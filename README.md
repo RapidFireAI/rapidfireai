@@ -6,7 +6,7 @@ Rapid experimentation for easier, faster, and more impactful fine-tuning and pos
 
 RapidFire AI is a new experiment execution framework that transforms your LLM customization experimentation from slow, sequential processes into rapid, intelligent workflows with hyperparallelized training, dynamic real-time experiment control, and automatic multi-GPU system orchestration.
 
-![Usage workflow of RapidFire AI](./usage.png)
+![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/usage.png)
 
 
 ## Getting Started
@@ -36,6 +36,11 @@ rapidfire start
 
 
 ### Troubleshooting
+
+For a quick system diagnostics report (Python env, relevant packages, GPU/CUDA, and key environment variables), run:
+```bash
+rapidfire doctor
+```
 
 If you encounter port conflicts, you can kill existing processes:
 ```bash

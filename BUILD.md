@@ -53,7 +53,7 @@ The script will:
 The project includes a GitHub Action that automatically builds and deploys to TestPyPI when you push a version tag:
 
 1. **Bump the version**: `./bump_version.sh patch`
-2. **Push the tag**: `git push origin v0.9.6`
+2. **Push the tag**: `git push origin test0.9.6`
 3. **GitHub Action triggers**: Automatically builds and uploads to TestPyPI
 
 **Prerequisites for TestPyPI deployment:**
