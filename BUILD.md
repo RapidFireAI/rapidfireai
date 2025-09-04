@@ -1,0 +1,66 @@
+# RapidFire
+An open source ML tool that allows for efficient, optimized, and user-friendly model training experimentation.
+
+## Building RapidFire AI
+
+### Building pypi package
+```bash
+# Remove any distributions and build to /dist folder
+rm -rf dist/ *.egg-info/ .eggs/ && python -m build
+
+# Copy or rsync /dist folder over to remote instance
+# Alternatively, git clone the repo
+rsync -av dist/ user:~/rapidfire
+
+# from directory where dist/ folder is
+pip install rapidfireai-0.9.9-py3-none-any.whl
+
+export PATH="$HOME/.local/bin:$PATH"
+
+rapidfire --version
+# RapidFire AI 0.9.9
+
+# install specific dependencies and initialize rapidfire
+rapidfire init
+
+# start the rapidfire server
+rapidfire start
+```
+
+### Automated Deployment and Version Management
+
+#### Version Bumping
+Use the included `bump_version.sh` script to automatically increment version numbers:
+
+```bash
+# Bump patch version (0.9.5 → 0.9.6)
+./bump_version.sh patch
+
+# Bump minor version (0.9.5 → 0.10.0)
+./bump_version.sh minor
+
+# Bump major version (0.9.5 → 1.0.0)
+./bump_version.sh major
+```
+
+The script will:
+- Update the version in `pyproject.toml`
+- Update the version comment in `requirements.txt`
+- Commit the changes
+- Create a git tag for the new version
+
+#### Automated TestPyPI Deployment
+The project includes a GitHub Action that automatically builds and deploys to TestPyPI when you push a version tag:
+
+1. **Bump the version**: `./bump_version.sh patch`
+2. **Push the tag**: `git push origin v0.9.6`
+3. **GitHub Action triggers**: Automatically builds and uploads to TestPyPI
+
+**Prerequisites for TestPyPI deployment:**
+- Add `TESTPYPI_API_TOKEN` to your GitHub repository secrets
+- Get the token from [TestPyPI account settings](https://test.pypi.org/manage/account/token/)
+
+**Manual TestPyPI upload** (if needed):
+```bash
+python -m twine upload --repository testpypi dist/*
+```
