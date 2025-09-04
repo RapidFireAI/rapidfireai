@@ -19,7 +19,7 @@ API_HOST=127.0.0.1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DISPATCHER_DIR="$SCRIPT_DIR/dispatcher"
-FRONTEND_DIR="$SCRIPT_DIR/frontend"
+FRONTEND_DIR="$SCRIPT_DIR/js"
 
 # Colors for output
 RED='\033[0;31m'
@@ -307,20 +307,34 @@ start_frontend() {
     # Check if we should use Node.js (preferred) or Docker
     print_status "Starting frontend with Node.js directly..."
     
+    # Determine which package manager to use
+    local yarn_binary=""
+    if [[ -f ".yarnrc.yml" ]]; then
+        # Check for available yarn releases in the yarn/releases directory
+        if [[ -f "yarn/releases/yarn-4.9.1.cjs" ]]; then
+            yarn_binary="yarn/releases/yarn-4.9.1.cjs"
+        elif [[ -f "yarn/releases/yarn-4.6.0.cjs" ]]; then
+            yarn_binary="yarn/releases/yarn-4.6.0.cjs"
+        elif [[ -f "yarn/releases/yarn-3.5.0.cjs" ]]; then
+            yarn_binary="yarn/releases/yarn-3.5.0.cjs"
+        fi
+    fi
+    
     # Check if node_modules exists
     if [[ ! -d "node_modules" ]]; then
         print_status "Installing Node.js dependencies..."
         # Check if this is a Yarn 2+ project (has .yarnrc.yml)
         if [[ -f ".yarnrc.yml" ]]; then
             print_status "Using local Yarn binary..."
-            if [[ -f "yarn/releases/yarn-3.6.3.cjs" ]]; then
-                node yarn/releases/yarn-3.6.3.cjs install || {
-                    print_error "Failed to install dependencies with local yarn"
+            
+            if [[ -n "$yarn_binary" ]]; then
+                node "$yarn_binary" install || {
+                    print_error "Failed to install dependencies with local yarn ($yarn_binary)"
                     cd "$SCRIPT_DIR"
                     return 1
                 }
             else
-                print_error "Local yarn binary not found at yarn/releases/yarn-3.6.3.cjs"
+                print_error "No local yarn binary found in yarn/releases/"
                 cd "$SCRIPT_DIR"
                 return 1
             fi
@@ -339,10 +353,21 @@ start_frontend() {
         fi
     fi
     
-    # Start Node.js server with npm start in background
-    print_status "Starting development server with npm start..."
+    # Start Node.js server with appropriate package manager
+    print_status "Starting development server..."
     print_status "Frontend logs will be written to: $SCRIPT_DIR/frontend.log"
-    PORT=$FRONTEND_PORT nohup npm start > "$SCRIPT_DIR/frontend.log" 2>&1 &
+    
+    # Use yarn if available, otherwise fall back to npm
+    if [[ -f ".yarnrc.yml" ]] && [[ -n "$yarn_binary" ]]; then
+        print_status "Using local Yarn binary to start server..."
+        PORT=$FRONTEND_PORT nohup node "$yarn_binary" start > "$SCRIPT_DIR/frontend.log" 2>&1 &
+    elif command -v yarn &> /dev/null; then
+        print_status "Using system Yarn to start server..."
+        PORT=$FRONTEND_PORT nohup yarn start > "$SCRIPT_DIR/frontend.log" 2>&1 &
+    else
+        print_status "Using npm to start server..."
+        PORT=$FRONTEND_PORT nohup npm start > "$SCRIPT_DIR/frontend.log" 2>&1 &
+    fi
     
     local frontend_pid=$!
     cd "$SCRIPT_DIR"  # Return to original directory
