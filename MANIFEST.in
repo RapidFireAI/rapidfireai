@@ -1,0 +1,52 @@
+# Include README and license files
+include README.md
+include LICENSE
+include rapidfireai/start.sh
+include rapidfireai/frontend/server.py
+include rapidfireai/frontend/proxy_middleware.py
+include rapidfireai/frontend/build/**/*
+include rapidfireai/frontend/package.json
+recursive-include rapidfireai/dispatcher *.py
+recursive-include rapidfireai/ml *.py
+recursive-include rapidfireai/automl *.py
+recursive-include rapidfireai/backend *.py
+recursive-include rapidfireai/db *.py *.sql
+recursive-include rapidfireai/utils *.py
+
+# Explicitly exclude unwanted files and directories - be very specific
+exclude rapidfireai/frontend/node_modules
+exclude rapidfireai/frontend/node_modules/*
+exclude rapidfireai/frontend/.yarn
+exclude rapidfireai/frontend/.yarn/*
+exclude rapidfireai/frontend/dist
+exclude rapidfireai/frontend/dist/*
+exclude rapidfireai/frontend/coverage
+exclude rapidfireai/frontend/coverage/*
+exclude rapidfireai/frontend/.nyc_output
+exclude rapidfireai/frontend/.nyc_output/*
+exclude rapidfireai/frontend/.cache
+exclude rapidfireai/frontend/.cache/*
+exclude rapidfireai/frontend/.next
+exclude rapidfireai/frontend/.next/*
+exclude rapidfireai/frontend/out
+exclude rapidfireai/frontend/out/*
+exclude rapidfireai/frontend/.env*
+exclude rapidfireai/frontend/*.log
+
+# Exclude common unwanted files
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude *.so
+global-exclude .DS_Store
+global-exclude .git*
+global-exclude .svn*
+global-exclude *.egg-info
+global-exclude .pytest_cache
+global-exclude .coverage
+global-exclude htmlcov
+global-exclude .tox
+global-exclude .venv
+global-exclude venv
+global-exclude venv311 

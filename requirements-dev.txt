@@ -1,0 +1,39 @@
+# Development dependencies for RapidFire AI
+# Install with: pip install -r requirements-dev.txt
+
+# Testing
+pytest>=6.0
+pytest-cov>=2.0
+pytest-mock>=3.0
+pytest-asyncio>=0.18.0
+
+# Code quality
+black>=21.0
+flake8>=3.8
+mypy>=0.800
+isort>=5.0
+pre-commit>=2.0
+
+# Documentation
+sphinx>=4.0
+sphinx-rtd-theme>=1.0
+myst-parser>=0.15
+
+# Development tools
+ipython>=7.0
+jupyter>=1.0
+notebook>=6.0
+
+# Build tools
+build>=0.7
+twine>=3.0
+setuptools>=45
+wheel>=0.37
+
+# Type checking
+types-requests>=2.25.0
+types-PyYAML>=5.4.0
+
+# Coverage and profiling
+coverage>=5.0
+pytest-cov>=2.0 

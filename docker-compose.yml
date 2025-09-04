@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  rapidfire-oss:
+    build: .
+    ports:
+      - "5002:5002"  # MLflow
+      - "8080:8080"  # API Server
+      - "3000:3000"  # Frontend
+    volumes:
+      - ./mlruns:/app/mlruns
+      - ./db:/root/db
+      - ./logs:/app/logs
+    environment:
+      - MLFLOW_PORT=5002
+      - MLFLOW_HOST=0.0.0.0
+      - FRONTEND_PORT=3000
+      - FRONTEND_HOST=0.0.0.0
+      - API_PORT=8080
+      - API_HOST=0.0.0.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5002 && curl -f http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s 
+      
