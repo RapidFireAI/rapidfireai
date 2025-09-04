@@ -1,0 +1,23 @@
+"""This module contains the TrainerConfig class which is responsible for configuring the trainer."""
+
+from dataclasses import dataclass
+from typing import Any, Callable, Optional
+
+import torch
+
+
+@dataclass
+class TrainerConfig:
+    """Trainer configuration"""
+
+    worker_id: int
+    run_id: int
+    mlflow_run_id: str
+    config_leaf: dict[str, Any]
+    total_steps: int
+    completed_steps: int
+    create_model_fn: Callable
+    train_dataset: torch.utils.data.Dataset
+    eval_dataset: Optional[torch.utils.data.Dataset]
+    warm_started_from: int | None
+    num_epochs_completed: int

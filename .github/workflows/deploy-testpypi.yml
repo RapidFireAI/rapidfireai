@@ -1,0 +1,42 @@
+name: Deploy to TestPyPI
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v0.9.5, v1.0.0, etc.
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build package
+        run: |
+          rm -rf dist/ *.egg-info/ .eggs/
+          python -m build
+
+      - name: Upload to TestPyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TESTPYPI_API_TOKEN_SUPPORT_DEV }}
+        run: |
+          python -m twine upload --repository testpypi dist/* --verbose
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-files
+          path: dist/
+          retention-days: 30 
