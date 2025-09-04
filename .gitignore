@@ -232,5 +232,4 @@ commands.sh
 # node
 node_modules/
 package-lock.json
-package.json
 rapidfireai/rapidfire_pids.txt
