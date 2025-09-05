@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button, CloseIcon, CopyIcon, Input, PlayIcon, Tooltip, StopIcon, TrashIcon, Checkbox, Typography } from '@databricks/design-system';
 import { css, Theme } from '@emotion/react';
 import { useDispatch } from 'react-redux';
-import { DispatcherService } from 'experiment-tracking/sdk/DispatcherService';
-import { deleteRunApi } from 'experiment-tracking/actions';
+import { DispatcherService } from '../../../experiment-tracking/sdk/DispatcherService';
 
 interface CloneModifyResponse {
   result: boolean;

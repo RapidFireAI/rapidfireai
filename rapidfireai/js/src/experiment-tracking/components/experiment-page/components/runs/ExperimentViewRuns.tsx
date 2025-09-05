@@ -41,9 +41,9 @@ import { useLoggedModelsForExperimentRunsTableV2 } from '../../hooks/useLoggedMo
 import { useResizableMaxWidth } from '@mlflow/mlflow/src/shared/web-shared/hooks/useResizableMaxWidth';
 import { useControllerNotification } from '../../hooks/useInteractiveControllerNotification';
 import InteractiveControllerComponent from '../../../run-page/InteractiveController';
-import RightSlidingDrawer from 'rapidfire-ui/components/RightSlidingDrawer';
+import RightSlidingDrawer from '../../../../../rapidfire-ui/components/RightSlidingDrawer';
 import TerminalLogViewer from '../../../TerminalLogViewer';
-import { DispatcherService } from 'experiment-tracking/sdk/DispatcherService';
+import { DispatcherService } from '../../../../../experiment-tracking/sdk/DispatcherService';
 import { useDesignSystemTheme } from '@databricks/design-system';
 
 export interface ExperimentViewRunsOwnProps {

@@ -161,6 +161,8 @@ export interface UseRunsColumnDefinitionsParams {
   allRunsHidden?: boolean;
   usingCustomVisibility?: boolean;
   runsHiddenMode?: RUNS_VISIBILITY_MODE;
+  showControllerNotification: (action: 'resume' | 'stop' | 'delete' | 'clone_modify', status: 'success' | 'error') => void;
+  onOpenController?: (runUuid: string, runName: string) => void
 }
 
 /**
@@ -250,6 +252,8 @@ export const useRunsColumnDefinitions = ({
   isComparingRuns,
   expandRows,
   runsHiddenMode,
+  showControllerNotification,
+  onOpenController,
 }: UseRunsColumnDefinitionsParams) => {
   const { theme } = useDesignSystemTheme();
 
