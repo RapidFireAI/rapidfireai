@@ -39,7 +39,7 @@ rapidfireai start
 
 For a quick system diagnostics report (Python env, relevant packages, GPU/CUDA, and key environment variables), run:
 ```bash
-rapidfire doctor
+rapidfireai doctor
 ```
 
 If you encounter port conflicts, you can kill existing processes:
