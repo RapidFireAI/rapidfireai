@@ -388,6 +388,8 @@ export type ExperimentViewRunsCompareMode =
   | 'ARTIFACT'
   | 'CHART'
   | 'TRACES'
+  | 'LOGS'
+  | 'IC_LOGS'
   | 'MODELS'
   | 'EVAL_RESULTS'
   | 'DATASETS'

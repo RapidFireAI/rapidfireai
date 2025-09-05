@@ -42,6 +42,9 @@ import { useResizableMaxWidth } from '@mlflow/mlflow/src/shared/web-shared/hooks
 import { useControllerNotification } from '../../hooks/useInteractiveControllerNotification';
 import InteractiveControllerComponent from '../../../run-page/InteractiveController';
 import RightSlidingDrawer from 'rapidfire-ui/components/RightSlidingDrawer';
+import TerminalLogViewer from '../../../TerminalLogViewer';
+import { DispatcherService } from 'experiment-tracking/sdk/DispatcherService';
+import { useDesignSystemTheme } from '@databricks/design-system';
 
 export interface ExperimentViewRunsOwnProps {
   isLoading: boolean;
@@ -79,6 +82,10 @@ const CHARTS_MIN_WIDTH = 350;
 
 export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) => {
   const [compareRunsMode] = useExperimentPageViewMode();
+  const [logs, setLogs] = useState<string[]>(['No experiment logs available yet...']);
+  const [icLogs, setICLogs] = useState<string[]>(['No interactive control logs available yet...']);
+  const { theme } = useDesignSystemTheme();
+  
   const {
     experiments,
     runsData,
@@ -165,12 +172,12 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
 
   const filteredTagKeys = useMemo(() => Utils.getVisibleTagKeyList(tagsList), [tagsList]);
 
-  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
+  const [isDatasetDrawerOpen, setIsDatasetDrawerOpen] = useState<boolean>(false);
   const [selectedDatasetWithRun, setSelectedDatasetWithRun] = useState<DatasetWithRunType>();
   
-  // InteractiveController state
+  // Drawer state
+  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [selectedRun, setSelectedRun] = useState<{ runUuid: string; runName: string } | null>(null);
-  const [isControllerDrawerOpen, setIsControllerDrawerOpen] = useState<boolean>(false);
 
   const experimentIds = useMemo(() => experiments.map(({ experimentId }) => experimentId), [experiments]);
 
@@ -239,24 +246,54 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
 
   const datasetSelected = useCallback((dataset: RunDatasetWithTags, run: RunRowType) => {
     setSelectedDatasetWithRun({ datasetWithTags: dataset, runData: run });
-    setIsDrawerOpen(true);
+    setIsDatasetDrawerOpen(true);
   }, []);
 
   // InteractiveController handlers
   const handleOpenController = useCallback((runUuid: string, runName: string) => {
     setSelectedRun({ runUuid, runName });
-    setIsControllerDrawerOpen(true);
-  }, []);
-
-  const handleCloseController = useCallback(() => {
-    setIsControllerDrawerOpen(false);
-    setSelectedRun(null);
+    setIsDrawerOpen(true);
   }, []);
 
   const handleHideRun = useCallback((runUuid: string) => {
     // This will be handled by the parent component or Redux state
     console.log('Hide run:', runUuid);
   }, []);
+
+  // Function to close the drawer
+  const handleCloseDrawer = useCallback(() => {
+    setIsDrawerOpen(false);
+    setSelectedRun(null);
+  }, []);
+
+  // Fetch logs when component mounts or compareRunsMode changes
+  useEffect(() => {
+    if (compareRunsMode === 'LOGS') {
+      const fetchLogs = async () => {
+        try {
+          const fetchedLogs = await DispatcherService.getLogs({ experiment_name: experiments[0].name });
+          setLogs(fetchedLogs);
+        } catch (error) {
+          console.error('Error fetching logs:', error);
+          setLogs(['Error fetching experiment logs...']);
+        }
+      };
+      fetchLogs();
+    }
+
+    if (compareRunsMode === 'IC_LOGS') {
+      const fetchICLogs = async () => {
+        try {
+          const fetchedICLogs = await DispatcherService.getICLogs({ experiment_name: experiments[0].name });
+          setICLogs(fetchedICLogs);
+        } catch (error) {
+          console.error('Error fetching IC logs:', error);
+          setICLogs(['Error fetching interactive control logs...']);
+        }
+      };
+      fetchICLogs();
+    }
+  }, [compareRunsMode, experiments]);
 
   const isTabActive = useIsTabActive();
   const autoRefreshEnabled = uiState.autoRefreshEnabled && shouldEnableExperimentPageAutoRefresh() && isTabActive;
@@ -362,26 +399,69 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
               disabled={Boolean(uiState.groupBy)}
             />
           )}
+          {compareRunsMode === 'LOGS' && (
+            <TerminalLogViewer logs={logs} />
+          )}
+          {compareRunsMode === 'IC_LOGS' && (
+            <TerminalLogViewer logs={icLogs} />
+          )}
           {notificationContainer}
           {selectedDatasetWithRun && (
             <ExperimentViewDatasetDrawer
-              isOpen={isDrawerOpen}
-              setIsOpen={setIsDrawerOpen}
+              isOpen={isDatasetDrawerOpen}
+              setIsOpen={setIsDatasetDrawerOpen}
               selectedDatasetWithRun={selectedDatasetWithRun}
               setSelectedDatasetWithRun={setSelectedDatasetWithRun}
             />
           )}
+          {/* Interactive Controller Drawer */}
           <RightSlidingDrawer
-            isOpen={isControllerDrawerOpen}
-            onClose={handleCloseController}
-            title="Interactive Controller"
-            width={800}
+            isOpen={isDrawerOpen && selectedRun !== null}
+            onClose={handleCloseDrawer}
+            width={700}
+            showBackdrop
+            closeOnBackdropClick
+            closeOnEscape
+            customHeader={
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                width: '100%',
+                padding: '0 20px'
+              }}>
+                <div style={{ 
+                  fontSize: '18px', 
+                  fontWeight: '600', 
+                  color: theme.colors.textPrimary
+                }}>
+                  Interactive Controller
+                </div>
+                <button
+                  onClick={handleCloseDrawer}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '8px',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: theme.colors.textSecondary,
+                    fontSize: '16px'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            }
           >
             {selectedRun && (
               <InteractiveControllerComponent
                 runUuid={selectedRun.runUuid}
                 runName={selectedRun.runName}
-                onClose={handleCloseController}
+                onClose={handleCloseDrawer}
                 showControllerNotification={showControllerNotification}
                 onHideRun={handleHideRun}
                 refreshRuns={refreshRuns}
