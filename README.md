@@ -25,10 +25,10 @@ source oss_venv/bin/activate
 pip install rapidfireai
 
 # install specific dependencies and initialize rapidfire
-rapidfire init
+rapidfireai init
 
 # start the rapidfire server
-rapidfire start
+rapidfireai start
 
 # open up example notebook and start experiment
 ```
