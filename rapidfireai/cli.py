@@ -342,10 +342,10 @@ def run_init():
     return 0
 
 def main():
-    """Main entry point for the rapidfire-start command."""
+    """Main entry point for the rapidfireai command."""
     parser = argparse.ArgumentParser(
         description="RapidFire AI - Start/stop/manage services",
-        prog="rapidfire"
+        prog="rapidfireai"
     )
     
     parser.add_argument(
