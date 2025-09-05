@@ -272,7 +272,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
       const fetchLogs = async () => {
         try {
           const fetchedLogs = await DispatcherService.getLogs({ experiment_name: experiments[0].name });
-          setLogs(fetchedLogs);
+          setLogs(Array.isArray(fetchedLogs) ? fetchedLogs : []);
         } catch (error) {
           console.error('Error fetching logs:', error);
           setLogs(['Error fetching experiment logs...']);
@@ -285,7 +285,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
       const fetchICLogs = async () => {
         try {
           const fetchedICLogs = await DispatcherService.getICLogs({ experiment_name: experiments[0].name });
-          setICLogs(fetchedICLogs);
+          setICLogs(Array.isArray(fetchedICLogs) ? fetchedICLogs : []);
         } catch (error) {
           console.error('Error fetching IC logs:', error);
           setICLogs(['Error fetching interactive control logs...']);
@@ -319,6 +319,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
         expandRows={expandRows}
         uiState={uiState}
         compareRunsMode={compareRunsMode}
+        showControllerNotification={showControllerNotification}
       />
     );
 

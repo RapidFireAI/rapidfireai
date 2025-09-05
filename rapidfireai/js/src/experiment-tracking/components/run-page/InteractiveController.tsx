@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, CloseIcon, CopyIcon, Input, PlayIcon, Tooltip, StopIcon, TrashIcon, Checkbox, Typography } from '@databricks/design-system';
+import { Button, CopyIcon, Input, PlayIcon, Tooltip, StopIcon, TrashIcon, Checkbox, Typography } from '@databricks/design-system';
 import { css, Theme } from '@emotion/react';
 import { useDispatch } from 'react-redux';
 import { DispatcherService } from '../../../experiment-tracking/sdk/DispatcherService';
@@ -184,7 +184,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
     <div css={styles.container}>
       <div css={styles.leftPanel}>
         <div css={styles.actionsHeader}>Actions</div>
-        <Tooltip content="Resume run" placement="left">
+        <Tooltip content="Resume run" componentId="resume-run-tooltip">
           <Button
             componentId="resume-run-button"
             size="middle"
@@ -196,7 +196,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
             Resume
           </Button>
         </Tooltip>
-        <Tooltip content="Stop run" placement="left">
+        <Tooltip content="Stop run" componentId="stop-run-tooltip">
           <Button
             componentId="stop-run-button"
             size="middle"
@@ -208,7 +208,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
             Stop
           </Button>
         </Tooltip>
-        <Tooltip content="Clone run" placement="left">
+        <Tooltip content="Clone run" componentId="clone-run-tooltip">
           <Button
             componentId="clone-run-button"
             size="middle"
@@ -222,7 +222,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
             Clone
           </Button>
         </Tooltip>
-        <Tooltip content="Delete run" placement="left">
+        <Tooltip content="Delete run" componentId="delete-run-tooltip">
           <Button
             componentId="delete-run-button"
             size="middle"
@@ -259,7 +259,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
 
           <div css={styles.configSection}>
             <Typography.Title level={5} css={styles.configHeader}>Run Configuration</Typography.Title>
-            <Tooltip content={isEditable ? "You can now edit the config" : "Click 'Clone' to edit this config"} placement="top">
+            <Tooltip content={isEditable ? "You can now edit the config" : "Click 'Clone' to edit this config"} componentId="edit-run-tooltip">
               <div css={styles.textAreaWrapper}>
                 <Input.TextArea 
                   componentId="config-textarea"
