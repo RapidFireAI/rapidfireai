@@ -1,9 +1,8 @@
 import ExperimentTrackingRoutes from '../../experiment-tracking/routes';
 import { Link } from '../utils/RoutingUtils';
-import { HomePageDocsUrl, RFDocsUrl, Version } from '../constants';
+import { RFDocsUrl, Version } from '../constants';
 import { DarkThemeSwitch } from '@mlflow/mlflow/src/common/components/DarkThemeSwitch';
 import { Button, MenuIcon, useDesignSystemTheme } from '@databricks/design-system';
-import { MlflowLogo } from './MlflowLogo';
 import logo from '../../common/static/RapidFire_Square_Bug.png';
 
 export const MlflowHeader = ({
