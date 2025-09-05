@@ -49,24 +49,25 @@ export const MlflowHeader = ({
           icon={<MenuIcon />}
         />
         <Link to={ExperimentTrackingRoutes.rootRoute}>
-          {/* <MlflowLogo
-            css={{
-              display: 'block',
-              height: theme.spacing.md * 2,
-              color: theme.colors.textPrimary,
-            }}
-          /> */}
           <img
               css={{
-                height: 45,              
-                marginLeft: 24,
-                marginTop: 12,           
-                marginBottom: 12,       
+                display: 'block',
+                height: theme.spacing.md * 1.75,
+                color: theme.colors.textPrimary,
               }}
               alt="RapidFireAI"
               src={logo}
             />
         </Link>
+        <span
+          css={{
+            fontSize: theme.typography.fontSizeLg,
+            color: theme.colors.textPrimary,
+            marginLeft: theme.spacing.sm,
+          }}
+        >
+          RapidFire
+        </span>
         <span
           css={{
             fontSize: theme.typography.fontSizeSm,
