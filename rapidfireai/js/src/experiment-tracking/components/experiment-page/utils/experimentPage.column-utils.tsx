@@ -19,6 +19,7 @@ import { ModelsCellRenderer } from '../components/runs/cells/ModelsCellRenderer'
 import { ModelsHeaderCellRenderer } from '../components/runs/cells/ModelsHeaderCellRenderer';
 import { SourceCellRenderer } from '../components/runs/cells/SourceCellRenderer';
 import { VersionCellRenderer } from '../components/runs/cells/VersionCellRenderer';
+import { InteractiveControllerCellRenderer } from '../components/runs/cells/InteractiveControllerCellRenderer';
 import {
   EXPERIMENT_FIELD_PREFIX_METRIC,
   EXPERIMENT_FIELD_PREFIX_PARAM,
@@ -58,6 +59,7 @@ const RUN_NAME_COLUMN_WIDTH = 190;
  */
 const BASE_RUN_ACTIONS_COLUMN_WIDTH = 105;
 const VISIBILITY_TOGGLE_WIDTH = 32;
+const INTERACTIVE_CONTROLLER_WIDTH = 105;
 
 /**
  * Calculates width for "actions" column. "compactMode" should be set to true
@@ -112,6 +114,7 @@ export const getFrameworkComponents = () => ({
   RowActionsHeaderCellRenderer,
   RunNameCellRenderer,
   DatasetsCellRenderer,
+  InteractiveControllerCellRenderer,
   AggregateMetricValueCell,
 });
 
@@ -279,6 +282,24 @@ export const useRunsColumnDefinitions = ({
       maxWidth: getActionsColumnWidth(isComparingRuns),
       resizable: false,
       suppressKeyboardEvent: RowActionsCellRendererSuppressKeyboardEvents,
+    });
+
+    // Add Interactive Controller column
+    columns.push({
+      headerName: 'IC Ops',
+      field: 'interactiveController',
+      initialWidth: INTERACTIVE_CONTROLLER_WIDTH,
+      width: INTERACTIVE_CONTROLLER_WIDTH,
+      minWidth: INTERACTIVE_CONTROLLER_WIDTH,
+      maxWidth: INTERACTIVE_CONTROLLER_WIDTH,
+      cellRenderer: 'InteractiveControllerCellRenderer',
+      cellRendererParams: {
+        onOpenController,
+      },
+      suppressMenu: true,
+      resizable: false,
+      sortable: false,
+      pinned: usingCompactViewport ? undefined : 'left',
     });
 
     const isRunColumnDynamicSized = isComparingRuns;

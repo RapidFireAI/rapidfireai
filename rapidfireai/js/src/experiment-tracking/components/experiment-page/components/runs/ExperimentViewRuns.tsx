@@ -39,6 +39,9 @@ import { useLoggedModelsForExperimentRunsTable } from '../../hooks/useLoggedMode
 import { ExperimentViewRunsRequestError } from '../ExperimentViewRunsRequestError';
 import { useLoggedModelsForExperimentRunsTableV2 } from '../../hooks/useLoggedModelsForExperimentRunsTableV2';
 import { useResizableMaxWidth } from '@mlflow/mlflow/src/shared/web-shared/hooks/useResizableMaxWidth';
+import { useControllerNotification } from '../../hooks/useInteractiveControllerNotification';
+import InteractiveControllerComponent from '../../../run-page/InteractiveController';
+import RightSlidingDrawer from 'rapidfire-ui/components/RightSlidingDrawer';
 
 export interface ExperimentViewRunsOwnProps {
   isLoading: boolean;
@@ -164,6 +167,10 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
 
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [selectedDatasetWithRun, setSelectedDatasetWithRun] = useState<DatasetWithRunType>();
+  
+  // InteractiveController state
+  const [selectedRun, setSelectedRun] = useState<{ runUuid: string; runName: string } | null>(null);
+  const [isControllerDrawerOpen, setIsControllerDrawerOpen] = useState<boolean>(false);
 
   const experimentIds = useMemo(() => experiments.map(({ experimentId }) => experimentId), [experiments]);
 
@@ -214,6 +221,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
 
   const [notificationsFn, notificationContainer] = useLegacyNotification();
   const showFetchedRunsNotifications = useFetchedRunsNotification(notificationsFn);
+  const showControllerNotification = useControllerNotification(notificationsFn);
 
   const [tableAreaWidth, setTableAreaWidth] = useState(INITIAL_RUN_COLUMN_SIZE);
 
@@ -232,6 +240,22 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
   const datasetSelected = useCallback((dataset: RunDatasetWithTags, run: RunRowType) => {
     setSelectedDatasetWithRun({ datasetWithTags: dataset, runData: run });
     setIsDrawerOpen(true);
+  }, []);
+
+  // InteractiveController handlers
+  const handleOpenController = useCallback((runUuid: string, runName: string) => {
+    setSelectedRun({ runUuid, runName });
+    setIsControllerDrawerOpen(true);
+  }, []);
+
+  const handleCloseController = useCallback(() => {
+    setIsControllerDrawerOpen(false);
+    setSelectedRun(null);
+  }, []);
+
+  const handleHideRun = useCallback((runUuid: string) => {
+    // This will be handled by the parent component or Redux state
+    console.log('Hide run:', runUuid);
   }, []);
 
   const isTabActive = useIsTabActive();
@@ -253,6 +277,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
         rowsData={visibleRuns}
         loadMoreRunsFunc={loadMoreRunsCallback}
         moreRunsAvailable={moreRunsAvailable}
+        onOpenController={handleOpenController}
         onDatasetSelected={datasetSelected}
         expandRows={expandRows}
         uiState={uiState}
@@ -346,6 +371,23 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
               setSelectedDatasetWithRun={setSelectedDatasetWithRun}
             />
           )}
+          <RightSlidingDrawer
+            isOpen={isControllerDrawerOpen}
+            onClose={handleCloseController}
+            title="Interactive Controller"
+            width={800}
+          >
+            {selectedRun && (
+              <InteractiveControllerComponent
+                runUuid={selectedRun.runUuid}
+                runName={selectedRun.runName}
+                onClose={handleCloseController}
+                showControllerNotification={showControllerNotification}
+                onHideRun={handleHideRun}
+                refreshRuns={refreshRuns}
+              />
+            )}
+          </RightSlidingDrawer>
         </div>
       </RunsChartsSetHighlightContextProvider>
     </CreateNewRunContextProvider>
