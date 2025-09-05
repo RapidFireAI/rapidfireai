@@ -184,7 +184,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
     <div css={styles.container}>
       <div css={styles.leftPanel}>
         <div css={styles.actionsHeader}>Actions</div>
-        <Tooltip title="Resume run" placement="left">
+        <Tooltip content="Resume run" placement="left">
           <Button
             componentId="resume-run-button"
             size="middle"
@@ -196,7 +196,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
             Resume
           </Button>
         </Tooltip>
-        <Tooltip title="Stop run" placement="left">
+        <Tooltip content="Stop run" placement="left">
           <Button
             componentId="stop-run-button"
             size="middle"
@@ -208,7 +208,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
             Stop
           </Button>
         </Tooltip>
-        <Tooltip title="Clone run" placement="left">
+        <Tooltip content="Clone run" placement="left">
           <Button
             componentId="clone-run-button"
             size="middle"
@@ -222,7 +222,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
             Clone
           </Button>
         </Tooltip>
-        <Tooltip title="Delete run" placement="left">
+        <Tooltip content="Delete run" placement="left">
           <Button
             componentId="delete-run-button"
             size="middle"
@@ -259,9 +259,10 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
 
           <div css={styles.configSection}>
             <Typography.Title level={5} css={styles.configHeader}>Run Configuration</Typography.Title>
-            <Tooltip title={isEditable ? "You can now edit the config" : "Click 'Clone' to edit this config"} placement="top">
+            <Tooltip content={isEditable ? "You can now edit the config" : "Click 'Clone' to edit this config"} placement="top">
               <div css={styles.textAreaWrapper}>
                 <Input.TextArea 
+                  componentId="config-textarea"
                   value={textareaContent}
                   onChange={(e) => setTextareaContent(e.target.value)}
                   readOnly={!isEditable}
@@ -275,6 +276,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
         {isEditable && (
         <>
             <Checkbox
+            componentId="warm-start-checkbox"
             isChecked={warmStart}
             onChange={() => setWarmStart(!warmStart)}
           >
