@@ -486,9 +486,9 @@ show_status() {
     fi
     
     echo ""
-    print_status "Available endpoints:"
-    echo "- Frontend: http://$FRONTEND_HOST:$FRONTEND_PORT"
-    echo "- API Server: http://$API_HOST:$API_PORT"
+    print_success "🚀 RapidFire Frontend is ready!"
+    print_status "👉 Open your browser and navigate to: http://$FRONTEND_HOST:$FRONTEND_PORT"
+    print_status "   (Click the link above or copy/paste the URL into your browser)"
     
     # Show log file status
     echo ""

@@ -64,18 +64,18 @@ print_status "Installing the package..."
 pip install dist/*.whl
 
 print_success "Package installed successfully!"
-print_status "You can now use the 'rapidfire-start' command:"
-print_status "  rapidfire --help"
-print_status "  rapidfire start"
-print_status "  rapidfire status"
-print_status "  rapidfire stop"
+print_status "You can now use the 'rapidfireai' command:"
+print_status "  rapidfireai --help"
+print_status "  rapidfireai start"
+print_status "  rapidfireai status"
+print_status "  rapidfireai stop"
 
 # Test the installation
 print_status "Testing the installation..."
-if command -v rapidfire &> /dev/null; then
-    print_success "rapidfire-start command is available"
-    rapidfire --version
+if command -v rapidfireai &> /dev/null; then
+    print_success "rapidfireai command is available"
+    rapidfireai --version
 else
-    print_error "rapidfire-start command not found in PATH"
+    print_error "rapidfireai command not found in PATH"
     print_status "You may need to restart your shell or activate your virtual environment"
 fi 
