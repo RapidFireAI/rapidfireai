@@ -70,7 +70,7 @@ full = [
 Homepage = "https://rapidfire.ai"
 
 [project.scripts]
-rapidfire = "rapidfireai.cli:main"
+rapidfireai = "rapidfireai.cli:main"
 
 [tool.setuptools]
 packages = ["rapidfireai"]

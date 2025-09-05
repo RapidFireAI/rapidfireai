@@ -17,14 +17,14 @@ pip install rapidfireai-0.9.9-py3-none-any.whl
 
 export PATH="$HOME/.local/bin:$PATH"
 
-rapidfire --version
+rapidfireai --version
 # RapidFire AI 0.9.9
 
 # install specific dependencies and initialize rapidfire
-rapidfire init
+rapidfireai init
 
 # start the rapidfire server
-rapidfire start
+rapidfireai start
 ```
 
 ### Automated Deployment and Version Management
