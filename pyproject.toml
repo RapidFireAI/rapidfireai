@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rapidfireai"
-version = "0.9.9"
+version = "0.9.10"
 authors = [
     {name = "RapidFire AI Inc.", email = "support@rapidfire.ai"},
 ]
@@ -12,7 +12,7 @@ description = "RapidFire AI: Rapid Experimentation Engine for Customizing LLMs"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
-keywords = ["ai", "rapidfire", "deep-learning", "artificial-intelligence", "machine-learning", "mlflow", "experiment-tracking"]
+keywords = ["ai", "rapidfire", "rapidfireai", "deep-learning", "artificial-intelligence", "machine-learning", "mlflow", "experiment-tracking"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -70,7 +70,7 @@ full = [
 Homepage = "https://rapidfire.ai"
 
 [project.scripts]
-rapidfire = "rapidfireai.cli:main"
+rapidfireai = "rapidfireai.cli:main"
 
 [tool.setuptools]
 packages = ["rapidfireai"]
