@@ -8,7 +8,7 @@ version = "0.9.10"
 authors = [
     {name = "RapidFire AI Inc.", email = "support@rapidfire.ai"},
 ]
-description = "RapidFire AI - Machine Learning Platform"
+description = "RapidFire AI: Rapid Experimentation Engine for Customizing LLMs"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
