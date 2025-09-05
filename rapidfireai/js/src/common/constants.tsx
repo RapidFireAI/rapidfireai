@@ -9,13 +9,15 @@ export const ErrorCodes = {
   RESOURCE_CONFLICT: 'RESOURCE_CONFLICT',
 };
 
-export const Version = '3.3.3.dev0';
+export const Version = '0.9.9';
 
 const DOCS_VERSION = 'latest';
 
 const DOCS_ROOT = `https://www.mlflow.org/docs/${DOCS_VERSION}`;
 
 export const HomePageDocsUrl = `${DOCS_ROOT}/index.html`;
+
+export const RFDocsUrl = `https://rapidfire-ai-oss-docs.readthedocs-hosted.com/en/latest/`
 
 export const ModelRegistryDocUrl = `${DOCS_ROOT}/model-registry.html`;
 
@@ -39,7 +41,7 @@ export const LoggingRunsDocUrl = `${DOCS_ROOT}/tracking.html#logging-data-to-run
 
 export const onboarding = 'onboarding';
 
-export const SupportPageUrl = 'https://github.com/mlflow/mlflow/issues';
+export const SupportPageUrl = 'https://github.com/RapidFireAI/rapidfireai/issues';
 
 export const ModelSignatureUrl = `${DOCS_ROOT}/models.html#model-signature`;
 

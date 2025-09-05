@@ -1,9 +1,10 @@
 import ExperimentTrackingRoutes from '../../experiment-tracking/routes';
 import { Link } from '../utils/RoutingUtils';
-import { HomePageDocsUrl, Version } from '../constants';
+import { HomePageDocsUrl, RFDocsUrl, Version } from '../constants';
 import { DarkThemeSwitch } from '@mlflow/mlflow/src/common/components/DarkThemeSwitch';
 import { Button, MenuIcon, useDesignSystemTheme } from '@databricks/design-system';
 import { MlflowLogo } from './MlflowLogo';
+import logo from '../../common/static/RapidFire_Square_Bug.png';
 
 export const MlflowHeader = ({
   isDarkTheme = false,
@@ -48,13 +49,23 @@ export const MlflowHeader = ({
           icon={<MenuIcon />}
         />
         <Link to={ExperimentTrackingRoutes.rootRoute}>
-          <MlflowLogo
+          {/* <MlflowLogo
             css={{
               display: 'block',
               height: theme.spacing.md * 2,
               color: theme.colors.textPrimary,
             }}
-          />
+          /> */}
+          <img
+              css={{
+                height: 45,              
+                marginLeft: 24,
+                marginTop: 12,           
+                marginBottom: 12,       
+              }}
+              alt="RapidFireAI"
+              src={logo}
+            />
         </Link>
         <span
           css={{
@@ -67,8 +78,8 @@ export const MlflowHeader = ({
       <div css={{ flex: 1 }} />
       <div css={{ display: 'flex', gap: theme.spacing.lg, alignItems: 'center' }}>
         <DarkThemeSwitch isDarkTheme={isDarkTheme} setIsDarkTheme={setIsDarkTheme} />
-        <a href="https://github.com/mlflow/mlflow">GitHub</a>
-        <a href={HomePageDocsUrl}>Docs</a>
+        <a href="https://github.com/RapidFireAI/rapidfireai">GitHub</a>
+        <a href={RFDocsUrl}>Docs</a>
       </div>
     </header>
   );
