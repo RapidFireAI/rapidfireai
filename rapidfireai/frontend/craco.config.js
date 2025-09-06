@@ -3,12 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
 const webpack = require('webpack');
-const ESLintPlugin = require('eslint-webpack-plugin');
-
-// Optimization packages
-const { whenProd } = require('@craco/craco');
-const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
-const WebpackBar = require('webpackbar');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 const proxyTarget = process.env.MLFLOW_PROXY;
 const useProxyServer = !!proxyTarget && !process.env.MLFLOW_DEV_PROXY_MODE;
@@ -17,8 +12,7 @@ const isDevserverWebsocketRequest = (request) =>
   request.url === '/ws' && (request.headers.upgrade === 'websocket' || request.headers['sec-websocket-version']);
 
 function mayProxy(pathname) {
-  // const publicPrefixPrefix = '/static-files/';
-  const publicPrefixPrefix = '/';
+  const publicPrefixPrefix = '/static-files/';
   if (pathname.startsWith(publicPrefixPrefix)) {
     const maybePublicPath = path.resolve('public', pathname.substring(publicPrefixPrefix.length));
     return !fs.existsSync(maybePublicPath);
@@ -267,6 +261,8 @@ module.exports = function () {
         jestConfig.setupFiles = ['jest-canvas-mock'];
         jestConfig.setupFilesAfterEnv.push('<rootDir>/scripts/env-mocks.js');
         jestConfig.setupFilesAfterEnv.push('<rootDir>/scripts/setup-jest-dom-matchers.js');
+        jestConfig.setupFilesAfterEnv.push('<rootDir>/scripts/setup-testing-library.js');
+        jestConfig.setupFilesAfterEnv.push('<rootDir>/src/setupTests.js');
         // Adjust config to work with dependencies using ".mjs" file extensions
         jestConfig.moduleFileExtensions.push('mjs');
         // Remove when this issue is resolved: https://github.com/gsoft-inc/craco/issues/393
@@ -279,49 +275,27 @@ module.exports = function () {
 
         const moduleNameMapper = {
           ...jestConfig.moduleNameMapper,
+          // bugfix for ESM issue in remark, see: https://github.com/orgs/remarkjs/discussions/1247
+          'unist-util-visit-parents/do-not-use-color': '<rootDir>/node_modules/unist-util-visit-parents/lib/color.js',
+          'vfile/do-not-use-conditional-minpath': '<rootDir>/node_modules/vfile/lib/minpath.browser.js',
+          'vfile/do-not-use-conditional-minproc': '<rootDir>/node_modules/vfile/lib/minproc.browser.js',
+          'vfile/do-not-use-conditional-minurl': '<rootDir>/node_modules/vfile/lib/minurl.browser.js',
+          // other aliases
+          '@databricks/i18n': '<rootDir>/src/i18n/i18n',
+          '@databricks/web-shared/query-client': '<rootDir>/src/common/utils/reactQueryHooks',
+          '@databricks/design-system/(.+)': '<rootDir>/node_modules/@databricks/design-system/dist/$1',
           '@databricks/web-shared/(.*)': '<rootDir>/src/shared/web-shared/$1',
+          '@mlflow/mlflow/(.*)': '<rootDir>/$1',
         };
 
         jestConfig.moduleNameMapper = moduleNameMapper;
-        jestConfig.setupFilesAfterEnv = [
-          '<rootDir>/scripts/jest/react-versions/index.ts',
-          ...(jestConfig.setupFilesAfterEnv || []),
-        ];
 
         return jestConfig;
       },
     },
     webpack: {
-      configure: (webpackConfig, { env, paths }) => {
-        // Disable source map generation in production for faster builds
-        if (env === 'production') {
-          webpackConfig.devtool = false;
-
-          // Optimize splitChunks for better performance and smaller bundle sizes
-          webpackConfig.optimization.splitChunks = {
-            chunks: 'all',
-            minSize: 20000,
-            maxSize: 244000,
-            minChunks: 1,
-            maxAsyncRequests: 30,
-            maxInitialRequests: 30,
-            automaticNameDelimiter: '~',
-            enforceSizeThreshold: 50000,
-            cacheGroups: {
-              defaultVendors: {
-                test: /[\\/]node_modules[\\/]/,
-                priority: -10
-              },
-              default: {
-                minChunks: 2,
-                priority: -20,
-                reuseExistingChunk: true
-              }
-            }
-          };
-        }
-
-        // webpackConfig.output.publicPath = 'static-files/';
+      configure: (webpackConfig, { env }) => {
+        webpackConfig.output.publicPath = 'static-files/';
         webpackConfig = i18nOverrides(webpackConfig);
         webpackConfig = configureIframeCSSPublicPaths(webpackConfig, env);
         webpackConfig = enableOptionalTypescript(webpackConfig);
@@ -340,24 +314,97 @@ module.exports = function () {
             'react/jsx-dev-runtime.js': require.resolve('react/jsx-dev-runtime'),
           },
         };
+
+        // Add separate entry for notebook renderer
+        webpackConfig.entry = {
+          main: webpackConfig.entry,
+          'ml-model-trace-renderer': path.resolve(
+            __dirname,
+            'src/shared/web-shared/model-trace-explorer/oss-notebook-renderer/index.ts',
+          ),
+        };
+
+        // Configure output for multiple entries
+        webpackConfig.output = {
+          ...webpackConfig.output,
+          filename: (pathData) => {
+            return pathData.chunk.name === 'ml-model-trace-renderer'
+              ? 'lib/notebook-trace-renderer/js/[name].[contenthash].js'
+              : 'static/js/[name].[contenthash:8].js';
+          },
+          chunkFilename: (pathData) => {
+            return pathData.chunk.name?.includes('ml-model-trace-renderer')
+              ? 'lib/notebook-trace-renderer/js/[name].[contenthash].chunk.js'
+              : 'static/js/[name].[contenthash:8].chunk.js';
+          },
+        };
+
+        // Configure CSS extraction for notebook renderer
+        if (env === 'production') {
+          const MiniCssExtractPlugin = webpackConfig.plugins.find(
+            (plugin) => plugin.constructor.name === 'MiniCssExtractPlugin',
+          );
+
+          if (MiniCssExtractPlugin) {
+            MiniCssExtractPlugin.options = {
+              ...MiniCssExtractPlugin.options,
+              filename: (pathData) => {
+                return pathData.chunk.name === 'ml-model-trace-renderer'
+                  ? 'lib/notebook-trace-renderer/css/[name].[contenthash].css'
+                  : 'static/css/[name].[contenthash:8].css';
+              },
+              chunkFilename: (pathData) => {
+                return pathData.chunk.name?.includes('ml-model-trace-renderer')
+                  ? 'lib/notebook-trace-renderer/css/[name].[contenthash].chunk.css'
+                  : 'static/css/[name].[contenthash:8].chunk.css';
+              },
+            };
+          }
+        }
+
+        // Configure main HtmlWebpackPlugin to exclude notebook renderer chunks
+        const mainHtmlPlugin = webpackConfig.plugins.find((plugin) => plugin.constructor.name === 'HtmlWebpackPlugin');
+        if (mainHtmlPlugin) {
+          mainHtmlPlugin.options.excludeChunks = ['ml-model-trace-renderer'];
+        }
+
+        // Add HTML template for notebook renderer
+        webpackConfig.plugins.push(
+          new HtmlWebpackPlugin({
+            template: path.resolve(
+              __dirname,
+              'src/shared/web-shared/model-trace-explorer/oss-notebook-renderer/index.html',
+            ),
+            filename: 'lib/notebook-trace-renderer/index.html',
+            chunks: ['ml-model-trace-renderer'],
+            inject: true,
+            publicPath: '/static-files/',
+            minify:
+              env === 'production'
+                ? {
+                    removeComments: true,
+                    collapseWhitespace: true,
+                    removeRedundantAttributes: true,
+                    useShortDoctype: true,
+                    removeEmptyAttributes: true,
+                    removeStyleLinkTypeAttributes: true,
+                    keepClosingSlash: true,
+                    minifyJS: true,
+                    minifyCSS: true,
+                    minifyURLs: true,
+                  }
+                : false,
+            base: '/',
+          }),
+        );
+
+        console.log('Webpack config:', webpackConfig);
         return webpackConfig;
       },
       plugins: [
-        // Add progress bar for better build process visibility
-        new WebpackBar({ profile: true }),
-        // Add bundle analyzer in production build
-        ...whenProd(() => [
-          new BundleAnalyzerPlugin({ analyzerMode: 'static' }),
-        ], []),
         new webpack.EnvironmentPlugin({
-          HIDE_HEADER: process.env.HIDE_HEADER ? 'true' : 'false',
-          HIDE_EXPERIMENT_LIST: process.env.HIDE_EXPERIMENT_LIST ? 'true' : 'false',
-          SHOW_GDPR_PURGING_MESSAGES: process.env.SHOW_GDPR_PURGING_MESSAGES ? 'true' : 'false',
-          USE_ABSOLUTE_AJAX_URLS: process.env.USE_ABSOLUTE_AJAX_URLS ? 'true' : 'false',
-          SHOULD_REDIRECT_IFRAME: process.env.SHOULD_REDIRECT_IFRAME ? 'true' : 'false',
-        }),
-        new ESLintPlugin({
-          extensions: ['js', 'jsx', 'ts', 'tsx'],
+          MLFLOW_SHOW_GDPR_PURGING_MESSAGES: process.env.MLFLOW_SHOW_GDPR_PURGING_MESSAGES ? 'true' : 'false',
+          MLFLOW_USE_ABSOLUTE_AJAX_URLS: process.env.MLFLOW_USE_ABSOLUTE_AJAX_URLS ? 'true' : 'false',
         }),
       ],
     },

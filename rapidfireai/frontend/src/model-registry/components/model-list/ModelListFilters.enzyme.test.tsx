@@ -1,4 +1,4 @@
-import { mountWithIntl } from 'common/utils/TestUtils.enzyme';
+import { mountWithIntl } from '@mlflow/mlflow/src/common/utils/TestUtils.enzyme';
 import { ModelListFilters, ModelListFiltersProps } from './ModelListFilters';
 
 describe('ModelListFilters', () => {
@@ -27,7 +27,7 @@ describe('ModelListFilters', () => {
 
     wrapper.find('input[data-testid="model-search-input"]').simulate('submit');
 
-    expect(onSearchFilterChange).toBeCalledWith('searched model');
+    expect(onSearchFilterChange).toHaveBeenCalledWith('searched model');
   });
 
   it('resets the search filter', () => {
@@ -39,6 +39,6 @@ describe('ModelListFilters', () => {
     });
 
     wrapper.find('[data-testid="models-list-filters-reset"]').hostNodes().simulate('click');
-    expect(onSearchFilterChange).toBeCalledWith('');
+    expect(onSearchFilterChange).toHaveBeenCalledWith('');
   });
 });

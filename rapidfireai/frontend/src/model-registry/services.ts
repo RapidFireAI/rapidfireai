@@ -8,6 +8,7 @@ import {
   postJson,
 } from '../common/utils/FetchUtils';
 
+// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- TODO(FEINF-4274)
 export class Services {
   /**
    * Create a registered model
@@ -19,13 +20,13 @@ export class Services {
    * List all registered models
    */
   static listRegisteredModels = (data: any) =>
-    getBigIntJson({ url: 'ajax-api/2.0/mlflow/registered-models/list', data });
+    getBigIntJson({ relativeUrl: 'ajax-api/2.0/mlflow/registered-models/list', data });
 
   /**
    * Search registered models
    */
   static searchRegisteredModels = (data: any) =>
-    getBigIntJson({ url: 'ajax-api/2.0/mlflow/registered-models/search', data });
+    getBigIntJson({ relativeUrl: 'ajax-api/2.0/mlflow/registered-models/search', data });
 
   /**
    * Update registered model

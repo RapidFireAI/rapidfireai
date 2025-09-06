@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { ReduxState, ThunkDispatch } from '../../../../redux-types';
-import { loadMoreRunsApi, searchRunsApi, UPDATE_MLFLOW_SERVER_STATUS } from '../../../actions';
+import { loadMoreRunsApi, searchRunsApi } from '../../../actions';
 import { ExperimentPageUIState } from '../models/ExperimentPageUIState';
 import { createSearchRunsParams, fetchModelVersionsForRuns } from '../utils/experimentPage.fetch-utils';
 import { ExperimentRunsSelectorResult, experimentRunsSelector } from '../utils/experimentRuns.selector';
@@ -10,11 +10,15 @@ import { ExperimentQueryParamsSearchFacets } from './useExperimentPageSearchFace
 import { ExperimentPageSearchFacetsState } from '../models/ExperimentPageSearchFacetsState';
 import { ErrorWrapper } from '../../../../common/utils/ErrorWrapper';
 import { searchModelVersionsApi } from '../../../../model-registry/actions';
-import { shouldEnableExperimentPageAutoRefresh } from '../../../../common/utils/FeatureUtils';
+import { PredefinedError } from '@databricks/web-shared/errors';
+import { mapErrorWrapperToPredefinedError } from '../../../../common/utils/ErrorUtils';
+import {
+  shouldEnableExperimentPageAutoRefresh,
+  shouldUsePredefinedErrorsInExperimentTracking,
+} from '../../../../common/utils/FeatureUtils';
 import Utils from '../../../../common/utils/Utils';
 import { useExperimentRunsAutoRefresh } from './useExperimentRunsAutoRefresh';
-import { RunEntity } from '../../../types';
-import { checkMLflowServer } from 'experiment-tracking/utils/ProxyCheckUtils';
+import type { RunEntity, SearchRunsApiResponse } from '../../../types';
 
 export type FetchRunsHookParams = ReturnType<typeof createSearchRunsParams> & {
   requestedFacets: ExperimentPageSearchFacetsState;
@@ -24,9 +28,9 @@ export type FetchRunsHookFunction = (
   params: FetchRunsHookParams,
   options?: {
     isAutoRefreshing?: boolean;
-    discardResultsFn?: (lastRequestedParams: FetchRunsHookParams) => boolean;
+    discardResultsFn?: (lastRequestedParams: FetchRunsHookParams, response?: SearchRunsApiResponse) => boolean;
   },
-) => Promise<RunEntity[]>;
+) => Promise<{ runs: RunEntity[]; next_page_token?: string }>;
 
 // Calculate actual params to use for fetching runs
 const createFetchRunsRequestParams = (
@@ -52,7 +56,6 @@ export const useExperimentRuns = (
   disabled = false,
 ) => {
   const dispatch = useDispatch<ThunkDispatch>();
-  const mlflowServerStatus = useSelector((state: ReduxState) => state.clusters.mlflowServer.status);
 
   const [runsData, setRunsData] = useState<ExperimentRunsSelectorResult>(() => createEmptyRunsResult());
 
@@ -60,11 +63,12 @@ export const useExperimentRuns = (
   const [isLoadingRuns, setIsLoadingRuns] = useState(true);
   const [isInitialLoadingRuns, setIsInitialLoadingRuns] = useState(true);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
-  const [requestError, setRequestError] = useState<ErrorWrapper | null>(null);
+  const [requestError, setRequestError] = useState<ErrorWrapper | Error | null>(null);
   const cachedPinnedRuns = useRef<string[]>([]);
 
   const lastFetchedTime = useRef<number | null>(null);
   const lastRequestedParams = useRef<FetchRunsHookParams | null>(null);
+  const lastSuccessfulRequestedParams = useRef<FetchRunsHookParams | null>(null);
 
   // Reset initial loading state when experiment IDs change
   useEffect(() => {
@@ -97,32 +101,23 @@ export const useExperimentRuns = (
 
   const loadModelVersions = useCallback(
     (runs: Parameters<typeof fetchModelVersionsForRuns>[0]) => {
-      fetchModelVersionsForRuns(runs || [], searchModelVersionsApi, dispatch);
+      const handleModelVersionLoadFailure = (error: Error | ErrorWrapper) => {
+        const normalizedError =
+          (error instanceof ErrorWrapper ? mapErrorWrapperToPredefinedError(error) : error) ?? error;
+        const message =
+          normalizedError instanceof ErrorWrapper ? normalizedError.getMessageField() : normalizedError.message;
+        Utils.displayGlobalErrorNotification(`Failed to load model versions for runs: ${message}`);
+      };
+
+      fetchModelVersionsForRuns(runs || [], searchModelVersionsApi, dispatch).catch(handleModelVersionLoadFailure);
     },
     [dispatch],
   );
 
-  const checkMLflowServerStatus = useCallback(async () => {
-    const isValid = await checkMLflowServer();
-    if (isValid !== mlflowServerStatus.isValid) {
-      dispatch({
-        type: UPDATE_MLFLOW_SERVER_STATUS,
-        payload: { isValid, uri: mlflowServerStatus.uri }
-      });
-    }
-    return isValid;
-  }, [dispatch, mlflowServerStatus.isValid, mlflowServerStatus.uri]);
-
   // Main function for fetching runs
   const fetchRuns: FetchRunsHookFunction = useCallback(
-    async (fetchParams, options = {}) => {
-      const isMLflowServerValid = await checkMLflowServerStatus();
-      if (!isMLflowServerValid) {
-        setRequestError(new ErrorWrapper('MLflow server is not accessible'));
-        return [];
-      }
-
-      return dispatch((thunkDispatch: ThunkDispatch, getStore: () => ReduxState) => {
+    (fetchParams, options = {}) =>
+      dispatch((thunkDispatch: ThunkDispatch, getStore: () => ReduxState) => {
         // If we're auto-refreshing, we don't want to show the loading spinner and
         // we don't want to update the last requested params - they're used to determine
         // whether to discard results when the automatically fetched data changes.
@@ -132,15 +127,18 @@ export const useExperimentRuns = (
         }
         return thunkDispatch((fetchParams.pageToken ? loadMoreRunsApi : searchRunsApi)(fetchParams))
           .then(async ({ value }) => {
-            setNextPageToken(value.next_page_token || null);
             lastFetchedTime.current = Date.now();
 
             setIsLoadingRuns(false);
             setIsInitialLoadingRuns(false);
+            setRequestError(null);
 
-            if (lastRequestedParams.current && options.discardResultsFn?.(lastRequestedParams.current)) {
+            if (lastRequestedParams.current && options.discardResultsFn?.(lastRequestedParams.current, value)) {
               return value;
             }
+
+            lastSuccessfulRequestedParams.current = fetchParams;
+            setNextPageToken(value.next_page_token || null);
 
             // We rely on redux reducer to update the state with new runs data,
             // then we pick it up from the store. This benefits other pages that use same data
@@ -151,14 +149,28 @@ export const useExperimentRuns = (
             loadModelVersions(value.runs || []);
             return value;
           })
-          .catch((e) => {
+          .catch((e: ErrorWrapper | PredefinedError) => {
             setIsLoadingRuns(false);
             setIsInitialLoadingRuns(false);
+            if (shouldUsePredefinedErrorsInExperimentTracking()) {
+              // If it's already a PredefinedError, we don't need to map it again
+              if (e instanceof PredefinedError) {
+                setRequestError(e);
+                return;
+              }
+              const maybePredefinedError = mapErrorWrapperToPredefinedError(e);
+              if (maybePredefinedError) {
+                setRequestError(maybePredefinedError);
+                return;
+              }
+            }
             setRequestError(e);
-            Utils.logErrorAndNotifyUser(e);
+            if (!shouldUsePredefinedErrorsInExperimentTracking()) {
+              Utils.logErrorAndNotifyUser(e);
+            }
           });
-    })},
-    [dispatch, setResultRunsData, loadModelVersions, checkMLflowServerStatus],
+      }),
+    [dispatch, setResultRunsData, loadModelVersions],
   );
 
   // Fetch runs when new request params are available
@@ -181,12 +193,11 @@ export const useExperimentRuns = (
     return fetchRuns({ ...requestParams, pageToken: nextPageToken });
   };
 
-  const refreshRuns = () => {
-    const requestParams = createFetchRunsRequestParams(searchFacets, experimentIds, cachedPinnedRuns.current);
-    if (requestParams) {
-      fetchRuns(requestParams);
+  const refreshRuns = useCallback(() => {
+    if (lastSuccessfulRequestedParams.current) {
+      fetchRuns({ ...lastSuccessfulRequestedParams.current, pageToken: undefined });
     }
-  };
+  }, [fetchRuns]);
 
   useExperimentRunsAutoRefresh({
     experimentIds,
@@ -197,7 +208,6 @@ export const useExperimentRuns = (
     runsData,
     isLoadingRuns: isLoadingRuns,
     lastFetchedTime,
-    checkMLflowServerStatus,
   });
 
   return {
@@ -208,7 +218,6 @@ export const useExperimentRuns = (
     isInitialLoadingRuns,
     runsData,
     requestError,
-    mlflowServerStatus,
   };
 };
 
@@ -223,4 +232,5 @@ const createEmptyRunsResult = () => ({
   runInfos: [],
   runUuidsMatchingFilter: [],
   tagsList: [],
+  inputsOutputsList: [],
 });

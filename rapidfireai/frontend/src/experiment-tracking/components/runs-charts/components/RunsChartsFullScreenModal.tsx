@@ -5,7 +5,7 @@ import { Modal, useDesignSystemTheme } from '@databricks/design-system';
 import { RunsChartsTooltipBodyProps, RunsChartsTooltipWrapper } from '../hooks/useRunsChartsTooltip';
 import { RunsChartsCard } from './cards/RunsChartsCard';
 import type { RunsGroupByConfig } from '../../experiment-page/utils/experimentPage.group-row-utils';
-import { ControllerAction } from 'experiment-tracking/components/experiment-page/hooks/useInteractiveControllerNotification';
+import type { RunsChartsGlobalLineChartConfig } from '../../experiment-page/models/ExperimentPageUIState';
 
 export const RunsChartsFullScreenModal = <TContext,>({
   chartData,
@@ -16,17 +16,23 @@ export const RunsChartsFullScreenModal = <TContext,>({
   tooltipContextValue,
   tooltipComponent,
   autoRefreshEnabled,
-  showControllerNotification,
+  globalLineChartConfig,
 }: {
   chartData: RunsChartsRunData[];
   isMetricHistoryLoading?: boolean;
   groupBy: RunsGroupByConfig | null;
   autoRefreshEnabled?: boolean;
-  fullScreenChart: { config: RunsChartsCardConfig; title: string; subtitle: ReactNode } | undefined;
+  fullScreenChart:
+    | {
+        config: RunsChartsCardConfig;
+        title: string | ReactNode;
+        subtitle: ReactNode;
+      }
+    | undefined;
   onCancel: () => void;
   tooltipContextValue: TContext;
   tooltipComponent: React.ComponentType<RunsChartsTooltipBodyProps<TContext>>;
-  showControllerNotification?: (action: ControllerAction, status: 'success' | 'error') => void;
+  globalLineChartConfig?: RunsChartsGlobalLineChartConfig;
 }) => {
   const { theme, getPrefixedClassName } = useDesignSystemTheme();
 
@@ -51,6 +57,7 @@ export const RunsChartsFullScreenModal = <TContext,>({
 
   return (
     <Modal
+      componentId="codegen_mlflow_app_src_experiment-tracking_components_runs-charts_components_runschartsfullscreenmodal.tsx_53"
       visible
       onCancel={onCancel}
       title={
@@ -76,11 +83,7 @@ export const RunsChartsFullScreenModal = <TContext,>({
         },
       }}
     >
-      <RunsChartsTooltipWrapper 
-        contextData={tooltipContextValue} 
-        component={tooltipComponent} 
-        showControllerNotification={showControllerNotification}
-      >
+      <RunsChartsTooltipWrapper contextData={tooltipContextValue} component={tooltipComponent}>
         <RunsChartsCard
           cardConfig={fullScreenChart.config}
           chartRunData={chartData}
@@ -89,6 +92,7 @@ export const RunsChartsFullScreenModal = <TContext,>({
           sectionIndex={0}
           fullScreen
           autoRefreshEnabled={autoRefreshEnabled}
+          globalLineChartConfig={globalLineChartConfig}
           {...emptyConfigureProps}
           {...emptyReorderProps}
         />

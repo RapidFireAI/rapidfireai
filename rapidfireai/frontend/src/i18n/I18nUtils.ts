@@ -5,9 +5,10 @@
  * annotations are already looking good, please remove this comment.
  */
 
-import { createIntlCache, createIntl } from 'react-intl';
+import { createIntlCache, createIntl, IntlShape } from 'react-intl';
 import { DEFAULT_LOCALE, loadMessages } from './loadMessages';
 import { useEffect, useState } from 'react';
+import Utils from '../common/utils/Utils';
 
 const FALLBACK_LOCALES: Record<string, string> = {
   es: 'es-ES',
@@ -28,7 +29,7 @@ export const I18nUtils = {
   async initI18n() {
     const locale = I18nUtils.getCurrentLocale();
     await I18nUtils.loadMessages(locale);
-    return { locale, messages: loadedMessages[locale] };
+    return I18nUtils.createIntlWithLocale();
   },
 
   getIntlProviderParams() {
@@ -45,7 +46,9 @@ export const I18nUtils = {
    */
   createIntlWithLocale() {
     const params = I18nUtils.getIntlProviderParams();
-    return createIntl({ locale: params.locale, messages: params.messages }, cache);
+    const intl = createIntl({ locale: params.locale, messages: params.messages }, cache);
+
+    return intl;
   },
 
   getCurrentLocale() {
@@ -85,11 +88,6 @@ export const I18nUtils = {
   },
 };
 
-export type UseI18nInitResult = {
-  locale: string;
-  messages: Record<string, any>;
-};
-
 /**
  * Ensure initialization of i18n subsystem and return
  * an object with current locale and messages storage.
@@ -99,17 +97,17 @@ export type UseI18nInitResult = {
  * This hook is intended to be used once in the top-level components.
  */
 export const useI18nInit = () => {
-  const [intlState, setIntlState] = useState<UseI18nInitResult | null>(null);
+  const [intl, setIntl] = useState<IntlShape | null>(null);
   useEffect(() => {
     I18nUtils.initI18n()
       .then((initializedIntlState) => {
-        setIntlState(initializedIntlState);
+        setIntl(initializedIntlState);
       })
       .catch((error) => {
         // Fall back to the defaults if loading translation fails
-        setIntlState(I18nUtils.getIntlProviderParams());
+        setIntl(I18nUtils.createIntlWithLocale());
       });
   }, []);
 
-  return intlState;
+  return intl;
 };

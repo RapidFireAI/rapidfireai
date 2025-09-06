@@ -1,5 +1,5 @@
 import React from 'react';
-import { ConfirmModalV2 } from './ConfirmModalV2';
+import { ConfirmModal } from './ConfirmModal';
 
 export type ConfirmActionType = 'stop' | 'resume' | 'delete';
 
@@ -29,7 +29,7 @@ export const ConfirmActionModal: React.FC<ConfirmActionModalProps> = ({
   };
 
   return (
-    <ConfirmModalV2
+    <ConfirmModal
       isOpen={isOpen}
       onClose={onClose}
       handleSubmit={handleSubmit}

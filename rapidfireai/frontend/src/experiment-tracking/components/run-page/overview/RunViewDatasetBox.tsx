@@ -1,4 +1,5 @@
-import type { KeyValueEntity, RunDatasetWithTags, RunInfoEntity } from '../../../types';
+import type { RunDatasetWithTags, RunInfoEntity } from '../../../types';
+import { KeyValueEntity } from '../../../../common/types';
 import { Button, DropdownMenu, Typography, useDesignSystemTheme } from '@databricks/design-system';
 import { ExperimentViewDatasetWithContext } from '../../experiment-page/components/runs/ExperimentViewDatasetWithContext';
 import { useState } from 'react';
@@ -6,7 +7,7 @@ import {
   DatasetWithRunType,
   ExperimentViewDatasetDrawer,
 } from '../../experiment-page/components/runs/ExperimentViewDatasetDrawer';
-import { getStableColorForRun } from '../../../utils/RunNameUtils';
+import type { UseGetRunQueryResponseRunInfo } from '../hooks/useGetRunQuery';
 
 /**
  * Renders single dataset, either in overview table cell or within a dropdown
@@ -14,6 +15,7 @@ import { getStableColorForRun } from '../../../utils/RunNameUtils';
 const DatasetEntry = ({ dataset, onClick }: { dataset: RunDatasetWithTags; onClick: () => void }) => {
   return (
     <Typography.Link
+      componentId="codegen_mlflow_app_src_experiment-tracking_components_run-page_overview_runviewdatasetbox.tsx_16"
       role="link"
       css={{
         textAlign: 'left',
@@ -34,7 +36,7 @@ export const RunViewDatasetBox = ({
   datasets,
 }: {
   tags: Record<string, KeyValueEntity>;
-  runInfo: RunInfoEntity;
+  runInfo: RunInfoEntity | UseGetRunQueryResponseRunInfo;
   datasets: RunDatasetWithTags[];
 }) => {
   const [selectedDatasetWithRun, setSelectedDatasetWithRun] = useState<DatasetWithRunType | null>(null);
@@ -52,9 +54,9 @@ export const RunViewDatasetBox = ({
     setSelectedDatasetWithRun({
       datasetWithTags: dataset,
       runData: {
-        experimentId: runInfo.experimentId,
-        runUuid: runInfo.runUuid,
-        runName: runInfo.runName,
+        experimentId: runInfo.experimentId ?? undefined,
+        runUuid: runInfo.runUuid ?? '',
+        runName: runInfo.runName ?? undefined,
         datasets: datasets,
         tags: tags,
       },
@@ -78,7 +80,10 @@ export const RunViewDatasetBox = ({
           <DropdownMenu.Content>
             {remainingDatasets.map((datasetWithTags) => {
               return (
-                <DropdownMenu.Item key={datasetWithTags.dataset.digest}>
+                <DropdownMenu.Item
+                  componentId="codegen_mlflow_app_src_experiment-tracking_components_run-page_overview_runviewdatasetbox.tsx_81"
+                  key={datasetWithTags.dataset.digest}
+                >
                   <DatasetEntry dataset={datasetWithTags} onClick={() => datasetClicked(datasetWithTags)} />
                 </DropdownMenu.Item>
               );
