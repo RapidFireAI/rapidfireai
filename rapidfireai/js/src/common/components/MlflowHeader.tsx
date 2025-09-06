@@ -70,6 +70,7 @@ export const MlflowHeader = ({
         <span
           css={{
             fontSize: theme.typography.fontSizeSm,
+            marginLeft: theme.spacing.sm,
           }}
         >
           {Version}
