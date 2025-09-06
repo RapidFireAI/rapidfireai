@@ -12,7 +12,7 @@ description = "RapidFire AI: Rapid Experimentation Engine for Customizing LLMs"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
-keywords = ["ai", "rapidfire", "rapidfireai", "deep-learning", "artificial-intelligence", "machine-learning", "mlflow", "experiment-tracking"]
+keywords = ["ai", "rapidfire", "rapidfireai", "llm", "deep-learning", "artificial-intelligence", "machine-learning", "mlflow", "experiment-tracking"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -89,6 +89,7 @@ rapidfireai = [
     "db/*.py",
     "db/*.sql",
     "utils/*.py",
+    "../tutorial_notebooks/**/*",
 ]
 
 [tool.setuptools.exclude-package-data]

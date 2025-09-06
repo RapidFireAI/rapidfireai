@@ -10,6 +10,7 @@ import argparse
 import platform
 import shutil
 import re
+import site
 from pathlib import Path
 from .version import __version__
 
@@ -301,8 +302,6 @@ def install_packages():
     # Generate CUDA requirements file
     cuda_major = get_cuda_version()
     compute_capability = get_compute_capability()
-    print(f"CUDA major version: {cuda_major}")
-    print(f"Compute capability: {compute_capability}")
     if cuda_major == 12:
         print(f"\n🎯 Detected CUDA {cuda_major}.x")
         packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu126"]})
@@ -333,12 +332,33 @@ def install_packages():
             print(f"   You may need to install {package} manually")
     return 0
 
+def copy_tutorial_notebooks():
+    """Copy the tutorial notebooks to the project."""
+    print("Getting tutorial notebooks...")
+    try:
+        tutorial_path = os.getenv("RF_TUTORIAL_PATH", os.path.join(".", "tutorial_notebooks"))
+        site_packages_path = site.getsitepackages()[0]
+        source_path =os.path.join(site_packages_path, "tutorial_notebooks")
+        print(f"Copying tutorial notebooks from {source_path} to {tutorial_path}...")
+        os.makedirs(tutorial_path, exist_ok=True)
+        shutil.copytree(source_path, tutorial_path, dirs_exist_ok=True)
+        print(f"✅ Successfully copied notebooks to {tutorial_path}")
+    except Exception as e:
+        print(f"❌ Failed to copy notebooks to {tutorial_path}")
+        print(f"   Error: {e}")
+        print("   You may need to copy notebooks manually")
+        return 1
+    return 0
+
+
 def run_init():
     """Run the init command to initialize the project."""
     print("🔧 Initializing RapidFire AI project...")
     print("-" * 30)
     print("Initializing project...")
     install_packages()
+    copy_tutorial_notebooks()
+
     return 0
 
 def main():
