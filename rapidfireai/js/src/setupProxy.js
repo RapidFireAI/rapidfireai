@@ -7,7 +7,8 @@ module.exports = function (app) {
   // Exception: If the caller has specified an MLFLOW_PROXY, we instead forward server requests
   // there.
   // eslint-disable-next-line no-undef
-  const proxyTarget = process.env.MLFLOW_PROXY || 'http://localhost:5000/';
+  // const proxyTarget = process.env.MLFLOW_PROXY || 'http://localhost:5000/';
+  const proxyTarget = 'http://localhost:5002/';
   // eslint-disable-next-line no-undef
   const proxyStaticTarget = process.env.MLFLOW_STATIC_PROXY || proxyTarget;
   app.use(
@@ -33,6 +34,12 @@ module.exports = function (app) {
     createProxyMiddleware('/model-versions/get-artifact', {
       target: proxyStaticTarget,
       ws: true,
+      changeOrigin: true,
+    }),
+  );
+  app.use(
+    createProxyMiddleware('/dispatcher', {
+      target: 'http://localhost:8080/',
       changeOrigin: true,
     }),
   );
