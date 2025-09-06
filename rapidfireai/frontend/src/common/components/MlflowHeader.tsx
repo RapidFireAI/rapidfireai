@@ -1,129 +1,87 @@
 import ExperimentTrackingRoutes from '../../experiment-tracking/routes';
-import { Link, Location, matchPath, useLocation } from '../utils/RoutingUtils';
+import { Link } from '../utils/RoutingUtils';
+import { RFDocsUrl, Version } from '../constants';
+import { DarkThemeSwitch } from '@mlflow/mlflow/src/common/components/DarkThemeSwitch';
+import { Button, MenuIcon, useDesignSystemTheme } from '@databricks/design-system';
 import logo from '../../common/static/RapidFire_Square_Bug.png';
-import { ModelRegistryRoutes } from '../../model-registry/routes';
-
-import { useQueryClient } from '@tanstack/react-query';
-import { Typography, Button } from '@databricks/design-system';
-import { useState, useEffect } from 'react';
-
-const colors = {
-  headerBg: '#0b3574',
-  headerText: '#e7f1fb',
-  headerActiveLink: '#43C9ED',
-};
-
-const classNames = {
-  activeNavLink: { borderBottom: `4px solid ${colors.headerActiveLink}` },
-};
-
-const isModelsActive = (location: Location) => matchPath('/models/*', location.pathname);
-
-// Update the isExperimentsActive function to account for files
-const isExperimentsActive = (location: Location) => !isModelsActive(location);
 
 export const MlflowHeader = ({
   isDarkTheme = false,
   setIsDarkTheme = (val: boolean) => {},
+  sidebarOpen,
+  toggleSidebar,
 }: {
   isDarkTheme?: boolean;
   setIsDarkTheme?: (isDarkTheme: boolean) => void;
+  sidebarOpen: boolean;
+  toggleSidebar: () => void;
 }) => {
-  const location = useLocation();
-  const HEADER_HEIGHT = '70px';
-
+  const { theme } = useDesignSystemTheme();
   return (
-    <>
-      <header
+    <header
+      css={{
+        backgroundColor: theme.colors.backgroundSecondary,
+        color: theme.colors.textSecondary,
+        display: 'flex',
+        paddingLeft: theme.spacing.sm,
+        paddingRight: theme.spacing.md,
+        paddingTop: theme.spacing.sm + theme.spacing.xs,
+        paddingBottom: theme.spacing.xs,
+        a: {
+          color: theme.colors.textSecondary,
+        },
+        alignItems: 'center',
+      }}
+    >
+      <div
         css={{
-          backgroundColor: colors.headerBg,
-          height: HEADER_HEIGHT,
-          color: colors.headerText,
           display: 'flex',
-          gap: 24,
-          a: {
-            color: colors.headerText,
-          },
+          alignItems: 'center',
         }}
       >
-        <div
-          css={{
-            display: 'flex',
-            alignItems: 'flex-end',
-          }}
-        >
-          <Link to={ExperimentTrackingRoutes.experimentsObservatoryRoute}>
-            <img
+        <Button
+          type="tertiary"
+          componentId="mlflow_header.toggle_sidebar_button"
+          onClick={toggleSidebar}
+          aria-label="Toggle sidebar"
+          aria-pressed={sidebarOpen}
+          icon={<MenuIcon />}
+        />
+        <Link to={ExperimentTrackingRoutes.rootRoute}>
+          <img
               css={{
-                height: 45,              
-                marginLeft: 24,
-                marginTop: 12,           
-                marginBottom: 12,       
+                display: 'block',
+                height: theme.spacing.md * 1.75,
+                color: theme.colors.textPrimary,
               }}
-              alt="MLflow"
+              alt="RapidFireAI"
               src={logo}
             />
-          </Link>
-        </div>
-        <div
+        </Link>
+        <span
           css={{
-            display: 'flex',
-            paddingTop: 25, 
-            fontSize: 18,  
-            gap: 24,
-            '& a': {      
-              fontWeight: 500,  
-              transition: 'color 0.2s ease',  
-              '&:hover': {
-                color: colors.headerActiveLink,  
-              }
-            }
+            fontSize: theme.typography.fontSizeLg,
+            color: theme.colors.textPrimary,
+            marginLeft: theme.spacing.sm,
           }}
         >
-          <Link
-            to={ExperimentTrackingRoutes.experimentPageDefaultRoute}
-            style={isExperimentsActive(location) ? classNames.activeNavLink : undefined}
-          >
-            Experiments
-          </Link>
-          {/* <Link
-            to={ModelRegistryRoutes.modelListPageRoute}
-            style={isModelsActive(location) ? classNames.activeNavLink : undefined}
-          >
-            Models
-          </Link> */}
-        </div>
-        <div css={{ flex: 1 }} />
-        
-        <div 
-          css={{ 
-            display: 'flex', 
-            gap: 24, 
-            paddingTop: 12,
-            fontSize: 16, 
-            marginRight: 24,
-            alignItems: 'center'
+          RapidFire
+        </span>
+        <span
+          css={{
+            fontSize: theme.typography.fontSizeSm,
+            marginLeft: theme.spacing.sm,
           }}
         >
-          <a
-            href="https://rapidfire-ai-oss-docs.readthedocs-hosted.com/en/latest/"
-            target="_blank"
-            rel="noopener noreferrer"
-            css={{
-              color: colors.headerText,
-              textDecoration: 'none',
-              fontSize: 18,  
-              fontWeight: 500,
-              transition: 'color 0.2s ease',
-              '&:hover': {
-                color: colors.headerActiveLink,
-              }
-            }}
-          >
-            Docs
-          </a>
-        </div>
-      </header>
-    </>
+          {Version}
+        </span>
+      </div>
+      <div css={{ flex: 1 }} />
+      <div css={{ display: 'flex', gap: theme.spacing.lg, alignItems: 'center' }}>
+        <DarkThemeSwitch isDarkTheme={isDarkTheme} setIsDarkTheme={setIsDarkTheme} />
+        <a href="https://github.com/RapidFireAI/rapidfireai">GitHub</a>
+        <a href={RFDocsUrl}>Docs</a>
+      </div>
+    </header>
   );
 };

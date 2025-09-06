@@ -5,7 +5,7 @@ import { ModelGatewayRouteTask } from './MlflowEnums';
 import { GatewayErrorWrapper } from '../utils/LLMGatewayUtils';
 import { fetchEndpoint, HTTPMethods } from '../../common/utils/FetchUtils';
 import { parseEndpointEvaluationResponse } from '../utils/LLMGatewayUtils';
-export const DATABRICKS_API_CLIENT_PROMPTLAB = 'PromptLab';
+const DATABRICKS_API_CLIENT_PROMPTLAB = 'PromptLab';
 
 export interface ModelGatewayQueryPayload {
   inputText: string;
@@ -81,7 +81,7 @@ export type EndpointModelGatewayResponseType = EndpointModelCompletionsResponseT
 
 export interface ModelGatewayModelInfo {
   /**
-   * "Original" name of the model (e.g. "gpt-3.5-turbo")
+   * "Original" name of the model (e.g. "gpt-4o-mini")
    */
   name: string;
   /**
@@ -155,6 +155,7 @@ const gatewayErrorHandler = ({
   }
 };
 
+// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- TODO(FEINF-4274)
 export class ModelGatewayService {
   static createEvaluationTextPayload(inputText: string, task: ModelGatewayRouteTask) {
     switch (task) {

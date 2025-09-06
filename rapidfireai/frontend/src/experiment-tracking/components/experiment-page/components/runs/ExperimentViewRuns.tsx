@@ -23,7 +23,7 @@ import { useExperimentViewLocalStore } from '../../hooks/useExperimentViewLocalS
 import { EvaluationArtifactCompareView } from '../../../evaluation-artifacts-compare/EvaluationArtifactCompareView';
 import {
   shouldEnableExperimentPageAutoRefresh,
-  shouldEnableRunsTableRunNameColumnResize,
+  shouldUseGetLoggedModelsBatchAPI,
 } from '../../../../../common/utils/FeatureUtils';
 import { CreateNewRunContextProvider } from '../../hooks/useCreateNewRun';
 import { useExperimentPageViewMode } from '../../hooks/useExperimentPageViewMode';
@@ -34,15 +34,17 @@ import { ReduxState, ThunkDispatch } from '../../../../../redux-types';
 import { ExperimentPageSearchFacetsState } from '../../models/ExperimentPageSearchFacetsState';
 import { useIsTabActive } from '../../../../../common/hooks/useIsTabActive';
 import { ExperimentViewRunsTableResizer } from './ExperimentViewRunsTableResizer';
-import TerminalLogViewer from '../../../TerminalLogViewer';
-import { DispatcherService } from 'experiment-tracking/sdk/DispatcherService';
+import { RunsChartsSetHighlightContextProvider } from '../../../runs-charts/hooks/useRunsChartTraceHighlight';
+import { useLoggedModelsForExperimentRunsTable } from '../../hooks/useLoggedModelsForExperimentRunsTable';
+import { ExperimentViewRunsRequestError } from '../ExperimentViewRunsRequestError';
+import { useLoggedModelsForExperimentRunsTableV2 } from '../../hooks/useLoggedModelsForExperimentRunsTableV2';
+import { useResizableMaxWidth } from '@mlflow/mlflow/src/shared/web-shared/hooks/useResizableMaxWidth';
 import { useControllerNotification } from '../../hooks/useInteractiveControllerNotification';
-import { set } from 'lodash';
-import RightSlidingDrawer from 'rapidfire-ui/components/RightSlidingDrawer';
 import InteractiveControllerComponent from '../../../run-page/InteractiveController';
+import RightSlidingDrawer from '../../../../../rapidfire-ui/components/RightSlidingDrawer';
+import TerminalLogViewer from '../../../TerminalLogViewer';
+import { DispatcherService } from '../../../../../experiment-tracking/sdk/DispatcherService';
 import { useDesignSystemTheme } from '@databricks/design-system';
-import { useUpdateExperimentViewUIState } from '../../contexts/ExperimentPageUIStateContext';
-import { RUNS_VISIBILITY_MODE } from '../../models/ExperimentPageUIState';
 
 export interface ExperimentViewRunsOwnProps {
   isLoading: boolean;
@@ -61,7 +63,7 @@ export interface ExperimentViewRunsProps extends ExperimentViewRunsOwnProps {
   isLoadingRuns: boolean;
   loadMoreRuns: () => Promise<any>;
   moreRunsAvailable: boolean;
-  requestError: ErrorWrapper | null;
+  requestError: ErrorWrapper | Error | null;
   refreshRuns: () => void;
 }
 
@@ -75,39 +77,14 @@ const createCurrentTime = () => {
   return mountTime;
 };
 
-export const INITIAL_RUN_COLUMN_SIZE = 295;
-
-const getTableLayoutStyles = (isComparingRuns = false, runListHidden = false) =>
-  shouldEnableRunsTableRunNameColumnResize()
-    ? {
-        display: 'flex',
-      }
-    : {
-        display: 'grid',
-        gridTemplateColumns: isComparingRuns
-          ? runListHidden
-            ? '10px 1fr'
-            : `${INITIAL_RUN_COLUMN_SIZE}px 1fr`
-          : '1fr',
-      };
-
-function cleanLogStrings(logs: string[]): string[] {
-  return logs.map(log => {
-    // Use a regular expression to match and remove "experiment.py:xxx", "ml_controller.py:xxx", and " - INFO"
-    return log.replace(/(experiment\.py|ml_controller\.py):\d+ -|- INFO/g, '');
-  });
-}
+const INITIAL_RUN_COLUMN_SIZE = 295;
+const CHARTS_MIN_WIDTH = 350;
 
 export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) => {
   const [compareRunsMode] = useExperimentPageViewMode();
   const [logs, setLogs] = useState<string[]>(['No experiment logs available yet...']);
   const [icLogs, setICLogs] = useState<string[]>(['No interactive control logs available yet...']);
   const { theme } = useDesignSystemTheme();
-  const updateUIState = useUpdateExperimentViewUIState();
-  
-  // Drawer state
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [selectedRun, setSelectedRun] = useState<{ runUuid: string; runName: string } | null>(null);
   
   const {
     experiments,
@@ -120,6 +97,8 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     requestError,
     refreshRuns,
   } = props;
+
+  const isComparingExperiments = experiments.length > 1;
 
   // Non-persistable view model state is being created locally
   const [viewState, setViewState] = useState(new ExperimentPageViewState());
@@ -141,6 +120,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     runInfos,
     runUuidsMatchingFilter,
     datasetsList,
+    inputsOutputsList,
   } = runsData;
 
   const modelVersionsByRunUuid = useSelector(({ entities }: ReduxState) => entities.modelVersionsByRunUuid);
@@ -156,8 +136,10 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
         metrics: metricsList[index],
         tags: tagsList[index],
         datasets: datasetsList[index],
+        inputs: inputsOutputsList?.[index]?.inputs || {},
+        outputs: inputsOutputsList?.[index]?.outputs || {},
       })),
-    [datasetsList, metricsList, paramsList, runInfos, tagsList],
+    [datasetsList, metricsList, paramsList, runInfos, tagsList, inputsOutputsList],
   );
 
   const { orderByKey, searchFilter } = searchFacetsState;
@@ -190,7 +172,35 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
 
   const filteredTagKeys = useMemo(() => Utils.getVisibleTagKeyList(tagsList), [tagsList]);
 
+  const [isDatasetDrawerOpen, setIsDatasetDrawerOpen] = useState<boolean>(false);
   const [selectedDatasetWithRun, setSelectedDatasetWithRun] = useState<DatasetWithRunType>();
+  
+  // Drawer state
+  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
+  const [selectedRun, setSelectedRun] = useState<{ runUuid: string; runName: string } | null>(null);
+
+  const experimentIds = useMemo(() => experiments.map(({ experimentId }) => experimentId), [experiments]);
+
+  // Check if we should use new GetLoggedModels API.
+  // If true, logged (and registered) models will be fetched based on runs inputs/outputs.
+  const isUsingGetLoggedModelsAPI = shouldUseGetLoggedModelsBatchAPI();
+
+  // Conditionally use legacy hook for fetching all logged models in the experiment
+  const loggedModelsV3ByRunUuidFromExperiment = useLoggedModelsForExperimentRunsTable({
+    experimentIds,
+    enabled: !isUsingGetLoggedModelsAPI,
+  });
+
+  // Conditionally use new hook for fetching logged models based on runs inputs/outputs
+  const loggedModelsV3ByRunUuidFromRunInputsOutputs = useLoggedModelsForExperimentRunsTableV2({
+    runData,
+    enabled: isUsingGetLoggedModelsAPI,
+  });
+
+  // Select the appropriate logged models based on the feature flag
+  const loggedModelsV3ByRunUuid = isUsingGetLoggedModelsAPI
+    ? loggedModelsV3ByRunUuidFromRunInputsOutputs
+    : loggedModelsV3ByRunUuidFromExperiment;
 
   // Use new, memoized version of the row creation function.
   // Internally disabled if the flag is not set.
@@ -210,63 +220,15 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     groupBy: uiState.groupBy,
     groupsExpanded: uiState.groupsExpanded,
     runsHiddenMode: uiState.runsHiddenMode,
+    runsVisibilityMap: uiState.runsVisibilityMap,
+    useGroupedValuesInCharts: uiState.useGroupedValuesInCharts,
+    searchFacetsState,
+    loggedModelsV3ByRunUuid,
   });
-
-  // Fetch logs when in 'LOGS' mode
-  useEffect(() => {
-    if (compareRunsMode === 'LOGS') {
-      const fetchLogs = async () => {
-        try {
-          const fetchedLogs = await DispatcherService.getLogs({ experiment_name: experiments[0].name });
-          if (fetchedLogs && Array.isArray(fetchedLogs) && (fetchedLogs.length === 0 || fetchedLogs[0] === '')) {
-            setLogs(['No experiment logs available yet...']);
-            return;
-          }
-
-          const filteredLogs = cleanLogStrings(fetchedLogs as string[]);
-          setLogs(filteredLogs as string[]);
-        } catch (error) {
-          console.error('Failed to fetch logs:', error);
-          // Optionally, you can set an error state here and display it to the user
-        }
-      };
-
-      if (experiments.length > 1) {
-        setLogs(['Please select a single experiment to view experiment logs.']);
-        return;
-      }
-
-      fetchLogs();
-    }
-
-    if (compareRunsMode === 'IC_LOGS') {
-      const fetchICLogs = async () => {
-        try {
-          const fetchedICLogs = await DispatcherService.getICLogs({ experiment_name: experiments[0].name });
-          if (fetchedICLogs && Array.isArray(fetchedICLogs) && (fetchedICLogs.length === 0 || fetchedICLogs[0] === '')) {
-            setICLogs(['No interactive control logs available yet...']);
-            return;
-          }
-          const filteredICLogs = cleanLogStrings(fetchedICLogs as string[]);
-          setICLogs(filteredICLogs as string[]);
-        } catch (error) {
-          console.error('Failed to fetch logs:', error);
-          // Optionally, you can set an error state here and display it to the user
-        }
-      };
-
-      if (experiments.length > 1) {
-        setICLogs(['Please select a single experiment to view interactive control logs.']);
-        return;
-      }
-
-      fetchICLogs();
-    }
-  }, [compareRunsMode]);
 
   const [notificationsFn, notificationContainer] = useLegacyNotification();
   const showFetchedRunsNotifications = useFetchedRunsNotification(notificationsFn);
-  const showControllerNotification = useControllerNotification(notificationsFn); 
+  const showControllerNotification = useControllerNotification(notificationsFn);
 
   const [tableAreaWidth, setTableAreaWidth] = useState(INITIAL_RUN_COLUMN_SIZE);
 
@@ -284,189 +246,231 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
 
   const datasetSelected = useCallback((dataset: RunDatasetWithTags, run: RunRowType) => {
     setSelectedDatasetWithRun({ datasetWithTags: dataset, runData: run });
+    setIsDatasetDrawerOpen(true);
+  }, []);
+
+  // InteractiveController handlers
+  const handleOpenController = useCallback((runUuid: string, runName: string) => {
+    setSelectedRun({ runUuid, runName });
     setIsDrawerOpen(true);
   }, []);
 
-  const isTabActive = useIsTabActive();
-  const autoRefreshEnabled = uiState.autoRefreshEnabled && shouldEnableExperimentPageAutoRefresh() && isTabActive;
-
-  // Function to open the drawer with a specific run
-  const handleOpenController = (runUuid: string, runName: string) => {
-    setSelectedRun({ runUuid, runName });
-    setIsDrawerOpen(true);
-  };
+  const handleHideRun = useCallback((runUuid: string) => {
+    // This will be handled by the parent component or Redux state
+    console.log('Hide run:', runUuid);
+  }, []);
 
   // Function to close the drawer
-  const handleCloseDrawer = () => {
+  const handleCloseDrawer = useCallback(() => {
     setIsDrawerOpen(false);
     setSelectedRun(null);
-  };
+  }, []);
 
-  // Function to hide a run
-  const handleHideRun = (runUuid: string) => {
-    updateUIState((existingState: ExperimentPageUIState) => ({
-      ...existingState,
-      runsHidden: !existingState.runsHidden.includes(runUuid)
-        ? [...existingState.runsHidden, runUuid]
-        : existingState.runsHidden.filter((r) => r !== runUuid),
-    }));
-    // Optionally refresh the runs list
-    refreshRuns?.();
-  };
+  // Fetch logs when component mounts or compareRunsMode changes
+  useEffect(() => {
+    if (compareRunsMode === 'LOGS') {
+      const fetchLogs = async () => {
+        try {
+          const fetchedLogs = await DispatcherService.getLogs({ experiment_name: experiments[0].name });
+          setLogs(Array.isArray(fetchedLogs) ? fetchedLogs : []);
+        } catch (error) {
+          console.error('Error fetching logs:', error);
+          setLogs(['Error fetching experiment logs...']);
+        }
+      };
+      fetchLogs();
+    }
 
-  const tableElement = (
-    <ExperimentViewRunsTable
-      experiments={experiments}
-      runsData={runsData}
-      searchFacetsState={searchFacetsState}
-      viewState={viewState}
-      isLoading={isLoadingRuns}
-      updateViewState={updateViewState}
-      onAddColumnClicked={addColumnClicked}
-      rowsData={visibleRuns}
-      loadMoreRunsFunc={loadMoreRunsCallback}
-      moreRunsAvailable={moreRunsAvailable}
-      onDatasetSelected={datasetSelected}
-      expandRows={expandRows}
-      uiState={uiState}
-      compareRunsMode={compareRunsMode}
-      showControllerNotification={showControllerNotification}
-      onOpenController={handleOpenController}
-    />
+    if (compareRunsMode === 'IC_LOGS') {
+      const fetchICLogs = async () => {
+        try {
+          const fetchedICLogs = await DispatcherService.getICLogs({ experiment_name: experiments[0].name });
+          setICLogs(Array.isArray(fetchedICLogs) ? fetchedICLogs : []);
+        } catch (error) {
+          console.error('Error fetching IC logs:', error);
+          setICLogs(['Error fetching interactive control logs...']);
+        }
+      };
+      fetchICLogs();
+    }
+  }, [compareRunsMode, experiments]);
+
+  const isTabActive = useIsTabActive();
+  const autoRefreshEnabled = uiState.autoRefreshEnabled && shouldEnableExperimentPageAutoRefresh() && isTabActive;
+  const usingGroupedValuesInCharts = uiState.useGroupedValuesInCharts ?? true;
+
+  const tableElement =
+    requestError instanceof Error && !isLoadingRuns ? (
+      <ExperimentViewRunsRequestError error={requestError} />
+    ) : (
+      <ExperimentViewRunsTable
+        experiments={experiments}
+        runsData={runsData}
+        searchFacetsState={searchFacetsState}
+        viewState={viewState}
+        isLoading={isLoadingRuns}
+        updateViewState={updateViewState}
+        onAddColumnClicked={addColumnClicked}
+        rowsData={visibleRuns}
+        loadMoreRunsFunc={loadMoreRunsCallback}
+        moreRunsAvailable={moreRunsAvailable}
+        onOpenController={handleOpenController}
+        onDatasetSelected={datasetSelected}
+        expandRows={expandRows}
+        uiState={uiState}
+        compareRunsMode={compareRunsMode}
+        showControllerNotification={showControllerNotification}
+      />
+    );
+
+  // Generate a unique storage key based on the experiment IDs
+  const configStorageKey = useMemo(
+    () =>
+      experiments
+        .map((e) => e.experimentId)
+        .sort()
+        .join(','),
+    [experiments],
   );
+
+  const { resizableMaxWidth, ref } = useResizableMaxWidth(CHARTS_MIN_WIDTH);
 
   return (
     <CreateNewRunContextProvider visibleRuns={visibleRuns} refreshRuns={refreshRuns}>
-      <ExperimentViewRunsControls
-        viewState={viewState}
-        updateViewState={updateViewState}
-        runsData={runsData}
-        searchFacetsState={searchFacetsState}
-        experimentId={experimentId}
-        requestError={requestError}
-        expandRows={expandRows}
-        updateExpandRows={updateExpandRows}
-        refreshRuns={refreshRuns}
-        uiState={uiState}
-        isLoading={isLoadingRuns}
-      />
-      <div
-        css={[
-          {
+      <RunsChartsSetHighlightContextProvider>
+        <ExperimentViewRunsControls
+          viewState={viewState}
+          updateViewState={updateViewState}
+          runsData={runsData}
+          searchFacetsState={searchFacetsState}
+          experimentId={experimentId}
+          requestError={requestError}
+          expandRows={expandRows}
+          updateExpandRows={updateExpandRows}
+          refreshRuns={refreshRuns}
+          uiState={uiState}
+          isLoading={isLoadingRuns}
+          isComparingExperiments={isComparingExperiments}
+        />
+        <div
+          ref={ref}
+          css={{
             minHeight: 225, // This is the exact height for displaying a minimum five rows and table header
             height: '100%',
             position: 'relative',
-          },
-          getTableLayoutStyles(isComparingRuns, runListHidden),
-        ]}
-      >
-        {isComparingRuns && shouldEnableRunsTableRunNameColumnResize() ? (
-          <ExperimentViewRunsTableResizer
-            onResize={setTableAreaWidth}
-            runListHidden={runListHidden}
-            width={tableAreaWidth}
-          >
-            {tableElement}
-          </ExperimentViewRunsTableResizer>
-        ) : (
-          tableElement
-        )}
-        {compareRunsMode === 'CHART' && (
-          <RunsCompare
-            isLoading={isLoadingRuns}
-            comparedRuns={visibleRuns}
-            metricKeyList={runsData.metricKeyList}
-            paramKeyList={runsData.paramKeyList}
-            experimentTags={runsData.experimentTags}
-            compareRunCharts={uiState.compareRunCharts}
-            compareRunSections={uiState.compareRunSections}
-            groupBy={uiState.groupBy}
-            autoRefreshEnabled={autoRefreshEnabled}
-            showControllerNotification={showControllerNotification}
-            refreshRuns={refreshRuns}
-          />
-        )}
-        {/* {compareRunsMode === 'ARTIFACT' && (
-          <EvaluationArtifactCompareView
-            comparedRuns={visibleRuns}
-            viewState={viewState}
-            updateViewState={updateViewState}
-            onDatasetSelected={datasetSelected}
-            disabled={Boolean(uiState.groupBy)}
-          />
-        )} */}
-        {compareRunsMode === 'LOGS' && (
-          <TerminalLogViewer logs={logs} />
-        )}
-         {compareRunsMode === 'IC_LOGS' && (
-          <TerminalLogViewer logs={icLogs} />
-        )}
-        {notificationContainer}
-        {selectedDatasetWithRun && (
-          <ExperimentViewDatasetDrawer
-            isOpen={isDrawerOpen}
-            setIsOpen={setIsDrawerOpen}
-            selectedDatasetWithRun={selectedDatasetWithRun}
-            setSelectedDatasetWithRun={setSelectedDatasetWithRun}
-          />
-        )}
-      </div>
-      
-      {/* Interactive Controller Drawer */}
-      <RightSlidingDrawer
-        isOpen={isDrawerOpen}
-        onClose={handleCloseDrawer}
-        width={700}
-        showBackdrop
-        closeOnBackdropClick
-        closeOnEscape
-        customHeader={
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center', 
-            width: '100%',
-            padding: '0 20px'
-          }}>
-            <div style={{ 
-              fontSize: '18px', 
-              fontWeight: '600', 
-              color: theme.colors.textPrimary
-            }}>
-              Interactive Controller
-            </div>
-            <button
-              onClick={handleCloseDrawer}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '8px',
-                borderRadius: '4px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: theme.colors.textSecondary,
-                transition: 'all 0.2s ease'
-              }}
-              aria-label="Close drawer"
+            display: 'flex',
+          }}
+        >
+          {isComparingRuns ? (
+            <ExperimentViewRunsTableResizer
+              onResize={setTableAreaWidth}
+              runListHidden={runListHidden}
+              width={tableAreaWidth}
+              maxWidth={resizableMaxWidth}
             >
-              ✕
-            </button>
-          </div>
-        }
-      >
-        {selectedRun && (
-          <InteractiveControllerComponent
-            runUuid={selectedRun.runUuid}
-            runName={selectedRun.runName}
+              {tableElement}
+            </ExperimentViewRunsTableResizer>
+          ) : (
+            tableElement
+          )}
+          {compareRunsMode === 'CHART' && (
+            <RunsCompare
+              isLoading={isLoadingRuns}
+              comparedRuns={visibleRuns}
+              metricKeyList={runsData.metricKeyList}
+              paramKeyList={runsData.paramKeyList}
+              experimentTags={runsData.experimentTags}
+              compareRunCharts={uiState.compareRunCharts}
+              compareRunSections={uiState.compareRunSections}
+              groupBy={usingGroupedValuesInCharts ? uiState.groupBy : null}
+              autoRefreshEnabled={autoRefreshEnabled}
+              hideEmptyCharts={uiState.hideEmptyCharts}
+              globalLineChartConfig={uiState.globalLineChartConfig}
+              chartsSearchFilter={uiState.chartsSearchFilter}
+              storageKey={configStorageKey}
+              minWidth={CHARTS_MIN_WIDTH}
+            />
+          )}
+          {compareRunsMode === 'ARTIFACT' && (
+            <EvaluationArtifactCompareView
+              comparedRuns={visibleRuns}
+              viewState={viewState}
+              updateViewState={updateViewState}
+              onDatasetSelected={datasetSelected}
+              disabled={Boolean(uiState.groupBy)}
+            />
+          )}
+          {compareRunsMode === 'LOGS' && (
+            <TerminalLogViewer logs={logs} />
+          )}
+          {compareRunsMode === 'IC_LOGS' && (
+            <TerminalLogViewer logs={icLogs} />
+          )}
+          {notificationContainer}
+          {selectedDatasetWithRun && (
+            <ExperimentViewDatasetDrawer
+              isOpen={isDatasetDrawerOpen}
+              setIsOpen={setIsDatasetDrawerOpen}
+              selectedDatasetWithRun={selectedDatasetWithRun}
+              setSelectedDatasetWithRun={setSelectedDatasetWithRun}
+            />
+          )}
+          {/* Interactive Controller Drawer */}
+          <RightSlidingDrawer
+            isOpen={isDrawerOpen && selectedRun !== null}
             onClose={handleCloseDrawer}
-            showControllerNotification={showControllerNotification}
-            onHideRun={handleHideRun}
-            refreshRuns={refreshRuns}
-          />
-        )}
-      </RightSlidingDrawer>
+            width={700}
+            showBackdrop
+            closeOnBackdropClick
+            closeOnEscape
+            customHeader={
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                width: '100%',
+                padding: '0 20px'
+              }}>
+                <div style={{ 
+                  fontSize: '18px', 
+                  fontWeight: '600', 
+                  color: theme.colors.textPrimary
+                }}>
+                  Interactive Controller
+                </div>
+                <button
+                  onClick={handleCloseDrawer}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '8px',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: theme.colors.textSecondary,
+                    fontSize: '16px'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            }
+          >
+            {selectedRun && (
+              <InteractiveControllerComponent
+                runUuid={selectedRun.runUuid}
+                runName={selectedRun.runName}
+                onClose={handleCloseDrawer}
+                showControllerNotification={showControllerNotification}
+                onHideRun={handleHideRun}
+                refreshRuns={refreshRuns}
+              />
+            )}
+          </RightSlidingDrawer>
+        </div>
+      </RunsChartsSetHighlightContextProvider>
     </CreateNewRunContextProvider>
   );
 });
