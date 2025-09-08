@@ -19,7 +19,7 @@ API_HOST=127.0.0.1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DISPATCHER_DIR="$SCRIPT_DIR/dispatcher"
-FRONTEND_DIR="$SCRIPT_DIR/js"
+FRONTEND_DIR="$SCRIPT_DIR/frontend"
 
 # Colors for output
 RED='\033[0;31m'
