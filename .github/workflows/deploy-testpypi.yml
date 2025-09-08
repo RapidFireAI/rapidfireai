@@ -17,7 +17,24 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'yarn'
+          cache-dependency-path: 'rapidfireai/frontend/yarn.lock'
+
+      - name: Install frontend dependencies
+        run: |
+          cd rapidfireai/frontend
+          yarn install --frozen-lockfile
+
+      - name: Build frontend
+        run: |
+          cd rapidfireai/frontend
+          yarn build
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install build twine
