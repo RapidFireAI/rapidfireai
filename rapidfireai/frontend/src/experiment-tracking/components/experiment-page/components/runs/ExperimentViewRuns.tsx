@@ -43,7 +43,7 @@ import { useControllerNotification } from '../../hooks/useInteractiveControllerN
 import InteractiveControllerComponent from '../../../run-page/InteractiveController';
 import RightSlidingDrawer from '../../../../../rapidfire-ui/components/RightSlidingDrawer';
 import TerminalLogViewer from '../../../TerminalLogViewer';
-import { DispatcherService } from '../../../../../experiment-tracking/sdk/DispatcherService';
+import { useExperimentLogs, useExperimentICLogs } from '../../../../hooks/useExperimentLogs';
 import { useDesignSystemTheme } from '@databricks/design-system';
 
 export interface ExperimentViewRunsOwnProps {
@@ -82,8 +82,6 @@ const CHARTS_MIN_WIDTH = 350;
 
 export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) => {
   const [compareRunsMode] = useExperimentPageViewMode();
-  const [logs, setLogs] = useState<string[]>(['No experiment logs available yet...']);
-  const [icLogs, setICLogs] = useState<string[]>(['No interactive control logs available yet...']);
   const { theme } = useDesignSystemTheme();
   
   const {
@@ -122,6 +120,17 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     datasetsList,
     inputsOutputsList,
   } = runsData;
+
+  // Fetch logs using React Query with intelligent caching based on experiment status
+  const experimentName = experiments[0]?.name;
+  const { data: logs = [], isLoading: isLoadingLogs, error: logsError } = useExperimentLogs(
+    experimentName,
+    compareRunsMode === 'LOGS'
+  );
+  const { data: icLogs = [], isLoading: isLoadingICLogs, error: icLogsError } = useExperimentICLogs(
+    experimentName,
+    compareRunsMode === 'IC_LOGS'
+  );
 
   const modelVersionsByRunUuid = useSelector(({ entities }: ReduxState) => entities.modelVersionsByRunUuid);
 
@@ -266,35 +275,6 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     setSelectedRun(null);
   }, []);
 
-  // Fetch logs when component mounts or compareRunsMode changes
-  useEffect(() => {
-    if (compareRunsMode === 'LOGS') {
-      const fetchLogs = async () => {
-        try {
-          const fetchedLogs = await DispatcherService.getLogs({ experiment_name: experiments[0].name });
-          setLogs(Array.isArray(fetchedLogs) ? fetchedLogs : []);
-        } catch (error) {
-          console.error('Error fetching logs:', error);
-          setLogs(['Error fetching experiment logs...']);
-        }
-      };
-      fetchLogs();
-    }
-
-    if (compareRunsMode === 'IC_LOGS') {
-      const fetchICLogs = async () => {
-        try {
-          const fetchedICLogs = await DispatcherService.getICLogs({ experiment_name: experiments[0].name });
-          setICLogs(Array.isArray(fetchedICLogs) ? fetchedICLogs : []);
-        } catch (error) {
-          console.error('Error fetching IC logs:', error);
-          setICLogs(['Error fetching interactive control logs...']);
-        }
-      };
-      fetchICLogs();
-    }
-  }, [compareRunsMode, experiments]);
-
   const isTabActive = useIsTabActive();
   const autoRefreshEnabled = uiState.autoRefreshEnabled && shouldEnableExperimentPageAutoRefresh() && isTabActive;
   const usingGroupedValuesInCharts = uiState.useGroupedValuesInCharts ?? true;
@@ -364,11 +344,17 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
         >
           {compareRunsMode === 'LOGS' ? (
             <div css={{ width: '100%', height: '100%' }}>
-              <TerminalLogViewer logs={logs} />
+              <TerminalLogViewer 
+                logs={isLoadingLogs ? ['Loading experiment logs...'] : logsError ? ['Error fetching experiment logs...'] : logs}
+                emptyStateMessage="No experiment logs available yet..."
+              />
             </div>
           ) : compareRunsMode === 'IC_LOGS' ? (
             <div css={{ width: '100%', height: '100%' }}>
-              <TerminalLogViewer logs={icLogs} />
+              <TerminalLogViewer 
+                logs={isLoadingICLogs ? ['Loading interactive control logs...'] : icLogsError ? ['Error fetching interactive control logs...'] : icLogs}
+                emptyStateMessage="No interactive control logs available yet..."
+              />
             </div>
           ) : isComparingRuns ? (
             <ExperimentViewRunsTableResizer
