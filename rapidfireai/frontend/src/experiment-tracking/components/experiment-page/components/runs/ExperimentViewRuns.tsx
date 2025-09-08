@@ -358,13 +358,18 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
             minHeight: 225, // This is the exact height for displaying a minimum five rows and table header
             height: '100%',
             position: 'relative',
-            display: 'flex',
+            display: (compareRunsMode === 'LOGS' || compareRunsMode === 'IC_LOGS') ? 'block' : 'flex',
+            width: (compareRunsMode === 'LOGS' || compareRunsMode === 'IC_LOGS') ? '100%' : 'auto',
           }}
         >
           {compareRunsMode === 'LOGS' ? (
-            <TerminalLogViewer logs={logs} />
+            <div css={{ width: '100%', height: '100%' }}>
+              <TerminalLogViewer logs={logs} />
+            </div>
           ) : compareRunsMode === 'IC_LOGS' ? (
-            <TerminalLogViewer logs={icLogs} />
+            <div css={{ width: '100%', height: '100%' }}>
+              <TerminalLogViewer logs={icLogs} />
+            </div>
           ) : isComparingRuns ? (
             <ExperimentViewRunsTableResizer
               onResize={setTableAreaWidth}
