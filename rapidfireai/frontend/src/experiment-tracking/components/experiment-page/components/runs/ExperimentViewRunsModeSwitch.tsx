@@ -156,6 +156,28 @@ export const ExperimentViewRunsModeSwitch = ({
         }
         key="TRACES"
       />
+      <LegacyTabs.TabPane
+        tab={
+          <span data-testid="experiment-runs-mode-switch-logs">
+            <FormattedMessage
+              defaultMessage="Logs"
+              description="A button enabling logs mode on the experiment page"
+            />
+          </span>
+        }
+        key="LOGS"
+      />
+      <LegacyTabs.TabPane
+        tab={
+          <span data-testid="experiment-runs-mode-switch-ic-logs">
+            <FormattedMessage
+              defaultMessage="Interactive Control Logs"
+              description="A button enabling interactive control logs mode on the experiment page"
+            />
+          </span>
+        }
+        key="IC_LOGS"
+      />
     </LegacyTabs>
   );
 };

@@ -361,7 +361,11 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
             display: 'flex',
           }}
         >
-          {isComparingRuns ? (
+          {compareRunsMode === 'LOGS' ? (
+            <TerminalLogViewer logs={logs} />
+          ) : compareRunsMode === 'IC_LOGS' ? (
+            <TerminalLogViewer logs={icLogs} />
+          ) : isComparingRuns ? (
             <ExperimentViewRunsTableResizer
               onResize={setTableAreaWidth}
               runListHidden={runListHidden}
@@ -399,12 +403,6 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
               onDatasetSelected={datasetSelected}
               disabled={Boolean(uiState.groupBy)}
             />
-          )}
-          {compareRunsMode === 'LOGS' && (
-            <TerminalLogViewer logs={logs} />
-          )}
-          {compareRunsMode === 'IC_LOGS' && (
-            <TerminalLogViewer logs={icLogs} />
           )}
           {notificationContainer}
           {selectedDatasetWithRun && (
