@@ -32,6 +32,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DISPATCHER_DIR="$SCRIPT_DIR/dispatcher"
 FRONTEND_DIR="$SCRIPT_DIR/frontend"
 
+RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
+RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
+
+if ! command -v $RF_PYTHON_EXECUTABLE &> /dev/null; then
+    RF_PYTHON_EXECUTABLE=python
+fi
+
+if ! command -v $RF_PIP_EXECUTABLE &> /dev/null; then
+    RF_PIP_EXECUTABLE=pip
+fi
+
+
 # Function to print colored output
 print_status() {
     echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
@@ -603,17 +615,6 @@ main() {
         exit 1
     fi
 }
-
-RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
-RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
-
-if ! command -v $RF_PYTHON_EXECUTABLE &> /dev/null; then
-    RF_PYTHON_EXECUTABLE=python
-fi
-
-if ! command -v $RF_PIP_EXECUTABLE &> /dev/null; then
-    RF_PIP_EXECUTABLE=pip
-fi
 
 # Handle command line arguments
 case "${1:-start}" in
