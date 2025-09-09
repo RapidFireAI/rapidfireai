@@ -56,29 +56,21 @@ setup_python_env() {
     # Check if the package can be imported
     print_status "Verifying rapidfireai package availability..."
 
-    if python3 -c "import rapidfireai; print('Package imported successfully with python3')" 2>/dev/null; then
-        print_success "rapidfireai package is available with python3"
+    if ${RF_PYTHON_EXECUTABLE} -c "import rapidfireai; print('Package imported successfully with ${RF_PYTHON_EXECUTABLE}')" 2>/dev/null; then
+        print_success "rapidfireai package is available with ${RF_PYTHON_EXECUTABLE}"
     else
-        print_error "rapidfireai package is not available with python3"
-
-        # Try with python as fallback
-        print_status "Trying to import with python..."
-        if python -c "import rapidfireai; print('Package imported successfully with python')" 2>/dev/null; then
-            print_success "rapidfireai package is available with python"
-        else
-            print_error "rapidfireai package is not available with python"
-            print_warning "Try reinstalling the package: pip install rapidfireai"
-            return 1
-        fi
+        print_error "rapidfireai package is not available with ${RF_PYTHON_EXECUTABLE}"
+        print_warning "Try reinstalling the package: ${RF_PIP_EXECUTABLE} install rapidfireai"
+        return 1
     fi
 
     # Install any missing dependencies
     print_status "Checking for required dependencies..."
-    if python3 -c "import mlflow, gunicorn, flask" 2>/dev/null; then
+    if ${RF_PYTHON_EXECUTABLE} -c "import mlflow, gunicorn, flask" 2>/dev/null; then
         print_success "All required dependencies are available"
     else
         print_warning "Some dependencies may be missing. Installing requirements..."
-        pip install mlflow gunicorn flask flask-cors
+        ${RF_PIP_EXECUTABLE} install mlflow gunicorn flask flask-cors
     fi
 
     return 0
@@ -158,14 +150,14 @@ check_startup_issues() {
     print_status "Checking for common startup issues..."
 
     # Check Python version and packages
-    if command -v python3 &> /dev/null; then
-        local python_version=$(python3 --version 2>&1)
+    if command -v ${RF_PYTHON_EXECUTABLE} &> /dev/null; then
+        local python_version=$(${RF_PYTHON_EXECUTABLE} --version 2>&1)
         print_status "Python version: $python_version"
 
         # Check for required packages
         local missing_packages=()
         for package in mlflow gunicorn flask; do
-            if ! python3 -c "import $package" 2>/dev/null; then
+            if ! ${RF_PYTHON_EXECUTABLE} -c "import $package" 2>/dev/null; then
                 missing_packages+=("$package")
             fi
         done
@@ -173,7 +165,7 @@ check_startup_issues() {
         if [[ ${#missing_packages[@]} -gt 0 ]]; then
             print_warning "Missing packages: ${missing_packages[*]}"
             print_status "Installing missing packages..."
-            pip3 install "${missing_packages[@]}" || print_error "Failed to install packages"
+            ${RF_PIP_EXECUTABLE} install "${missing_packages[@]}" || print_error "Failed to install packages"
         fi
     fi
 
@@ -201,15 +193,15 @@ wait_for_service() {
     local max_attempts=${4:-30}  # Allow custom timeout, default 30 seconds
     local attempt=1
 
-    print_status "Waiting for $service to be ready on $host:$port (timeout: ${max_attempts}s)..."
+    print_status "Waiting for $service to be ready on $host:$port (timeout: ${max_attempts} attempts)..."
 
-    if ! command -v nc &> /dev/null; then
-        print_error "nc is not installed, please install the operating system package for netcat"
-        return 1
+    if command -v nc &> /dev/null; then
+        ping_command="$(command -v nc) -z $host $port"
+    else
+        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
     fi
-
     while [ $attempt -le $max_attempts ]; do
-        if command -v nc -z "$host" "$port" 2>/dev/null; then
+        if eval ${ping_command} &>/dev/null; then
             print_success "$service is ready!"
             return 0
         fi
@@ -251,7 +243,7 @@ start_mlflow() {
     echo "$mlflow_pid MLflow" >> "$PID_FILE"
 
     # Wait for MLflow to be ready
-    if wait_for_service $MLFLOW_HOST $MLFLOW_PORT "MLflow server; then
+    if wait_for_service $MLFLOW_HOST $MLFLOW_PORT "MLflow server"; then
         print_success "MLflow server started (PID: $mlflow_pid)"
         return 0
     else
@@ -395,9 +387,9 @@ start_frontend() {
 
     # Test if the server can be imported without errors
     print_status "Testing frontend server imports..."
-    if ! python3 -c "import server" 2>/dev/null; then
+    if ! ${RF_PYTHON_EXECUTABLE} -c "import server" 2>/dev/null; then
         print_error "Frontend server has import errors. Testing with verbose output:"
-        python3 -c "import server" 2>&1 | head -20
+        ${RF_PYTHON_EXECUTABLE} -c "import server" 2>&1 | head -20
         cd "$SCRIPT_DIR"
         return 1
     fi
@@ -411,9 +403,9 @@ start_frontend() {
 
     # Use setsid on Linux, nohup on macOS for better process management
     if command -v setsid &> /dev/null; then
-        PORT=$FRONTEND_PORT setsid python3 server.py > "$SCRIPT_DIR/frontend.log" 2>&1 &
+        PORT=$FRONTEND_PORT setsid ${RF_PYTHON_EXECUTABLE} server.py > "$SCRIPT_DIR/frontend.log" 2>&1 &
     else
-        PORT=$FRONTEND_PORT nohup python3 server.py > "$SCRIPT_DIR/frontend.log" 2>&1 &
+        PORT=$FRONTEND_PORT nohup ${RF_PYTHON_EXECUTABLE} server.py > "$SCRIPT_DIR/frontend.log" 2>&1 &
     fi
 
     local frontend_pid=$!
@@ -611,6 +603,17 @@ main() {
         exit 1
     fi
 }
+
+RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
+RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
+
+if ! command -v $RF_PYTHON_EXECUTABLE &> /dev/null; then
+    RF_PYTHON_EXECUTABLE=python
+fi
+
+if ! command -v $RF_PIP_EXECUTABLE &> /dev/null; then
+    RF_PIP_EXECUTABLE=pip
+fi
 
 # Handle command line arguments
 case "${1:-start}" in
