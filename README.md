@@ -48,7 +48,7 @@ source oss_venv/bin/activate
 pip install "huggingface-hub[cli]"
 hf auth login --token <your_token>
 
-# open up example notebook from ~/tutorial_notebooks and start experiment
+# open up example notebook from ./tutorial_notebooks and start experiment
 ```
 
 ### Troubleshooting
