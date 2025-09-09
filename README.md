@@ -10,13 +10,16 @@ RapidFire AI is a new experiment execution framework that transforms your LLM cu
 
 
 ## Getting Started
+
 ### Prerequisites
+
 - [NVIDIA GPU using the 7.x or 8.x Compute Capability](https://developer.nvidia.com/cuda-gpus)
 - [NVIDIA CUDA Toolkit 11.8+](https://developer.nvidia.com/cuda-toolkit-archive)
 - [Python 3.12.x](https://www.python.org/downloads/)
 - [PyTorch 2.7.1+](https://pytorch.org/get-started/previous-versions/) with corresponding forward compatible prebuilt CUDA binaries
 
 ### Installation/Starting
+
 ```bash
 virtualenv -p python3 oss_venv
 source oss_venv/bin/activate
@@ -25,6 +28,8 @@ source oss_venv/bin/activate
 pip install rapidfireai
 
 # install specific dependencies and initialize rapidfire
+# Optionally set RF_TUTORIAL_PATH environment variable to sepecify
+# alternate location for copying tutorial notebooks to
 rapidfireai init
 
 # start the rapidfire server
@@ -33,7 +38,18 @@ rapidfireai start
 # open up example notebook and start experiment
 ```
 
+### Running tutorial notebooks
 
+```bash
+source oss_venv/bin/activate
+
+# from replace <your_token> with your hugging face token
+# https://huggingface.co/docs/hub/en/security-tokens
+pip install "huggingface-hub[cli]"
+hf auth login --token <your_token>
+
+# open up example notebook from ./tutorial_notebooks and start experiment
+```
 
 ### Troubleshooting
 
@@ -53,13 +69,14 @@ lsof -t -i:3000 | xargs kill -9  # frontend server
 
 Browse or reference the full documentation, example use case tutorials, all API details, dashboard details, and more [here](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/).
 
-
 ## Key Features
 
 ### MLflow Integration
+
 Full MLflow support for experiment tracking and metrics visualization. A named RapidFire AI experiment corresponds to an MLflow experiment for comprehensive governance
 
 ### Interactive Control Operations (IC Ops)
+
 First-of-its-kind dynamic real-time control over runs in flight. Can be invoked through the dashboard:
 - Stop active runs; puts them in a dormant state
 - Resume stopped runs; makes them active again
@@ -67,11 +84,12 @@ First-of-its-kind dynamic real-time control over runs in flight. Can be invoked 
 - Delete unwanted or failed runs
 
 ### Multi-GPU Support
+
 The Scheduler automatically handles multiple GPUs on the machine and divides resources across all running configs for optimal resource utilization.
 
 ### Search and AutoML Support
-Built-in procedures for searching over configuration knob combinations, including Grid Search and Random Search. Easy to integrate with AutoML procedures. Native support for some popular AutoML procedures and customized automation of IC Ops coming soon.
 
+Built-in procedures for searching over configuration knob combinations, including Grid Search and Random Search. Easy to integrate with AutoML procedures. Native support for some popular AutoML procedures and customized automation of IC Ops coming soon.
 
 ## Directory Structure
 
@@ -90,6 +108,7 @@ rapidfireai/
 ## Architecture
 
 RapidFire AI adopts a microservices-inspired loosely coupled distributed architecture with:
+
 - **Dispatcher**: Web API layer for UI communication
 - **Database**: SQLite for state persistence
 - **Controller**: Central orchestrator running in user process
@@ -98,30 +117,36 @@ RapidFire AI adopts a microservices-inspired loosely coupled distributed archite
 
 This design enables efficient resource utilization while providing a seamless user experience for AI experimentation.
 
-
 ## Components
 
 ### Dispatcher
+
 The dispatcher provides a REST API interface for the web UI. It can be run via Flask as a single app or via Gunicorn to have it load balanced. Handles interactive control features and displays the current state of the runs in the experiment.
 
 ### Database
+
 Uses SQLite for persistent storage of metadata of experiments, runs, and artifacts. The Controller also uses it to talk with Workers on scheduling state. A clean asynchronous interface for all DB operations, including experiment lifecycle management and run tracking.
 
 ### Controller
+
 Runs as part of the user’s console or Notebook process. Orchestrates the entire training lifecycle including model creation, worker management, and scheduling. The `run_fit` logic handles sample preprocessing, model creation for given knob configurations, worker initialization, and continuous monitoring of training progress across distributed workers.
 
 ### Worker
+
 Handles the actual model training and inference on the GPUs. Workers poll the Database for tasks, load dataset chunks, and execute training runs with checkpointing and progress reporting. Currently expects any given model for given batch size to fit on a single GPU.
 
 ### Experiment
+
 Manages the complete experiment lifecycle, including creation, naming conventions, and cleanup. Experiments are automatically named with unique suffixes if conflicts exist, and all experiment metadata is tracked in the Database. An experiment's running tasks are automatically cancelled when the process ends abruptly.
 
 ### Dashboard
+
 A fork of MLflow that enables full tracking and visualization of all experiments and runs. It features a new panel for Interactive Control Ops that can be performed on any active runs.
 
-
 ## Developing with RapidFire AI
+
 ### Prerequisites
+
 - Python 3.x
 - Git
 - Ubuntu/Debian system (for apt package manager)
@@ -187,4 +212,3 @@ lsof -t -i:8080 | xargs kill -9 # dispatcher
 lsof -t -i:5002 | xargs kill -9 # mlflow
 lsof -t -i:3000 | xargs kill -9 # frontend
 ```
-
