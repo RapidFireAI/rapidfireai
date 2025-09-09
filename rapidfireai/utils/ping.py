@@ -3,8 +3,7 @@ import socket
 import argparse
 
 def ping_server(server: str, port: int, timeout=3):
-    """ping server"""
-    print(timeout)
+    """ping server:port """
     try:
         socket.setdefaulttimeout(timeout)
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
