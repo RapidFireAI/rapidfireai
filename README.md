@@ -183,11 +183,6 @@ pip3 install -r requirements.txt
 # uv pip install vllm=0.10.1.1 --torch-backend=cu126 or cu118
 # uv pip install flash-attn==1.0.9 --no-build-isoloation or 2.8.3
 
-# install frontend packages
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs
-npm install npm@10.5.1
-sudo apt install -y yarn
-
 # if running into node versioning errors, remove the previous version of node then run the lines above again
 sudo apt-get remove --purge nodejs libnode-dev libnode72 npm
 sudo apt autoremove --purge
