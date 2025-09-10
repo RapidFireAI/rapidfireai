@@ -1,3 +1,4 @@
+import os
 from enum import Enum
 
 MLFLOW_URL = "http://127.0.0.1:5002"
@@ -9,6 +10,9 @@ SHM_MIN_FREE_SPACE = 1.0
 # Logging Constants
 LOG_FILENAME = "rapidfire.log"
 TRAINING_LOG_FILENAME = "training.log"
+
+# Scheduler Constants
+NUM_MONTE_CARLO_SIMULATIONS = 1000
 
 
 class LogType(Enum):
@@ -31,8 +35,6 @@ class DBConfig:
     """Class to manage the database configuration for SQLite"""
 
     # Use user's home directory for database path
-    import os
-
     DB_PATH: str = os.path.expanduser("~/db/rapidfire.db")
 
     # Connection settings
