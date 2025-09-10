@@ -179,6 +179,9 @@ git checkout develop
 # install the repository as a python package
 pip3 install -r requirements.txt
 
+# install node
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs
+
 # Install correct version of vllm and flash-attn
 # uv pip install vllm=0.10.1.1 --torch-backend=cu126 or cu118
 # uv pip install flash-attn==1.0.9 --no-build-isoloation or 2.8.3
@@ -189,7 +192,6 @@ sudo apt autoremove --purge
 
 # check installations
 node -v # 22.x
-npm -v # 10.5.1
 
 # still inside venv, run the start script to begin all 3 servers
 chmod +x ./rapidfireai/start_dev.sh
