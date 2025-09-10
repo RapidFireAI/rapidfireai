@@ -313,7 +313,7 @@ def install_packages():
         print("\n⚠️  CUDA version not detected or unsupported.")
     if compute_capability == 7:
         print(f"\n🎯 Detected CUDA Compute Capability {compute_capability}.x")
-        packages.append({"package": "flash-attn==1.0.9", "extra_args": ["--no-build-isolation"]})
+        print("Skipping flash-attn installation")
     elif compute_capability == 8:
         print(f"\n🎯 Detected CUDA Compute Capability {compute_capability}.x")
         packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
