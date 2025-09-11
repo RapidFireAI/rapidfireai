@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS runs (
     error TEXT DEFAULT '',
     source TEXT DEFAULT '',
     ended_by TEXT DEFAULT '',
+    estimated_runtime REAL DEFAULT 0.0,
+    required_workers INTEGER DEFAULT 0,
     warm_started_from INTEGER DEFAULT NULL
 );
 
