@@ -41,7 +41,7 @@ class Scheduler:
 
         # Store run parameters
         self.run_req_workers: dict[int, int] = {}
-        self.run_sampled_runtime: dict[int, float] = {}
+        self.run_estimated_runtime: dict[int, float] = {}
         self.run_start_chunk_id: dict[int, int] = {}
 
         for run in runs_info:
@@ -52,7 +52,7 @@ class Scheduler:
                     f"Run {run_id} requires {req_workers} workers but only {self.n_workers} workers are available"
                 )
             self.run_req_workers[run_id] = req_workers
-            self.run_sampled_runtime[run_id] = run.get("sampled_runtime", 1.0)
+            self.run_estimated_runtime[run_id] = run.get("estimated_runtime", 1.0)
             self.run_start_chunk_id[run_id] = run.get("start_chunk_id", 0)
 
         # Initialize actual state - NO completion times needed for actual state!
@@ -93,7 +93,7 @@ class Scheduler:
                 f"Run {run_id} requires {req_workers} workers but only {self.n_workers} workers are available"
             )
         self.run_req_workers[run_id] = req_workers
-        self.run_sampled_runtime[run_id] = run_info.get("sampled_runtime", 1.0)
+        self.run_estimated_runtime[run_id] = run_info.get("estimated_runtime", 1.0)
         self.run_start_chunk_id[run_id] = run_info.get("start_chunk_id", 0)
 
         # Set the progress
@@ -118,7 +118,7 @@ class Scheduler:
         self.state.run_assigned_workers.pop(run_id, None)
 
         self.run_req_workers.pop(run_id, None)
-        self.run_sampled_runtime.pop(run_id, None)
+        self.run_estimated_runtime.pop(run_id, None)
         self.run_start_chunk_id.pop(run_id, None)
 
         # Remove from run_ids
@@ -160,15 +160,27 @@ class Scheduler:
         return available_workers
 
     def _get_schedulable_runs(self, sim_state: SchedulerState) -> list[int]:
-        """Get runs that can be scheduled in given state."""
+        """Get runs that can be scheduled"""
         schedulable = []
+
+        # Find the minimum chunk progress among all incomplete runs
+        min_chunks_visited = float("inf")
+        for run_id in self.run_ids:
+            if sim_state.run_visited_num_chunks[run_id] < self.n_chunks:
+                min_chunks_visited = min(min_chunks_visited, sim_state.run_visited_num_chunks[run_id])
+
+        # Only allow scheduling runs that are at the minimum level
         for run_id in self.run_ids:
             # Skip completed runs
             if sim_state.run_visited_num_chunks[run_id] >= self.n_chunks:
                 continue
-            # A run is schedulable only if it's not currently running
-            if len(sim_state.run_assigned_workers[run_id]) == 0:
+            # Skip currently running runs
+            if len(sim_state.run_assigned_workers[run_id]) > 0:
+                continue
+            # Only include runs at the minimum chunk level
+            if sim_state.run_visited_num_chunks[run_id] == min_chunks_visited:
                 schedulable.append(run_id)
+
         return schedulable
 
     def _get_next_chunk_id(self, sim_state: SchedulerState, run_id: int) -> int:
@@ -225,7 +237,7 @@ class Scheduler:
                 if req_workers <= len(available_workers):
                     chunk_id = self._get_next_chunk_id(sim_state, run_id)
                     assigned_workers = available_workers[:req_workers]
-                    runtime = self.run_sampled_runtime[run_id]
+                    runtime = self.run_estimated_runtime[run_id]
 
                     # Update simulation state
                     for worker_id in assigned_workers:
@@ -254,10 +266,7 @@ class Scheduler:
                 sim_state.current_time = min(sim_state.run_completion_time.values())
 
         # Calculate makespan
-        if schedule_sequence:
-            makespan = max(task["end_time"] for task in schedule_sequence)
-        else:
-            makespan = 0.0
+        makespan = max(task["end_time"] for task in schedule_sequence) if schedule_sequence else 0.0
 
         return makespan, schedule_sequence
 
