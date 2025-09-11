@@ -7,14 +7,15 @@
 set -e  # Exit on any error
 
 # Configuration
-MLFLOW_PORT=5002
-MLFLOW_HOST=127.0.0.1
-FRONTEND_PORT=3000
-FRONTEND_HOST=0.0.0.0
+RF_MLFLOW_PORT=5002
+RF_MLFLOW_HOST=127.0.0.1
+RF_FRONTEND_PORT=3000
+RF_FRONTEND_HOST=0.0.0.0
 # API server configuration - these should match DispatcherConfig in constants.py
-API_PORT=8080
-API_HOST=127.0.0.1
+RF_API_PORT=8080
+RF_API_HOST=127.0.0.1
 
+RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
 # Directory paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -29,7 +30,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # PID file to track processes
-PID_FILE="rapidfire_pids.txt"
+RF_PID_FILE="${RF_PID_FILE:=rapidfire_pids.txt}"
 
 # Function to print colored output
 print_status() {
@@ -133,7 +134,7 @@ cleanup() {
     fi
     
     # Kill processes by port (more reliable for MLflow)
-    for port in $MLFLOW_PORT $FRONTEND_PORT $API_PORT; do
+    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT; do
         local pids=$(lsof -ti :$port 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
             print_status "Killing processes on port $port"
@@ -148,7 +149,7 @@ cleanup() {
     done
     
     # Clean up tracked PIDs
-    if [[ -f "$PID_FILE" ]]; then
+    if [[ -f "$RF_PID_FILE" ]]; then
         while read -r pid service; do
             if kill -0 "$pid" 2>/dev/null; then
                 print_status "Stopping $service (PID: $pid)"
@@ -160,8 +161,8 @@ cleanup() {
                     kill -9 -$pid 2>/dev/null || kill -9 $pid 2>/dev/null || true
                 fi
             fi
-        done < "$PID_FILE"
-        rm -f "$PID_FILE"
+        done < "$RF_PID_FILE"
+        rm -f "$RF_PID_FILE"
     fi
     
     # Final cleanup - kill any remaining MLflow or gunicorn processes
@@ -211,7 +212,7 @@ wait_for_service() {
 start_mlflow() {
     print_status "Starting MLflow server..."
     
-    if ! check_port $MLFLOW_PORT "MLflow server"; then
+    if ! check_port $RF_MLFLOW_PORT "MLflow server"; then
         return 1
     fi
         
@@ -219,23 +220,23 @@ start_mlflow() {
     # Use setsid on Linux, nohup on macOS
     if command -v setsid &> /dev/null; then
         setsid mlflow server \
-            --host $MLFLOW_HOST \
-            --port $MLFLOW_PORT \
-            --backend-store-uri sqlite:///mlflow.db > /dev/null 2>&1 &
+            --host $RF_MLFLOW_HOST \
+            --port $RF_MLFLOW_PORT \
+            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > /dev/null 2>&1 &
     else
         nohup mlflow server \
-            --host $MLFLOW_HOST \
-            --port $MLFLOW_PORT \
-            --backend-store-uri sqlite:///mlflow.db > /dev/null 2>&1 &
+            --host $RF_MLFLOW_HOST \
+            --port $RF_MLFLOW_PORT \
+            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > /dev/null 2>&1 &
     fi
     
     local mlflow_pid=$!
-    echo "$mlflow_pid MLflow" >> "$PID_FILE"
+    echo "$mlflow_pid MLflow" >> "$RF_PID_FILE"
     
     # Wait for MLflow to be ready
-    if wait_for_service $MLFLOW_HOST $MLFLOW_PORT "MLflow server"; then
+    if wait_for_service $RF_MLFLOW_HOST $RF_MLFLOW_PORT "MLflow server"; then
         print_success "MLflow server started (PID: $mlflow_pid)"
-        print_status "MLflow UI available at: http://$MLFLOW_HOST:$MLFLOW_PORT"
+        print_status "MLflow UI available at: http://$RF_MLFLOW_HOST:$RF_MLFLOW_PORT"
         return 0
     else
         return 1
@@ -275,12 +276,12 @@ start_api_server() {
     
     local api_pid=$!
     cd "$SCRIPT_DIR"  # Return to original directory
-    echo "$api_pid API_Server" >> "$PID_FILE"
+    echo "$api_pid API_Server" >> "$RF_PID_FILE"
     
     # Wait for API server to be ready
-    if wait_for_service $API_HOST $API_PORT "API server"; then
+    if wait_for_service $RF_API_HOST $RF_API_PORT "API server"; then
         print_success "API server started (PID: $api_pid)"
-        print_status "API server available at: http://$API_HOST:$API_PORT"
+        print_status "API server available at: http://$RF_API_HOST:$RF_API_PORT"
         return 0
     else
         return 1
@@ -291,7 +292,7 @@ start_api_server() {
 start_frontend() {
     print_status "Starting frontend tracking server..."
     
-    if ! check_port $FRONTEND_PORT "Frontend server"; then
+    if ! check_port $RF_FRONTEND_PORT "Frontend server"; then
         return 1
     fi
     
@@ -342,16 +343,16 @@ start_frontend() {
     # Start Node.js server with npm start in background
     print_status "Starting development server with npm start..."
     print_status "Frontend logs will be written to: $SCRIPT_DIR/frontend.log"
-    PORT=$FRONTEND_PORT nohup npm start > "$SCRIPT_DIR/frontend.log" 2>&1 &
+    PORT=$RF_FRONTEND_PORT nohup npm start > "$SCRIPT_DIR/frontend.log" 2>&1 &
     
     local frontend_pid=$!
     cd "$SCRIPT_DIR"  # Return to original directory
-    echo "$frontend_pid Frontend_Node" >> "$PID_FILE"
+    echo "$frontend_pid Frontend_Node" >> "$RF_PID_FILE"
     
     # Wait for frontend to be ready with longer timeout for development server
-    if wait_for_service localhost $FRONTEND_PORT "Frontend server" 120; then
+    if wait_for_service localhost $RF_FRONTEND_PORT "Frontend server" 120; then
         print_success "Frontend server started with Node.js (PID: $frontend_pid)"
-        print_status "Frontend available at: http://localhost:$FRONTEND_PORT"
+        print_status "Frontend available at: http://localhost:$RF_FRONTEND_PORT"
         return 0
     else
         print_error "Frontend development server failed to start. Showing recent logs:"
@@ -371,14 +372,14 @@ show_status() {
     print_status "RapidFire AI Services Status:"
     echo "=================================="
     
-    if [[ -f "$PID_FILE" ]]; then
+    if [[ -f "$RF_PID_FILE" ]]; then
         while read -r pid service; do
             if kill -0 "$pid" 2>/dev/null; then
                 print_success "$service is running (PID: $pid)"
             else
                 print_error "$service is not running (PID: $pid)"
             fi
-        done < "$PID_FILE"
+        done < "$RF_PID_FILE"
     else
         print_warning "No services are currently tracked"
     fi
@@ -390,9 +391,9 @@ show_status() {
     
     echo ""
     print_status "Available endpoints:"
-    echo "- MLflow UI: http://$MLFLOW_HOST:$MLFLOW_PORT"
-    echo "- Frontend: http://$FRONTEND_HOST:$FRONTEND_PORT"
-    echo "- API Server: http://$API_HOST:$API_PORT"
+    echo "- MLflow UI: http://$RF_MLFLOW_HOST:$RF_MLFLOW_PORT"
+    echo "- Frontend: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
+    echo "- API Server: http://$RF_API_HOST:$RF_API_PORT"
 }
 
 # Main execution
@@ -400,7 +401,7 @@ main() {
     print_status "Starting RapidFire AI services..."
     
     # Remove old PID file
-    rm -f "$PID_FILE"
+    rm -f "$RF_PID_FILE"
     
     # Set up signal handlers for cleanup
     trap cleanup SIGINT SIGTERM EXIT
@@ -430,12 +431,12 @@ main() {
         while true; do
             sleep 5
             # Check if any process died
-            if [[ -f "$PID_FILE" ]]; then
+            if [[ -f "$RF_PID_FILE" ]]; then
                 while read -r pid service; do
                     if ! kill -0 "$pid" 2>/dev/null; then
                         print_error "$service (PID: $pid) has stopped unexpectedly"
                     fi
-                done < "$PID_FILE"
+                done < "$RF_PID_FILE"
             fi
         done
     else

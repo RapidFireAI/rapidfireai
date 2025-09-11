@@ -1,5 +1,5 @@
 # Use Python base image
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -41,12 +41,12 @@ RUN chmod +x /app/start.sh
 EXPOSE 5002 8080 3000
 
 # Set environment variables
-ENV MLFLOW_PORT=5002
-ENV MLFLOW_HOST=0.0.0.0
-ENV FRONTEND_PORT=3000
-ENV FRONTEND_HOST=0.0.0.0
-ENV API_PORT=8080
-ENV API_HOST=0.0.0.0
+ENV RF_MLFLOW_PORT=5002
+ENV RF_MLFLOW_HOST=0.0.0.0
+ENV RF_FRONTEND_PORT=3000
+ENV RF_FRONTEND_HOST=0.0.0.0
+ENV RF_API_PORT=8080
+ENV RF_API_HOST=0.0.0.0
 
 # Use the start script as entrypoint
 ENTRYPOINT ["/app/start.sh"]
