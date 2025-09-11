@@ -25,7 +25,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # PID file to track processes
-PID_FILE="rapidfire_pids.txt"
+RF_PID_FILE="${RF_PID_FILE:=rapidfire_pids.txt}"
 
 # Directory paths for pip-installed package
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -108,7 +108,7 @@ cleanup() {
     done
 
     # Clean up tracked PIDs
-    if [[ -f "$PID_FILE" ]]; then
+    if [[ -f "$RF_PID_FILE" ]]; then
         while read -r pid service; do
             if kill -0 "$pid" 2>/dev/null; then
                 print_status "Stopping $service (PID: $pid)"
@@ -120,8 +120,8 @@ cleanup() {
                     kill -9 -$pid 2>/dev/null || kill -9 $pid 2>/dev/null || true
                 fi
             fi
-        done < "$PID_FILE"
-        rm -f "$PID_FILE"
+        done < "$RF_PID_FILE"
+        rm -f "$RF_PID_FILE"
     fi
 
     # Final cleanup - kill any remaining MLflow, gunicorn, or Flask processes
@@ -252,7 +252,7 @@ start_mlflow() {
     fi
 
     local mlflow_pid=$!
-    echo "$mlflow_pid MLflow" >> "$PID_FILE"
+    echo "$mlflow_pid MLflow" >> "$RF_PID_FILE"
 
     # Wait for MLflow to be ready
     if wait_for_service $MLFLOW_HOST $MLFLOW_PORT "MLflow server"; then
@@ -324,7 +324,7 @@ start_api_server() {
 
     local api_pid=$!
     cd "$SCRIPT_DIR"  # Return to original directory
-    echo "$api_pid API_Server" >> "$PID_FILE"
+    echo "$api_pid API_Server" >> "$RF_PID_FILE"
 
     # Wait for API server to be ready - use longer timeout for API server
     if wait_for_service $API_HOST $API_PORT "API server" 60; then
@@ -426,10 +426,10 @@ start_frontend() {
     # Store both PID and process group ID for better cleanup
     if command -v setsid &> /dev/null; then
         # On Linux, we can get the process group ID
-        echo "$frontend_pid Frontend_Flask" >> "$PID_FILE"
+        echo "$frontend_pid Frontend_Flask" >> "$RF_PID_FILE"
     else
         # On macOS, just store the PID
-        echo "$frontend_pid Frontend_Flask" >> "$PID_FILE"
+        echo "$frontend_pid Frontend_Flask" >> "$RF_PID_FILE"
     fi
 
     # Wait for frontend to be ready - check both localhost and 127.0.0.1
@@ -486,14 +486,14 @@ show_status() {
     print_status "RapidFire AI Services Status:"
     echo "=================================="
 
-    if [[ -f "$PID_FILE" ]]; then
+    if [[ -f "$RF_PID_FILE" ]]; then
         while read -r pid service; do
             if kill -0 "$pid" 2>/dev/null; then
                 print_success "$service is running (PID: $pid)"
             else
                 print_error "$service is not running (PID: $pid)"
             fi
-        done < "$PID_FILE"
+        done < "$RF_PID_FILE"
     else
         print_warning "No services are currently tracked"
     fi
@@ -550,7 +550,7 @@ main() {
     print_status "Starting RapidFire AI services..."
 
     # Remove old PID file
-    rm -f "$PID_FILE"
+    rm -f "$RF_PID_FILE"
 
     # Set up signal handlers for cleanup
     trap cleanup SIGINT SIGTERM EXIT
@@ -586,12 +586,12 @@ main() {
         while true; do
             sleep 5
             # Check if any process died
-            if [[ -f "$PID_FILE" ]]; then
+            if [[ -f "$RF_PID_FILE" ]]; then
                 while read -r pid service; do
                     if ! kill -0 "$pid" 2>/dev/null; then
                         print_error "$service (PID: $pid) has stopped unexpectedly"
                     fi
-                done < "$PID_FILE"
+                done < "$RF_PID_FILE"
             fi
         done
     else

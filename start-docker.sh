@@ -27,7 +27,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # PID file to track processes
-PID_FILE="rapidfire_pids.txt"
+RF_PID_FILE="${RF_PID_FILE:=rapidfire_pids.txt}"
 
 # Function to print colored output
 print_status() {
@@ -85,7 +85,7 @@ cleanup() {
     done
     
     # Clean up tracked PIDs
-    if [[ -f "$PID_FILE" ]]; then
+    if [[ -f "$RF_PID_FILE" ]]; then
         while read -r pid service; do
             if kill -0 "$pid" 2>/dev/null; then
                 print_status "Stopping $service (PID: $pid)"
@@ -97,8 +97,8 @@ cleanup() {
                     kill -9 -$pid 2>/dev/null || kill -9 $pid 2>/dev/null || true
                 fi
             fi
-        done < "$PID_FILE"
-        rm -f "$PID_FILE"
+        done < "$RF_PID_FILE"
+        rm -f "$RF_PID_FILE"
     fi
     
     # Final cleanup - kill any remaining MLflow or gunicorn processes
@@ -163,7 +163,7 @@ start_mlflow() {
         --default-artifact-root ./mlruns &
     
     local mlflow_pid=$!
-    echo "$mlflow_pid MLflow" >> "$PID_FILE"
+    echo "$mlflow_pid MLflow" >> "$RF_PID_FILE"
     
     # Wait for MLflow to be ready
     if wait_for_service $MLFLOW_HOST $MLFLOW_PORT "MLflow server"; then
@@ -208,7 +208,7 @@ start_api_server() {
     
     local api_pid=$!
     cd "$SCRIPT_DIR"  # Return to original directory
-    echo "$api_pid API_Server" >> "$PID_FILE"
+    echo "$api_pid API_Server" >> "$RF_PID_FILE"
     
     # Wait for API server to be ready
     if wait_for_service $API_HOST $API_PORT "API server"; then
@@ -251,7 +251,7 @@ start_frontend() {
         
         local frontend_pid=$!
         cd "$SCRIPT_DIR"  # Return to original directory
-        echo "$frontend_pid Frontend_Node" >> "$PID_FILE"
+        echo "$frontend_pid Frontend_Node" >> "$RF_PID_FILE"
         
         # Wait for frontend to be ready with longer timeout for development server
         if wait_for_service localhost $FRONTEND_PORT "Frontend server" 120; then
@@ -281,14 +281,14 @@ show_status() {
     print_status "RapidFire AI Services Status:"
     echo "=================================="
     
-    if [[ -f "$PID_FILE" ]]; then
+    if [[ -f "$RF_PID_FILE" ]]; then
         while read -r pid service; do
             if kill -0 "$pid" 2>/dev/null; then
                 print_success "$service is running (PID: $pid)"
             else
                 print_error "$service is not running (PID: $pid)"
             fi
-        done < "$PID_FILE"
+        done < "$RF_PID_FILE"
     else
         print_warning "No services are currently tracked"
     fi
@@ -305,7 +305,7 @@ main() {
     print_status "Starting RapidFire AI services in Docker..."
     
     # Remove old PID file
-    rm -f "$PID_FILE"
+    rm -f "$RF_PID_FILE"
     
     # Set up signal handlers for cleanup
     trap cleanup SIGINT SIGTERM EXIT
@@ -335,12 +335,12 @@ main() {
         while true; do
             sleep 5
             # Check if any process died
-            if [[ -f "$PID_FILE" ]]; then
+            if [[ -f "$RF_PID_FILE" ]]; then
                 while read -r pid service; do
                     if ! kill -0 "$pid" 2>/dev/null; then
                         print_error "$service (PID: $pid) has stopped unexpectedly"
                     fi
-                done < "$PID_FILE"
+                done < "$RF_PID_FILE"
             fi
         done
     else
