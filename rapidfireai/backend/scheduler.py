@@ -12,6 +12,7 @@ class SchedulerState:
         self.run_visited_num_chunks: dict[int, int] = {}
         self.run_assigned_workers: dict[int, set[int]] = {}
         self.run_completion_time: dict[int, float] = {}
+        self.run_scheduling_generation: dict[int, int] = {}  # Track scheduling generation for fairness
         self.current_time: float = 0.0
 
     def copy(self):
@@ -21,6 +22,7 @@ class SchedulerState:
         new_state.run_visited_num_chunks = copy.deepcopy(self.run_visited_num_chunks)
         new_state.run_assigned_workers = copy.deepcopy(self.run_assigned_workers)
         new_state.run_completion_time = copy.deepcopy(self.run_completion_time)
+        new_state.run_scheduling_generation = copy.deepcopy(self.run_scheduling_generation)
         new_state.current_time = self.current_time
         return new_state
 
@@ -58,6 +60,7 @@ class Scheduler:
         self.state.worker_running_current_run = dict.fromkeys(range(self.n_workers), -1)
         self.state.run_visited_num_chunks = dict.fromkeys(self.run_ids, 0)
         self.state.run_assigned_workers = {run_id: set() for run_id in self.run_ids}
+        self.state.run_scheduling_generation = dict.fromkeys(self.run_ids, 0)
 
     def reset_run(self, run_id: int) -> None:
         """Reset the scheduler for a specific run (used at epoch boundaries)"""
@@ -81,6 +84,14 @@ class Scheduler:
 
         # Set the progress
         self.state.run_visited_num_chunks[run_id] = run_visited_num_chunks
+
+        # Initialize scheduling generation for new runs
+        # Set to minimum generation so it gets scheduled fairly
+        if self.state.run_scheduling_generation:
+            min_gen = min(self.state.run_scheduling_generation.values())
+            self.state.run_scheduling_generation[run_id] = min_gen
+        else:
+            self.state.run_scheduling_generation[run_id] = 0
 
     def remove_run(self, run_id: int) -> int:
         """Remove a run from the scheduler and return its progress."""
@@ -138,16 +149,10 @@ class Scheduler:
         return available_workers
 
     def _get_schedulable_runs(self, sim_state: SchedulerState) -> list[int]:
-        """Get runs that can be scheduled"""
-        schedulable = []
+        """Get runs that can be scheduled, ensuring fair round-robin scheduling."""
+        available_for_scheduling = []
 
-        # Find the minimum chunk progress among all incomplete runs
-        min_chunks_visited = float("inf")
-        for run_id in self.run_ids:
-            if sim_state.run_visited_num_chunks[run_id] < self.n_chunks:
-                min_chunks_visited = min(min_chunks_visited, sim_state.run_visited_num_chunks[run_id])
-
-        # Only allow scheduling runs that are at the minimum level
+        # First, identify runs that are not currently running and not completed
         for run_id in self.run_ids:
             # Skip completed runs
             if sim_state.run_visited_num_chunks[run_id] >= self.n_chunks:
@@ -155,11 +160,21 @@ class Scheduler:
             # Skip currently running runs
             if len(sim_state.run_assigned_workers[run_id]) > 0:
                 continue
-            # Only include runs at the minimum chunk level
-            if sim_state.run_visited_num_chunks[run_id] == min_chunks_visited:
-                schedulable.append(run_id)
+            available_for_scheduling.append(run_id)
 
-        return schedulable
+        if not available_for_scheduling:
+            return []
+
+        # Find the minimum generation among available runs
+        min_generation = min(sim_state.run_scheduling_generation.get(run_id, 0) for run_id in available_for_scheduling)
+
+        # Only return runs at the minimum generation (haven't had their turn in this round)
+        fair_schedulable = []
+        for run_id in available_for_scheduling:
+            if sim_state.run_scheduling_generation.get(run_id, 0) == min_generation:
+                fair_schedulable.append(run_id)
+
+        return fair_schedulable
 
     def _get_next_chunk_id(self, sim_state: SchedulerState, run_id: int) -> int:
         """Get the next chunk ID for a run in given state."""
@@ -203,7 +218,7 @@ class Scheduler:
                     # No runs in progress and can't schedule anything - we're done
                     break
 
-            # Try to schedule runs randomly
+            # Try to schedule runs randomly from the fair set
             shuffled_runs = random.sample(schedulable_runs, len(schedulable_runs))
             scheduled_any = False
 
@@ -223,6 +238,9 @@ class Scheduler:
 
                     sim_state.run_completion_time[run_id] = sim_state.current_time + runtime
 
+                    # Increment the scheduling generation for this run
+                    sim_state.run_scheduling_generation[run_id] = sim_state.run_scheduling_generation.get(run_id, 0) + 1
+
                     # Record this scheduling decision
                     schedule_sequence.append(
                         {
@@ -236,9 +254,7 @@ class Scheduler:
                     scheduled_any = True
                     # Continue to try scheduling more runs in this time slot
 
-            # If we scheduled something but there are still workers/runs available,
-            # stay at current time to try scheduling more
-            # Otherwise, if nothing was scheduled but we have runs in progress, advance time
+            # If nothing was scheduled but we have runs in progress, advance time
             if not scheduled_any and sim_state.run_completion_time:
                 sim_state.current_time = min(sim_state.run_completion_time.values())
 
@@ -279,7 +295,6 @@ class Scheduler:
             if schedule_sequence and makespan < best_makespan:
                 best_makespan = makespan
                 # Find the first action that hasn't been done yet
-                # Since we're simulating from current state, the first action should be valid
                 for action in schedule_sequence:
                     # Check if this action is still valid in current state
                     run_id = action["run_id"]
@@ -316,6 +331,9 @@ class Scheduler:
                     self.state.worker_running_current_run[worker_id] = run_id
                     self.state.run_assigned_workers[run_id].add(worker_id)
 
+                # Increment the scheduling generation for fairness
+                self.state.run_scheduling_generation[run_id] = self.state.run_scheduling_generation.get(run_id, 0) + 1
+
                 is_last_chunk = chunk_id == self.n_chunks - 1
 
                 return {
@@ -349,4 +367,5 @@ class Scheduler:
             "run_workers": {
                 r: f"{len(self.state.run_assigned_workers[r])}/{self.run_req_workers[r]}" for r in self.run_ids
             },
+            "scheduling_generation": {r: self.state.run_scheduling_generation.get(r, 0) for r in self.run_ids},
         }
