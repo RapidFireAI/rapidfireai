@@ -6,8 +6,14 @@ An open source ML tool that allows for efficient, optimized, and user-friendly m
 ### Building pypi package
 ```bash
 # install nodejs locally, either using nvm or installing latest node 22.x
-# on linux machines
+# Option 1: NodeSource repository (official)
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs
+
+# Option 2: nvm (Node Version Manager) - works on all Linux distros
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+source ~/.bashrc
+nvm install 22
+nvm use 22
 
 # on mac
 # brew install node@22
@@ -16,6 +22,9 @@ curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-ge
 cd rapidfireai/frontend
 node ./yarn/releases/yarn-4.9.1.cjs install
 node ./yarn/releases/yarn-4.9.1.cjs build
+
+# go back to rapidfireai root
+cd ../..
 
 # Remove any distributions and build to /dist folder
 rm -rf dist/ *.egg-info/ .eggs/ && python -m build
