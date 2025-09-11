@@ -10,12 +10,9 @@ import { ExperimentPageUIState } from '../../models/ExperimentPageUIState';
 import { ExperimentViewArtifactLocation } from '../ExperimentViewArtifactLocation';
 import { ExperimentViewCopyExperimentId } from './ExperimentViewCopyExperimentId';
 import { ExperimentViewCopyArtifactLocation } from './ExperimentViewCopyArtifactLocation';
-import { InfoSmallIcon, InfoPopover } from '@databricks/design-system';
-import { Popover } from '@databricks/design-system';
-import { EXPERIMENT_PAGE_FEEDBACK_URL } from '@mlflow/mlflow/src/experiment-tracking/constants';
+import { InfoPopover } from '@databricks/design-system';
 import { Link } from '@mlflow/mlflow/src/common/utils/RoutingUtils';
 import Routes from '@mlflow/mlflow/src/experiment-tracking/routes';
-import { ExperimentViewManagementMenu } from './ExperimentViewManagementMenu';
 
 /**
  * Header for a single experiment page. Displays title, breadcrumbs and provides
@@ -58,40 +55,6 @@ export const ExperimentViewHeader = React.memo(
      * Extract the last part of the experiment name
      */
     const normalizedExperimentName = useMemo(() => experiment.name.split('/').pop(), [experiment.name]);
-
-    const feedbackFormUrl = EXPERIMENT_PAGE_FEEDBACK_URL;
-
-    const renderFeedbackForm = () => {
-      const feedbackLink = (
-        <Button
-          href={feedbackFormUrl}
-          target="_blank"
-          rel="noreferrer"
-          componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_header_experimentviewheaderv2.tsx_100"
-          css={{ marginLeft: theme.spacing.sm }}
-          type="link"
-          size="small"
-          endIcon={<NewWindowIcon />}
-        >
-          <FormattedMessage
-            defaultMessage="Provide Feedback"
-            description="Link to a survey for users to give feedback"
-          />
-        </Button>
-      );
-      return feedbackLink;
-    };
-
-    const getShareButton = () => {
-      const shareButtonElement = (
-        <ExperimentViewHeaderShareButton
-          experimentIds={experimentIds}
-          searchFacetsState={searchFacetsState}
-          uiState={uiState}
-        />
-      );
-      return shareButtonElement;
-    };
 
     const getInfoTooltip = () => {
       return (
@@ -178,7 +141,6 @@ export const ExperimentViewHeader = React.memo(
         }
         titleAddOns={[
           getInfoTooltip(),
-          renderFeedbackForm(),
           showAddDescriptionButton && getAddDescriptionButton(),
         ].filter(Boolean)}
         breadcrumbs={breadcrumbs}
@@ -197,11 +159,6 @@ export const ExperimentViewHeader = React.memo(
           },
         }}
       >
-        <div css={{ display: 'flex', gap: theme.spacing.sm }}>
-          {/* Wrap the buttons in a flex element */}
-          <ExperimentViewManagementMenu experiment={experiment} />
-          {getShareButton()}
-        </div>
       </PageHeader>
     );
   },

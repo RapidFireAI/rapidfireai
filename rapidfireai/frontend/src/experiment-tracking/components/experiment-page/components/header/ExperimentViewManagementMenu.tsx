@@ -1,13 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Typography } from '@databricks/design-system';
-import { FormattedMessage } from 'react-intl';
-import { OverflowMenu } from '../../../../../shared/building_blocks/PageHeader';
 import { ExperimentEntity } from '../../../../types';
-import { getExperimentType } from '../../utils/experimentPage.common-utils';
-import { shouldEnableExperimentPageHeaderV2 } from '@mlflow/mlflow/src/common/utils/FeatureUtils';
-import { getShareFeedbackOverflowMenuItem } from './ExperimentViewHeader.utils';
-import { getExperimentKindFromTags } from '../../../../utils/ExperimentKindUtils';
-import { ExperimentKind } from '../../../../constants';
 import { useNavigate } from '@mlflow/mlflow/src/common/utils/RoutingUtils';
 import Routes from '@mlflow/mlflow/src/experiment-tracking/routes';
 import { DeleteExperimentModal } from '../../../modals/DeleteExperimentModal';
@@ -34,30 +26,6 @@ export const ExperimentViewManagementMenu = ({
 
   return (
     <>
-      <OverflowMenu
-        menu={[
-          {
-            id: 'rename',
-            itemName: (
-              <FormattedMessage
-                defaultMessage="Rename"
-                description="Text for rename button on the experiment view page header"
-              />
-            ),
-            onClick: () => setShowRenameExperimentModal(true),
-          },
-          {
-            id: 'delete',
-            itemName: (
-              <FormattedMessage
-                defaultMessage="Delete"
-                description="Text for delete button on the experiment view page header"
-              />
-            ),
-            onClick: () => setShowDeleteExperimentModal(true),
-          },
-        ]}
-      />
       <RenameExperimentModal
         experimentId={experiment.experimentId}
         experimentName={experiment.name}
