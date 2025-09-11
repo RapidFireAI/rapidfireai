@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS worker_task (
     run_id INTEGER NOT NULL,
     chunk_id INTEGER NOT NULL,
     config_options TEXT DEFAULT '{}',
+    multi_worker_details TEXT DEFAULT '{}',
     FOREIGN KEY (run_id) REFERENCES runs (run_id)
 );
 

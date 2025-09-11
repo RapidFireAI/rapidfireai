@@ -584,14 +584,16 @@ class RfDb:
         status: TaskStatus,
         run_id: int,
         chunk_id: int = -1,
+        multi_worker_details: dict[str, Any] | None = None,
         config_options: dict[str, Any] | None = None,
     ) -> int:
         """Create a worker task"""
 
         query = """
-            INSERT INTO worker_task (worker_id, task_type, status, run_id, chunk_id, config_options)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO worker_task (worker_id, task_type, status, run_id, chunk_id, multi_worker_details, config_options)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """
+        multi_worker_details_str = json.dumps(multi_worker_details) if multi_worker_details else "{}"
         config_options_str = encode_payload(config_options) if config_options else "{}"
         self.db.execute(
             query,
@@ -601,6 +603,7 @@ class RfDb:
                 status.value,
                 run_id,
                 chunk_id,
+                multi_worker_details_str,
                 config_options_str,
             ),
             commit=True,
@@ -613,7 +616,7 @@ class RfDb:
     def get_all_worker_tasks(self) -> dict[int, dict[str, Any]]:
         """Get the latest task of each worker"""
         query = """
-            SELECT worker_id, task_id, task_type, status, run_id, chunk_id, config_options
+            SELECT worker_id, task_id, task_type, status, run_id, chunk_id, multi_worker_details, config_options
             FROM worker_task wt1
             WHERE task_id = (
                 SELECT MAX(task_id)
@@ -632,14 +635,15 @@ class RfDb:
                     "status": TaskStatus(task[3]),
                     "run_id": task[4],
                     "chunk_id": task[5],
-                    "config_options": decode_db_payload(task[6]) if task[6] and task[6] != "{}" else {},
+                    "multi_worker_details": json.loads(task[6]) if task[6] and task[6] != "{}" else {},
+                    "config_options": decode_db_payload(task[7]) if task[7] and task[7] != "{}" else {},
                 }
         return formatted_details
 
     def get_worker_scheduled_task(self, worker_id: int) -> dict[str, Any]:
         """Get the latest scheduled task for a worker"""
         query = """
-            SELECT task_id, task_type, run_id, chunk_id, config_options
+            SELECT task_id, task_type, run_id, chunk_id, multi_worker_details, config_options
             FROM worker_task
             WHERE worker_id = ? AND status = ?
             ORDER BY task_id DESC
@@ -649,14 +653,15 @@ class RfDb:
 
         if task_details:
             task_details = task_details[0]
+            multi_worker_details = json.loads(task_details[4]) if task_details[4] and task_details[4] != "{}" else {}
+            config_options = decode_db_payload(task_details[5]) if task_details[5] and task_details[5] != "{}" else {}
             formatted_details = {
                 "task_id": task_details[0],
                 "task_type": WorkerTask(task_details[1]),
                 "run_id": task_details[2],
                 "chunk_id": task_details[3],
-                "config_options": decode_db_payload(task_details[4])
-                if task_details[4] and task_details[4] != "{}"
-                else {},
+                "multi_worker_details": multi_worker_details,
+                "config_options": config_options,
             }
             return formatted_details
         return {}
