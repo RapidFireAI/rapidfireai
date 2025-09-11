@@ -15,6 +15,7 @@ FRONTEND_HOST=0.0.0.0
 API_PORT=8080
 API_HOST=127.0.0.1
 
+RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
 # Directory paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -221,12 +222,12 @@ start_mlflow() {
         setsid mlflow server \
             --host $MLFLOW_HOST \
             --port $MLFLOW_PORT \
-            --backend-store-uri sqlite:///mlflow.db > /dev/null 2>&1 &
+            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > /dev/null 2>&1 &
     else
         nohup mlflow server \
             --host $MLFLOW_HOST \
             --port $MLFLOW_PORT \
-            --backend-store-uri sqlite:///mlflow.db > /dev/null 2>&1 &
+            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > /dev/null 2>&1 &
     fi
     
     local mlflow_pid=$!
