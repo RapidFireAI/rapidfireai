@@ -11,9 +11,6 @@ SHM_MIN_FREE_SPACE = 1.0
 LOG_FILENAME = "rapidfire.log"
 TRAINING_LOG_FILENAME = "training.log"
 
-# Scheduler Constants
-NUM_MONTE_CARLO_SIMULATIONS = 1000
-
 
 class LogType(Enum):
     """Enum class for log types"""

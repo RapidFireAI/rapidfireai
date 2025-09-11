@@ -5,7 +5,8 @@ This module contains the Experiment class which manages the entire experiment li
 import multiprocessing as mp
 import os
 import traceback
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 from torch.utils.data import Dataset
@@ -82,11 +83,14 @@ class Experiment:
         eval_dataset: Dataset,
         num_chunks: int,
         seed: int = 42,
+        monte_carlo_simulations: int = 1000,
     ) -> None:
         """Run the fit"""
         try:
             controller = Controller(self.experiment_id, self.experiment_name)
-            controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed)
+            controller.run_fit(
+                param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, monte_carlo_simulations
+            )
         except Exception as e:
             if hasattr(self, "logger"):
                 self.logger.opt(exception=True).error(f"Error running fit: {e}")
