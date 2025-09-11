@@ -283,13 +283,16 @@ class RfDb:
         ended_by: RunEndedBy | None = None,
         warm_started_from: int | None = None,
         cloned_from: int | None = None,
+        estimated_runtime: float = 0.0,
+        required_workers: int = 0,
     ) -> int:
         """Create a new run"""
         query = """
             INSERT INTO runs (status, mlflow_run_id, flattened_config, config_leaf,
             completed_steps, total_steps, num_chunks_visited_curr_epoch,
-            num_epochs_completed, chunk_offset, error, source, ended_by, warm_started_from, cloned_from)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            num_epochs_completed, chunk_offset, error, source, ended_by, warm_started_from, cloned_from,
+            estimated_runtime, required_workers)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         self.db.execute(
             query,
@@ -308,6 +311,8 @@ class RfDb:
                 ended_by.value if ended_by else "",
                 warm_started_from,
                 cloned_from,
+                estimated_runtime,
+                required_workers,
             ),
             commit=True,
         )
@@ -333,6 +338,8 @@ class RfDb:
         ended_by: RunEndedBy | None = None,
         warm_started_from: int | None = None,
         cloned_from: int | None = None,
+        estimated_runtime: float | None = None,
+        required_workers: int | None = None,
     ) -> None:
         """Set the details of an existing run"""
         # Initialize a dictionary to hold the column-value pairs
@@ -351,6 +358,8 @@ class RfDb:
             "ended_by": ended_by.value if ended_by else None,
             "warm_started_from": warm_started_from,
             "cloned_from": cloned_from,
+            "estimated_runtime": estimated_runtime,
+            "required_workers": required_workers,
         }
 
         # Filter out None values
@@ -378,7 +387,7 @@ class RfDb:
         query = """
             SELECT status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
-            warm_started_from, cloned_from
+            warm_started_from, cloned_from, estimated_runtime, required_workers
             FROM runs
             WHERE run_id = ?
         """
@@ -401,6 +410,8 @@ class RfDb:
                 "ended_by": RunEndedBy(run_details[11]) if run_details[11] else None,
                 "warm_started_from": run_details[12],
                 "cloned_from": run_details[13],
+                "estimated_runtime": run_details[14],
+                "required_workers": run_details[15],
             }
             return formatted_details
         raise DBException("No run found")
@@ -415,7 +426,7 @@ class RfDb:
         query = f"""
             SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
-            warm_started_from, cloned_from
+            warm_started_from, cloned_from, estimated_runtime, required_workers
             FROM runs
             WHERE status IN ({placeholders})
         """
@@ -440,6 +451,8 @@ class RfDb:
                     "ended_by": RunEndedBy(run[12]) if run[12] else None,
                     "warm_started_from": run[13],
                     "cloned_from": run[14],
+                    "estimated_runtime": run[15],
+                    "required_workers": run[16],
                 }
         return formatted_details
 
@@ -448,7 +461,7 @@ class RfDb:
         query = """
             SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
-            warm_started_from, cloned_from
+            warm_started_from, cloned_from, estimated_runtime, required_workers
             FROM runs
         """
         run_details = self.db.execute(query, fetch=True)
@@ -471,6 +484,8 @@ class RfDb:
                     "ended_by": RunEndedBy(run[12]) if run[12] else None,
                     "warm_started_from": run[13],
                     "cloned_from": run[14],
+                    "estimated_runtime": run[15],
+                    "required_workers": run[16],
                 }
         return formatted_details
 

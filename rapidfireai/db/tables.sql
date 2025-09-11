@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS runs (
     source TEXT DEFAULT '',
     ended_by TEXT DEFAULT '',
     warm_started_from INTEGER DEFAULT NULL,
-    cloned_from INTEGER DEFAULT NULL
+    cloned_from INTEGER DEFAULT NULL,
+    estimated_runtime REAL DEFAULT 0.0,
+    required_workers INTEGER DEFAULT 0
 );
 
 -- Interactive Control table
