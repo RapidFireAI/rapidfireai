@@ -12,12 +12,12 @@ services:
       - ./db:/root/db
       - ./logs:/app/logs
     environment:
-      - MLFLOW_PORT=5002
-      - MLFLOW_HOST=0.0.0.0
-      - FRONTEND_PORT=3000
-      - FRONTEND_HOST=0.0.0.0
-      - API_PORT=8080
-      - API_HOST=0.0.0.0
+      - RF_MLFLOW_PORT=5002
+      - RF_MLFLOW_HOST=0.0.0.0
+      - RF_FRONTEND_PORT=3000
+      - RF_FRONTEND_HOST=0.0.0.0
+      - RF_API_PORT=8080
+      - RF_API_HOST=0.0.0.0
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5002 && curl -f http://localhost:3000"]
