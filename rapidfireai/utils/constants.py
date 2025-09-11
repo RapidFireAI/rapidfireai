@@ -12,9 +12,6 @@ USE_SHARED_MEMORY = True
 LOG_FILENAME = "rapidfire.log"
 TRAINING_LOG_FILENAME = "training.log"
 
-# Scheduler Constants
-NUM_MONTE_CARLO_SIMULATIONS = 1000
-
 
 class LogType(Enum):
     """Enum class for log types"""

@@ -3,8 +3,6 @@
 import copy
 import random
 
-from rapidfireai.utils.constants import NUM_MONTE_CARLO_SIMULATIONS
-
 
 class SchedulerState:
     """A lightweight state for simulation that can be easily copied and modified."""
@@ -30,7 +28,7 @@ class SchedulerState:
 class Scheduler:
     """This class is responsible for scheduling runs on to workers to train on a chunk"""
 
-    def __init__(self, runs_info: list[dict], num_workers: int, num_chunks: int, num_simulations: int = 100) -> None:
+    def __init__(self, runs_info: list[dict], num_workers: int, num_chunks: int, num_simulations: int = 1000) -> None:
         self.n_workers: int = num_workers
         self.n_chunks: int = num_chunks
         self.num_simulations: int = num_simulations
@@ -175,10 +173,9 @@ class Scheduler:
         # Work with a copy - simulation DOES care about time
         sim_state = start_state.copy()
         schedule_sequence = []
-        max_iterations = NUM_MONTE_CARLO_SIMULATIONS
 
         iteration = 0
-        while iteration < max_iterations:
+        while iteration < self.num_simulations:
             iteration += 1
 
             # Check termination
