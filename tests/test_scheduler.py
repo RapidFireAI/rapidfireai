@@ -17,9 +17,9 @@ class TestSchedulerInitialization:
     def test_basic_initialization(self):
         """Test basic scheduler initialization with runs_info format"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0, "start_chunk_id": 0},
-            {"run_id": 2, "req_workers": 2, "sampled_runtime": 15.0, "start_chunk_id": 0},
-            {"run_id": 3, "req_workers": 1, "sampled_runtime": 8.0, "start_chunk_id": 0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0, "start_chunk_id": 0},
+            {"run_id": 2, "req_workers": 2, "estimated_runtime": 15.0, "start_chunk_id": 0},
+            {"run_id": 3, "req_workers": 1, "estimated_runtime": 8.0, "start_chunk_id": 0},
         ]
 
         scheduler = Scheduler(runs_info, num_workers=4, num_chunks=10, num_simulations=50)
@@ -34,9 +34,9 @@ class TestSchedulerInitialization:
         assert scheduler.run_req_workers[1] == 1
         assert scheduler.run_req_workers[2] == 2
         assert scheduler.run_req_workers[3] == 1
-        assert scheduler.run_sampled_runtime[1] == 10.0
-        assert scheduler.run_sampled_runtime[2] == 15.0
-        assert scheduler.run_sampled_runtime[3] == 8.0
+        assert scheduler.run_estimated_runtime[1] == 10.0
+        assert scheduler.run_estimated_runtime[2] == 15.0
+        assert scheduler.run_estimated_runtime[3] == 8.0
 
     def test_initialization_with_defaults(self):
         """Test initialization with default values"""
@@ -45,7 +45,7 @@ class TestSchedulerInitialization:
 
         assert scheduler.num_simulations == 100  # Default value
         assert scheduler.run_req_workers[1] == 1  # Default value
-        assert scheduler.run_sampled_runtime[1] == 1.0  # Default value
+        assert scheduler.run_estimated_runtime[1] == 1.0  # Default value
         assert scheduler.run_start_chunk_id[1] == 0  # Default value
 
     def test_initialization_empty_runs(self):
@@ -82,14 +82,14 @@ class TestRunManagement:
         """Test adding a new run to the scheduler"""
         scheduler = Scheduler([], num_workers=2, num_chunks=5)
 
-        run_info = {"run_id": 1, "req_workers": 2, "sampled_runtime": 12.0, "start_chunk_id": 0}
+        run_info = {"run_id": 1, "req_workers": 2, "estimated_runtime": 12.0, "start_chunk_id": 0}
 
         scheduler.add_run(run_info, run_visited_num_chunks=0)
 
         assert 1 in scheduler.run_ids
         assert scheduler.n_runs == 1
         assert scheduler.run_req_workers[1] == 2
-        assert scheduler.run_sampled_runtime[1] == 12.0
+        assert scheduler.run_estimated_runtime[1] == 12.0
         assert scheduler.state.run_visited_num_chunks[1] == 0
         assert len(scheduler.state.run_assigned_workers[1]) == 0
 
@@ -97,31 +97,31 @@ class TestRunManagement:
         """Test adding a run with existing progress"""
         scheduler = Scheduler([], num_workers=2, num_chunks=10)
 
-        run_info = {"run_id": 1, "req_workers": 1, "sampled_runtime": 5.0}
+        run_info = {"run_id": 1, "req_workers": 1, "estimated_runtime": 5.0}
         scheduler.add_run(run_info, run_visited_num_chunks=3)
 
         assert scheduler.state.run_visited_num_chunks[1] == 3
 
     def test_add_existing_run(self):
         """Test adding a run that already exists"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 5.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 5.0}]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=5)
 
         # Add same run with different parameters
-        run_info = {"run_id": 1, "req_workers": 2, "sampled_runtime": 8.0}
+        run_info = {"run_id": 1, "req_workers": 2, "estimated_runtime": 8.0}
         scheduler.add_run(run_info, run_visited_num_chunks=2)
 
         # Should update parameters but not add duplicate
         assert scheduler.n_runs == 1
         assert scheduler.run_req_workers[1] == 2
-        assert scheduler.run_sampled_runtime[1] == 8.0
+        assert scheduler.run_estimated_runtime[1] == 8.0
         assert scheduler.state.run_visited_num_chunks[1] == 2
 
     def test_remove_run(self):
         """Test removing a run from the scheduler"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 5.0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 8.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 5.0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 8.0},
         ]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=5)
 
@@ -136,7 +136,7 @@ class TestRunManagement:
         assert scheduler.n_runs == 1
         assert 1 not in scheduler.state.run_visited_num_chunks
         assert 1 not in scheduler.run_req_workers
-        assert 1 not in scheduler.run_sampled_runtime
+        assert 1 not in scheduler.run_estimated_runtime
         assert 1 not in scheduler.state.run_assigned_workers
 
     def test_remove_nonexistent_run(self):
@@ -149,7 +149,7 @@ class TestRunManagement:
 
     def test_reset_run(self):
         """Test resetting a run to start from beginning"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 5.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 5.0}]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=5)
 
         # Set some progress and assign workers
@@ -179,7 +179,7 @@ class TestTaskCompletion:
 
     def test_set_completed_task(self):
         """Test marking a task as completed"""
-        runs_info = [{"run_id": 1, "req_workers": 2, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 2, "estimated_runtime": 10.0}]
         scheduler = Scheduler(runs_info, num_workers=3, num_chunks=5)
 
         # Assign workers to the run
@@ -214,8 +214,8 @@ class TestScheduling:
     def test_schedule_basic(self):
         """Test basic scheduling with available workers and runs"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 8.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 8.0},
         ]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=5, num_simulations=10)
 
@@ -240,7 +240,7 @@ class TestScheduling:
 
     def test_schedule_all_workers_busy(self):
         """Test scheduling when all workers are busy"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0}]
         scheduler = Scheduler(runs_info, num_workers=1, num_chunks=5)
 
         # Make all workers busy
@@ -255,7 +255,7 @@ class TestScheduling:
 
     def test_schedule_all_runs_completed(self):
         """Test scheduling when all runs have completed all chunks"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0}]
         scheduler = Scheduler(runs_info, num_workers=1, num_chunks=2)
 
         # Mark run as completed
@@ -270,7 +270,7 @@ class TestScheduling:
 
     def test_schedule_no_schedulable_runs(self):
         """Test scheduling when no runs can be scheduled"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0}]
         scheduler = Scheduler(runs_info, num_workers=1, num_chunks=5)
 
         # Make run busy (assigned workers)
@@ -285,7 +285,7 @@ class TestScheduling:
 
     def test_schedule_multi_worker_run(self):
         """Test scheduling a run that requires multiple workers"""
-        runs_info = [{"run_id": 1, "req_workers": 3, "sampled_runtime": 15.0}]
+        runs_info = [{"run_id": 1, "req_workers": 3, "estimated_runtime": 15.0}]
         scheduler = Scheduler(runs_info, num_workers=4, num_chunks=5, num_simulations=10)
 
         with patch.object(scheduler, "_simulate_random_schedule") as mock_sim:
@@ -308,7 +308,7 @@ class TestScheduling:
     def test_insufficient_workers_validation(self):
         """Test that ValueError is raised when runs require more workers than available"""
         # Test in initialization
-        runs_info = [{"run_id": 1, "req_workers": 3, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 3, "estimated_runtime": 10.0}]
 
         with pytest.raises(ValueError, match="Run 1 requires 3 workers but only 2 workers are available"):
             Scheduler(runs_info, num_workers=2, num_chunks=5)
@@ -317,11 +317,11 @@ class TestScheduling:
         scheduler = Scheduler([], num_workers=2, num_chunks=5)
 
         with pytest.raises(ValueError, match="Run 1 requires 3 workers but only 2 workers are available"):
-            scheduler.add_run({"run_id": 1, "req_workers": 3, "sampled_runtime": 10.0})
+            scheduler.add_run({"run_id": 1, "req_workers": 3, "estimated_runtime": 10.0})
 
     def test_schedule_last_chunk_detection(self):
         """Test that is_last_chunk is correctly detected"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0}]
         scheduler = Scheduler(runs_info, num_workers=1, num_chunks=3)
 
         # Set run to be on last chunk
@@ -344,8 +344,8 @@ class TestMonteCarloSimulation:
     def test_simulate_random_schedule_basic(self):
         """Test basic simulation functionality"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 8.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 8.0},
         ]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=2, num_simulations=5)
 
@@ -367,7 +367,7 @@ class TestMonteCarloSimulation:
 
     def test_simulate_random_schedule_with_seed(self):
         """Test that simulation is deterministic with same seed"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0}]
         scheduler = Scheduler(runs_info, num_workers=1, num_chunks=2, num_simulations=5)
 
         # Run simulation twice with same seed
@@ -380,8 +380,8 @@ class TestMonteCarloSimulation:
     def test_simulate_random_schedule_different_seeds(self):
         """Test that different seeds produce different results"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 8.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 8.0},
         ]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=2, num_simulations=5)
 
@@ -397,7 +397,7 @@ class TestMonteCarloSimulation:
 
     def test_simulate_random_schedule_state_preservation(self):
         """Test that simulation doesn't modify the original state"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0}]
         scheduler = Scheduler(runs_info, num_workers=1, num_chunks=2, num_simulations=5)
 
         # Save original state
@@ -444,8 +444,8 @@ class TestHelperMethods:
     def test_get_schedulable_runs(self):
         """Test getting schedulable runs"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 8.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 8.0},
         ]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=5)
 
@@ -461,7 +461,7 @@ class TestHelperMethods:
 
     def test_get_next_chunk_id(self):
         """Test getting next chunk ID for a run"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0, "start_chunk_id": 2}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0, "start_chunk_id": 2}]
         scheduler = Scheduler(runs_info, num_workers=1, num_chunks=5)
 
         # Test with different progress levels
@@ -473,7 +473,7 @@ class TestHelperMethods:
 
     def test_scheduler_state_copy(self):
         """Test SchedulerState copying functionality"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0}]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=5)
 
         # Modify state
@@ -503,8 +503,8 @@ class TestStatusReporting:
     def test_get_status_basic(self):
         """Test basic status reporting"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 2, "req_workers": 2, "sampled_runtime": 15.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 2, "req_workers": 2, "estimated_runtime": 15.0},
         ]
         scheduler = Scheduler(runs_info, num_workers=3, num_chunks=5)
 
@@ -524,8 +524,8 @@ class TestStatusReporting:
     def test_get_status_with_progress(self):
         """Test status reporting with some progress"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 8.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 8.0},
         ]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=5)
 
@@ -549,7 +549,7 @@ class TestEdgeCases:
 
     def test_zero_workers(self):
         """Test scheduler with zero workers raises exception when runs require workers"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0}]
 
         with pytest.raises(ValueError, match="Run 1 requires 1 workers but only 0 workers are available"):
             Scheduler(runs_info, num_workers=0, num_chunks=5)
@@ -563,7 +563,7 @@ class TestEdgeCases:
 
     def test_zero_chunks(self):
         """Test scheduler with zero chunks"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0}]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=0)
 
         result = scheduler.schedule()
@@ -582,7 +582,7 @@ class TestEdgeCases:
 
     def test_negative_runtime(self):
         """Test scheduler with negative runtime"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": -5.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": -5.0}]
         scheduler = Scheduler(runs_info, num_workers=1, num_chunks=5)
 
         # Should not crash, but behavior is undefined
@@ -591,7 +591,7 @@ class TestEdgeCases:
 
     def test_zero_runtime(self):
         """Test scheduler with zero runtime"""
-        runs_info = [{"run_id": 1, "req_workers": 1, "sampled_runtime": 0.0}]
+        runs_info = [{"run_id": 1, "req_workers": 1, "estimated_runtime": 0.0}]
         scheduler = Scheduler(runs_info, num_workers=1, num_chunks=5)
 
         result = scheduler.schedule()
@@ -599,7 +599,7 @@ class TestEdgeCases:
 
     def test_very_large_worker_requirement(self):
         """Test scheduler with worker requirement larger than available workers raises exception"""
-        runs_info = [{"run_id": 1, "req_workers": 100, "sampled_runtime": 10.0}]
+        runs_info = [{"run_id": 1, "req_workers": 100, "estimated_runtime": 10.0}]
 
         with pytest.raises(ValueError, match="Run 1 requires 100 workers but only 2 workers are available"):
             Scheduler(runs_info, num_workers=2, num_chunks=5)
@@ -619,8 +619,8 @@ class TestIntegrationScenarios:
                 {
                     "run_id": i,
                     "req_workers": req_workers,
-                    "sampled_runtime": 5.0 + (i % 3) * 2.0,  # Varying runtimes: 5.0, 7.0, 9.0
-                    "start_chunk_id": i % 4,  # Different starting chunks
+                    "estimated_runtime": 5.0 + (i % 3) * 2.0,  # Varying runtimes: 5.0, 7.0, 9.0
+                    "start_chunk_id": 0,  # i % 4,  # Different starting chunks
                 }
             )
 
@@ -821,9 +821,9 @@ class TestIntegrationScenarios:
     def test_simple_scheduling_without_monte_carlo(self):
         """Test basic scheduling without Monte Carlo simulation to verify core logic"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 8.0},
-            {"run_id": 3, "req_workers": 1, "sampled_runtime": 12.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 8.0},
+            {"run_id": 3, "req_workers": 1, "estimated_runtime": 12.0},
         ]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=3, num_simulations=0)  # Force fallback logic
 
@@ -862,8 +862,8 @@ class TestIntegrationScenarios:
     def test_complete_training_cycle(self):
         """Test a complete training cycle from start to finish"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 15.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 15.0},
         ]
         scheduler = Scheduler(
             runs_info, num_workers=2, num_chunks=2, num_simulations=5
@@ -910,7 +910,7 @@ class TestIntegrationScenarios:
         scheduler = Scheduler([], num_workers=2, num_chunks=5, num_simulations=5)
 
         # Add runs dynamically
-        run1_info = {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0}
+        run1_info = {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0}
         scheduler.add_run(run1_info)
 
         # Schedule and complete first run
@@ -919,7 +919,7 @@ class TestIntegrationScenarios:
         scheduler.set_completed_task(1)
 
         # Add second run
-        run2_info = {"run_id": 2, "req_workers": 1, "sampled_runtime": 8.0}
+        run2_info = {"run_id": 2, "req_workers": 1, "estimated_runtime": 8.0}
         scheduler.add_run(run2_info)
 
         # Schedule second run
@@ -932,7 +932,7 @@ class TestIntegrationScenarios:
         assert progress == 1
 
         # Add third run
-        run3_info = {"run_id": 3, "req_workers": 1, "sampled_runtime": 12.0}
+        run3_info = {"run_id": 3, "req_workers": 1, "estimated_runtime": 12.0}
         scheduler.add_run(run3_info)
 
         # Schedule third run
@@ -942,9 +942,9 @@ class TestIntegrationScenarios:
     def test_worker_failure_simulation(self):
         """Test handling worker failures by removing runs"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 8.0},
-            {"run_id": 3, "req_workers": 1, "sampled_runtime": 12.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 8.0},
+            {"run_id": 3, "req_workers": 1, "estimated_runtime": 12.0},
         ]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=5, num_simulations=5)
 
@@ -967,9 +967,9 @@ class TestIntegrationScenarios:
     def test_load_balancing_verification(self):
         """Test that the scheduler balances load across runs"""
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 10.0},
-            {"run_id": 3, "req_workers": 1, "sampled_runtime": 10.0},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 10.0},
+            {"run_id": 3, "req_workers": 1, "estimated_runtime": 10.0},
         ]
         scheduler = Scheduler(runs_info, num_workers=1, num_chunks=10, num_simulations=20)
 
@@ -1005,7 +1005,7 @@ class TestIntegrationScenarios:
                 {
                     "run_id": i,
                     "req_workers": req_workers,
-                    "sampled_runtime": 3.0 + (i % 3) * 1.0,  # 3.0, 4.0, 5.0
+                    "estimated_runtime": 3.0 + (i % 3) * 1.0,  # 3.0, 4.0, 5.0
                     "start_chunk_id": 0,
                 }
             )
@@ -1063,12 +1063,12 @@ class TestIntegrationScenarios:
         print("\n=== Mixed Worker Requirements Test ===")
 
         runs_info = [
-            {"run_id": 1, "req_workers": 1, "sampled_runtime": 4.0, "start_chunk_id": 0},
-            {"run_id": 2, "req_workers": 2, "sampled_runtime": 6.0, "start_chunk_id": 1},
-            {"run_id": 3, "req_workers": 3, "sampled_runtime": 8.0, "start_chunk_id": 2},
-            {"run_id": 4, "req_workers": 1, "sampled_runtime": 3.0, "start_chunk_id": 0},
-            {"run_id": 5, "req_workers": 2, "sampled_runtime": 5.0, "start_chunk_id": 1},
-            {"run_id": 6, "req_workers": 1, "sampled_runtime": 4.0, "start_chunk_id": 2},
+            {"run_id": 1, "req_workers": 1, "estimated_runtime": 4.0, "start_chunk_id": 0},
+            {"run_id": 2, "req_workers": 2, "estimated_runtime": 6.0, "start_chunk_id": 1},
+            {"run_id": 3, "req_workers": 3, "estimated_runtime": 8.0, "start_chunk_id": 2},
+            {"run_id": 4, "req_workers": 1, "estimated_runtime": 3.0, "start_chunk_id": 0},
+            {"run_id": 5, "req_workers": 2, "estimated_runtime": 5.0, "start_chunk_id": 1},
+            {"run_id": 6, "req_workers": 1, "estimated_runtime": 4.0, "start_chunk_id": 2},
         ]
 
         scheduler = Scheduler(runs_info, num_workers=4, num_chunks=4, num_simulations=20)
@@ -1139,7 +1139,7 @@ class TestIntegrationScenarios:
                 {
                     "run_id": i,
                     "req_workers": req_workers,
-                    "sampled_runtime": 2.0 + (i % 4) * 0.5,  # 2.0, 2.5, 3.0, 3.5
+                    "estimated_runtime": 2.0 + (i % 4) * 0.5,  # 2.0, 2.5, 3.0, 3.5
                     "start_chunk_id": i % 3,
                 }
             )
@@ -1202,9 +1202,9 @@ class TestIntegrationScenarios:
 
         # Test case where total worker requirements exactly match available workers
         runs_info = [
-            {"run_id": 1, "req_workers": 2, "sampled_runtime": 5.0, "start_chunk_id": 0},
-            {"run_id": 2, "req_workers": 1, "sampled_runtime": 3.0, "start_chunk_id": 0},
-            {"run_id": 3, "req_workers": 1, "sampled_runtime": 4.0, "start_chunk_id": 0},
+            {"run_id": 1, "req_workers": 2, "estimated_runtime": 5.0, "start_chunk_id": 0},
+            {"run_id": 2, "req_workers": 1, "estimated_runtime": 3.0, "start_chunk_id": 0},
+            {"run_id": 3, "req_workers": 1, "estimated_runtime": 4.0, "start_chunk_id": 0},
         ]
 
         scheduler = Scheduler(runs_info, num_workers=4, num_chunks=3, num_simulations=10)
