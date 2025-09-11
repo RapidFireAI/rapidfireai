@@ -45,6 +45,7 @@ import RightSlidingDrawer from '../../../../../rapidfire-ui/components/RightSlid
 import TerminalLogViewer from '../../../TerminalLogViewer';
 import { useExperimentLogs, useExperimentICLogs } from '../../../../hooks/useExperimentLogs';
 import { useDesignSystemTheme } from '@databricks/design-system';
+import { useUpdateExperimentViewUIState } from '../../contexts/ExperimentPageUIStateContext';
 
 export interface ExperimentViewRunsOwnProps {
   isLoading: boolean;
@@ -83,6 +84,7 @@ const CHARTS_MIN_WIDTH = 350;
 export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) => {
   const [compareRunsMode] = useExperimentPageViewMode();
   const { theme } = useDesignSystemTheme();
+  const updateUIState = useUpdateExperimentViewUIState();
   
   const {
     experiments,
@@ -264,10 +266,17 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     setIsDrawerOpen(true);
   }, []);
 
-  const handleHideRun = useCallback((runUuid: string) => {
-    // This will be handled by the parent component or Redux state
-    console.log('Hide run:', runUuid);
-  }, []);
+   // Function to hide a run
+   const handleHideRun = (runUuid: string) => {
+    updateUIState((existingState: ExperimentPageUIState) => ({
+      ...existingState,
+      runsHidden: !existingState.runsHidden.includes(runUuid)
+        ? [...existingState.runsHidden, runUuid]
+        : existingState.runsHidden.filter((r) => r !== runUuid),
+    }));
+    // Optionally refresh the runs list
+    refreshRuns?.();
+  };
 
   // Function to close the drawer
   const handleCloseDrawer = useCallback(() => {
