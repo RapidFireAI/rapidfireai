@@ -10,7 +10,6 @@ SHM_MIN_FREE_SPACE = 1.0
 LOG_FILENAME = "rapidfire.log"
 TRAINING_LOG_FILENAME = "training.log"
 
-
 class LogType(Enum):
     """Enum class for log types"""
 
@@ -33,7 +32,7 @@ class DBConfig:
     # Use user's home directory for database path
     import os
 
-    DB_PATH: str = os.path.expanduser("~/db/rapidfire.db")
+    DB_PATH: str = os.path.join(os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~","db"))), "rapidfire.db")
 
     # Connection settings
     CONNECTION_TIMEOUT: float = 30.0
