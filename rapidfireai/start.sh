@@ -7,13 +7,13 @@
 set -e  # Exit on any error
 
 # Configuration
-MLFLOW_PORT=5002
-MLFLOW_HOST=127.0.0.1
-FRONTEND_PORT=3000
-FRONTEND_HOST=0.0.0.0
+RF_MLFLOW_PORT=${RF_MLFLOW_PORT:=5002}
+RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=127.0.0.1}
+RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=3000}
+RF_FRONTEND_HOST=${RF_FRONTEND_HOST:=0.0.0.0}
 # API server configuration - these should match DispatcherConfig in constants.py
-API_PORT=8080
-API_HOST=127.0.0.1
+RF_API_PORT=${RF_API_PORT:=8080}
+RF_API_HOST=${RF_API_HOST:=127.0.0.1}
 
 RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
 
@@ -93,7 +93,7 @@ cleanup() {
     print_warning "Shutting down services..."
 
     # Kill processes by port (more reliable for MLflow)
-    for port in $MLFLOW_PORT $FRONTEND_PORT $API_PORT; do
+    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT; do
         local pids=$(lsof -ti :$port 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
             print_status "Killing processes on port $port"
@@ -131,7 +131,7 @@ cleanup() {
     pkill -f "python.*server.py" 2>/dev/null || true
 
     # Additional cleanup for any remaining processes on our ports
-    for port in $MLFLOW_PORT $FRONTEND_PORT $API_PORT; do
+    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT; do
         local remaining_pids=$(lsof -ti :$port 2>/dev/null || true)
         if [[ -n "$remaining_pids" ]]; then
             print_status "Force killing remaining processes on port $port"
@@ -231,7 +231,7 @@ start_mlflow() {
     print_status "Making Database directory $RF_DB_PATH..."
     mkdir -p "$RF_DB_PATH"
 
-    if ! check_port $MLFLOW_PORT "MLflow server"; then
+    if ! check_port $RF_MLFLOW_PORT "MLflow server"; then
         return 1
     fi
 
@@ -241,13 +241,13 @@ start_mlflow() {
     # Use setsid on Linux, nohup on macOS
     if command -v setsid &> /dev/null; then
         setsid mlflow server \
-            --host $MLFLOW_HOST \
-            --port $MLFLOW_PORT \
+            --host $RF_MLFLOW_HOST \
+            --port $RF_MLFLOW_PORT \
             --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > "$SCRIPT_DIR/mlflow.log" 2>&1 &
     else
         nohup mlflow server \
-            --host $MLFLOW_HOST \
-            --port $MLFLOW_PORT \
+            --host $RF_MLFLOW_HOST \
+            --port $RF_MLFLOW_PORT \
             --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > "$SCRIPT_DIR/mlflow.log" 2>&1 &
     fi
 
@@ -255,7 +255,7 @@ start_mlflow() {
     echo "$mlflow_pid MLflow" >> "$RF_PID_FILE"
 
     # Wait for MLflow to be ready
-    if wait_for_service $MLFLOW_HOST $MLFLOW_PORT "MLflow server"; then
+    if wait_for_service $RF_MLFLOW_HOST $RF_MLFLOW_PORT "MLflow server"; then
         print_success "MLflow server started (PID: $mlflow_pid)"
         return 0
     else
@@ -327,9 +327,9 @@ start_api_server() {
     echo "$api_pid API_Server" >> "$RF_PID_FILE"
 
     # Wait for API server to be ready - use longer timeout for API server
-    if wait_for_service $API_HOST $API_PORT "API server" 60; then
+    if wait_for_service $RF_API_HOST $RF_API_PORT "API server" 60; then
         print_success "API server started (PID: $api_pid)"
-        print_status "API server available at: http://$API_HOST:$API_PORT"
+        print_status "API server available at: http://$RF_API_HOST:$RF_API_PORT"
         return 0
     else
         print_error "API server failed to start. Checking for errors..."
@@ -370,7 +370,7 @@ start_api_server() {
 start_frontend() {
     print_status "Starting frontend tracking server..."
 
-    if ! check_port $FRONTEND_PORT "Frontend server"; then
+    if ! check_port $RF_FRONTEND_PORT "Frontend server"; then
         return 1
     fi
 
@@ -415,9 +415,9 @@ start_frontend() {
 
     # Use setsid on Linux, nohup on macOS for better process management
     if command -v setsid &> /dev/null; then
-        PORT=$FRONTEND_PORT setsid ${RF_PYTHON_EXECUTABLE} server.py > "$SCRIPT_DIR/frontend.log" 2>&1 &
+        PORT=$RF_FRONTEND_PORT setsid ${RF_PYTHON_EXECUTABLE} server.py > "$SCRIPT_DIR/frontend.log" 2>&1 &
     else
-        PORT=$FRONTEND_PORT nohup ${RF_PYTHON_EXECUTABLE} server.py > "$SCRIPT_DIR/frontend.log" 2>&1 &
+        PORT=$RF_FRONTEND_PORT nohup ${RF_PYTHON_EXECUTABLE} server.py > "$SCRIPT_DIR/frontend.log" 2>&1 &
     fi
 
     local frontend_pid=$!
@@ -437,8 +437,8 @@ start_frontend() {
     local check_hosts=("localhost" "127.0.0.1")
 
     for host in "${check_hosts[@]}"; do
-        if wait_for_service $host $FRONTEND_PORT "Frontend server" 15; then
-            print_success "Frontend Flask server started (PID: $frontend_pid) on $host:$FRONTEND_PORT"
+        if wait_for_service $host $RF_FRONTEND_PORT "Frontend server" 15; then
+            print_success "Frontend Flask server started (PID: $frontend_pid) on $host:$RF_FRONTEND_PORT"
             frontend_ready=true
             break
         fi
@@ -500,7 +500,7 @@ show_status() {
 
     echo ""
     print_success "🚀 RapidFire Frontend is ready!"
-    print_status "👉 Open your browser and navigate to: http://$FRONTEND_HOST:$FRONTEND_PORT"
+    print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
     print_status "   (Click the link above or copy/paste the URL into your browser)"
 
     # Show log file status
