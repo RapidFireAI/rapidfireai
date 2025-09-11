@@ -87,6 +87,7 @@ class RFModelConfig:
     """Model configuration for AutoML training."""
 
     model_name: str = None
+    num_gpus: int | None = None
     tokenizer: str | None = None
     tokenizer_kwargs: dict[str, Any] | None = None
     formatting_func: Callable | List | None = None
