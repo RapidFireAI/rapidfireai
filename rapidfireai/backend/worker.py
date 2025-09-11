@@ -4,6 +4,7 @@ import gc
 import os
 import time
 import traceback
+from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from logging import Logger
@@ -11,7 +12,7 @@ from multiprocessing import Process
 from multiprocessing.managers import DictProxy
 from multiprocessing.synchronize import Event as EventType
 from multiprocessing.synchronize import Lock
-from typing import Any, Callable
+from typing import Any
 
 import torch
 
@@ -88,6 +89,7 @@ class Worker:
         self,
         run_id: int,
         chunk_id: int,
+        multi_worker_details: dict[str, Any],
         create_model_fn: Callable,
     ) -> None:
         """Run fit"""
@@ -105,7 +107,8 @@ class Worker:
 
         # fetch train dataset chunk
         train_dataset_chunk = self.train_dataset_chunks.get_chunk(chunk_id)
-        # create worker config
+
+        # create trainer config
         trainer_config = TrainerConfig(
             worker_id=self.worker_id,
             run_id=run_id,
@@ -113,6 +116,9 @@ class Worker:
             config_leaf=config_leaf,
             total_steps=run_details["total_steps"],
             completed_steps=run_details["completed_steps"],
+            local_rank=multi_worker_details["local_rank"],
+            world_size=multi_worker_details["world_size"],
+            world_worker_ids=multi_worker_details["worker_ids"],
             create_model_fn=create_model_fn,
             train_dataset=train_dataset_chunk,
             eval_dataset=self.eval_dataset,
@@ -121,42 +127,46 @@ class Worker:
         )
         completed_steps = self.db.get_completed_steps(run_id)
 
+        # set reward funcs if warm started from GRPO
         use_shared_memory = True
-        parent_run_details = None
-        if trainer_config.warm_started_from is not None:
+        if trainer_config.warm_started_from is not None and trainer_config.config_leaf.get("trainer_type") == "GRPO":
             parent_run_details = self.db.get_run(trainer_config.warm_started_from)
-            if trainer_config.config_leaf.get("trainer_type") == "GRPO":
-                config_leaf["reward_funcs"] = parent_run_details["config_leaf"].get("reward_funcs")
-                self.db.set_run_details(run_id, config_leaf=config_leaf)
+            config_leaf["reward_funcs"] = parent_run_details["config_leaf"].get("reward_funcs")
+            self.db.set_run_details(run_id, config_leaf=config_leaf)
 
+        # create trainer instance and write logs to user logger
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             trainer_instance, base_model_name = create_trainer_instance(
                 trainer_config, self.shm_manager, use_shared_memory, self.mlflow_manager, chunk_id
             )
-
-        # if first time, save checkpoint to disk
-        if completed_steps == 0 and not use_shared_memory:
-            save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
-
-        # write logs to user logger
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
         if stderr_buffer.getvalue():
             self.training_logger.error(stderr_buffer.getvalue())
 
-        self.logger.debug(f"Beginning training for run {run_id} on chunk {chunk_id}")
+        # if first time, save checkpoint to disk
+        if completed_steps == 0 and not use_shared_memory:
+            save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
 
         # update base model name in db for run
         trainer_config.config_leaf["model_name"] = trainer_instance.model.config._name_or_path
         self.db.set_run_details(run_id, config_leaf=trainer_config.config_leaf)
 
-        # Train the model
+        # train the model and time it
+        self.logger.debug(f"Beginning training for run {run_id} on chunk {chunk_id}")
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
+        start_time = time.time()
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             trainer_instance.train()
+        end_time = time.time()
+
+        # update estimated runtime in database for scheduler optimization
+        if trainer_config.local_rank == 0:
+            runtime = end_time - start_time
+        self.db.set_estimated_runtime(run_id, runtime)
 
         # write logs to user logger
         if stdout_buffer.getvalue():
@@ -168,10 +178,9 @@ class Worker:
         new_completed_steps = completed_steps + trainer_instance.state.global_step
         self.db.set_completed_steps(run_id, new_completed_steps)
 
-        save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
-
-        # Save checkpoints to shared memory
+        # save checkpoints
         if use_shared_memory:
+            # save checkpoints to shared memory
             save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager)
             if not trainer_config.config_leaf.get("peft_params"):
                 save_model_to_shared_memory(
@@ -183,13 +192,16 @@ class Worker:
                     trainer_config.run_id,
                 )
             self.logger.debug(f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}")
+            save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
             if save_strategy == "chunk" or (save_strategy == "epoch" and chunk_id == self.num_chunks - 1):
                 save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps)
                 self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
-        else:  # save checkpoint to disk when not using shared memory
+        else:
+            # save checkpoint to disk when not using shared memory
             save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps)
             self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
 
+        # save final checkpoint
         if chunk_id == self.num_chunks - 1 and new_completed_steps >= trainer_config.total_steps:
             save_checkpoint_to_disk(trainer_instance, trainer_config, last=True)
             self.logger.debug(f"Saved final checkpoint for run {run_id} on chunk {chunk_id}")
@@ -213,7 +225,7 @@ class Worker:
         self.logger.debug(f"Completed training for run {run_id} on chunk {chunk_id}")
 
     def serve_forever(self) -> None:
-        """This runs in the worker process"""
+        """The main loop for the worker"""
 
         prev_task_id: int | None = None
         while not (self.shutdown_event and self.shutdown_event.is_set()):
@@ -229,6 +241,7 @@ class Worker:
                 task_type = scheduled_task["task_type"]
                 run_id = scheduled_task["run_id"]
                 chunk_id = scheduled_task["chunk_id"]
+                multi_worker_details = scheduled_task["multi_worker_details"]
                 create_model_fn = scheduled_task["config_options"]["create_model_fn"]
                 self.logger.debug(f"Received task {task_type} for run {run_id}")
 
@@ -237,7 +250,7 @@ class Worker:
 
                     # run train and validation function
                     try:
-                        self.run_fit(run_id, chunk_id, create_model_fn)
+                        self.run_fit(run_id, chunk_id, multi_worker_details, create_model_fn)
                         self.db.set_worker_task_status(self.worker_id, TaskStatus.COMPLETED)
                     except Exception as e:
                         self.logger.opt(exception=True).error(

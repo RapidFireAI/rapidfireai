@@ -1,12 +1,14 @@
 """This module contains the Controller class which is responsible for orchestrating the RapidFire lifecycle."""
 
+import contextlib
 import math
 import random
 import time
+from collections.abc import Callable
 from logging import Logger
 from pathlib import Path
 from pprint import pformat
-from typing import Any, Callable
+from typing import Any
 
 import mlflow
 import torch
@@ -42,11 +44,8 @@ class Controller:
         """Initialize the controller."""
         import torch.multiprocessing as mp
 
-        try:
+        with contextlib.suppress(RuntimeError):
             mp.set_start_method("spawn", force=True)
-        except RuntimeError:
-            # Start method already set
-            pass
 
         self.experiment_id: int = experiment_id
         self.experiment_name: str = experiment_name
@@ -66,6 +65,9 @@ class Controller:
             raise NoGPUsFoundException("No GPUs found while initializing controller.")
         self.logger.debug(f"Found {self.num_workers} workers/GPUs.")
 
+        # set default required workers
+        self.default_req_workers: int = 1
+
         # initialize shared manager and registry, create shared memory manager instance
         self.shm_manager: SharedMemoryManager = SharedMemoryManager(name="controller-shm")
         registry, process_lock = self.shm_manager.get_shm_objects()
@@ -79,7 +81,7 @@ class Controller:
 
         self.logger.debug("Controller initialized")
 
-    def _create_models(
+    def _create_model_entries(
         self,
         param_config: AutoMLAlgorithm | dict[str, Any],
         source: RunSource,
@@ -88,7 +90,7 @@ class Controller:
         num_chunks: int,
         warm_start_info: dict[str, Any] | None = None,
     ) -> list[int]:
-        """Create the models."""
+        """Creates all model-related entries - database values, directories and MLFlow run."""
 
         # get config_leaf from param_config for each run
         config_leafs = get_runs(param_config, seed)
@@ -96,10 +98,22 @@ class Controller:
         # create runs
         runs = {}
         for config_leaf in config_leafs:
+            # get flattened config and total steps
             flattened_config = get_flattened_config_leaf(config_leaf)
-            # print("flattened_config: ",flattened_config)
             total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks)
 
+            # determine estimated runtime and required workers
+            if warm_start_info:
+                # use parent run's estimated runtime and required workers
+                parent_run_details = self.db.get_run(warm_start_info["parent_run_id"])
+                estimated_runtime = parent_run_details["estimated_runtime"]
+                required_workers = parent_run_details["required_workers"]
+            else:
+                # add an initial random estimated runtime
+                estimated_runtime = random.uniform(1.0, 10.0)
+                required_workers = config_leaf.get("num_gpus", self.default_req_workers)
+
+            # create run
             run_id = self.db.create_run(
                 config_leaf=config_leaf,
                 status=RunStatus.NEW,
@@ -108,6 +122,8 @@ class Controller:
                 error="",
                 source=source,
                 ended_by=None,
+                estimated_runtime=estimated_runtime,
+                required_workers=required_workers,
                 start_chunk_id=warm_start_info["start_chunk_id"] if warm_start_info else 0,
                 warm_started_from=warm_start_info["parent_run_id"] if warm_start_info else None,
             )
@@ -177,7 +193,7 @@ class Controller:
         # delete model object from shared memory
         self.shm_manager.delete_model_object(run_id, base_model_name if delete_shared_objects else None)
 
-    def _process_interactive_control(
+    def _execute_interactive_control(
         self,
         run_states: dict[str, Any],
         clone_modify_tasks: list[dict[str, Any]],
@@ -249,7 +265,7 @@ class Controller:
             # create model for the new run
             try:
                 if ic_op == ControllerTask.IC_CLONE_MODIFY:
-                    run_ids = self._create_models(
+                    run_ids = self._create_model_entries(
                         config_leaf,
                         RunSource.INTERACTIVE_CONTROL,
                         seed,
@@ -261,7 +277,7 @@ class Controller:
                         "parent_run_id": parent_run_id,
                         "start_chunk_id": parent_run_details["num_chunks_visited_curr_epoch"],
                     }
-                    run_ids = self._create_models(
+                    run_ids = self._create_model_entries(
                         config_leaf,
                         RunSource.INTERACTIVE_CONTROL,
                         seed,
@@ -402,8 +418,13 @@ class Controller:
         eval_dataset: Dataset,
         num_chunks: int,
         seed: int = 42,
+        num_gpus: int = 1,
+        monte_carlo_simulations: int = 1000,
     ) -> None:
         """Run the fit."""
+
+        # set default required workers
+        self.default_req_workers = num_gpus
 
         # set experiment task to create models
         self.db.set_experiment_current_task(ExperimentTask.CREATE_MODELS)
@@ -429,7 +450,7 @@ class Controller:
         # create models
         try:
             len_train_dataset = len(train_dataset)
-            self._create_models(param_config, RunSource.INITIAL, seed, len_train_dataset, num_chunks=num_chunks)
+            self._create_model_entries(param_config, RunSource.INITIAL, seed, len_train_dataset, num_chunks=num_chunks)
             self.logger.debug("Created models.")
         except Exception as e:
             raise ControllerException(f"Error creating models: {e}") from e
@@ -447,20 +468,27 @@ class Controller:
             raise ControllerException(f"Error creating workers: {e}") from e
 
         # create scheduler
-        run_ids = list(
-            self.db.get_runs_by_status(
-                [
-                    RunStatus.NEW,
-                ]
-            ).keys()
-        )
-        scheduler = Scheduler(run_ids, self.num_workers, num_chunks)
+        runs_info = []
+        run_ids = list(self.db.get_runs_by_status([RunStatus.NEW]).keys())
+        for run_id in run_ids:
+            run_details = self.db.get_run(run_id)
+            runs_info.append(
+                {
+                    "run_id": run_id,
+                    "req_workers": run_details["required_workers"],
+                    "estimated_runtime": run_details["estimated_runtime"],
+                    "start_chunk_id": run_details.get("start_chunk_id", 0),
+                }
+            )
+
+        scheduler = Scheduler(runs_info, self.num_workers, num_chunks, monte_carlo_simulations)
 
         # run fit
         self.logger.info("Starting Training and Validation")
         try:
             all_done = False
             prev_worker_tasks = {}  # Track previous iteration's worker tasks
+            active_runs = {}  # Track runs that are currently training and their workers: {run_id: worker_ids_tuple}
 
             while not all_done:
                 # check for errors
@@ -474,45 +502,51 @@ class Controller:
                 all_worker_tasks = self.db.get_all_worker_tasks()
                 all_run_details = self.db.get_all_runs()
 
-                # Filter and separate fresh completed and failed tasks in a single loop
-                completed_tasks = {}
-                failed_tasks = []
+                # Process completed and failed tasks by run
+                completed_runs = set()
+                failed_runs = set()
+
                 for worker_id, worker_task in all_worker_tasks.items():
                     prev_task = prev_worker_tasks.get(worker_id, {})
-                    current_task_tuple = (worker_task["task_id"], worker_task["status"])
                     prev_task_tuple = (prev_task.get("task_id"), prev_task.get("status"))
+                    current_task_tuple = (worker_task["task_id"], worker_task["status"])
 
                     # skip if task is the same as previous iteration (no change in status) or run is not active
                     if current_task_tuple == prev_task_tuple or worker_task["run_id"] not in scheduler.run_ids:
                         continue
 
-                    if worker_task["status"] == TaskStatus.COMPLETED:
-                        completed_tasks[worker_id] = worker_task
-                    elif worker_task["status"] == TaskStatus.FAILED:
-                        failed_tasks.append(worker_task)
+                    run_id = worker_task["run_id"]
+                    if worker_task["status"] == TaskStatus.COMPLETED and run_id in active_runs:
+                        completed_runs.add(run_id)
+                    elif worker_task["status"] == TaskStatus.FAILED and run_id in active_runs:
+                        failed_runs.add(run_id)
 
                 # Process completed tasks first (before scheduling new ones)
-                for worker_id, worker_task in completed_tasks.items():
-                    run_id = worker_task["run_id"]
+                for run_id in completed_runs:
+                    if run_id not in scheduler.run_ids:
+                        continue
+
                     chunk_id = worker_task["chunk_id"]
                     run_details = all_run_details[run_id]
-                    self.logger.debug(f"Completed task: run {run_id}, chunk {chunk_id} on worker {worker_id}")
+                    self.logger.debug(
+                        f"Completed task: run {run_id}, chunk {chunk_id} on workers {active_runs[run_id]}"
+                    )
                     self.logger.info(
                         f"Run {run_id} completed steps - {run_details['completed_steps']}/{run_details['total_steps']}"
                     )
 
                     # Update scheduler state
-                    scheduler.set_completed_task(worker_id)
+                    scheduler.set_completed_task(run_id)
 
                     # Update database state and local state using scheduler's state as source of truth
-                    new_chunks_visited = scheduler.run_visited_num_chunks[run_id]
-                    if new_chunks_visited == num_chunks:
+                    new_num_chunks_visited = scheduler.state.run_visited_num_chunks[run_id]
+                    if new_num_chunks_visited == num_chunks:
                         num_epochs_completed = run_details["num_epochs_completed"] + 1
                     else:
                         num_epochs_completed = run_details["num_epochs_completed"]
                     self.db.set_run_details(
                         run_id=run_id,
-                        num_chunks_visited_curr_epoch=new_chunks_visited,
+                        num_chunks_visited_curr_epoch=new_num_chunks_visited,
                         num_epochs_completed=num_epochs_completed,
                     )
 
@@ -538,93 +572,119 @@ class Controller:
                             f"steps {run_details['completed_steps']}/{run_details['total_steps']}"
                         )
                     # Check if run has completed only current epoch (hasn't reached total_steps yet)
-                    elif (
-                        new_chunks_visited == num_chunks and run_details["completed_steps"] < run_details["total_steps"]
-                    ):
+                    elif new_num_chunks_visited == num_chunks:
                         scheduler.reset_run(run_id)
                         self.db.set_run_details(run_id=run_id, num_chunks_visited_curr_epoch=0)
-                        self.logger.info(f"Run {run_id} has completed epoch ({new_chunks_visited}/{num_chunks} chunks)")
+                        self.logger.info(
+                            f"Run {run_id} has completed epoch ({new_num_chunks_visited}/{num_chunks} chunks)"
+                        )
+
+                    # Remove from active runs
+                    if run_id in active_runs:
+                        active_runs.pop(run_id)
 
                 # Check for failed runs and update scheduler, local state, shm
-                for worker_task in failed_tasks:
-                    run_id = worker_task["run_id"]
-                    run_error = all_run_details[run_id]["error"]
+                for run_id in failed_runs:
                     if run_id in scheduler.run_ids:
+                        run_error = all_run_details[run_id]["error"]
                         scheduler.remove_run(run_id)
                         self._clear_run_from_shm(run_id)
+
+                        if run_id in active_runs:
+                            active_runs.pop(run_id)
+
                         err_msg = f"Run {run_id} has failed: {run_error}"
                         print(err_msg)
                         self.logger.error(err_msg)
-                    self.logger.debug(f"Removed run {run_id} from scheduler")
+                        self.logger.debug(f"Removed run {run_id} from scheduler")
 
-                # Process interactive control tasks (this fetches latest run states internally)
+                # Process and execute interactive control tasks (this fetches latest run states internally)
                 try:
-                    currently_scheduled_runs = list(scheduler.worker_running_current_run.values())
+                    currently_scheduled_runs = list(active_runs.keys())
                     run_states, clone_modify_tasks = self._process_interm_ic_ops_states(currently_scheduled_runs)
-                    self._process_interactive_control(
+                    self._execute_interactive_control(
                         run_states, clone_modify_tasks, len_train_dataset, seed, num_chunks
                     )
                 except Exception as e:
-                    raise ControllerException(f"Error processing interactive control tasks: {e}") from e
+                    raise ControllerException(f"Error executing interactive control tasks: {e}") from e
 
                 # fetch latest run states again (post IC ops states)
                 all_run_details = self.db.get_all_runs()
 
                 # Update scheduler with active and inactive runs from IC Ops changes
                 for run_id, run_details in all_run_details.items():
-                    # add active runs to scheduler
                     if run_details["status"] in (RunStatus.ONGOING, RunStatus.NEW) and run_id not in scheduler.run_ids:
+                        # add new runs to scheduler
+                        run_info = {
+                            "run_id": run_id,
+                            "req_workers": run_details["required_workers"],
+                            "estimated_runtime": run_details["estimated_runtime"],
+                            "start_chunk_id": run_details["start_chunk_id"],
+                        }
                         chunks_visited = all_run_details[run_id]["num_chunks_visited_curr_epoch"]
-                        start_chunk_id = all_run_details[run_id]["start_chunk_id"]
-                        scheduler.add_run(run_id, chunks_visited, start_chunk_id)
+                        scheduler.add_run(run_info, chunks_visited)
                         self.logger.debug(f"Added run {run_id} to scheduler with {chunks_visited} chunks visited")
-                    # remove inactive runs from scheduler
                     elif (
                         run_details["status"] in (RunStatus.STOPPED, RunStatus.DELETED) and run_id in scheduler.run_ids
                     ):
+                        # remove inactive runs from scheduler
                         scheduler.remove_run(run_id)
+                        if run_id in active_runs:
+                            active_runs.pop(run_id)
                         self.logger.debug(f"Removed run {run_id} from scheduler")
 
-                # Get schedule from scheduler
+                # Get best-first action schedule from scheduler
                 schedule = scheduler.schedule()
                 run_id = schedule["run_id"]
-                worker_id = schedule["worker_id"]
+                worker_ids = schedule["worker_ids"]
                 chunk_id = schedule["chunk_id"]
 
                 # Check termination condition
-                if run_id is None and worker_id is None and chunk_id is None:
+                if run_id is None:
                     self.logger.info("Scheduler indicates all runs have completed all chunks")
                     all_done = True
                     break
 
                 # Check if no schedule possible
-                if run_id == -1 and worker_id == -1 and chunk_id == -1:
+                if run_id == -1:
                     # self.logger.debug("No schedule possible - all workers busy or no available runs")
                     time.sleep(1)
                     continue
 
                 # Execute Schedule
-                # Create worker task
                 # self.logger.debug(f"Scheduler schedule: {schedule}")
+                # update run status to ongoing
                 self.db.set_run_details(run_id=run_id, status=RunStatus.ONGOING)
-                self.db.create_worker_task(
-                    worker_id,
-                    WorkerTask.TRAIN_VAL,
-                    TaskStatus.SCHEDULED,
-                    run_id,
-                    chunk_id,
-                    config_options={"create_model_fn": create_model_fn},
-                )
-                self.logger.debug(f"Scheduled run {run_id} on worker {worker_id} for chunk {chunk_id}")
 
-                # Small delay
-                time.sleep(1)
+                # track this run in active_runs
+                active_runs[run_id] = worker_ids
+
+                # create a worker task for each worker
+                multi_worker_details = {
+                    "world_size": len(worker_ids),
+                    "worker_ids": worker_ids,
+                }
+                for worker_id in worker_ids:
+                    multi_worker_details["local_rank"] = worker_ids.index(worker_id)
+                    self.db.create_worker_task(
+                        worker_id,
+                        WorkerTask.TRAIN_VAL,
+                        TaskStatus.SCHEDULED,
+                        run_id,
+                        chunk_id,
+                        multi_worker_details=multi_worker_details,
+                        config_options={"create_model_fn": create_model_fn},
+                    )
+                self.logger.debug(f"Scheduled run {run_id} on workers {worker_ids} for chunk {chunk_id}")
 
                 # Update prev_worker_tasks for next iteration (only track task_id and status)
                 prev_worker_tasks = {
                     worker_id: {"task_id": worker_task["task_id"], "status": worker_task["status"]}
                     for worker_id, worker_task in all_worker_tasks.items()
                 }
+
+                # Small delay
+                time.sleep(1)
 
             # set experiment task to idle
             self.db.set_experiment_current_task(ExperimentTask.IDLE)
