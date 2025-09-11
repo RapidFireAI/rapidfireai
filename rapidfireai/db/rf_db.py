@@ -519,6 +519,15 @@ class RfDb:
             return completed_steps[0][0]
         raise DBException("No completed steps found")
 
+    def set_estimated_runtime(self, run_id: int, estimated_runtime: float) -> None:
+        """Set the estimated runtime for a run"""
+        query = """
+            UPDATE runs
+            SET estimated_runtime = ?
+            WHERE run_id = ?
+        """
+        self.db.execute(query, (estimated_runtime, run_id), commit=True)
+
     # Interactive Control Table
     def create_ic_ops_task(self, run_id: int, ic_op: ControllerTask, config_leaf: dict[str, Any]) -> int:
         """Create a new interactive control task"""
