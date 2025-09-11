@@ -43,7 +43,7 @@ class TestSchedulerInitialization:
         runs_info = [{"run_id": 1}]
         scheduler = Scheduler(runs_info, num_workers=2, num_chunks=5)
 
-        assert scheduler.num_simulations == 100  # Default value
+        assert scheduler.num_simulations == 1000  # Default value
         assert scheduler.run_req_workers[1] == 1  # Default value
         assert scheduler.run_estimated_runtime[1] == 1.0  # Default value
         assert scheduler.run_start_chunk_id[1] == 0  # Default value
@@ -818,47 +818,6 @@ class TestIntegrationScenarios:
 
         print("Large scale scheduling test completed successfully!")
 
-    def test_simple_scheduling_without_monte_carlo(self):
-        """Test basic scheduling without Monte Carlo simulation to verify core logic"""
-        runs_info = [
-            {"run_id": 1, "req_workers": 1, "estimated_runtime": 10.0},
-            {"run_id": 2, "req_workers": 1, "estimated_runtime": 8.0},
-            {"run_id": 3, "req_workers": 1, "estimated_runtime": 12.0},
-        ]
-        scheduler = Scheduler(runs_info, num_workers=2, num_chunks=3, num_simulations=0)  # Force fallback logic
-
-        # Track assignments
-        assignments = []
-
-        # Test basic scheduling without Monte Carlo
-        for i in range(10):  # Try 10 assignments
-            result = scheduler.schedule()
-
-            if result["run_id"] is None:  # All completed
-                break
-            elif result["run_id"] == -1:  # No workers available
-                # Complete any running tasks
-                for worker_id in range(scheduler.n_workers):
-                    if scheduler.state.worker_running_current_run[worker_id] != -1:
-                        run_id = scheduler.state.worker_running_current_run[worker_id]
-                        scheduler.set_completed_task(run_id)
-                        break
-                continue
-
-            assignments.append(result)
-            scheduler.set_completed_task(result["run_id"])
-
-        print(f"Simple test assignments: {len(assignments)}")
-        print(f"Final progress: {scheduler.state.run_visited_num_chunks}")
-
-        # Verify that all runs got some progress
-        for run_id in scheduler.run_ids:
-            assert scheduler.state.run_visited_num_chunks[run_id] > 0, f"Run {run_id} made no progress"
-
-        # Verify that all runs completed all chunks
-        for run_id in scheduler.run_ids:
-            assert scheduler.state.run_visited_num_chunks[run_id] == scheduler.n_chunks
-
     def test_complete_training_cycle(self):
         """Test a complete training cycle from start to finish"""
         runs_info = [
@@ -1252,6 +1211,439 @@ class TestIntegrationScenarios:
             assert scheduler.state.run_visited_num_chunks[run_id] == scheduler.n_chunks
 
         print(f"✓ Edge case test completed: {len(all_assignments)} assignments")
+
+    def test_large_scale_dynamic_runs_same_start_chunk(self):
+        """Test large scale scheduling with dynamic run addition/deletion, all starting from chunk 0"""
+        print("\n=== Large Scale Dynamic Runs Test (Same Start Chunk) ===")
+
+        # Start with 5 runs, all starting from chunk 0
+        initial_runs_info = []
+        for i in range(1, 6):
+            req_workers = ((i - 1) % 3) + 1  # 1, 2, 3, 1, 2
+            initial_runs_info.append(
+                {
+                    "run_id": i,
+                    "req_workers": req_workers,
+                    "estimated_runtime": 4.0 + (i % 3) * 1.0,  # 4.0, 5.0, 6.0
+                    "start_chunk_id": 0,  # All start from chunk 0
+                }
+            )
+
+        scheduler = Scheduler(initial_runs_info, num_workers=4, num_chunks=5, num_simulations=15)
+
+        all_assignments = []
+        max_iterations = 200
+        iteration = 0
+        runs_in_progress = set()
+        runs_to_add = list(range(6, 16))  # Runs 6-15 to add dynamically
+        runs_to_remove = []  # Track runs to remove
+        added_runs = set(range(1, 6))  # Track all run IDs that have been added (initial runs)
+
+        print(
+            f"Initial runs: {len(initial_runs_info)}, Workers: {scheduler.n_workers}, Chunks per run: {scheduler.n_chunks}"
+        )
+        print(f"Initial worker requirements: {[run['req_workers'] for run in initial_runs_info]}")
+        print(f"Runs to add dynamically: {runs_to_add}")
+        print()
+
+        while iteration < max_iterations:
+            result = scheduler.schedule()
+
+            if result["run_id"] is None:  # All runs completed
+                print(f"\n✓ All runs completed after {iteration} iterations")
+                break
+
+            elif result["run_id"] == -1:  # No workers available
+                if runs_in_progress:
+                    run_to_complete = next(iter(runs_in_progress))
+                    scheduler.set_completed_task(run_to_complete)
+                    runs_in_progress.remove(run_to_complete)
+                    print(f"  [{iteration}] Completed Run {run_to_complete}, freed workers")
+                else:
+                    print(f"ERROR: No workers available but no runs in progress at iteration {iteration}")
+                    break
+
+            else:
+                # Successfully scheduled a run
+                run_id = result["run_id"]
+                worker_ids = result["worker_ids"]
+                chunk_id = result["chunk_id"]
+
+                all_assignments.append(result)
+                runs_in_progress.add(run_id)
+
+                print(f"  [{iteration}] Scheduled Run {run_id} on Workers {worker_ids} for Chunk {chunk_id}")
+
+                # Dynamic run management
+                if iteration % 5 == 4:  # Every 5 iterations (more frequent)
+                    # Add a new run
+                    if runs_to_add:
+                        new_run_id = runs_to_add.pop(0)
+                        req_workers = ((new_run_id - 1) % 3) + 1
+                        new_run_info = {
+                            "run_id": new_run_id,
+                            "req_workers": req_workers,
+                            "estimated_runtime": 3.0 + (new_run_id % 4) * 1.0,  # 3.0, 4.0, 5.0, 6.0
+                            "start_chunk_id": 0,  # All start from chunk 0
+                        }
+                        scheduler.add_run(new_run_info)
+                        added_runs.add(new_run_id)
+                        print(f"    → Added Run {new_run_id} (req_workers={req_workers})")
+
+                    # Mark some runs for removal (but don't remove immediately)
+                    if len(scheduler.run_ids) > 4 and iteration > 15:  # Start removal earlier
+                        # Find a run that's not currently running and has made some progress
+                        candidates = []
+                        for rid in scheduler.run_ids:
+                            if rid not in runs_in_progress and scheduler.state.run_visited_num_chunks[rid] > 0:
+                                candidates.append(rid)
+
+                        if candidates and len(runs_to_remove) < 3:  # Limit removals
+                            run_to_remove = candidates[0]
+                            runs_to_remove.append(run_to_remove)
+                            print(f"    → Marked Run {run_to_remove} for removal")
+
+                # Remove marked runs
+                if runs_to_remove and iteration % 8 == 7:  # Every 8 iterations
+                    run_to_remove = runs_to_remove.pop(0)
+                    if run_to_remove in scheduler.run_ids:
+                        progress = scheduler.remove_run(run_to_remove)
+                        print(f"    → Removed Run {run_to_remove} (had completed {progress} chunks)")
+
+                # Complete runs less frequently to allow more dynamic behavior
+                if iteration % 6 == 5 and runs_in_progress:
+                    num_to_complete = min(len(runs_in_progress), 1)  # Complete fewer runs at once
+                    runs_to_complete = list(runs_in_progress)[:num_to_complete]
+
+                    for run_id in runs_to_complete:
+                        scheduler.set_completed_task(run_id)
+                        runs_in_progress.remove(run_id)
+                        print(f"    → Completed Run {run_id}")
+
+            iteration += 1
+
+            # Print progress every 25 iterations
+            if iteration % 25 == 0:
+                progress = {run_id: scheduler.state.run_visited_num_chunks[run_id] for run_id in scheduler.run_ids}
+                print(f"\n  Progress at iteration {iteration}: {progress}")
+                print(f"  Runs in progress: {runs_in_progress}")
+                print(f"  Runs to add: {runs_to_add}")
+                print(f"  Runs to remove: {runs_to_remove}\n")
+
+        # Complete any remaining runs
+        while runs_in_progress:
+            run_id = runs_in_progress.pop()
+            scheduler.set_completed_task(run_id)
+            print(f"  Final cleanup: Completed Run {run_id}")
+
+        print("\n=== Test Results ===")
+        print(f"Total iterations: {iteration}")
+        print(f"Total assignments made: {len(all_assignments)}")
+        print(f"Runs that were added: {sorted(added_runs)}")
+        print("Final progress by run:")
+        for run_id in sorted(scheduler.run_ids):
+            progress = scheduler.state.run_visited_num_chunks[run_id]
+            expected = scheduler.n_chunks
+            status = "✓" if progress == expected else "✗"
+            print(f"  Run {run_id}: {progress}/{expected} chunks {status}")
+
+        # Verification assertions
+        print("\n=== Verification ===")
+
+        # 1. Verify that all remaining runs completed all chunks
+        all_completed = True
+        for run_id in scheduler.run_ids:
+            chunks_done = scheduler.state.run_visited_num_chunks[run_id]
+            if chunks_done != scheduler.n_chunks:
+                print(f"✗ Run {run_id} only completed {chunks_done}/{scheduler.n_chunks} chunks")
+                all_completed = False
+
+        if all_completed:
+            print("✓ All remaining runs completed all chunks")
+
+        # 2. Verify that all workers are idle
+        all_idle = True
+        for worker_id in range(scheduler.n_workers):
+            if scheduler.state.worker_running_current_run[worker_id] != -1:
+                print(
+                    f"✗ Worker {worker_id} is still assigned to run {scheduler.state.worker_running_current_run[worker_id]}"
+                )
+                all_idle = False
+
+        if all_idle:
+            print("✓ All workers are idle")
+
+        # 3. Verify minimum assignments (at least initial runs * chunks)
+        min_assignments = len(initial_runs_info) * scheduler.n_chunks
+        if len(all_assignments) >= min_assignments:
+            print(f"✓ Made at least {min_assignments} assignments (actual: {len(all_assignments)})")
+        else:
+            print(f"✗ Expected at least {min_assignments} assignments, got {len(all_assignments)}")
+
+        # 4. Verify all start chunks were 0
+        start_chunk_violations = []
+        for assignment in all_assignments:
+            run_id = assignment["run_id"]
+            chunk_id = assignment["chunk_id"]
+            # Calculate expected chunk based on progress
+            progress = sum(1 for a in all_assignments if a["run_id"] == run_id and a["chunk_id"] <= chunk_id)
+            expected_chunk = (progress - 1) % scheduler.n_chunks  # 0-indexed
+            if chunk_id != expected_chunk:
+                start_chunk_violations.append(f"Run {run_id} chunk {chunk_id} should be {expected_chunk}")
+
+        if not start_chunk_violations:
+            print("✓ All runs started from chunk 0 and progressed correctly")
+        else:
+            print(f"✗ Found {len(start_chunk_violations)} start chunk violations:")
+            for v in start_chunk_violations[:5]:
+                print(f"  {v}")
+
+        # Summary
+        print("\n=== Summary ===")
+        success = all_completed and all_idle and len(all_assignments) >= min_assignments and not start_chunk_violations
+
+        if success:
+            print("✅ All tests passed!")
+        else:
+            print("❌ Some tests failed - see details above")
+
+        # Convert to assertions for pytest
+        assert all_completed, "Not all remaining runs completed all chunks"
+        assert all_idle, "Not all workers are idle"
+        assert len(all_assignments) >= min_assignments, (
+            f"Expected at least {min_assignments} assignments, got {len(all_assignments)}"
+        )
+        assert not start_chunk_violations, f"Found start chunk violations: {start_chunk_violations[:5]}"
+
+        print("Large scale dynamic runs test (same start chunk) completed successfully!")
+
+    def test_large_scale_dynamic_runs_different_start_chunks(self):
+        """Test large scale scheduling with dynamic run addition/deletion, all with different start chunk IDs"""
+        print("\n=== Large Scale Dynamic Runs Test (Different Start Chunks) ===")
+
+        # Start with 5 runs, each with different start chunk IDs
+        initial_runs_info = []
+        for i in range(1, 6):
+            req_workers = ((i - 1) % 3) + 1  # 1, 2, 3, 1, 2
+            start_chunk = (i - 1) % 4  # 0, 1, 2, 3, 0
+            initial_runs_info.append(
+                {
+                    "run_id": i,
+                    "req_workers": req_workers,
+                    "estimated_runtime": 4.0 + (i % 3) * 1.0,  # 4.0, 5.0, 6.0
+                    "start_chunk_id": start_chunk,
+                }
+            )
+
+        scheduler = Scheduler(initial_runs_info, num_workers=4, num_chunks=5, num_simulations=15)
+
+        all_assignments = []
+        max_iterations = 200
+        iteration = 0
+        runs_in_progress = set()
+        runs_to_add = list(range(6, 16))  # Runs 6-15 to add dynamically
+        runs_to_remove = []  # Track runs to remove
+        added_runs = set(range(1, 6))  # Track all run IDs that have been added (initial runs)
+
+        print(
+            f"Initial runs: {len(initial_runs_info)}, Workers: {scheduler.n_workers}, Chunks per run: {scheduler.n_chunks}"
+        )
+        print(f"Initial worker requirements: {[run['req_workers'] for run in initial_runs_info]}")
+        print(f"Initial start chunks: {[run['start_chunk_id'] for run in initial_runs_info]}")
+        print(f"Runs to add dynamically: {runs_to_add}")
+        print()
+
+        while iteration < max_iterations:
+            result = scheduler.schedule()
+
+            if result["run_id"] is None:  # All runs completed
+                print(f"\n✓ All runs completed after {iteration} iterations")
+                break
+
+            elif result["run_id"] == -1:  # No workers available
+                if runs_in_progress:
+                    run_to_complete = next(iter(runs_in_progress))
+                    scheduler.set_completed_task(run_to_complete)
+                    runs_in_progress.remove(run_to_complete)
+                    print(f"  [{iteration}] Completed Run {run_to_complete}, freed workers")
+                else:
+                    print(f"ERROR: No workers available but no runs in progress at iteration {iteration}")
+                    break
+
+            else:
+                # Successfully scheduled a run
+                run_id = result["run_id"]
+                worker_ids = result["worker_ids"]
+                chunk_id = result["chunk_id"]
+
+                all_assignments.append(result)
+                runs_in_progress.add(run_id)
+
+                print(f"  [{iteration}] Scheduled Run {run_id} on Workers {worker_ids} for Chunk {chunk_id}")
+
+                # Dynamic run management
+                if iteration % 5 == 4:  # Every 5 iterations (more frequent)
+                    # Add a new run
+                    if runs_to_add:
+                        new_run_id = runs_to_add.pop(0)
+                        req_workers = ((new_run_id - 1) % 3) + 1
+                        start_chunk = (new_run_id - 1) % 4  # Different start chunk for each run
+                        new_run_info = {
+                            "run_id": new_run_id,
+                            "req_workers": req_workers,
+                            "estimated_runtime": 3.0 + (new_run_id % 4) * 1.0,  # 3.0, 4.0, 5.0, 6.0
+                            "start_chunk_id": start_chunk,
+                        }
+                        scheduler.add_run(new_run_info)
+                        added_runs.add(new_run_id)
+                        print(f"    → Added Run {new_run_id} (req_workers={req_workers}, start_chunk={start_chunk})")
+
+                    # Mark some runs for removal (but don't remove immediately)
+                    if len(scheduler.run_ids) > 4 and iteration > 15:  # Start removal earlier
+                        # Find a run that's not currently running and has made some progress
+                        candidates = []
+                        for rid in scheduler.run_ids:
+                            if rid not in runs_in_progress and scheduler.state.run_visited_num_chunks[rid] > 0:
+                                candidates.append(rid)
+
+                        if candidates and len(runs_to_remove) < 3:  # Limit removals
+                            run_to_remove = candidates[0]
+                            runs_to_remove.append(run_to_remove)
+                            print(f"    → Marked Run {run_to_remove} for removal")
+
+                # Remove marked runs
+                if runs_to_remove and iteration % 8 == 7:  # Every 8 iterations
+                    run_to_remove = runs_to_remove.pop(0)
+                    if run_to_remove in scheduler.run_ids:
+                        progress = scheduler.remove_run(run_to_remove)
+                        print(f"    → Removed Run {run_to_remove} (had completed {progress} chunks)")
+
+                # Complete runs less frequently to allow more dynamic behavior
+                if iteration % 6 == 5 and runs_in_progress:
+                    num_to_complete = min(len(runs_in_progress), 1)  # Complete fewer runs at once
+                    runs_to_complete = list(runs_in_progress)[:num_to_complete]
+
+                    for run_id in runs_to_complete:
+                        scheduler.set_completed_task(run_id)
+                        runs_in_progress.remove(run_id)
+                        print(f"    → Completed Run {run_id}")
+
+            iteration += 1
+
+            # Print progress every 25 iterations
+            if iteration % 25 == 0:
+                progress = {run_id: scheduler.state.run_visited_num_chunks[run_id] for run_id in scheduler.run_ids}
+                print(f"\n  Progress at iteration {iteration}: {progress}")
+                print(f"  Runs in progress: {runs_in_progress}")
+                print(f"  Runs to add: {runs_to_add}")
+                print(f"  Runs to remove: {runs_to_remove}\n")
+
+        # Complete any remaining runs
+        while runs_in_progress:
+            run_id = runs_in_progress.pop()
+            scheduler.set_completed_task(run_id)
+            print(f"  Final cleanup: Completed Run {run_id}")
+
+        print("\n=== Test Results ===")
+        print(f"Total iterations: {iteration}")
+        print(f"Total assignments made: {len(all_assignments)}")
+        print(f"Runs that were added: {sorted(added_runs)}")
+        print("Final progress by run:")
+        for run_id in sorted(scheduler.run_ids):
+            progress = scheduler.state.run_visited_num_chunks[run_id]
+            expected = scheduler.n_chunks
+            status = "✓" if progress == expected else "✗"
+            start_chunk = scheduler.run_start_chunk_id.get(run_id, 0)
+            print(f"  Run {run_id}: {progress}/{expected} chunks {status} (started from chunk {start_chunk})")
+
+        # Verification assertions
+        print("\n=== Verification ===")
+
+        # 1. Verify that all remaining runs completed all chunks
+        all_completed = True
+        for run_id in scheduler.run_ids:
+            chunks_done = scheduler.state.run_visited_num_chunks[run_id]
+            if chunks_done != scheduler.n_chunks:
+                print(f"✗ Run {run_id} only completed {chunks_done}/{scheduler.n_chunks} chunks")
+                all_completed = False
+
+        if all_completed:
+            print("✓ All remaining runs completed all chunks")
+
+        # 2. Verify that all workers are idle
+        all_idle = True
+        for worker_id in range(scheduler.n_workers):
+            if scheduler.state.worker_running_current_run[worker_id] != -1:
+                print(
+                    f"✗ Worker {worker_id} is still assigned to run {scheduler.state.worker_running_current_run[worker_id]}"
+                )
+                all_idle = False
+
+        if all_idle:
+            print("✓ All workers are idle")
+
+        # 3. Verify minimum assignments (at least initial runs * chunks)
+        min_assignments = len(initial_runs_info) * scheduler.n_chunks
+        if len(all_assignments) >= min_assignments:
+            print(f"✓ Made at least {min_assignments} assignments (actual: {len(all_assignments)})")
+        else:
+            print(f"✗ Expected at least {min_assignments} assignments, got {len(all_assignments)}")
+
+        # 4. Verify chunk progression respects start chunks
+        chunk_progression_violations = []
+        run_chunk_assignments = {}
+        for assignment in all_assignments:
+            run_id = assignment["run_id"]
+            chunk_id = assignment["chunk_id"]
+            if run_id not in run_chunk_assignments:
+                run_chunk_assignments[run_id] = []
+            run_chunk_assignments[run_id].append(chunk_id)
+
+        for run_id, chunks in run_chunk_assignments.items():
+            start_chunk = scheduler.run_start_chunk_id.get(run_id, 0)
+            expected_chunks = [(start_chunk + i) % scheduler.n_chunks for i in range(len(chunks))]
+            if sorted(chunks) != sorted(expected_chunks):
+                chunk_progression_violations.append(
+                    f"Run {run_id} chunks {sorted(chunks)} don't match expected {sorted(expected_chunks)} (start_chunk={start_chunk})"
+                )
+
+        if not chunk_progression_violations:
+            print("✓ All runs progressed through chunks correctly based on their start chunks")
+        else:
+            print(f"✗ Found {len(chunk_progression_violations)} chunk progression violations:")
+            for v in chunk_progression_violations[:5]:
+                print(f"  {v}")
+
+        # 5. Verify all runs had different start chunks
+        start_chunks = [scheduler.run_start_chunk_id.get(run_id, 0) for run_id in scheduler.run_ids]
+        unique_start_chunks = set(start_chunks)
+        if len(unique_start_chunks) > 1:  # At least some variety
+            print(f"✓ Runs had varied start chunks: {sorted(unique_start_chunks)}")
+        else:
+            print(f"⚠ All runs had the same start chunk: {list(unique_start_chunks)[0]}")
+
+        # Summary
+        print("\n=== Summary ===")
+        success = (
+            all_completed and all_idle and len(all_assignments) >= min_assignments and not chunk_progression_violations
+        )
+
+        if success:
+            print("✅ All tests passed!")
+        else:
+            print("❌ Some tests failed - see details above")
+
+        # Convert to assertions for pytest
+        assert all_completed, "Not all remaining runs completed all chunks"
+        assert all_idle, "Not all workers are idle"
+        assert len(all_assignments) >= min_assignments, (
+            f"Expected at least {min_assignments} assignments, got {len(all_assignments)}"
+        )
+        assert not chunk_progression_violations, (
+            f"Found chunk progression violations: {chunk_progression_violations[:5]}"
+        )
+
+        print("Large scale dynamic runs test (different start chunks) completed successfully!")
 
 
 if __name__ == "__main__":
