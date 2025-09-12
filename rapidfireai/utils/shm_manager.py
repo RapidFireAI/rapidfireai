@@ -460,7 +460,7 @@ class SharedMemoryManager:
                     dict(self._registry[warm_started_from])[SHMObjectType.CHECKPOINTS]
                 )
             self._registry[model_id] = model_entry
-            self.logger.debug(f"Copied warm start checkpoint from {warm_started_from} to {model_id}")
+            self.logger.debug(f"Copied warm start checkpoint from run {warm_started_from} to run {model_id}")
 
     def list_models(self):
         """Get list of all model IDs currently in shared memory."""
