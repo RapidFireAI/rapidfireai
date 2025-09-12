@@ -10,11 +10,11 @@ import {
   Popover,
   RHFControlledComponents,
   RestoreAntDDefaultClsPrefix,
-  Tooltip,
+  LegacyTooltip,
   useDesignSystemTheme,
 } from '@databricks/design-system';
 import { Typography } from '@databricks/design-system';
-import { KeyValueEntity } from '../../experiment-tracking/types';
+import { KeyValueEntity } from '../types';
 import { FormattedMessage, useIntl } from 'react-intl';
 import { useForm } from 'react-hook-form';
 import { TagKeySelectDropdown } from '../components/TagSelectDropdown';
@@ -33,11 +33,13 @@ export const useEditKeyValueTagsModal = <T extends { tags?: KeyValueEntity[] }>(
   saveTagsHandler,
   allAvailableTags,
   valueRequired = false,
+  title,
 }: {
   onSuccess?: () => void;
   saveTagsHandler: (editedEntity: T, existingTags: KeyValueEntity[], newTags: KeyValueEntity[]) => Promise<any>;
   allAvailableTags?: string[];
   valueRequired?: boolean;
+  title?: React.ReactNode;
 }) => {
   const editedEntityRef = useRef<T>();
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -133,13 +135,16 @@ export const useEditKeyValueTagsModal = <T extends { tags?: KeyValueEntity[] }>(
 
   const EditTagsModal = (
     <Modal
+      componentId="codegen_mlflow_app_src_common_hooks_useeditkeyvaluetagsmodal.tsx_135"
       destroyOnClose
       visible={showModal}
       title={
-        <FormattedMessage
-          defaultMessage="Add/Edit tags"
-          description="Key-value tag editor modal > Title of the update tags modal"
-        />
+        title ?? (
+          <FormattedMessage
+            defaultMessage="Add/Edit tags"
+            description="Key-value tag editor modal > Title of the update tags modal"
+          />
+        )
       }
       onCancel={hideModal}
       footer={
@@ -162,7 +167,7 @@ export const useEditKeyValueTagsModal = <T extends { tags?: KeyValueEntity[] }>(
           {showPopoverMessage ? (
             <UnsavedTagPopoverTrigger formValues={formValues} isLoading={isLoading} onSaveTask={saveTags} />
           ) : (
-            <Tooltip
+            <LegacyTooltip
               title={
                 !hasNewValues
                   ? intl.formatMessage({
@@ -185,7 +190,7 @@ export const useEditKeyValueTagsModal = <T extends { tags?: KeyValueEntity[] }>(
                   description: 'Key-value tag editor modal > Manage Tag save button',
                 })}
               </Button>
-            </Tooltip>
+            </LegacyTooltip>
           )}
         </RestoreAntDDefaultClsPrefix>
       }
@@ -220,7 +225,8 @@ export const useEditKeyValueTagsModal = <T extends { tags?: KeyValueEntity[] }>(
                     description: 'Key-value tag editor modal > Value input label',
                   })}
             </FormUI.Label>
-            {/* <RHFControlledComponents.Input
+            <RHFControlledComponents.Input
+              componentId="codegen_mlflow_app_src_common_hooks_useeditkeyvaluetagsmodal.tsx_223"
               name="value"
               control={form.control}
               aria-label={
@@ -238,10 +244,10 @@ export const useEditKeyValueTagsModal = <T extends { tags?: KeyValueEntity[] }>(
                 defaultMessage: 'Type a value',
                 description: 'Key-value tag editor modal > Value input placeholder',
               })}
-            /> */}
+            />
           </div>
         </div>
-        <Tooltip
+        <LegacyTooltip
           title={intl.formatMessage({
             defaultMessage: 'Add tag',
             description: 'Key-value tag editor modal > Add tag button',
@@ -257,7 +263,7 @@ export const useEditKeyValueTagsModal = <T extends { tags?: KeyValueEntity[] }>(
           >
             <PlusIcon />
           </Button>
-        </Tooltip>
+        </LegacyTooltip>
       </form>
       {errorMessage && <FormUI.Message type="error" message={errorMessage} />}
       <div
@@ -304,7 +310,7 @@ function UnsavedTagPopoverTrigger({
     },
   );
   return (
-    <Popover.Root>
+    <Popover.Root componentId="codegen_mlflow_app_src_common_hooks_useeditkeyvaluetagsmodal.tsx_309">
       <Popover.Trigger asChild>
         <Button
           componentId="codegen_mlflow_app_src_common_hooks_useeditkeyvaluetagsmodal.tsx_306"

@@ -1,4 +1,4 @@
-import { Button, SyncIcon, Tooltip, useDesignSystemTheme } from '@databricks/design-system';
+import { Button, SyncIcon, LegacyTooltip, useDesignSystemTheme } from '@databricks/design-system';
 import React, { useEffect, useState } from 'react';
 import { FormattedMessage } from 'react-intl';
 import { connect } from 'react-redux';
@@ -6,13 +6,10 @@ import { MAX_DETECT_NEW_RUNS_RESULTS, POLL_INTERVAL } from '../../../../constant
 import { ExperimentStoreEntities } from '../../../../types';
 import { useExperimentIds } from '../../hooks/useExperimentIds';
 import { searchRunsPayload } from '../../../../actions';
-import { checkMLflowServer } from 'experiment-tracking/utils/ProxyCheckUtils';
-import { ReduxState } from 'redux-types';
 
 export interface ExperimentViewRefreshButtonProps {
   runInfos: ExperimentStoreEntities['runInfosByUuid'];
   refreshRuns?: () => void;
-  mlflowServerStatus: { isValid: boolean; uri: string | null };
 }
 
 /**
@@ -21,17 +18,18 @@ export interface ExperimentViewRefreshButtonProps {
  */
 export const ExperimentViewRefreshButtonImpl = React.memo(
   (props: React.PropsWithChildren<ExperimentViewRefreshButtonProps>) => {
-    const { runInfos, mlflowServerStatus } = props;
+    const { runInfos } = props;
     const { theme } = useDesignSystemTheme();
 
     const { refreshRuns } = props;
 
     const experimentIds = useExperimentIds();
 
-    
-    const [lastFetchTime, setLastFetchTime] = useState(0); // Keeps the time of the last runs fetch
-    const [newRunsCount, setNewRunsCount] = useState(0); // Keeps the number of available new runs
-    const [isPolling, setIsPolling] = useState(true);
+    // Keeps the time of the last runs fetch
+    const [lastFetchTime, setLastFetchTime] = useState(0);
+
+    // Keeps the number of available new runs
+    const [newRunsCount, setNewRunsCount] = useState(0);
 
     // We're resetting number of new runs and the fetch date
     // every time when the runs payload has changed
@@ -40,22 +38,12 @@ export const ExperimentViewRefreshButtonImpl = React.memo(
       setLastFetchTime(() => Date.now());
     }, [runInfos]);
 
-    useEffect(() => {
-      setIsPolling(mlflowServerStatus.isValid);
-    }, [mlflowServerStatus.isValid]);
-
     useEffect(
       () => {
         if (!lastFetchTime) {
           return undefined;
         }
-        const interval = setInterval(async() => {
-          const isServerValid = await checkMLflowServer();
-          if (!isServerValid) {
-            setIsPolling(false);
-            return;
-          }
-
+        const interval = setInterval(() => {
           // Let's query for new runs that have started after a certain time
           const searchPayloadData: any = {
             experimentIds,
@@ -71,17 +59,8 @@ export const ExperimentViewRefreshButtonImpl = React.memo(
         return () => clearInterval(interval);
       },
       // We're resetting the interval each time the reference time or experiment IDs have changed
-      [lastFetchTime, experimentIds, isPolling],
+      [lastFetchTime, experimentIds],
     );
-
-    const handleRefreshClick = () => {
-      if (refreshRuns) {
-        refreshRuns();
-      }
-      setNewRunsCount(0);
-      setLastFetchTime(() => Date.now());
-      setIsPolling(true);
-    };
 
     return (
       <div css={{ position: 'relative' }}>
@@ -114,7 +93,7 @@ export const ExperimentViewRefreshButtonImpl = React.memo(
             {MAX_DETECT_NEW_RUNS_RESULTS > newRunsCount ? newRunsCount : `${MAX_DETECT_NEW_RUNS_RESULTS - 1}+`}
           </div>
         )}
-        <Tooltip
+        <LegacyTooltip
           title={
             <FormattedMessage
               defaultMessage="Refresh"
@@ -125,12 +104,11 @@ export const ExperimentViewRefreshButtonImpl = React.memo(
         >
           <Button
             componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrefreshbutton.tsx_123"
-            onClick={handleRefreshClick}
+            onClick={refreshRuns}
             data-testid="runs-refresh-button"
             icon={<SyncIcon />}
-            disabled={!mlflowServerStatus.isValid}
           />
-        </Tooltip>
+        </LegacyTooltip>
       </div>
     );
   },
@@ -140,17 +118,12 @@ export const ExperimentViewRefreshButtonImpl = React.memo(
  * The only thing that we're interested in the store is the current set of runInfos.
  * We're going to monitor it so we will know when new runs are fetched.
  */
-const mapStateToProps = (state: ReduxState) => {
-  return { 
-    runInfos: state.entities.runInfosByUuid,
-    mlflowServerStatus: state.clusters.mlflowServer.status, 
-  };
+const mapStateToProps = (state: { entities: ExperimentStoreEntities }) => {
+  return { runInfos: state.entities.runInfosByUuid };
 };
 
 export const ExperimentViewRefreshButton = connect(mapStateToProps, undefined, undefined, {
   // We're interested only in "entities" sub-tree so we won't
   // re-render on other state changes (e.g. API request IDs)
-  areStatesEqual: (nextState, prevState) => 
-    nextState.entities.runInfosByUuid === prevState.entities.runInfosByUuid &&
-    nextState.clusters.mlflowServer.status === prevState.clusters.mlflowServer.status,
+  areStatesEqual: (nextState, prevState) => nextState.entities.runInfosByUuid === prevState.entities.runInfosByUuid,
 })(ExperimentViewRefreshButtonImpl);
