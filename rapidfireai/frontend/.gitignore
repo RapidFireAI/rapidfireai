@@ -6,12 +6,15 @@
 /yarn-cache-folder
 # Allow dist folders in vendor folder
 !/vendor/*/dist
+# Allow lib folders in public folder
+!/public/lib
 
 # testing
 /coverage
 /junit.xml
 
 # production
+# /build
 /*.jar
 /*.zip
 /zip-staging-dir
@@ -28,3 +31,7 @@ yarn-debug.log*
 yarn-error.log*
 
 /.swc
+
+/src/lang/compiled/*.json
+
+tsconfig.tsbuildinfo

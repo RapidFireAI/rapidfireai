@@ -1,7 +1,6 @@
 import type { ExperimentStoreEntities } from './experiment-tracking/types';
 import type { ModelGatewayReduxState } from './experiment-tracking/reducers/ModelGatewayReducer';
 import type { EvaluationDataReduxState } from './experiment-tracking/reducers/EvaluationDataReducer';
-import type { ClusterState } from './experiment-tracking/reducers/ClusterReducer';
 import type {
   ApisReducerReduxState,
   ComparedExperimentsReducerReduxState,
@@ -18,7 +17,6 @@ export type ReduxState = {
   modelGateway: ModelGatewayReduxState;
   evaluationData: EvaluationDataReduxState;
   comparedExperiments: ComparedExperimentsReducerReduxState;
-  clusters: ClusterState;
 };
 
 // Redux type definitions combining redux-thunk & redux-promise-middleware types
