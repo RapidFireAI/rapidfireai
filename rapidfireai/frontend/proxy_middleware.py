@@ -12,6 +12,10 @@ import requests
 from flask import Flask, request, Response, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+RF_API_PORT = os.getenv('RF_API_PORT', '8080')
+RF_MLFLOW_PORT = os.getenv('RF_MLFLOW_PORT', '5002')
+RF_API_HOST = "127.0.0.1" if os.getenv('RF_API_HOST', '0.0.0.0') == '0.0.0.0' else os.getenv('RF_API_HOST', '127.0.0.1')
+RF_MLFLOW_HOST = "127.0.0.1" if os.getenv('RF_MLFLOW_HOST', '0.0.0.0') == '0.0.0.0' else os.getenv('RF_MLFLOW_HOST', '127.0.0.1')
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,9 +27,9 @@ class UserProxyManager:
     def __init__(self):
         self.user_proxies = {}
         self.default_proxy = {
-            'main_proxy_target': 'http://127.0.0.1:5002/',
-            'static_proxy_target': 'http://127.0.0.1:5002/',
-            'dispatcher_proxy_target': 'http://127.0.0.1:8080/',
+            'main_proxy_target': f'http://{RF_MLFLOW_HOST}:{RF_MLFLOW_PORT}/',
+            'static_proxy_target': f'http://{RF_MLFLOW_HOST}:{RF_MLFLOW_PORT}/',
+            'dispatcher_proxy_target': f'http://{RF_API_HOST}:{RF_API_PORT}/',
         }
     
     def get_user_proxy(self, user_id: str) -> Dict[str, str]:

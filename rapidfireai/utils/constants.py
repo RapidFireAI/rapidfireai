@@ -1,6 +1,12 @@
+import os
 from enum import Enum
 
-MLFLOW_URL = "http://127.0.0.1:5002"
+RF_MLFLOW_HOST = "127.0.0.1" if os.getenv('RF_MLFLOW_HOST', '0.0.0.0') == '0.0.0.0' else os.getenv('RF_MLFLOW_HOST', '127.0.0.1')
+RF_MLFLOW_PORT = os.getenv('RF_MLFLOW_PORT', '5002')
+RF_API_HOST = "127.0.0.1" if os.getenv('RF_API_HOST', '0.0.0.0') == '0.0.0.0' else os.getenv('RF_API_HOST', '127.0.0.1')
+RF_API_PORT = os.getenv('RF_API_PORT', '8080')
+
+MLFLOW_URL = f"http://{RF_MLFLOW_HOST}:{RF_MLFLOW_PORT}"
 
 # Shared Memory Constants
 SHM_WARN_THRESHOLD = 80
@@ -21,17 +27,14 @@ class LogType(Enum):
 class DispatcherConfig:
     """Class to manage the dispatcher configuration"""
 
-    HOST: str = "127.0.0.1"
-    PORT: int = 8080
-
+    HOST: str = RF_API_HOST
+    PORT: int = RF_API_PORT
 
 # Database Constants
 class DBConfig:
     """Class to manage the database configuration for SQLite"""
 
     # Use user's home directory for database path
-    import os
-
     DB_PATH: str = os.path.join(os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~","db"))), "rapidfire.db")
 
     # Connection settings

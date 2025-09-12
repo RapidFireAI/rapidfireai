@@ -210,7 +210,7 @@ module.exports = function () {
           },
         ],
         host: 'localhost',
-        port: 3000,
+        port: parseInt(process.env.RF_FRONTEND_PORT, 10) || 3000,
         open: false,
       }),
       client: {
