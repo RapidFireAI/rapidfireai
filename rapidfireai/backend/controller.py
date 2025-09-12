@@ -36,6 +36,7 @@ from rapidfireai.utils.mlflow_manager import MLflowManager
 from rapidfireai.utils.serialize import encode_payload
 from rapidfireai.utils.shm_manager import SharedMemoryManager
 from rapidfireai.utils.worker_manager import WorkerManager
+from rapidfireai.utils.distributed_utils import find_free_port
 
 
 class Controller:
@@ -704,6 +705,8 @@ class Controller:
                 multi_worker_details = {
                     "world_size": len(worker_ids),
                     "worker_ids": worker_ids,
+                    "master_address": "localhost",
+                    "master_port": find_free_port(),
                 }
                 for worker_id in worker_ids:
                     multi_worker_details["local_rank"] = worker_ids.index(worker_id)

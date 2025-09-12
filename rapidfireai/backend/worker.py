@@ -26,6 +26,7 @@ from rapidfireai.ml.checkpoint_utils import (
 from rapidfireai.ml.trainer import create_trainer_instance
 from rapidfireai.utils.constants import MLFLOW_URL, USE_SHARED_MEMORY, RunStatus, SHMObjectType, TaskStatus, WorkerTask
 from rapidfireai.utils.datapaths import DataPath
+from rapidfireai.utils.distributed_utils import barrier, cleanup_distributed, is_distributed_initialized
 from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
 from rapidfireai.utils.mlflow_manager import MLflowManager
@@ -108,6 +109,29 @@ class Worker:
         run_details = self.db.get_run(run_id)
         config_leaf = run_details["config_leaf"]
         mlflow_run_id = run_details["mlflow_run_id"]
+        if config_leaf.get("training_args", {}).get("fsdp_config", {}):  # FIXME: just fsdp arg
+            use_fsdp = True
+        else:
+            use_fsdp = False
+
+        # Initialize distributed training if FSDP is enabled for this run
+        if use_fsdp:
+            try:
+                from rapidfireai.utils.distributed_utils import setup_distributed_environment
+
+                # Get distributed configuration from run details
+                master_addr = multi_worker_details["master_address"]
+                master_port = multi_worker_details["master_port"]
+                world_size = multi_worker_details["world_size"]
+                rank = self.worker_id  # FIXME: check if this is correct
+
+                setup_distributed_environment(
+                    rank=rank, world_size=world_size, master_addr=master_addr, master_port=master_port
+                )
+                self.logger.debug(f"Worker {self.worker_id} initialized distributed training for run {run_id}")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize distributed training for run {run_id}: {e}")
+                raise
 
         # set seed
         # torch.manual_seed(run_details["seed"])
@@ -159,7 +183,7 @@ class Worker:
         stderr_buffer = StringIO()
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             trainer_instance, base_model_name = create_trainer_instance(
-                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id
+                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id, use_fsdp=use_fsdp
             )
 
         # if first time, save checkpoint to disk
@@ -178,6 +202,11 @@ class Worker:
 
         # train the model and time it
         self.logger.debug(f"Beginning training for run {run_id} on chunk {chunk_id}")
+
+        # Synchronize all workers before training starts
+        if use_fsdp and is_distributed_initialized():
+            barrier()
+
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
         start_time = time.time()
@@ -185,10 +214,14 @@ class Worker:
             trainer_instance.train()
         end_time = time.time()
 
+        # Synchronize all workers after training completes
+        if use_fsdp and is_distributed_initialized():
+            barrier()
+
         # update estimated runtime in database for scheduler optimization
         if trainer_config.local_rank == 0:
             runtime = end_time - start_time
-        self.db.set_estimated_runtime(run_id, runtime)
+            self.db.set_estimated_runtime(run_id, runtime)
 
         # write logs to user logger
         if stdout_buffer.getvalue():
@@ -200,10 +233,18 @@ class Worker:
         new_completed_steps = completed_steps + trainer_instance.state.global_step
         self.db.set_completed_steps(run_id, new_completed_steps)
 
-        save_strategy = config_leaf.get("training_args", {}).get("save_strategy", "epoch")
-        # Save checkpoints to shared memory
+        save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
+        # total_params = sum(p.numel() for p in trainer_instance.model.parameters())
+        # trainable_params = sum(p.numel() for p in trainer_instance.model.parameters() if p.requires_grad)
+        # self.logger.debug(f"Total parameters: {total_params}, Trainable parameters: {trainable_params} for worker {self.worker_id}")
+
+        # save checkpoints
         if USE_SHARED_MEMORY:
-            save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager)
+            if use_fsdp and is_distributed_initialized():
+                barrier()
+
+            # save checkpoints to shared memory
+            save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager, use_fsdp=use_fsdp)
             if not trainer_config.config_leaf.get("peft_params"):
                 save_model_to_shared_memory(
                     trainer_instance.model,
@@ -212,8 +253,16 @@ class Worker:
                     self.shm_manager,
                     SHMObjectType.FULL_MODEL,
                     trainer_config.run_id,
+                    use_fsdp=use_fsdp,
                 )
-            self.logger.debug(f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}")
+            self.logger.debug(
+                f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}",
+                f"and worker {self.worker_id}",
+            )
+
+            if use_fsdp and is_distributed_initialized():
+                barrier()
+
             if save_strategy == "chunk" or (save_strategy == "epoch" and chunk_id == self.num_chunks - 1):
                 save_checkpoint_to_disk(
                     trainer_instance,
@@ -231,10 +280,17 @@ class Worker:
             save_checkpoint_to_disk(trainer_instance, trainer_config, last=True)
             self.logger.debug(f"Saved final checkpoint for run {run_id} on chunk {chunk_id}")
 
+        if use_fsdp and is_distributed_initialized():
+            barrier()
+
         # clean up all references to shared memory objects
         if hasattr(trainer_instance, "model"):
+            if hasattr(trainer_instance.model, "cpu"):
+                trainer_instance.model.cpu()
             del trainer_instance.model
         if hasattr(trainer_instance, "ref_model"):
+            if hasattr(trainer_instance.ref_model, "cpu"):
+                trainer_instance.ref_model.cpu()
             del trainer_instance.ref_model
         if hasattr(trainer_instance, "optimizer"):
             del trainer_instance.optimizer
@@ -246,7 +302,11 @@ class Worker:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            if use_fsdp:
+                torch.cuda.synchronize()
 
+        if use_fsdp and is_distributed_initialized():
+            barrier()
         self.logger.debug(f"Completed training for run {run_id} on chunk {chunk_id}")
 
     def serve_forever(self) -> None:
@@ -289,6 +349,9 @@ class Worker:
                         self.db.set_worker_task_status(self.worker_id, TaskStatus.FAILED)
                 else:
                     raise WorkerException(f"Invalid task type: {task_type}")
+                if is_distributed_initialized():
+                    cleanup_distributed()
+                    self.logger.debug(f"Worker {self.worker_id} distributed training cleaned up")
             except Exception as e:
                 self.logger.opt(exception=True).error(f"Worker {self.worker_id} error: {e}")
                 self.db.set_experiment_error(str(e) + "\n" + traceback.format_exc())
@@ -301,6 +364,14 @@ class Worker:
         self.logger.debug(f"Worker {self.worker_id} shutdown requested")
         if self.shutdown_event:
             self.shutdown_event.set()
+
+        # Clean up distributed training if enabled
+        if is_distributed_initialized():
+            try:
+                cleanup_distributed()
+                self.logger.debug(f"Worker {self.worker_id} distributed training cleaned up")
+            except Exception as e:
+                self.logger.debug(f"Error during distributed cleanup: {e}")
 
         # Close database connection to prevent resource leaks
         try:

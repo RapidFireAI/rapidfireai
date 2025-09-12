@@ -23,7 +23,6 @@ def worker_process_target(worker_id: int, model_registry: DictProxy, process_loc
     Target function that runs in each worker process.
     Creates Worker instance inside the process to avoid pickling issues.
     """
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(worker_id)
 
     # Create worker instance inside the process (avoids pickling)
     worker = Worker(worker_id, model_registry, process_lock, shutdown_event)

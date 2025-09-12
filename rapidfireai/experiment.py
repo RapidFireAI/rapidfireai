@@ -86,13 +86,14 @@ class Experiment:
         eval_dataset: Dataset,
         num_chunks: int,
         seed: int = 42,
+        num_gpus: int = 1,
         monte_carlo_simulations: int = 1000,
     ) -> None:
         """Run the fit"""
         try:
             controller = Controller(self.experiment_id, self.experiment_name)
             controller.run_fit(
-                param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, monte_carlo_simulations
+                param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations
             )
         except Exception as e:
             if hasattr(self, "logger"):
