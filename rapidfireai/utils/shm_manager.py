@@ -156,9 +156,11 @@ class SharedMemoryManager:
         else:
             return obj
 
-    def _move_model_to_shared_memory(self, model):
-        """Move model to shared memory with proper BitsAndBytes handling"""
-        model = model.cpu()
+    def _move_model_to_shared_memory(self, model, is_fsdp=False):
+        """Move model to shared memory with proper BitsAndBytes and FSDP handling"""
+        if not is_fsdp:
+            model = model.cpu()
+        
         for _, param in model.named_parameters():
             if param.data is not None:
                 param.data = self._safe_tensor_to_shared_memory(param.data)
@@ -233,7 +235,7 @@ class SharedMemoryManager:
         return model, bnb_modules
 
     # model object operations
-    def _save_full_model(self, model_id: str, model_data: dict, model_object_type: SHMObjectType):
+    def _save_full_model(self, model_id: str, model_data: dict, model_object_type: SHMObjectType, is_fsdp=False):
         """Save the full model in shared memory. model_id can be either run_id or name of a base model"""
         with self._process_lock if self._process_lock else self._thread_lock:
             if model_id in self._registry:
@@ -250,7 +252,7 @@ class SharedMemoryManager:
             # move model to shared memory
             model_cpu = model_data[model_object_type]
             tokenizer = model_data["tokenizer"]
-            model, bnb_modules = self._move_model_to_shared_memory(model_cpu)
+            model, bnb_modules = self._move_model_to_shared_memory(model_cpu, is_fsdp=is_fsdp)
             shared_model = {
                 model_object_type: model,
                 "tokenizer": tokenizer,
@@ -364,11 +366,11 @@ class SharedMemoryManager:
         model_obj = model_entry.get(model_object_type)
         return model_obj
 
-    def save_model_object(self, model_id: str, model_object_type: SHMObjectType, model_object: dict):
+    def save_model_object(self, model_id: str, model_object_type: SHMObjectType, model_object: dict, is_fsdp=False):
         """Save a model object to shared memory."""
         # save model object
         if model_object_type in [SHMObjectType.BASE_MODEL, SHMObjectType.FULL_MODEL, SHMObjectType.REF_FULL_MODEL]:
-            self._save_full_model(model_id, model_object, model_object_type)
+            self._save_full_model(model_id, model_object, model_object_type, is_fsdp=is_fsdp)
         elif model_object_type == SHMObjectType.REF_STATE_DICT:
             self._save_ref_state_dict(model_id, model_object)
         elif model_object_type == SHMObjectType.CHECKPOINTS:

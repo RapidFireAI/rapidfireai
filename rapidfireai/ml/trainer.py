@@ -25,18 +25,63 @@ from rapidfireai.utils.trainer_config import TrainerConfig
 set_verbosity_error()
 
 
+def create_rf_trainer(trainer_type: str, trainer_config=None, **kwargs):
+    """
+    Factory function to create a custom trainer that uses total_steps from trainer_config.
+    """
+    base_trainer_map = {
+        "SFT": SFTTrainer,
+        "DPO": DPOTrainer,
+        "GRPO": GRPOTrainer,
+    }
+    
+    if trainer_type not in base_trainer_map:
+        raise ValueError(f"Unsupported trainer type: {trainer_type}")
+    
+    base_trainer_class = base_trainer_map[trainer_type]
+    
+    class RFTrainer(base_trainer_class):
+        """Custom trainer that uses total_steps from trainer_config for scheduler setup."""
+        
+        def __init__(self, trainer_config=None, **kwargs):
+            super().__init__(**kwargs)
+            self.trainer_config = trainer_config
+        
+        def create_optimizer_and_scheduler(self, num_training_steps: int):
+            """
+            Setup the optimizer and the learning rate scheduler.
+            Uses trainer_config.total_steps instead of num_training_steps.
+            """
+            if self.trainer_config is not None:
+                num_training_steps = self.trainer_config.total_steps
+            
+            self.create_optimizer()
+            self.create_scheduler(num_training_steps=num_training_steps, optimizer=self.optimizer)
+    
+    return RFTrainer(trainer_config=trainer_config, **kwargs)
+
+
 def create_trainer_instance(
     trainer_config: TrainerConfig,
     shm_manager: SharedMemoryManager,
     use_shared_memory: bool = False,
     mlflow_manager=None,
     chunk_id: int = 0,
+    use_fsdp: bool = False,
 ) -> tuple[Union[SFTTrainer, DPOTrainer, GRPOTrainer, None], str]:
     """
     Create a trainer instance with proper state restoration.
     """
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(trainer_config.worker_id)
-    device = "cuda:0"
+    if not use_fsdp:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(trainer_config.worker_id)
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, trainer_config.world_worker_ids))
+    
+    # Set device based on distributed training
+    if use_fsdp:
+        device = "cpu"
+    else:
+        device = "cuda:0"
 
     trainer = None
     config_leaf = trainer_config.config_leaf
@@ -46,7 +91,7 @@ def create_trainer_instance(
     compute_metrics = additional_trainer_kwargs.get("compute_metrics", None)
 
     # Configure training arguments
-    training_args = _configure_training_args(training_args)
+    training_args = _configure_training_args(training_args,trainer_config, use_fsdp=use_fsdp)
     trainer_config_obj = _create_trainer_config_object(trainer_type, training_args)
     # check if peft params is empty dict
     if config_leaf.get("peft_params") == {}:
@@ -55,9 +100,9 @@ def create_trainer_instance(
         is_peft = True
     # Load model and tokenizer
     if use_shared_memory:
-        model_instance, tokenizer = load_checkpoint_from_shared_memory(trainer_config, shm_manager, is_peft=is_peft)
+        model_instance, tokenizer = load_checkpoint_from_shared_memory(trainer_config, shm_manager, device, is_peft=is_peft, use_fsdp=use_fsdp)
     else:
-        model_instance, tokenizer = load_checkpoint_from_disk(trainer_config, is_peft=is_peft)
+        model_instance, tokenizer = load_checkpoint_from_disk(trainer_config, device, is_peft=is_peft)
     # add model name to model config
     config_leaf["model_name"] = model_instance.config._name_or_path
 
@@ -65,11 +110,11 @@ def create_trainer_instance(
     ref_model_instance = None
     if config_leaf.get("trainer_type") == "DPO":
         model_instance, ref_model_instance = _setup_reference_model(
-            model_instance, trainer_config, config_leaf, use_shared_memory, shm_manager, device, is_peft
+            model_instance, trainer_config, config_leaf, use_shared_memory, shm_manager, device, is_peft, use_fsdp=use_fsdp
         )
 
     model_instance = model_instance.to(device)
-
+    
     trainer_kwargs, formatting_func, additional_trainer_kwargs = _prepare_trainer_kwargs(
         model_instance,
         trainer_config_obj,
@@ -97,11 +142,11 @@ def create_trainer_instance(
     trainer_kwargs.update(additional_trainer_kwargs)
     trainer_kwargs = {k: v for k, v in trainer_kwargs.items() if v is not None}
 
-    trainer = _create_trainer_by_type(trainer_type, trainer_kwargs, trainer_config, use_shared_memory, shm_manager)
+    trainer = _create_trainer_by_type(trainer_type, trainer_kwargs, trainer_config, use_shared_memory, shm_manager, device, use_fsdp=use_fsdp)
     return trainer, config_leaf["model_name"]
 
 
-def _configure_training_args(training_args: dict) -> dict:
+def _configure_training_args(training_args: dict, trainer_config: TrainerConfig, use_fsdp: bool = False) -> dict:
     """Configure training arguments with default values."""
     training_args.pop("max_steps", None)
     training_args["num_train_epochs"] = 1
@@ -115,6 +160,13 @@ def _configure_training_args(training_args: dict) -> dict:
 
     if "save_steps" in training_args:
         training_args.pop("save_steps")
+    
+    # Configure distributed training arguments for FSDP
+    if use_fsdp:
+        training_args["local_rank"] = trainer_config.local_rank
+        training_args["dataloader_num_workers"] = trainer_config.world_size # Avoid multiprocessing issues with FSDP
+        training_args["dataloader_pin_memory"] = False
+        training_args["remove_unused_columns"] = False  # FSDP requires this
 
     return training_args
 
@@ -132,7 +184,7 @@ def _create_trainer_config_object(trainer_type: str, training_args: dict):
 
 
 def _setup_reference_model(
-    model_instance, trainer_config, config_leaf, use_shared_memory, shm_manager, device, is_peft
+    model_instance, trainer_config, config_leaf, use_shared_memory, shm_manager, device, is_peft, use_fsdp=False
 ):
     """Setup reference model for DPO training."""
     ref_model_instance = None
@@ -175,7 +227,7 @@ def _setup_reference_model(
             model_instance = model_instance.to(device)
     else:
         ref_model_instance = load_or_create_ref_model(
-            model_instance, trainer_config, device, use_shared_memory, shm_manager
+            model_instance, trainer_config, device, use_shared_memory, shm_manager, use_fsdp=use_fsdp
         )
         ref_model_instance = ref_model_instance.to(device)
     return model_instance, ref_model_instance
@@ -191,7 +243,7 @@ def _prepare_trainer_kwargs(
     config_leaf,
 ):
     """Prepare keyword arguments for trainer creation."""
-    if config_leaf.get("trainer_type") == "DPO  ":
+    if config_leaf.get("trainer_type") == "DPO":
         model_instance = ensure_gradient_compatibility(
             model_instance, hasattr(model_instance, "peft_config")
         )  # FIXME: change function for DPO
@@ -276,34 +328,15 @@ def _setup_callbacks(
     return callbacks, additional_trainer_kwargs
 
 
-def _create_trainer_by_type(trainer_type, trainer_kwargs, trainer_config, use_shared_memory, shm_manager):
+def _create_trainer_by_type(trainer_type, trainer_kwargs, trainer_config, use_shared_memory, shm_manager, device, use_fsdp=False):
     """Create trainer instance based on type with proper state restoration."""
-    if trainer_type == "SFT":
-        dummy_trainer = SFTTrainer(**trainer_kwargs)
-        dummy_trainer.create_optimizer_and_scheduler(num_training_steps=trainer_config.total_steps)
-        trainer = SFTTrainer(**trainer_kwargs, optimizers=(dummy_trainer.optimizer, dummy_trainer.lr_scheduler))
-        del dummy_trainer
-
-    elif trainer_type == "DPO":
-        dummy_trainer = DPOTrainer(**trainer_kwargs)
-        dummy_trainer.create_optimizer_and_scheduler(num_training_steps=trainer_config.total_steps)
-        trainer = DPOTrainer(**trainer_kwargs, optimizers=(dummy_trainer.optimizer, dummy_trainer.lr_scheduler))
-        num_trainable = sum(p.requires_grad for _, p in trainer.model.named_parameters())
-        num_opt_params = sum(len(g["params"]) for g in trainer.optimizer.state_dict()["param_groups"])
-        del dummy_trainer
-
-    elif trainer_type == "GRPO":
-        dummy_trainer = GRPOTrainer(**trainer_kwargs)
-        dummy_trainer.create_optimizer_and_scheduler(num_training_steps=trainer_config.total_steps)
-        trainer = GRPOTrainer(**trainer_kwargs, optimizers=(dummy_trainer.optimizer, dummy_trainer.lr_scheduler))
-        del dummy_trainer
-    else:
-        raise ValueError(f"Unsupported trainer type: {trainer_type}")
+    # Create trainer using the factory function
+    trainer = create_rf_trainer(trainer_type, trainer_config=trainer_config, **trainer_kwargs)
 
     if trainer_config.completed_steps > 0:
         if use_shared_memory:
             trainer = restore_trainer_from_shared_memory(trainer, trainer_config, shm_manager)
         else:
-            trainer = restore_trainer_from_disk(trainer, trainer_config)
+            trainer = restore_trainer_from_disk(trainer, trainer_config, device)
 
     return trainer

@@ -8,6 +8,9 @@ import torch.nn as nn
 from peft import LoraConfig, PeftModel, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict
 from transformers import AutoTokenizer
 from trl import DPOTrainer, GRPOTrainer, SFTTrainer
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import FullStateDictConfig
+from torch.distributed.fsdp import FullOptimStateDictConfig, StateDictType
 
 from rapidfireai.utils.constants import SHMObjectType
 from rapidfireai.utils.datapaths import DataPath
@@ -83,7 +86,7 @@ def create_model_instance(
     device: Optional[str] = None,
 ) -> tuple[nn.Module, AutoTokenizer]:
     """Create a model instance from a model configuration"""
-    if device is not None:
+    if device is not None and model_config["model_kwargs"]["device_map"] is not None:#FIXME: add a robust fix
         model_config["model_kwargs"]["device_map"] = {"": device}
     if checkpoint_path and not is_peft:
         model_config["model_name"] = checkpoint_path
@@ -97,22 +100,52 @@ def create_model_instance(
     return model_instance, tokenizer
 
 
+def _collect_fsdp_peft_state_dict(model, adapter_name: str = "default"):
+    """Collect PEFT state dict from FSDP model efficiently"""
+    from torch.distributed.fsdp import FullStateDictConfig, StateDictType
+    from torch.distributed.checkpoint.state_dict import get_state_dict, set_state_dict
+    
+    # Configure FSDP to collect full state dict
+    full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+    
+    # Use new API instead of deprecated state_dict_type
+    with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
+        peft_state_dict = get_peft_model_state_dict(model, adapter_name=adapter_name)
+    return peft_state_dict
+
+
 def save_checkpoint_to_shared_memory(
-    trainer: Union[SFTTrainer, DPOTrainer, GRPOTrainer], trainer_config: TrainerConfig, shm_manager: SharedMemoryManager
+    trainer: Union[SFTTrainer, DPOTrainer, GRPOTrainer], trainer_config: TrainerConfig, shm_manager: SharedMemoryManager, use_fsdp: bool = False
 ) -> None:
-    """Save checkpoint to shared memory"""
+    
     checkpoint = {}
+    rank = trainer_config.local_rank if use_fsdp else 0
 
     if hasattr(trainer.model, "peft_config"):
-        peft_state_dict = get_peft_model_state_dict(
-            trainer.model,
-            adapter_name=trainer_config.config_leaf.get("training_args").get("model_adapter_name", "default"),
-        )
-        checkpoint["state_dict"] = {k: v.cpu().clone() for k, v in peft_state_dict.items()}
+        if use_fsdp:
+            adapter_name = trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
+            peft_state_dict = _collect_fsdp_peft_state_dict(trainer.model, adapter_name)
+            if peft_state_dict is not None:
+                checkpoint["state_dict"] = {k: v.cpu().clone() for k, v in peft_state_dict.items()}
+        else:
+            peft_state_dict = get_peft_model_state_dict(
+                trainer.model,
+                adapter_name=trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default"),
+            )
+            checkpoint["state_dict"] = {k: v.cpu().clone() for k, v in peft_state_dict.items()}
         checkpoint["adapter_config"] = trainer.model.peft_config
 
     if trainer.optimizer is not None:
-        checkpoint["optimizer_state"] = move_tensors_to_cpu(trainer.optimizer.state_dict())
+        if use_fsdp:
+            full_optim_state_dict_config = FullOptimStateDictConfig(offload_to_cpu=True, rank0_only=True)
+            with FSDP.state_dict_type(trainer.model, StateDictType.FULL_STATE_DICT,FullStateDictConfig(offload_to_cpu=True, rank0_only=True), full_optim_state_dict_config):
+                optimizer_state = trainer.optimizer.state_dict()
+            if optimizer_state is not None:
+                checkpoint["optimizer_state"] = move_tensors_to_cpu(optimizer_state)
+            print("collected optimizer state")
+        else:
+            checkpoint["optimizer_state"] = move_tensors_to_cpu(trainer.optimizer.state_dict())
+            print("collected optimizer state")
 
     if trainer.lr_scheduler is not None:
         checkpoint["scheduler_state"] = move_tensors_to_cpu(trainer.lr_scheduler.state_dict())
@@ -139,15 +172,17 @@ def save_checkpoint_to_shared_memory(
         if hasattr(config, "tokenizer_config"):
             checkpoint["tokenizer_config"] = config.tokenizer_config
 
+    # Only rank 0 saves to shared memory for FSDP
+    if use_fsdp and rank != 0:
+        return
     shm_manager.save_model_object(trainer_config.run_id, SHMObjectType.CHECKPOINTS, checkpoint)
 
 
 def load_checkpoint_from_shared_memory(
-    trainer_config: TrainerConfig, shm_manager: SharedMemoryManager, ref: bool = False, is_peft: bool = False
+    trainer_config: TrainerConfig, shm_manager: SharedMemoryManager, device: str, ref: bool = False, is_peft: bool = False, use_fsdp: bool = False
 ) -> tuple[nn.Module, AutoTokenizer, dict]:
     """Load checkpoint from shared memory"""
     run_id = trainer_config.run_id
-    device = "cuda:0"
     base_model = None
     model_id = trainer_config.config_leaf.get("model_name")
 
@@ -166,11 +201,11 @@ def load_checkpoint_from_shared_memory(
             if model_id is None:
                 model_id = base_model.config._name_or_path
             save_model_to_shared_memory(
-                base_model, tokenizer, trainer_config, shm_manager, SHMObjectType.BASE_MODEL, model_id
+                base_model, tokenizer, trainer_config, shm_manager, SHMObjectType.BASE_MODEL, model_id, use_fsdp=use_fsdp
             )
         else:
             base_model, tokenizer = load_model_from_shared_memory(
-                trainer_config, shm_manager, SHMObjectType.BASE_MODEL, model_id
+                trainer_config, shm_manager, SHMObjectType.BASE_MODEL, model_id, device
             )
 
     if base_model == "" or (not is_peft and not shm_manager.model_exists(run_id)):
@@ -229,22 +264,39 @@ def load_checkpoint_from_shared_memory(
 
         elif not is_peft:
             model, tokenizer = load_model_from_shared_memory(
-                trainer_config, shm_manager, SHMObjectType.FULL_MODEL, trainer_config.run_id
+                trainer_config, shm_manager, SHMObjectType.FULL_MODEL, trainer_config.run_id, device
             )
 
     return model, tokenizer
 
 
 def load_model_from_shared_memory(
-    trainer_config: TrainerConfig, shm_manager: SharedMemoryManager, model_object_type: SHMObjectType, model_id: str
+    trainer_config: TrainerConfig, shm_manager: SharedMemoryManager, model_object_type: SHMObjectType, model_id: str, device: str
 ) -> tuple[nn.Module, AutoTokenizer]:
     """Load model from shared memory"""
     model_data = shm_manager.load_model_object(model_id, model_object_type)
     model = copy.deepcopy(model_data[model_object_type])
     tokenizer = model_data["tokenizer"]
-    bnb_modules = move_tensors_to_device(model_data["bnb_modules"], device="cuda:0")
-    model = get_model_to_device(model, bnb_modules, device="cuda:0")
+    bnb_modules = move_tensors_to_device(model_data["bnb_modules"], device=device)
+    model = get_model_to_device(model, bnb_modules, device=device)
     return model, tokenizer
+
+
+def _collect_fsdp_full_model(model):
+    """Collect full model state from FSDP model efficiently"""
+    from torch.distributed.fsdp import FullStateDictConfig, StateDictType
+    from torch.distributed.checkpoint.state_dict import get_state_dict, set_state_dict
+    full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)    
+    with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
+        full_state_dict = model.state_dict()
+        
+        if full_state_dict is None:
+            return None
+        model_cpu = model.cpu()
+        
+        model_cpu.load_state_dict(full_state_dict)
+    
+    return model_cpu
 
 
 def save_model_to_shared_memory(
@@ -254,13 +306,26 @@ def save_model_to_shared_memory(
     shm_manager: SharedMemoryManager,
     model_type: str,
     model_id: str,
+    use_fsdp: bool = False,
 ) -> None:
-    """Save model to shared memory"""
+    """Save model to shared memory with FSDP support"""
+    rank = trainer_config.local_rank if use_fsdp else 0
+    
+    if use_fsdp and rank != 0:
+        return
+        
     if model_type != SHMObjectType.FULL_MODEL and shm_manager.model_exists(model_id):
         return
-    model_cpu = model.cpu()
+    
+    if use_fsdp and model_type == SHMObjectType.FULL_MODEL:
+        model_cpu = _collect_fsdp_full_model(model)
+        if model_cpu is None:
+            return
+    else:
+        model_cpu = model.cpu()
+    
     model_data = {model_type: model_cpu, "tokenizer": tokenizer}
-    shm_manager.save_model_object(model_id, model_type, model_data)
+    shm_manager.save_model_object(model_id, model_type, model_data, is_fsdp=use_fsdp)
 
 
 def load_or_create_ref_model(
@@ -269,16 +334,19 @@ def load_or_create_ref_model(
     device: str,
     use_shared_memory: bool,
     shm_manager: SharedMemoryManager,
+    use_fsdp: bool = False,
 ) -> Optional[nn.Module]:
     """Load or create reference model for DPO training based on configuration"""
     config_leaf = trainer_config.config_leaf
-    device = "cuda:0"
     ref_model_name = trainer_config.config_leaf.get("ref_model_config", {}).get("model_name", None)
     model_id = trainer_config.config_leaf.get("model_name")
     ref_model_id = "ref_" + (trainer_config.config_leaf.get("ref_model_config", {}).get("model_name") or model_id)
+    
+    rank = trainer_config.local_rank if use_fsdp else 0
+    
     if use_shared_memory and shm_manager.model_exists(ref_model_id):
         ref_model_instance, _ = load_model_from_shared_memory(
-            trainer_config, shm_manager, SHMObjectType.REF_FULL_MODEL, ref_model_id
+            trainer_config, shm_manager, SHMObjectType.REF_FULL_MODEL, ref_model_id, device
         )
     else:
         if ref_model_name is not None:
@@ -286,10 +354,17 @@ def load_or_create_ref_model(
                 config_leaf.get("ref_model_config"), trainer_config.create_model_fn, device=device
             )
         elif trainer_config.completed_steps == 0:
-            ref_model_instance = copy.deepcopy(model_instance)
-        save_model_to_shared_memory(
-            ref_model_instance, None, trainer_config, shm_manager, SHMObjectType.REF_FULL_MODEL, ref_model_id
-        )
+            if use_fsdp:
+                # For FSDP, create reference model efficiently
+                ref_model_instance = _collect_fsdp_full_model(model_instance)
+            else:
+                ref_model_instance = copy.deepcopy(model_instance)
+        
+        # Only rank 0 saves reference model to shared memory for FSDP
+        if not use_fsdp or rank == 0:
+            save_model_to_shared_memory(
+                ref_model_instance, None, trainer_config, shm_manager, SHMObjectType.REF_FULL_MODEL, ref_model_id, use_fsdp=use_fsdp
+            )
 
     return ref_model_instance
 
@@ -457,10 +532,9 @@ def save_checkpoint_to_disk(
 
 
 def load_checkpoint_from_disk(
-    trainer_config: TrainerConfig, ref: bool = False, is_peft: bool = False
+    trainer_config: TrainerConfig, device: str, ref: bool = False, is_peft: bool = False
 ) -> tuple[nn.Module, AutoTokenizer, dict]:
     """Load checkpoint from disk"""
-    device = "cuda:0"
     checkpoint_path = None
     if trainer_config.warm_started_from is not None and trainer_config.completed_steps == 0:
         base_run_path = DataPath.base_run_path(trainer_config.warm_started_from)
@@ -484,12 +558,11 @@ def load_checkpoint_from_disk(
 
 
 def restore_trainer_from_disk(
-    trainer: Union[SFTTrainer, DPOTrainer, GRPOTrainer], trainer_config: TrainerConfig
+    trainer: Union[SFTTrainer, DPOTrainer, GRPOTrainer], trainer_config: TrainerConfig, device: str
 ) -> Union[SFTTrainer, DPOTrainer, GRPOTrainer]:
     """Restore trainer from disk with proper state accumulation"""
     base_run_path = DataPath.base_run_path(trainer_config.run_id)
     checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"
-    device = "cuda:0"
 
     trainer_state_path = checkpoint_path / "trainer_state.json"
     if trainer_state_path.exists():
