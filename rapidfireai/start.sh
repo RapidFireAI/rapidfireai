@@ -434,7 +434,11 @@ start_frontend() {
 
     # Wait for frontend to be ready - check both localhost and 127.0.0.1
     local frontend_ready=false
-    local check_hosts=("localhost" "127.0.0.1")
+    if [[ "$RF_FRONTEND_HOST" == "0.0.0.0" ]]; then
+        local check_hosts=("localhost" "127.0.0.1")
+    else
+        local check_hosts=("$RF_FRONTEND_HOST")
+    fi
 
     for host in "${check_hosts[@]}"; do
         if wait_for_service $host $RF_FRONTEND_PORT "Frontend server" 15; then

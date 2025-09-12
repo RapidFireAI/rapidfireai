@@ -8,7 +8,7 @@ module.exports = function (app) {
   // there.
   // eslint-disable-next-line no-undef
   // const proxyTarget = process.env.MLFLOW_PROXY || 'http://localhost:5000/';
-  const proxyTarget = 'http://localhost:5002/';
+  const proxyTarget = `http://localhost:${parseInt(process.env.RF_MLFLOW_PORT,10)||5002}/`;
   // eslint-disable-next-line no-undef
   const proxyStaticTarget = process.env.MLFLOW_STATIC_PROXY || proxyTarget;
   app.use(
@@ -39,7 +39,7 @@ module.exports = function (app) {
   );
   app.use(
     createProxyMiddleware('/dispatcher', {
-      target: 'http://localhost:8080/',
+      target: `http://localhost:${parseInt(process.env.RF_API_PORT, 10)||8080}/`,
       changeOrigin: true,
     }),
   );

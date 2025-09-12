@@ -1,5 +1,6 @@
 """This module contains functions for the dispatcher module."""
 
+import os
 import traceback
 from logging import Logger
 from typing import Any
@@ -12,7 +13,9 @@ from rapidfireai.utils.constants import LOG_FILENAME, ControllerTask, Dispatcher
 from rapidfireai.utils.exceptions import DispatcherException
 from rapidfireai.utils.logging import RFLogger
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:3000", "http://localhost"]
+RF_FRONTEND_PORT = os.getenv('RF_FRONTEND_PORT', '3000')
+RF_FRONTEND_HOST = os.getenv('RF_FRONTEND_HOST', '0.0.0.0')
+CORS_ALLOWED_ORIGINS = [f"http://localhost:{RF_FRONTEND_PORT}", "http://localhost"]
 
 
 class Dispatcher:
