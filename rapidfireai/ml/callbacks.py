@@ -165,15 +165,16 @@ class MLflowLoggingCallback(TrainerCallback):
                         )
                     except Exception as e:
                         print(f"Warning: Failed to log metric {key} to MLflow: {e}")
-            self.mlflow_manager.log_metric(
-                self.mlflow_run_id, "chunk number", self.chunk_id, step=self.completed_steps + state.global_step
-            )
-            self.mlflow_manager.log_metric(
-                self.mlflow_run_id,
-                "num_epochs_completed",
-                self.num_epochs_completed,
-                step=self.completed_steps + state.global_step,
-            )
+            if "eval_loss" not in logs and "train_runtime" not in logs:
+                self.mlflow_manager.log_metric(
+                    self.mlflow_run_id, "chunk number", self.chunk_id, step=self.completed_steps + state.global_step
+                )
+                self.mlflow_manager.log_metric(
+                    self.mlflow_run_id,
+                    "num_epochs_completed",
+                    self.num_epochs_completed,
+                    step=self.completed_steps + state.global_step,
+                )
 
 
 class LogLevelCallback(TrainerCallback):
