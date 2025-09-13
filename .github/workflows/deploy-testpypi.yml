@@ -27,12 +27,12 @@ jobs:
       - name: Install frontend dependencies
         run: |
           cd rapidfireai/frontend
-          yarn install --frozen-lockfile
+          node ./yarn/releases/yarn-4.9.1.cjs install
 
       - name: Build frontend
         run: |
           cd rapidfireai/frontend
-          yarn build
+          node ./yarn/releases/yarn-4.9.1.cjs build
 
       - name: Install Python dependencies
         run: |
