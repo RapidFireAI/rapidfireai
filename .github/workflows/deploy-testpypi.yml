@@ -28,7 +28,6 @@ jobs:
         run: |
           cd rapidfireai/frontend
           node ./yarn/releases/yarn-4.9.1.cjs install
-          node ./yarn/releases/yarn-4.9.1.cjs build
 
       - name: Build frontend
         run: |
