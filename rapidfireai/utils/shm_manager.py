@@ -286,7 +286,7 @@ class SharedMemoryManager:
             # create model entry in registry
             if model_id not in self._registry:
                 self._registry[model_id] = {SHMObjectType.CHECKPOINTS: {}}
-                
+
             model_entry = self._registry[model_id]
             if SHMObjectType.CHECKPOINTS not in model_entry:
                 model_entry[SHMObjectType.CHECKPOINTS] = {}
@@ -445,18 +445,22 @@ class SharedMemoryManager:
                     SHMObjectType.CHECKPOINTS: {},
                 }
 
+            # copy full_model, ref_state_dict, and checkpoints from warm_started_from to model_id
             model_entry = dict(self._registry[model_id])
-            model_entry[SHMObjectType.FULL_MODEL] = copy.deepcopy(
-                dict(self._registry[warm_started_from])[SHMObjectType.FULL_MODEL]
-            )
-            model_entry[SHMObjectType.REF_STATE_DICT] = copy.deepcopy(
-                dict(self._registry[warm_started_from])[SHMObjectType.REF_STATE_DICT]
-            )
-            model_entry[SHMObjectType.CHECKPOINTS] = copy.deepcopy(
-                dict(self._registry[warm_started_from])[SHMObjectType.CHECKPOINTS]
-            )
+            if SHMObjectType.FULL_MODEL in self._registry[warm_started_from]:
+                model_entry[SHMObjectType.FULL_MODEL] = copy.deepcopy(
+                    dict(self._registry[warm_started_from])[SHMObjectType.FULL_MODEL]
+                )
+            if SHMObjectType.REF_STATE_DICT in self._registry[warm_started_from]:
+                model_entry[SHMObjectType.REF_STATE_DICT] = copy.deepcopy(
+                    dict(self._registry[warm_started_from])[SHMObjectType.REF_STATE_DICT]
+                )
+            if SHMObjectType.CHECKPOINTS in self._registry[warm_started_from]:
+                model_entry[SHMObjectType.CHECKPOINTS] = copy.deepcopy(
+                    dict(self._registry[warm_started_from])[SHMObjectType.CHECKPOINTS]
+                )
             self._registry[model_id] = model_entry
-            self.logger.debug(f"Copied warm start checkpoint from {warm_started_from} to {model_id}")
+            self.logger.debug(f"Copied warm start checkpoint from run {warm_started_from} to run {model_id}")
 
     def list_models(self):
         """Get list of all model IDs currently in shared memory."""
