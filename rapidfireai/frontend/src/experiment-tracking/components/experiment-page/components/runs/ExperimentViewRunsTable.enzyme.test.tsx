@@ -7,18 +7,13 @@ import { MemoryRouter } from '../../../../../common/utils/RoutingUtils';
 import { createExperimentPageUIState } from '../../models/ExperimentPageUIState';
 import { createExperimentPageSearchFacetsState } from '../../models/ExperimentPageSearchFacetsState';
 import { MockedReduxStoreProvider } from '../../../../../common/utils/TestUtils';
-import { makeCanonicalSortKey } from '../../utils/experimentPage.common-utils';
-import { COLUMN_TYPES } from '../../../../constants';
 
 /**
  * Mock all expensive utility functions
  */
 jest.mock('../../utils/experimentPage.column-utils', () => ({
-  ...jest.requireActual<typeof import('../../utils/experimentPage.column-utils')>(
-    '../../utils/experimentPage.column-utils',
-  ),
-  useRunsColumnDefinitions: jest.fn(() => []),
-  makeCanonicalSortKey: jest.requireActual('../../utils/experimentPage.common-utils').makeCanonicalSortKey,
+  ...jest.requireActual('../../utils/experimentPage.column-utils'),
+  useRunsColumnDefinitions: jest.fn().mockImplementation(() => []),
 }));
 
 /**
@@ -65,7 +60,7 @@ jest.mock('../../../../../common/components/ag-grid/AgGridLoader', () => {
  * settings enzyme wrapper's props prossible
  */
 jest.mock('react-intl', () => ({
-  ...jest.requireActual<typeof import('react-intl')>('react-intl'),
+  ...jest.requireActual('react-intl'),
   FormattedMessage: () => <div />,
 }));
 
@@ -118,26 +113,16 @@ describe('ExperimentViewRunsTable', () => {
 
   test('should properly call creating column definitions function', () => {
     createWrapper();
-    expect(useRunsColumnDefinitions).toHaveBeenCalledWith(
+    expect(useRunsColumnDefinitions).toBeCalledWith(
       expect.objectContaining({
         selectedColumns: expect.anything(),
         compareExperiments: false,
-        metricKeyList: [],
-        paramKeyList: [],
-        tagKeyList: [],
+        metricKeyList: ['m1', 'm2', 'm3'],
+        paramKeyList: ['p1', 'p2', 'p3'],
+        tagKeyList: mockTagKeys,
         columnApi: expect.anything(),
       }),
     );
-  });
-
-  test('should pass selected tag columns to column definitions', () => {
-    const tagKey = mockTagKeys[0];
-    createWrapper({
-      uiState: Object.assign(createExperimentPageUIState(), {
-        selectedColumns: [makeCanonicalSortKey(COLUMN_TYPES.TAGS, tagKey)],
-      }),
-    });
-    expect(useRunsColumnDefinitions).toHaveBeenCalledWith(expect.objectContaining({ tagKeyList: [tagKey] }));
   });
 
   test('should properly generate new column data on the new runs data', () => {
@@ -145,7 +130,7 @@ describe('ExperimentViewRunsTable', () => {
 
     // Assert that we're not calling for generating columns
     // while having "newparam" parameter
-    expect(useRunsColumnDefinitions).not.toHaveBeenCalledWith(
+    expect(useRunsColumnDefinitions).not.toBeCalledWith(
       expect.objectContaining({
         paramKeyList: ['p1', 'p2', 'p3', 'newparam'],
       }),
@@ -157,10 +142,10 @@ describe('ExperimentViewRunsTable', () => {
     });
 
     // Assert that "newparam" parameter is being included in calls
-    // for new columns - but only if it's in the selected columns
-    expect(useRunsColumnDefinitions).toHaveBeenCalledWith(
+    // for new columns
+    expect(useRunsColumnDefinitions).toBeCalledWith(
       expect.objectContaining({
-        paramKeyList: [],
+        paramKeyList: ['p1', 'p2', 'p3', 'newparam'],
       }),
     );
   });
@@ -199,7 +184,7 @@ describe('ExperimentViewRunsTable', () => {
     const containingExperimentsWrapper = createWrapper({ moreRunsAvailable: false });
 
     // Assert "load more" row not being sent to agGrid
-    expect(mockGridApi.setRowData).not.toHaveBeenCalledWith(
+    expect(mockGridApi.setRowData).not.toBeCalledWith(
       expect.arrayContaining([expect.objectContaining({ isLoadMoreRow: true })]),
     );
 
@@ -209,7 +194,7 @@ describe('ExperimentViewRunsTable', () => {
     });
 
     // Assert "load more" row being added to payload
-    expect(mockGridApi.setRowData).toHaveBeenCalledWith(
+    expect(mockGridApi.setRowData).toBeCalledWith(
       expect.arrayContaining([expect.objectContaining({ isLoadMoreRow: true })]),
     );
   });
@@ -256,7 +241,6 @@ describe('ExperimentViewRunsTable', () => {
       'attributes.`Version`',
       'attributes.`Models`',
       'attributes.`Dataset`',
-      'attributes.`Description`',
     ];
 
     simpleExperimentsWrapper.setProps({
@@ -275,15 +259,6 @@ describe('ExperimentViewRunsTable', () => {
         selectedColumns: newSelectedColumns,
       }),
     });
-
-    // With the selected columns including 'params.`p1`' and 'metrics.`m1`',
-    // the filtered paramKeyList and metricKeyList should now include these values
-    expect(useRunsColumnDefinitions).toHaveBeenCalledWith(
-      expect.objectContaining({
-        paramKeyList: ['p1'],
-        metricKeyList: ['m1'],
-      }),
-    );
 
     // Assert "show more columns" CTA button not being displayed anymore
     expect(simpleExperimentsWrapper.find('ExperimentViewRunsTableAddColumnCTA').length).toBe(0);

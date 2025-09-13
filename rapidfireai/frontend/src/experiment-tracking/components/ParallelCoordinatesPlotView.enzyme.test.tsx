@@ -88,7 +88,7 @@ describe('unit tests', () => {
     instance.findLastMetricFromState = jest.fn(() => 'metric_1');
     instance.setState = jest.fn();
     instance.maybeUpdateStateForColorScale(['metric_1', 'metric_0']); // rightmost metric changes
-    expect(instance.setState).toHaveBeenCalled();
+    expect(instance.setState).toBeCalled();
   });
 
   test('maybeUpdateStateForColorScale should not trigger setState when last metric stays', () => {
@@ -97,7 +97,7 @@ describe('unit tests', () => {
     instance.findLastMetricFromState = jest.fn(() => 'metric_1');
     instance.setState = jest.fn();
     instance.maybeUpdateStateForColorScale(['metric_0', 'metric_1']); // rightmost metric stays
-    expect(instance.setState).not.toHaveBeenCalled();
+    expect(instance.setState).not.toBeCalled();
   });
 
   test('generateAttributesForCategoricalDimension', () => {

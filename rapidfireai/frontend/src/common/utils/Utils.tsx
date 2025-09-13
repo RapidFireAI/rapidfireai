@@ -5,19 +5,24 @@
  * annotations are already looking good, please remove this comment.
  */
 
+// @ts-expect-error TS(7016): Could not find a declaration file for module 'date... Remove this comment to see the full error message
+import dateFormat from 'dateformat';
 import React from 'react';
-import moment from 'moment';
+import notebookSvg from '../static/notebook.svg';
+import revisionSvg from '../static/revision.svg';
+import emptySvg from '../static/empty.svg';
+import laptopSvg from '../static/laptop.svg';
+import projectSvg from '../static/project.svg';
+import workflowsIconSvg from '../static/WorkflowsIcon.svg';
 import qs from 'qs';
 import { MLFLOW_INTERNAL_PREFIX } from './TagUtils';
 import _ from 'lodash';
 import { ErrorCodes, SupportPageUrl } from '../constants';
-import { FormattedMessage, IntlShape } from 'react-intl';
+import { FormattedMessage } from 'react-intl';
 import { ErrorWrapper } from './ErrorWrapper';
-import { RunInfoEntity } from '../../experiment-tracking/types';
-import { KeyValueEntity } from '../types';
-import { NOTE_CONTENT_TAG } from '../../experiment-tracking/utils/NoteUtils';
+import { KeyValueEntity, RunInfoEntity } from '../../experiment-tracking/types';
+import { FileCodeIcon, FolderBranchIcon, NotebookIcon, WorkflowsIcon } from '@databricks/design-system';
 
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- TODO(FEINF-4274)
 class Utils {
   /**
    * Merge a runs parameters / metrics.
@@ -58,21 +63,11 @@ class Utils {
   /**
    * Displays the error notification in the UI.
    */
-  static displayGlobalErrorNotification(content: any, duration?: any) {
+  static displayGlobalErrorNotification(content: any, duration: any) {
     if (!Utils.#notificationsApi) {
       return;
     }
     (Utils.#notificationsApi as any).error({ message: content, duration: duration });
-  }
-
-  /**
-   * Displays the info notification in the UI.
-   */
-  static displayGlobalInfoNotification(content: any, duration?: any) {
-    if (!Utils.#notificationsApi) {
-      return;
-    }
-    (Utils.#notificationsApi as any).info({ message: content, duration: duration });
   }
 
   static runNameTag = 'mlflow.runName';
@@ -130,22 +125,13 @@ class Utils {
   /**
    * Format timestamps from millisecond epoch time.
    */
-  static formatTimestamp(timestamp: any, intl?: IntlShape) {
+  static formatTimestamp(timestamp: any, format = 'yyyy-mm-dd HH:MM:ss') {
+    if (timestamp === undefined) {
+      return '(unknown)';
+    }
     const d = new Date(0);
     d.setUTCMilliseconds(timestamp);
-
-    // Need to update here when the original shared code is updated: https://github.com/databricks-eng/universe/blob/master/js/packages/web-shared/src/date-time/DateTimeFormats.ts#L37
-    if (intl) {
-      return intl.formatDate(d, {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-    }
-    return moment(d).format('YYYY-MM-DD HH:mm:ss');
+    return dateFormat(d, format);
   }
 
   static timeSinceStr(date: any, referenceDate = new Date()) {
@@ -236,11 +222,8 @@ class Utils {
    * @param startTime in milliseconds
    * @param endTime in milliseconds
    */
-  static getDuration(startTime?: number | string | null, endTime?: number | string | null) {
-    if (!Number(startTime) || !Number(endTime)) {
-      return null;
-    }
-    return Utils.formatDuration(Number(endTime) - Number(startTime));
+  static getDuration(startTime: any, endTime: any) {
+    return startTime && endTime ? Utils.formatDuration(endTime - startTime) : null;
   }
 
   static baseName(path: any) {
@@ -494,7 +477,7 @@ class Utils {
     runUuid: any,
     sourceName: any,
     workspaceUrl = null,
-    nameOverride: string | null = null,
+    nameOverride = null,
   ) {
     // sourceName may not be present when rendering feature table notebook consumers from remote
     // workspaces or when notebook fetcher failed to fetch the sourceName. Always provide a default
@@ -540,7 +523,7 @@ class Utils {
     jobRunId: any,
     jobName: any,
     workspaceUrl = null,
-    nameOverride: string | null = null,
+    nameOverride = null,
   ) {
     // jobName may not be present when rendering feature table job consumers from remote
     // workspaces or when getJob API failed to fetch the jobName. Always provide a default
@@ -617,22 +600,14 @@ class Utils {
     return Utils.getRunName(runInfo) || 'Run ' + runUuid;
   }
 
-  static getRunName(runInfo?: RunInfoEntity) {
-    return runInfo?.runName || '';
+  static getRunName(runInfo: RunInfoEntity) {
+    return runInfo.runName || '';
   }
 
   static getRunNameFromTags(runTags: any) {
     const runNameTag = runTags[Utils.runNameTag];
     if (runNameTag) {
       return runNameTag.value;
-    }
-    return '';
-  }
-
-  static getRunDescriptionFromTags(runTags: any) {
-    const runDescriptionTag = runTags?.[NOTE_CONTENT_TAG];
-    if (runDescriptionTag) {
-      return runDescriptionTag.value;
     }
     return '';
   }
@@ -1007,8 +982,6 @@ class Utils {
     duration = 3,
     passErrorToParentFrame = false,
   ) {
-    // eslint-disable-next-line no-console -- TODO(FEINF-3587)
-    console.error(e);
     if (typeof e === 'string') {
       Utils.displayGlobalErrorNotification(e, duration);
     } else if (e instanceof ErrorWrapper) {
@@ -1016,6 +989,7 @@ class Utils {
       Utils.displayGlobalErrorNotification(e.renderHttpError(), duration);
       // eslint-disable-next-line no-empty
     } else {
+      // console.log('logErrorAndNotifyUser: else');
     }
   }
 

@@ -28,13 +28,12 @@ describe('modelNameValidator should work properly', () => {
     expect(mockCallback).toHaveBeenCalledWith(undefined);
   });
 
-  test('should invoke callback with undefined for undefined name', () => {
+  test('should invoke callback with undefined for empty name', () => {
     const mockCallback = jest.fn((err) => err);
     modelNameValidator(undefined, undefined, mockCallback);
     expect(mockCallback).toHaveBeenCalledWith(undefined);
   });
 
-  // eslint-disable-next-line jest/no-done-callback -- TODO(FEINF-1337)
   test('should invoke callback with error message when model exists', (done) => {
     // getRegisteredModel returns resolved promise indicates model exists
     ModelRegistryService.getRegisteredModel = jest.fn(() => Promise.resolve());
@@ -49,7 +48,6 @@ describe('modelNameValidator should work properly', () => {
     });
   });
 
-  // eslint-disable-next-line jest/no-done-callback -- TODO(FEINF-1337)
   test('should invoke callback with undefined when model does not exist', (done) => {
     // getRegisteredModel returns rejected promise indicates model does not exist
     ModelRegistryService.getRegisteredModel = jest.fn(() => Promise.reject());

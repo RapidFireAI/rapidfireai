@@ -1,7 +1,7 @@
-import userEvent from '@testing-library/user-event';
+import userEvent from '@testing-library/user-event-14';
 
 import { useEditKeyValueTagsModal } from './useEditKeyValueTagsModal';
-import { KeyValueEntity } from '../types';
+import { KeyValueEntity } from '../../experiment-tracking/types';
 import {
   act,
   fireEvent,
@@ -10,7 +10,7 @@ import {
   within,
   selectAntdOption,
   renderWithIntl,
-} from '@mlflow/mlflow/src/common/utils/TestUtils.react18';
+} from 'common/utils/TestUtils.react18';
 
 describe('useEditKeyValueTagsModal', () => {
   function renderTestComponent(
@@ -87,7 +87,7 @@ describe('useEditKeyValueTagsModal', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Save tags' }));
 
-    expect(saveHandlerFn).toHaveBeenCalledWith(existingTaggedEntity, existingTags, [
+    expect(saveHandlerFn).toBeCalledWith(existingTaggedEntity, existingTags, [
       { key: 'tag1', value: 'tagvalue1' },
       { key: 'newtag', value: '' },
     ]);
@@ -108,7 +108,7 @@ describe('useEditKeyValueTagsModal', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Save tags' }));
 
-    expect(saveHandlerFn).toHaveBeenCalledWith(existingTaggedEntity, existingTags, [
+    expect(saveHandlerFn).toBeCalledWith(existingTaggedEntity, existingTags, [
       { key: 'tag1', value: 'tagvalue1' },
       { key: 'tag2', value: '' },
     ]);
@@ -136,7 +136,7 @@ describe('useEditKeyValueTagsModal', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Save tags' }));
 
-    expect(saveHandlerFn).toHaveBeenCalledWith(existingTaggedEntity, existingTags, [
+    expect(saveHandlerFn).toBeCalledWith(existingTaggedEntity, existingTags, [
       { key: 'tag1', value: 'tagvalue1' },
       { key: 'newtag', value: 'newvalue' },
     ]);

@@ -1,8 +1,8 @@
-.mlflow-html-iframe {
+.html-iframe {
   border: none;
 }
 
-.mlflow-artifact-html-view {
+.artifact-html-view {
   width: 100%;
   height: 100%;
   overflow: auto;

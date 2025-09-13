@@ -6,31 +6,29 @@
  */
 
 import React, { Component } from 'react';
+// @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Pagination, Spinner } from '@databricks/design-system';
-import {
-  getArtifactBytesContent,
-  getArtifactLocationUrl,
-  getLoggedModelArtifactLocationUrl,
-} from '../../../common/utils/ArtifactUtils';
+import { getArtifactBytesContent, getArtifactLocationUrl } from '../../../common/utils/ArtifactUtils';
 import './ShowArtifactPdfView.css';
 import Utils from '../../../common/utils/Utils';
 import { ErrorWrapper } from '../../../common/utils/ErrorWrapper';
 import { ArtifactViewSkeleton } from './ArtifactViewSkeleton';
 import { ArtifactViewErrorState } from './ArtifactViewErrorState';
-import type { LoggedModelArtifactViewerProps } from './ArtifactViewComponents.types';
-import { fetchArtifactUnified, type FetchArtifactUnifiedFn } from './utils/fetchArtifactUnified';
-import { setupReactPDFWorker } from './utils/setupReactPDFWorker';
 
-setupReactPDFWorker(pdfjs);
+// See: https://github.com/wojtekmaj/react-pdf/blob/master/README.md#enable-pdfjs-worker for how
+// workerSrc is supposed to be specified.
+pdfjs.GlobalWorkerOptions.workerSrc = `./static-files/pdf.worker.js`;
 
-type Props = {
+type OwnProps = {
   runUuid: string;
   path: string;
-  getArtifact: FetchArtifactUnifiedFn;
-} & LoggedModelArtifactViewerProps;
+  getArtifact?: (...args: any[]) => any;
+};
 
 type State = any;
+
+type Props = OwnProps & typeof ShowArtifactPdfView.defaultProps;
 
 class ShowArtifactPdfView extends Component<Props, State> {
   state = {
@@ -42,18 +40,14 @@ class ShowArtifactPdfView extends Component<Props, State> {
   };
 
   static defaultProps = {
-    getArtifact: fetchArtifactUnified,
+    getArtifact: getArtifactBytesContent,
   };
 
   /** Fetches artifacts and updates component state with the result */
   fetchPdf() {
-    const { path, runUuid, isLoggedModelsMode, loggedModelId, experimentId, entityTags } = this.props;
-
+    const artifactLocation = getArtifactLocationUrl(this.props.path, this.props.runUuid);
     this.props
-      .getArtifact?.(
-        { path, runUuid, isLoggedModelsMode, loggedModelId, experimentId, entityTags },
-        getArtifactBytesContent,
-      )
+      .getArtifact(artifactLocation)
       .then((artifactPdfData: any) => {
         this.setState({ pdfData: { data: artifactPdfData }, loading: false });
       })
@@ -66,18 +60,8 @@ class ShowArtifactPdfView extends Component<Props, State> {
     this.fetchPdf();
   }
 
-  resetPDFState() {
-    this.setState({
-      pdfData: undefined,
-      loading: true,
-      currentPage: 1,
-      numPages: 1,
-    });
-  }
-
   componentDidUpdate(prevProps: Props) {
     if (this.props.path !== prevProps.path || this.props.runUuid !== prevProps.runUuid) {
-      this.resetPDFState();
       this.fetchPdf();
     }
   }
@@ -97,8 +81,8 @@ class ShowArtifactPdfView extends Component<Props, State> {
   renderPdf = () => {
     return (
       <React.Fragment>
-        <div className="mlflow-pdf-viewer">
-          <div className="mlflow-paginator">
+        <div className="pdf-viewer">
+          <div className="paginator">
             <Pagination
               // @ts-expect-error TS(2322): Type '{ simple: true; currentPageIndex: number; nu... Remove this comment to see the full error message
               simple
@@ -113,19 +97,14 @@ class ShowArtifactPdfView extends Component<Props, State> {
               dangerouslySetAntdProps={{ simple: true }}
             />
           </div>
-          <div className="mlflow-document">
+          <div className="document">
             <Document
               file={this.state.pdfData}
               onLoadSuccess={this.onDocumentLoadSuccess}
               onLoadError={this.onDocumentLoadError}
               loading={<Spinner />}
             >
-              <Page
-                pageNumber={this.state.currentPage}
-                loading={<Spinner />}
-                renderTextLayer={false}
-                renderAnnotationLayer={false}
-              />
+              <Page pageNumber={this.state.currentPage} loading={<Spinner />} />
             </Document>
           </div>
         </div>
@@ -140,7 +119,7 @@ class ShowArtifactPdfView extends Component<Props, State> {
     if (this.state.error) {
       return <ArtifactViewErrorState className="artifact-pdf-view-error" />;
     } else {
-      return <div className="mlflow-pdf-outer-container">{this.renderPdf()}</div>;
+      return <div className="pdf-outer-container">{this.renderPdf()}</div>;
     }
   }
 }

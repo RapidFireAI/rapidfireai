@@ -6,7 +6,11 @@ import {
   makeCanonicalSortKey,
 } from '../../../experiment-page/utils/experimentPage.common-utils';
 import type { RunsChartsCardConfig, RunsChartsContourCardConfig } from '../../runs-charts.types';
-import { RunsChartsMetricParamSelect, RunsChartsConfigureField } from './RunsChartsConfigure.common';
+import {
+  RunsChartsMetricParamSelect,
+  RunsChartsConfigureField,
+  RunsChartsRunNumberSelect,
+} from './RunsChartsConfigure.common';
 
 type ValidAxis = keyof Pick<RunsChartsContourCardConfig, 'xaxis' | 'yaxis' | 'zaxis'>;
 
@@ -132,6 +136,11 @@ export const RunsChartsConfigureContourChart = ({
           metricKeyList={metricKeyList}
         />
       </RunsChartsConfigureField>
+      <RunsChartsRunNumberSelect
+        value={state.runsCountToCompare}
+        onChange={updateVisibleRunCount}
+        options={runSelectOptions}
+      />
     </>
   );
 };

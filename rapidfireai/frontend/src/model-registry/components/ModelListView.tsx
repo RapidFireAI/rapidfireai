@@ -19,7 +19,7 @@ import LocalStorageUtils from '../../common/utils/LocalStorageUtils';
 import { PageHeader } from '../../shared/building_blocks/PageHeader';
 
 import { FormattedMessage, type IntlShape, injectIntl } from 'react-intl';
-import { Alert, CursorPagination, Spacer as DuBoisSpacer, Spacer, Typography } from '@databricks/design-system';
+import { Alert, CursorPagination, Spacer as DuBoisSpacer, Typography } from '@databricks/design-system';
 import { shouldShowModelsNextUI } from '../../common/utils/FeatureUtils';
 import { ModelListFilters } from './model-list/ModelListFilters';
 import { ModelListTable } from './model-list/ModelListTable';
@@ -32,6 +32,7 @@ const LAST_MODIFIED_COLUMN_INDEX = 'last_updated_timestamp';
 
 type ModelListViewImplProps = {
   models: any[];
+  endpoints?: any;
   showEditPermissionModal: (...args: any[]) => any;
   permissionLevel: string;
   selectedOwnerFilter: string;
@@ -161,32 +162,29 @@ export class ModelListViewImpl extends React.Component<ModelListViewImplProps, M
       />
     );
     return (
-      <PageContainer data-testid="ModelListView-container" usesFullHeight>
+      <PageContainer data-test-id="ModelListView-container" usesFullHeight>
         <div>
-          <PageHeader title={title} spacerSize="xs">
+          <PageHeader
+            infoPopover={
+              <div>
+                {ModelListViewImpl.getLearnMoreDisplayString()}{' '}
+                <FormattedMessage
+                  defaultMessage="<link>Learn more</link>"
+                  description="Learn more link on the model list page with cloud-specific link"
+                  values={{
+                    link: (chunks) => (
+                      <Typography.Link href={ModelListViewImpl.getLearnMoreLinkUrl()} openInNewTab>
+                        {chunks}
+                      </Typography.Link>
+                    ),
+                  }}
+                />
+              </div>
+            }
+            title={title}
+          >
             <CreateModelButton />
           </PageHeader>
-          {/* TODO[SHIP-6202]: Move the description to the Header prop 'description' once it's been added */}
-          <Typography.Hint>
-            {ModelListViewImpl.getLearnMoreDisplayString()}{' '}
-            <FormattedMessage
-              defaultMessage="<link>Learn more</link>"
-              description="Learn more link on the model list page with cloud-specific link"
-              values={{
-                link: (chunks) => (
-                  <Typography.Link
-                    componentId="codegen_mlflow_app_src_model-registry_components_modellistview.tsx_244"
-                    href={ModelListViewImpl.getLearnMoreLinkUrl()}
-                    openInNewTab
-                  >
-                    {chunks}
-                  </Typography.Link>
-                ),
-              }}
-            />
-          </Typography.Hint>
-          <Spacer />
-
           <ModelListFilters
             searchFilter={this.props.searchInput}
             onSearchFilterChange={(value) => this.handleSearch(null, value)}
@@ -208,7 +206,6 @@ export class ModelListViewImpl extends React.Component<ModelListViewImplProps, M
               <div css={{ flex: 1 }}>{shouldShowModelsNextUI() && <ModelsNextUIToggleSwitch />}</div>
               <div>
                 <CursorPagination
-                  componentId="codegen_mlflow_app_src_model-registry_components_modellistview.tsx_305"
                   hasNextPage={Boolean(nextPageToken)}
                   hasPreviousPage={currentPage > 1}
                   onNextPage={this.handleClickNext}

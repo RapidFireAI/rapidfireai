@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { shallowWithInjectIntl } from '@mlflow/mlflow/src/common/utils/TestUtils.enzyme';
+import { shallowWithInjectIntl } from 'common/utils/TestUtils.enzyme';
 import { RenameRunModalWithIntl } from './RenameRunModal';
 import { GenericInputModal } from './GenericInputModal';
 
@@ -33,8 +33,7 @@ describe('RenameRunModal', () => {
     expect(wrapper.find(GenericInputModal).length).toBe(1);
   });
 
-  // eslint-disable-next-line jest/no-done-callback -- TODO(FEINF-1337)
-  test('handleRenameRun closes modal in both success & failure cases', (done) => {
+  test('test handleRenameRun closes modal in both success & failure cases', (done) => {
     const values = { newName: 'renamed' };
     const promise = wrapper.find(GenericInputModal).prop('handleSubmit')(values);
     promise.finally(() => {

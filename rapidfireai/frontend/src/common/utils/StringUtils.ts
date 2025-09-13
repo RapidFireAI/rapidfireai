@@ -1,22 +1,27 @@
-import _ from 'lodash';
-// Import pako lazily to reduce bundle size
-const lazyPako = () => import('pako');
+/**
+ * NOTE: this code file was automatically migrated to TypeScript using ts-migrate and
+ * may contain multiple `any` type annotations and `@ts-expect-error` directives.
+ * If possible, please improve types while making changes to this file. If the type
+ * annotations are already looking good, please remove this comment.
+ */
 
-export const truncateToFirstLineWithMaxLength = (str: string, maxLength: number): string => {
+import _ from 'lodash';
+
+export const truncateToFirstLineWithMaxLength = (str: any, maxLength: any) => {
   const truncated = _.truncate(str, {
     length: maxLength,
   });
   return _.takeWhile(truncated, (char) => char !== '\n').join('');
 };
 
-export const capitalizeFirstChar = (str: unknown) => {
+export const capitalizeFirstChar = (str: any) => {
   if (!str || typeof str !== 'string' || str.length < 1) {
     return str;
   }
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 };
 
-export const middleTruncateStr = (str: string, maxLen: number) => {
+export const middleTruncateStr = (str: any, maxLen: any) => {
   if (str.length > maxLen) {
     const firstPartLen = Math.floor((maxLen - 3) / 2);
     const lastPartLen = maxLen - 3 - firstPartLen;
@@ -26,7 +31,7 @@ export const middleTruncateStr = (str: string, maxLen: number) => {
   }
 };
 
-const capitalizeFirstLetter = (string: string) => {
+export const capitalizeFirstLetter = (string: any) => {
   return string.charAt(0).toUpperCase() + string.slice(1);
 };
 
@@ -39,7 +44,7 @@ const _keyStr = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+
  *
  * @param {string} input - Text to encode
  */
-export const btoaUtf8 = (input: string) => {
+export const btoaUtf8 = (input: any) => {
   let output = '';
   let i = 0;
 
@@ -56,8 +61,7 @@ export const btoaUtf8 = (input: string) => {
     let enc4 = chr3 & 63;
 
     if (isNaN(chr2)) {
-      enc4 = 64;
-      enc3 = enc4;
+      enc3 = enc4 = 64;
     } else if (isNaN(chr3)) {
       enc4 = 64;
     }
@@ -74,7 +78,7 @@ export const btoaUtf8 = (input: string) => {
  *
  * @param {string} input - Text to decode
  */
-export const atobUtf8 = (input: string) => {
+export const atobUtf8 = (input: any) => {
   let output = '';
   let i = 0;
 
@@ -171,49 +175,3 @@ export const getStringSHA256 = (input: string) => {
     return Array.prototype.map.call(new Uint8Array(arrayBuffer), (x) => ('00' + x.toString(16)).slice(-2)).join('');
   });
 };
-
-const COMPRESSED_TEXT_DEFLATE_PREFIX = 'deflate;';
-
-export const textCompressDeflate = async (text: string) => {
-  const pako = await lazyPako();
-  const binaryData = pako.deflate(text);
-
-  // Buffer-based implementation
-  if (typeof Buffer !== 'undefined') {
-    const b64encoded = Buffer.from(binaryData).toString('base64');
-    return `${COMPRESSED_TEXT_DEFLATE_PREFIX}${b64encoded}`;
-  }
-
-  // btoa-based implementation
-  const binaryString = Array.from(binaryData, (byte) => String.fromCodePoint(byte)).join('');
-  return `${COMPRESSED_TEXT_DEFLATE_PREFIX}${btoa(binaryString)}`;
-};
-
-export const textDecompressDeflate = async (compressedText: string) => {
-  const pako = await lazyPako();
-  if (!compressedText.startsWith(COMPRESSED_TEXT_DEFLATE_PREFIX)) {
-    throw new Error('Invalid compressed text, payload header invalid');
-  }
-  const compressedTextWithoutPrefix = compressedText.slice(COMPRESSED_TEXT_DEFLATE_PREFIX.length);
-
-  // Buffer-based implementation
-  if (typeof Buffer !== 'undefined') {
-    const binaryString = Buffer.from(compressedTextWithoutPrefix, 'base64');
-    return pako.inflate(
-      // This doesn't fail in Mlflow-Copybara-Tester-Pr. TODO: check why.
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore [FEINF-4084] No overload matches this call.
-      binaryString,
-      { to: 'string' },
-    );
-  }
-
-  // atob-based implementation
-  const binaryString = atob(compressedTextWithoutPrefix);
-  return pako.inflate(
-    Uint8Array.from(binaryString, (m) => m.codePointAt(0) ?? 0),
-    { to: 'string' },
-  );
-};
-
-export const isTextCompressedDeflate = (text: string) => text.startsWith(COMPRESSED_TEXT_DEFLATE_PREFIX);

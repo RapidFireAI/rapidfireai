@@ -1,6 +1,6 @@
 import { keyBy } from 'lodash';
-import { renderWithIntl, fastFillInput, act, screen, within } from '@mlflow/mlflow/src/common/utils/TestUtils.react18';
-import { LoggedModelProto, MetricEntitiesByName, RunInfoEntity } from '../../../types';
+import { renderWithIntl, fastFillInput, act, screen } from 'common/utils/TestUtils.react17';
+import { MetricEntitiesByName, RunInfoEntity } from '../../../types';
 import { RunViewMetricsTable } from './RunViewMetricsTable';
 import { MemoryRouter } from '../../../../common/utils/RoutingUtils';
 
@@ -30,13 +30,10 @@ const sampleLatestMetrics = keyBy(
 ) as any;
 
 describe('RunViewMetricsTable', () => {
-  const renderComponent = (
-    latestMetrics: MetricEntitiesByName = sampleLatestMetrics,
-    loggedModels?: LoggedModelProto[],
-  ) => {
+  const renderComponent = (latestMetrics: MetricEntitiesByName = sampleLatestMetrics) => {
     return renderWithIntl(
       <MemoryRouter>
-        <RunViewMetricsTable runInfo={testRunInfo} latestMetrics={latestMetrics} loggedModels={loggedModels} />
+        <RunViewMetricsTable runInfo={testRunInfo} latestMetrics={latestMetrics} />
       </MemoryRouter>,
     );
   };
@@ -54,14 +51,18 @@ describe('RunViewMetricsTable', () => {
     // Expect 10 rows for 9 metrics and 1 table header
     expect(screen.getAllByRole('row')).toHaveLength(9 + 1);
 
-    // Change the filter query
-    await fastFillInput(screen.getByRole('textbox'), 'metric_a');
+    await act(async () => {
+      // Change the filter query
+      fastFillInput(screen.getByRole('textbox'), 'metric_a');
+    });
 
     // Expect 4 rows for 3 filtered metrics and 1 table header
     expect(screen.getAllByRole('row')).toHaveLength(3 + 1);
 
-    // Change the filter query
-    await fastFillInput(screen.getByRole('textbox'), 'metric_xyz');
+    await act(async () => {
+      // Change the filter query
+      fastFillInput(screen.getByRole('textbox'), 'metric_xyz');
+    });
 
     // Expect no result rows, a header row and a message
     expect(screen.queryAllByRole('row')).toHaveLength(0 + 1);
@@ -81,43 +82,23 @@ describe('RunViewMetricsTable', () => {
     expect(screen.getByRole('cell', { name: /^System metrics/ })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: /^Model metrics/ })).toBeInTheDocument();
 
-    // Change the filter query
-    await fastFillInput(screen.getByRole('textbox'), 'system_');
+    await act(async () => {
+      // Change the filter query
+      fastFillInput(screen.getByRole('textbox'), 'system_');
+    });
 
     // Expect 4 rows: 2 rows for metrics, 1 header row for sections (system) and 1 header row for table
     expect(screen.getAllByRole('row')).toHaveLength(2 + 1 + 1);
     expect(screen.queryByRole('cell', { name: /^System metrics/ })).toBeInTheDocument();
     expect(screen.queryByRole('cell', { name: /^Model metrics/ })).not.toBeInTheDocument();
 
-    // Change the filter query
-    await fastFillInput(screen.getByRole('textbox'), 'foo-bar-abc-xyz');
+    await act(async () => {
+      // Change the filter query
+      fastFillInput(screen.getByRole('textbox'), 'foo-bar-abc-xyz');
+    });
 
     // Expect no result rows, a header row and a message
     expect(screen.queryAllByRole('row')).toHaveLength(0 + 1);
     expect(screen.getByText('No metrics match the search filter')).toBeInTheDocument();
-  });
-  test('Renders the table with logged models', () => {
-    renderComponent(sampleLatestMetrics, [
-      {
-        data: { metrics: [sampleLatestMetrics['metric_a2']] },
-        info: { name: 'model_a2', model_id: 'm-a2' },
-      },
-      {
-        data: { metrics: [sampleLatestMetrics['metric_c1']] },
-        info: { name: 'model_c1', model_id: 'm-c1' },
-      },
-    ]);
-    const rowWithMetricA2 = screen.getByRole('row', { name: /metric_a2/ });
-    const rowWithMetricC1 = screen.getByRole('row', { name: /metric_c1/ });
-
-    expect(within(rowWithMetricA2).getByRole('link', { name: 'model_a2' })).toHaveAttribute(
-      'href',
-      expect.stringMatching(/models\/m-a2/),
-    );
-
-    expect(within(rowWithMetricC1).getByRole('link', { name: 'model_c1' })).toHaveAttribute(
-      'href',
-      expect.stringMatching(/models\/m-c1/),
-    );
   });
 });

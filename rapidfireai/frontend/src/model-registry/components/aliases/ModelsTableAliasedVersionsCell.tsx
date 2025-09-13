@@ -1,6 +1,6 @@
 import { first, sortBy } from 'lodash';
 import { ModelEntity } from '../../../experiment-tracking/types';
-import { AliasTag } from '../../../common/components/AliasTag';
+import { ModelVersionAliasTag } from './ModelVersionAliasTag';
 import { Button, DropdownMenu, useDesignSystemTheme } from '@databricks/design-system';
 import { Link } from '../../../common/utils/RoutingUtils';
 import { ModelRegistryRoutes } from '../../routes';
@@ -38,7 +38,7 @@ export const ModelsTableAliasedVersionsCell = ({ model }: ModelsTableAliasedVers
   return (
     <div>
       <Link to={ModelRegistryRoutes.getModelVersionPageRoute(model.name, latestVersionAlias.version)}>
-        <AliasTag value={latestVersionAlias.alias} css={{ marginRight: 0, cursor: 'pointer' }} />
+        <ModelVersionAliasTag value={latestVersionAlias.alias} css={{ marginRight: 0, cursor: 'pointer' }} />
         : <FormattedMessage {...versionLabel} values={{ version: latestVersionAlias.version }} />
       </Link>
       {otherAliases.length > 0 && (
@@ -54,12 +54,9 @@ export const ModelsTableAliasedVersionsCell = ({ model }: ModelsTableAliasedVers
           </DropdownMenu.Trigger>
           <DropdownMenu.Content align="start">
             {otherAliases.map(({ alias, version }) => (
-              <DropdownMenu.Item
-                componentId="codegen_mlflow_app_src_model-registry_components_aliases_modelstablealiasedversionscell.tsx_57"
-                key={alias}
-              >
+              <DropdownMenu.Item key={alias}>
                 <Link to={ModelRegistryRoutes.getModelVersionPageRoute(model.name, version)}>
-                  <AliasTag value={alias} css={{ marginRight: 0, cursor: 'pointer' }} />:{' '}
+                  <ModelVersionAliasTag value={alias} css={{ marginRight: 0, cursor: 'pointer' }} />:{' '}
                   <span css={{ color: theme.colors.actionTertiaryTextDefault }}>
                     <FormattedMessage {...versionLabel} values={{ version }} />
                   </span>

@@ -1,5 +1,5 @@
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
-import { decorators, Treebeard, TreebeardData } from 'react-treebeard';
+import { decorators, Treebeard } from 'react-treebeard';
 import { DATA_EXTENSIONS, getExtension, IMAGE_EXTENSIONS, TEXT_EXTENSIONS } from '../../common/utils/FileUtils';
 
 import spinner from '../../common/static/mlflow-spinner.png';
@@ -16,7 +16,7 @@ interface ArtifactViewTreeProps {
     },
     toggled: boolean,
   ) => void;
-  data: TreebeardData;
+  data: Record<string, string>[];
 }
 
 export const ArtifactViewTree = ({ data, onToggleTreebeard }: ArtifactViewTreeProps) => {
@@ -59,7 +59,7 @@ decorators.Header = ({ style, node }: DecoratorStyle) => {
   return (
     <div
       style={style.base}
-      data-testid="artifact-tree-node"
+      data-test-id="artifact-tree-node"
       // eslint-disable-next-line react/no-unknown-property
       artifact-name={node.name}
       aria-label={node.name}
@@ -75,7 +75,7 @@ decorators.Header = ({ style, node }: DecoratorStyle) => {
 decorators.Loading = ({ style }: DecoratorStyle) => {
   return (
     <div style={style}>
-      <img alt="" className="mlflow-loading-spinner" src={spinner} />
+      <img alt="" className="loading-spinner" src={spinner} />
       <FormattedMessage
         defaultMessage="loading..."
         description="Loading spinner text to show that the artifact loading is in progress"
@@ -125,8 +125,6 @@ const getTreebeardStyle = (theme: Theme) => ({
           left: '50%',
           margin: '-12px 0 0 -4px',
           height: '14px',
-          display: 'flex',
-          alignItems: 'end',
         },
         height: 7,
         width: 7,

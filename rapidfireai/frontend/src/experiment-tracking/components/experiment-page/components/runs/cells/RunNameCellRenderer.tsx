@@ -1,16 +1,15 @@
 import { ICellRendererParams } from '@ag-grid-community/core';
-import { Button, MinusSquareIcon, PlusSquareIcon, useDesignSystemTheme } from '@databricks/design-system';
+import { Button, MinusBoxIcon, PlusSquareIcon, useDesignSystemTheme } from '@databricks/design-system';
 import { Theme } from '@emotion/react';
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Link } from '../../../../../../common/utils/RoutingUtils';
 import Routes from '../../../../../routes';
 import { RunRowType } from '../../../utils/experimentPage.row-types';
 import { GroupParentCellRenderer } from './GroupParentCellRenderer';
 import invariant from 'invariant';
 import { RunColorPill } from '../../RunColorPill';
-import { shouldEnableToggleIndividualRunsInGroups } from '../../../../../../common/utils/FeatureUtils';
+import { shouldUseNewRunRowsVisibilityModel } from '../../../../../../common/utils/FeatureUtils';
 import { useGetExperimentRunColor, useSaveExperimentRunColor } from '../../../hooks/useExperimentRunColor';
-import { useExperimentViewRunsTableHeaderContext } from '../ExperimentViewRunsTableHeaderContext';
 
 export interface RunNameCellRendererProps extends ICellRendererParams {
   data: RunRowType;
@@ -23,7 +22,6 @@ export const RunNameCellRenderer = React.memo((props: RunNameCellRendererProps) 
 
   const saveRunColor = useSaveExperimentRunColor();
   const getRunColor = useGetExperimentRunColor();
-  const { useGroupedValuesInCharts } = useExperimentViewRunsTableHeaderContext();
 
   // If we're rendering a group row, use relevant component
   if (props.data.groupParentInfo) {
@@ -40,12 +38,6 @@ export const RunNameCellRenderer = React.memo((props: RunNameCellRendererProps) 
   const { hasExpander, expanderOpen, childrenIds, level, belongsToGroup } = runDateAndNestInfo;
 
   const renderingAsParent = !isNaN(level) && hasExpander;
-  const hideRunColorControl = (() => {
-    if (shouldEnableToggleIndividualRunsInGroups()) {
-      return belongsToGroup && useGroupedValuesInCharts;
-    }
-    return belongsToGroup;
-  })();
 
   return (
     <div css={styles.cellWrapper}>
@@ -66,19 +58,19 @@ export const RunNameCellRenderer = React.memo((props: RunNameCellRendererProps) 
               }}
               key={'Expander-' + runUuid}
               type="link"
-              icon={expanderOpen ? <MinusSquareIcon /> : <PlusSquareIcon />}
+              icon={expanderOpen ? <MinusBoxIcon /> : <PlusSquareIcon />}
             />
           )}
         </div>
       </div>
       <div css={styles.runLink}>
-        {hideRunColorControl ? (
+        {belongsToGroup ? (
           // Render empty color pills for grouped runs
           <div css={{ width: 12, height: 12, flexShrink: 0 }} />
         ) : (
           <RunColorPill
             color={getRunColor(runUuid)}
-            hidden={props.isComparingRuns && hidden}
+            hidden={shouldUseNewRunRowsVisibilityModel() && !belongsToGroup && props.isComparingRuns && hidden}
             data-testid="experiment-view-table-run-color"
             onChangeColor={(colorValue) => saveRunColor({ runUuid, colorValue })}
           />

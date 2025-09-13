@@ -7,7 +7,7 @@
 
 import React, { Component } from 'react';
 import Utils from '../utils/Utils';
-import { LegacyForm, Input, Button, Spacer } from '@databricks/design-system';
+import { Form, Input, Button, Spacer } from '@databricks/design-system';
 import { EditableFormTable } from './tables/EditableFormTable';
 import _ from 'lodash';
 import { FormattedMessage, injectIntl } from 'react-intl';
@@ -24,7 +24,7 @@ type Props = {
   innerRef?: any;
 };
 
-class EditableTagsTableViewImpl extends Component<Props> {
+export class EditableTagsTableViewImpl extends Component<Props> {
   tableColumns = [
     {
       title: this.props.intl.formatMessage({
@@ -88,8 +88,8 @@ class EditableTagsTableViewImpl extends Component<Props> {
         <Spacer size="sm" />
         <div>
           {/* @ts-expect-error TS(2322): Type '{ children: Element[]; ref: any; layout: "in... Remove this comment to see the full error message */}
-          <LegacyForm ref={innerRef} layout="inline" onFinish={handleAddTag} css={styles.form}>
-            <LegacyForm.Item
+          <Form ref={innerRef} layout="inline" onFinish={handleAddTag} css={styles.form}>
+            <Form.Item
               name="name"
               rules={[
                 {
@@ -105,7 +105,6 @@ class EditableTagsTableViewImpl extends Component<Props> {
               ]}
             >
               <Input
-                componentId="codegen_mlflow_app_src_common_components_editabletagstableview.tsx_107"
                 aria-label="tag name"
                 data-testid="tags-form-input-name"
                 placeholder={this.props.intl.formatMessage({
@@ -113,10 +112,9 @@ class EditableTagsTableViewImpl extends Component<Props> {
                   description: 'Default text for name placeholder in editable tags table form in MLflow',
                 })}
               />
-            </LegacyForm.Item>
-            <LegacyForm.Item name="value" rules={[]}>
+            </Form.Item>
+            <Form.Item name="value" rules={[]}>
               <Input
-                componentId="codegen_mlflow_app_src_common_components_editabletagstableview.tsx_117"
                 aria-label="tag value"
                 data-testid="tags-form-input-value"
                 placeholder={this.props.intl.formatMessage({
@@ -124,8 +122,8 @@ class EditableTagsTableViewImpl extends Component<Props> {
                   description: 'Default text for value placeholder in editable tags table form in MLflow',
                 })}
               />
-            </LegacyForm.Item>
-            <LegacyForm.Item>
+            </Form.Item>
+            <Form.Item>
               <Button
                 componentId="codegen_mlflow_app_src_common_components_editabletagstableview.tsx_127"
                 loading={isRequestPending}
@@ -137,8 +135,8 @@ class EditableTagsTableViewImpl extends Component<Props> {
                   description="Add button text in editable tags table view in MLflow"
                 />
               </Button>
-            </LegacyForm.Item>
-          </LegacyForm>
+            </Form.Item>
+          </Form>
         </div>
       </>
     );

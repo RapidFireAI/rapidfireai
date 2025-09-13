@@ -6,18 +6,16 @@
  */
 
 import React from 'react';
-import _ from 'lodash';
 import { Link, NavigateFunction } from '../../common/utils/RoutingUtils';
 import { ModelRegistryRoutes } from '../routes';
-import { TagAssignmentModal } from '../../common/components/TagAssignmentModal';
-import { TagList } from '../../common/components/TagList';
 import { PromoteModelButton } from './PromoteModelButton';
 import { SchemaTable } from './SchemaTable';
 import Utils from '../../common/utils/Utils';
 import { ModelStageTransitionDropdown } from './ModelStageTransitionDropdown';
+import { message } from 'antd';
 import { Descriptions } from '../../common/components/Descriptions';
 import { modelStagesMigrationGuideLink } from '../../common/constants';
-import { Alert, Modal, Button, InfoSmallIcon, LegacyTooltip, Typography } from '@databricks/design-system';
+import { Alert, Modal, Button, InfoIcon, Tooltip, Typography } from '@databricks/design-system';
 import {
   ModelVersionStatus,
   StageLabels,
@@ -25,8 +23,6 @@ import {
   ModelVersionStatusIcons,
   DefaultModelVersionStatusMessages,
   ACTIVE_STAGES,
-  type ModelVersionActivity,
-  type PendingModelVersionActivity,
 } from '../constants';
 import Routers from '../../experiment-tracking/routes';
 import { CollapsibleSection } from '../../common/components/CollapsibleSection';
@@ -40,29 +36,23 @@ import { FormattedMessage, type IntlShape, injectIntl } from 'react-intl';
 import { extractArtifactPathFromModelSource } from '../utils/VersionUtils';
 import { withNextModelsUIContext } from '../hooks/useNextModelsUI';
 import { ModelsNextUIToggleSwitch } from './ModelsNextUIToggleSwitch';
-import { shouldShowModelsNextUI, shouldUseSharedTaggingUI } from '../../common/utils/FeatureUtils';
+import { shouldShowModelsNextUI } from '../../common/utils/FeatureUtils';
 import { ModelVersionViewAliasEditor } from './aliases/ModelVersionViewAliasEditor';
 import type { ModelEntity, RunInfoEntity } from '../../experiment-tracking/types';
-import { ErrorWrapper } from '../../common/utils/ErrorWrapper';
-import { KeyValueEntity } from '../../common/types';
 
 type ModelVersionViewImplProps = {
   modelName?: string;
   modelVersion?: any;
   modelEntity?: ModelEntity;
   schema?: any;
-  activities?: ModelVersionActivity[];
+  activities?: Record<string, unknown>[];
   transitionRequests?: Record<string, unknown>[];
   onCreateComment: (...args: any[]) => any;
   onEditComment: (...args: any[]) => any;
   onDeleteComment: (...args: any[]) => any;
   runInfo?: RunInfoEntity;
   runDisplayName?: string;
-  handleStageTransitionDropdownSelect: (
-    activity: PendingModelVersionActivity,
-    comment?: string,
-    archiveExistingVersions?: boolean,
-  ) => void;
+  handleStageTransitionDropdownSelect: (...args: any[]) => any;
   deleteModelVersionApi: (...args: any[]) => any;
   handleEditDescription: (...args: any[]) => any;
   onAliasesModified: () => void;
@@ -82,14 +72,9 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
     isDeleteModalConfirmLoading: false,
     showDescriptionEditor: false,
     isTagsRequestPending: false,
-    isTagAssignmentModalVisible: false,
-    isSavingTags: false,
-    tagSavingError: undefined,
   };
 
   formRef = React.createRef();
-
-  sharedTaggingUIEnabled = shouldUseSharedTaggingUI();
 
   componentDidMount() {
     const pageTitle = `${this.props.modelName} v${this.props.modelVersion.version} - MLflow Model`;
@@ -142,49 +127,6 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
     this.setState({ showDescriptionEditor: true });
   };
 
-  getTags = () =>
-    _.sortBy(
-      Utils.getVisibleTagValues(this.props.tags).map(([key, value]) => ({
-        key,
-        name: key,
-        value,
-      })),
-      'name',
-    );
-
-  handleCloseTagAssignmentModal = () => {
-    this.setState({ isTagAssignmentModalVisible: false, tagSavingError: undefined });
-  };
-
-  handleEditTags = () => {
-    this.setState({ isTagAssignmentModalVisible: true, tagSavingError: undefined });
-  };
-
-  handleSaveTags = (newTags: KeyValueEntity[], deletedTags: KeyValueEntity[]): Promise<void> => {
-    this.setState({ isSavingTags: true });
-
-    const { modelName } = this.props;
-    const { version } = this.props.modelVersion;
-
-    const newTagsToSet = newTags.map(({ key, value }) =>
-      this.props.setModelVersionTagApi(modelName, version, key, value),
-    );
-
-    const deletedTagsToDelete = deletedTags.map(({ key }) =>
-      this.props.deleteModelVersionTagApi(modelName, version, key),
-    );
-
-    return Promise.all([...newTagsToSet, ...deletedTagsToDelete])
-      .then(() => {
-        this.setState({ isSavingTags: false });
-      })
-      .catch((error: ErrorWrapper | Error) => {
-        const message = error instanceof ErrorWrapper ? error.getMessageField() : error.message;
-
-        this.setState({ isSavingTags: false, tagSavingError: message });
-      });
-  };
-
   handleAddTag = (values: any) => {
     const form = this.formRef.current;
     const { modelName } = this.props;
@@ -196,21 +138,17 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
         this.setState({ isTagsRequestPending: false });
         (form as any).resetFields();
       })
-      .catch((ex: ErrorWrapper | Error) => {
+      .catch((ex: any) => {
         this.setState({ isTagsRequestPending: false });
-        // eslint-disable-next-line no-console -- TODO(FEINF-3587)
         console.error(ex);
-
-        const userVisibleError = ex instanceof ErrorWrapper ? ex.getMessageField() : ex.message;
-
-        Utils.displayGlobalErrorNotification(
+        message.error(
           this.props.intl.formatMessage(
             {
               defaultMessage: 'Failed to add tag. Error: {userVisibleError}',
               description: 'Text for user visible error when adding tag in model version view',
             },
             {
-              userVisibleError,
+              userVisibleError: ex.getUserVisibleError(),
             },
           ),
         );
@@ -220,20 +158,16 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
   handleSaveEdit = ({ name, value }: any) => {
     const { modelName } = this.props;
     const { version } = this.props.modelVersion;
-    return this.props.setModelVersionTagApi(modelName, version, name, value).catch((ex: ErrorWrapper | Error) => {
-      // eslint-disable-next-line no-console -- TODO(FEINF-3587)
+    return this.props.setModelVersionTagApi(modelName, version, name, value).catch((ex: any) => {
       console.error(ex);
-
-      const userVisibleError = ex instanceof ErrorWrapper ? ex.getMessageField() : ex.message;
-
-      Utils.displayGlobalErrorNotification(
+      message.error(
         this.props.intl.formatMessage(
           {
             defaultMessage: 'Failed to set tag. Error: {userVisibleError}',
             description: 'Text for user visible error when setting tag in model version view',
           },
           {
-            userVisibleError,
+            userVisibleError: ex.getUserVisibleError(),
           },
         ),
       );
@@ -243,20 +177,16 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
   handleDeleteTag = ({ name }: any) => {
     const { modelName } = this.props;
     const { version } = this.props.modelVersion;
-    return this.props.deleteModelVersionTagApi(modelName, version, name).catch((ex: ErrorWrapper | Error) => {
-      // eslint-disable-next-line no-console -- TODO(FEINF-3587)
+    return this.props.deleteModelVersionTagApi(modelName, version, name).catch((ex: any) => {
       console.error(ex);
-
-      const userVisibleError = ex instanceof ErrorWrapper ? ex.getMessageField() : ex.message;
-
-      Utils.displayGlobalErrorNotification(
+      message.error(
         this.props.intl.formatMessage(
           {
             defaultMessage: 'Failed to delete tag. Error: {userVisibleError}',
             description: 'Text for user visible error when deleting tag in model version view',
           },
           {
-            userVisibleError,
+            userVisibleError: ex.getUserVisibleError(),
           },
         ),
       );
@@ -293,16 +223,12 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
   renderDisabledStage(modelVersion: any) {
     const tooltipContent = (
       <FormattedMessage
-        defaultMessage="Stages have been deprecated in the new Model Registry UI. Learn how to
+        defaultMessage="Stages have been deprecated in the new Model Registry UI. Learn how to 
       migrate models <link>here</link>."
         description="Tooltip content for the disabled stage metadata in model version page"
         values={{
           link: (chunks: any) => (
-            <Typography.Link
-              componentId="codegen_mlflow_app_src_model-registry_components_modelversionview.tsx_301"
-              href={modelStagesMigrationGuideLink}
-              openInNewTab
-            >
+            <Typography.Link href={modelStagesMigrationGuideLink} openInNewTab>
               {chunks}
             </Typography.Link>
           ),
@@ -319,9 +245,9 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
       >
         <div css={{ display: 'flex', alignItems: 'center' }}>
           {StageLabels[modelVersion.current_stage]}
-          <LegacyTooltip title={tooltipContent} placement="bottom">
-            <InfoSmallIcon css={{ paddingLeft: '4px' }} />
-          </LegacyTooltip>
+          <Tooltip title={tooltipContent} placement="bottom">
+            <InfoIcon css={{ paddingLeft: '4px' }} />
+          </Tooltip>
         </div>
       </Descriptions.Item>
     );
@@ -336,7 +262,7 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
           description: 'Label name for registered timestamp metadata in model version page',
         })}
       >
-        {Utils.formatTimestamp(creation_timestamp, this.props.intl)}
+        {Utils.formatTimestamp(creation_timestamp)}
       </Descriptions.Item>
     );
   }
@@ -366,16 +292,12 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
           description: 'Label name for last modified timestamp metadata in model version page',
         })}
       >
-        {Utils.formatTimestamp(last_updated_timestamp, this.props.intl)}
+        {Utils.formatTimestamp(last_updated_timestamp)}
       </Descriptions.Item>
     );
   }
 
   renderSourceRunDescription() {
-    // We don't show the source run link if the model version is not created from a run
-    if (!this.props.modelVersion?.run_id) {
-      return null;
-    }
     return (
       <Descriptions.Item
         key="description-key-source-run"
@@ -403,7 +325,7 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
     const link = (
       <>
         <Link
-          data-testid="copied-from-link"
+          data-test-id="copied-from-link"
           to={ModelRegistryRoutes.getModelVersionPageRoute(sourceModelName, sourceModelVersion)}
         >
           {sourceModelName}
@@ -471,9 +393,7 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
   renderMetadata(modelVersion: any) {
     return (
       // @ts-expect-error TS(2322): Type '{ children: any[]; className: string; }' is ... Remove this comment to see the full error message
-      <Descriptions columns={5} className="metadata-list">
-        {this.getDescriptions(modelVersion)}
-      </Descriptions>
+      <Descriptions className="metadata-list">{this.getDescriptions(modelVersion)}</Descriptions>
     );
   }
 
@@ -487,7 +407,7 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
       return (
         <Alert
           type={type}
-          className={`mlflow-status-alert mlflow-status-alert-${type}`}
+          className={`status-alert status-alert-${type}`}
           message={status_message || defaultMessage}
           // @ts-expect-error TS(2322): Type '{ type: "error" | "info"; className: string;... Remove this comment to see the full error message
           icon={ModelVersionStatusIcons[status]}
@@ -502,7 +422,7 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
     return (
       <Button
         componentId="codegen_mlflow_app_src_model-registry_components_modelversionview.tsx_516"
-        data-testid="descriptionEditButton"
+        data-test-id="descriptionEditButton"
         type="link"
         onClick={this.startEditingDescription}
       >
@@ -558,20 +478,6 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
     return usingNextModelsUI ? <PromoteModelButton modelVersion={modelVersion} /> : null;
   }
 
-  renderTags() {
-    if (!this.sharedTaggingUIEnabled) {
-      return null;
-    }
-
-    return (
-      <Descriptions columns={1} data-testid="model-view-tags">
-        <Descriptions.Item label="Tags">
-          <TagList tags={this.getTags()} onEdit={this.handleEditTags} />
-        </Descriptions.Item>
-      </Descriptions>
-    );
-  }
-
   getPageHeader(title: any, breadcrumbs: any) {
     const menu = [
       {
@@ -607,7 +513,6 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
       />
     );
     const breadcrumbs = [
-      // eslint-disable-next-line react/jsx-key
       <Link to={ModelRegistryRoutes.modelListPageRoute}>
         <FormattedMessage
           defaultMessage="Registered Models"
@@ -615,28 +520,17 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
              view page"
         />
       </Link>,
-      // eslint-disable-next-line react/jsx-key
-      <Link data-testid="breadcrumbRegisteredModel" to={ModelRegistryRoutes.getModelPageRoute(modelName)}>
+      <Link data-test-id="breadcrumbRegisteredModel" to={ModelRegistryRoutes.getModelPageRoute(modelName)}>
         {modelName}
       </Link>,
     ];
     return (
       <div>
-        <TagAssignmentModal
-          isLoading={this.state.isSavingTags}
-          error={this.state.tagSavingError}
-          visible={this.state.isTagAssignmentModalVisible}
-          initialTags={this.getTags()}
-          componentIdPrefix="model-version-view"
-          onSubmit={this.handleSaveTags}
-          onClose={this.handleCloseTagAssignmentModal}
-        />
         {this.getPageHeader(title, breadcrumbs)}
         {this.renderStatusAlert()}
 
         {/* Metadata List */}
         {this.renderMetadata(modelVersion)}
-        {this.renderTags()}
 
         {/* New models UI switch */}
         {shouldShowModelsNextUI() && (
@@ -658,7 +552,7 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
           }
           forceOpen={showDescriptionEditor}
           defaultCollapsed={!description}
-          data-testid="model-version-description-section"
+          data-test-id="model-version-description-section"
         >
           <EditableNote
             defaultMarkdown={description}
@@ -667,30 +561,28 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
             showEditor={showDescriptionEditor}
           />
         </CollapsibleSection>
-        {!this.sharedTaggingUIEnabled && (
-          <div data-testid="tags-section">
-            <CollapsibleSection
-              title={
-                <FormattedMessage
-                  defaultMessage="Tags"
-                  description="Title text for the tags section on the model versions view page"
-                />
-              }
-              defaultCollapsed={Utils.getVisibleTagValues(tags).length === 0}
-              data-testid="model-version-tags-section"
-            >
-              <EditableTagsTableView
-                // @ts-expect-error TS(2322): Type '{ innerRef: RefObject<unknown>; handleAddTag... Remove this comment to see the full error message
-                innerRef={this.formRef}
-                handleAddTag={this.handleAddTag}
-                handleDeleteTag={this.handleDeleteTag}
-                handleSaveEdit={this.handleSaveEdit}
-                tags={tags}
-                isRequestPending={isTagsRequestPending}
+        <div data-test-id="tags-section">
+          <CollapsibleSection
+            title={
+              <FormattedMessage
+                defaultMessage="Tags"
+                description="Title text for the tags section on the model versions view page"
               />
-            </CollapsibleSection>
-          </div>
-        )}
+            }
+            defaultCollapsed={Utils.getVisibleTagValues(tags).length === 0}
+            data-test-id="model-version-tags-section"
+          >
+            <EditableTagsTableView
+              // @ts-expect-error TS(2322): Type '{ innerRef: RefObject<unknown>; handleAddTag... Remove this comment to see the full error message
+              innerRef={this.formRef}
+              handleAddTag={this.handleAddTag}
+              handleDeleteTag={this.handleDeleteTag}
+              handleSaveEdit={this.handleSaveEdit}
+              tags={tags}
+              isRequestPending={isTagsRequestPending}
+            />
+          </CollapsibleSection>
+        </div>
         <CollapsibleSection
           title={
             <FormattedMessage
@@ -698,7 +590,7 @@ export class ModelVersionViewImpl extends React.Component<ModelVersionViewImplPr
               description="Title text for the schema section on the model versions view page"
             />
           }
-          data-testid="model-version-schema-section"
+          data-test-id="model-version-schema-section"
         >
           <SchemaTable schema={schema} />
         </CollapsibleSection>

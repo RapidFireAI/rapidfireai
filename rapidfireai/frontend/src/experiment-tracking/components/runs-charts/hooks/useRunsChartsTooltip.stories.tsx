@@ -1,4 +1,5 @@
 import { Button, CloseIcon } from '@databricks/design-system';
+import { EmotionJSX, WithConditionalCSSProp } from '@emotion/react/types/jsx-namespace';
 import React, { PropsWithChildren, ReactNode, useState } from 'react';
 import { IntlProvider } from 'react-intl';
 import { RunInfoEntity } from '../../../types';
@@ -102,8 +103,9 @@ const createMockData = (numRuns: number, numValues: number, negative = false) =>
 const withChartMenuContext =
   <
     T,
-    P extends JSX.IntrinsicAttributes &
-      JSX.LibraryManagedAttributes<React.ComponentType<T>, React.PropsWithChildren<T>>,
+    P extends EmotionJSX.IntrinsicAttributes &
+      WithConditionalCSSProp<PropsWithChildren<T>> &
+      T & { children?: ReactNode },
   >(
     Component: React.ComponentType<T>,
   ) =>

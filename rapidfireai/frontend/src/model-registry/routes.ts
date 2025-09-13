@@ -1,7 +1,6 @@
 import { createMLflowRoutePath, generatePath } from '../common/utils/RoutingUtils';
 
 // Route path definitions (used in defining route elements)
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- TODO(FEINF-4274)
 export class ModelRegistryRoutePaths {
   static get modelListPage() {
     return createMLflowRoutePath('/models');
@@ -27,7 +26,6 @@ export class ModelRegistryRoutePaths {
 }
 
 // Concrete routes and functions for generating parametrized paths
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- TODO(FEINF-4274)
 export class ModelRegistryRoutes {
   static get modelListPageRoute() {
     return ModelRegistryRoutePaths.modelListPage;

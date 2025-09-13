@@ -1,18 +1,21 @@
 import { Tooltip, useDesignSystemTheme } from '@databricks/design-system';
-import { RunColorPill } from '@mlflow/mlflow/src/experiment-tracking/components/experiment-page/components/RunColorPill';
+import { RunColorPill } from 'experiment-tracking/components/experiment-page/components/RunColorPill';
+import { useMemo } from 'react';
 import { RunsChartsImageCardConfig, RunsChartsCardConfig } from '../../runs-charts.types';
 import { RunsChartsRunData } from '../RunsCharts.common';
-import { EmptyImageGridPlot, ImagePlotWithHistory } from './ImageGridPlot.common';
-import { ImageEntity } from '@mlflow/mlflow/src/experiment-tracking/types';
+import { EmptyImageGridPlot, IMAGE_GAP_SIZE, ImagePlotWithHistory, getImageSize } from './ImageGridPlot.common';
+import { ImageEntity } from 'experiment-tracking/types';
 
 export const ImageGridSingleKeyPlot = ({
   previewData,
   cardConfig,
+  width,
 }: {
   previewData: RunsChartsRunData[];
   cardConfig: RunsChartsImageCardConfig;
   groupBy?: string;
   setCardConfig?: (setter: (current: RunsChartsCardConfig) => RunsChartsImageCardConfig) => void;
+  width: number;
 }) => {
   const { theme } = useDesignSystemTheme();
 
@@ -21,11 +24,15 @@ export const ImageGridSingleKeyPlot = ({
     return imageMetadata && Object.keys(imageMetadata).length > 0;
   });
 
+  const imageSize = useMemo(() => {
+    return getImageSize(displayRuns.length, width);
+  }, [displayRuns, width]);
+
   if (displayRuns.length === 0) {
     return <EmptyImageGridPlot />;
   }
   return (
-    <div css={{ display: 'flex', justifyContent: 'flex-start', flexWrap: 'wrap', gap: theme.spacing.xs }}>
+    <div css={{ display: 'flex', justifyContent: 'flex-start', flexWrap: 'wrap' }}>
       {displayRuns.map((run: RunsChartsRunData) => {
         // There is exactly one key in this plot
         const imageMetadataByStep = Object.values(run.images[cardConfig.imageKeys[0]]).reduce(
@@ -38,21 +45,11 @@ export const ImageGridSingleKeyPlot = ({
           {} as Record<number, ImageEntity>,
         );
         return (
-          <div
-            key={run.uuid}
-            css={{
-              border: `1px solid transparent`,
-              borderRadius: theme.borders.borderRadiusSm,
-              padding: theme.spacing.sm,
-              '&:hover': {
-                border: `1px solid ${theme.colors.border}`,
-                backgroundColor: theme.colors.tableBackgroundUnselectedHover,
-              },
-            }}
-          >
-            <Tooltip content={run.displayName} componentId="mlflow.charts.image-plot.run-name-tooltip">
+          <div key={run.uuid} css={{ padding: `${IMAGE_GAP_SIZE / 2}px` }}>
+            <Tooltip title={run.displayName}>
               <div
                 css={{
+                  width: imageSize,
                   height: theme.typography.lineHeightMd,
                   overflow: 'hidden',
                   whiteSpace: 'nowrap',
@@ -69,6 +66,7 @@ export const ImageGridSingleKeyPlot = ({
               key={run.uuid}
               step={cardConfig.step}
               metadataByStep={imageMetadataByStep}
+              imageSize={imageSize}
               runUuid={run.uuid}
             />
           </div>

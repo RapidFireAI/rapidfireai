@@ -15,8 +15,6 @@ import configureStore from 'redux-mock-store';
 
 import { MetricPageImpl, MetricPage } from './MetricPage';
 import NotFoundPage from './NotFoundPage';
-import { mountWithIntl } from '../../common/utils/TestUtils.enzyme';
-import Utils from '../../common/utils/Utils';
 
 describe('MetricPage', () => {
   let wrapper;
@@ -51,7 +49,7 @@ describe('MetricPage', () => {
   });
 
   test('should render with minimal props without exploding', () => {
-    wrapper = mountWithIntl(
+    wrapper = mount(
       <Provider store={minimalStore}>
         <MemoryRouter>
           <MetricPage {...minimalProps} />
@@ -62,7 +60,7 @@ describe('MetricPage', () => {
   });
 
   test('should render NotFoundPage when runs are not in query parameters', () => {
-    wrapper = mountWithIntl(
+    wrapper = mount(
       <Provider store={minimalStore}>
         <MemoryRouter>
           <MetricPage {...commonProps} />
@@ -82,7 +80,7 @@ describe('MetricPage', () => {
           '?runs=["a"]&metric="primary_metric_key"&experiment=0&plot_metric_keys=["metric_1","metric_2"]&plot_layout={}',
       },
     };
-    wrapper = mountWithIntl(
+    wrapper = mount(
       <Provider store={minimalStore}>
         <MemoryRouter>
           <MetricPage {...props} />
@@ -92,24 +90,5 @@ describe('MetricPage', () => {
 
     instance = wrapper.find(MetricPageImpl).instance();
     expect(instance.renderPageContent().type).not.toBe(NotFoundPage);
-  });
-
-  test('should display global error notification when query parameters are invalid', () => {
-    jest.spyOn(Utils, 'displayGlobalErrorNotification').mockImplementation(() => {});
-    const props = {
-      ...commonProps,
-      location: {
-        search: '?xyz=abc',
-      },
-    };
-    wrapper = mountWithIntl(
-      <Provider store={minimalStore}>
-        <MemoryRouter>
-          <MetricPage {...props} />
-        </MemoryRouter>
-      </Provider>,
-    ).find(MetricPage);
-
-    expect(wrapper.find(MetricPage).html()).toContain('Error during metric page load: invalid URL');
   });
 });

@@ -5,7 +5,6 @@
  * annotations are already looking good, please remove this comment.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- TODO(FEINF-4274)
 export default class CompareRunUtil {
   /**
    * Find in a list of metrics/params a certain key

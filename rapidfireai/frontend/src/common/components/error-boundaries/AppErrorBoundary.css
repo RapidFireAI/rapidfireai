@@ -1,8 +1,11 @@
-.mlflow-center {
+.center {
+  text-align: center;
+}
+.center {
   text-align: center;
 }
 
-.mlflow-error-image {
+.error-image {
   margin: 12% auto 60px;
   display: block;
 }

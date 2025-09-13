@@ -6,11 +6,10 @@
  */
 
 import React, { Component } from 'react';
-import { Alert, Button, LegacyTooltip, useDesignSystemTheme } from '@databricks/design-system';
+import { Alert, Button, Tooltip, useDesignSystemTheme } from '@databricks/design-system';
 import { Prompt } from './Prompt';
-import 'react-mde/lib/styles/css/react-mde-all.css';
 import ReactMde, { SvgIcon } from 'react-mde';
-import { forceAnchorTagNewTab, getMarkdownConverter, sanitizeConvertedHtml } from '../utils/MarkdownUtils';
+import { forceAnchorTagNewTab, getConverter, sanitizeConvertedHtml } from '../utils/MarkdownUtils';
 import './EditableNote.css';
 import { FormattedMessage, IntlShape, injectIntl } from 'react-intl';
 
@@ -29,8 +28,6 @@ type EditableNoteImplProps = {
 };
 
 type EditableNoteImplState = any;
-
-const getReactMdeIcon = (name: string) => <TooltipIcon name={name} />;
 
 export class EditableNoteImpl extends Component<EditableNoteImplProps, EditableNoteImplState> {
   static defaultProps = {
@@ -57,7 +54,7 @@ export class EditableNoteImpl extends Component<EditableNoteImplProps, EditableN
     error: null,
   };
 
-  converter = getMarkdownConverter();
+  converter = getConverter();
 
   handleMdeValueChange = (markdown: any) => {
     this.setState({ markdown });
@@ -112,7 +109,7 @@ export class EditableNoteImpl extends Component<EditableNoteImplProps, EditableN
     // @ts-expect-error TS(2339): Property 'confirmLoading' does not exist on type '... Remove this comment to see the full error message
     const { confirmLoading } = this.state;
     return (
-      <div className="mlflow-editable-note-actions" data-testid="editable-note-actions">
+      <div className="editable-note-actions">
         <div>
           <Button
             componentId="codegen_mlflow_app_src_common_components_editablenote.tsx_114"
@@ -156,7 +153,7 @@ export class EditableNoteImpl extends Component<EditableNoteImplProps, EditableN
     const { markdown, selectedTab, error } = this.state;
     const htmlContent = this.getSanitizedHtmlContent();
     return (
-      <div className="note-view-outer-container" data-testid="note-view-outer-container">
+      <div className="note-view-outer-container">
         {showEditor ? (
           <React.Fragment>
             <div className="note-view-text-area">
@@ -173,12 +170,11 @@ export class EditableNoteImpl extends Component<EditableNoteImplProps, EditableN
                 onTabChange={this.handleTabChange}
                 // @ts-expect-error TS(2554): Expected 0 arguments, but got 1.
                 generateMarkdownPreview={(md) => Promise.resolve(this.getSanitizedHtmlContent(md))}
-                getIcon={getReactMdeIcon}
+                getIcon={(name) => <TooltipIcon name={name} />}
               />
             </div>
             {error && (
               <Alert
-                componentId="codegen_mlflow_app_src_common_components_editablenote.tsx_178"
                 type="error"
                 message={this.props.intl.formatMessage({
                   defaultMessage: 'There was an error submitting your note.',
@@ -214,12 +210,12 @@ function TooltipIcon(props: TooltipIconProps) {
   const { name } = props;
   return (
     // @ts-expect-error TS(2322): Type '{ children: Element; position: string; title... Remove this comment to see the full error message
-    <LegacyTooltip position="top" title={name}>
+    <Tooltip position="top" title={name}>
       <span css={{ color: theme.colors.textPrimary }}>
         {/* @ts-expect-error TS(2322): Type 'string | undefined' is not assignable to typ... Remove this comment to see the full error message */}
         <SvgIcon icon={name} />
       </span>
-    </LegacyTooltip>
+    </Tooltip>
   );
 }
 
@@ -230,7 +226,7 @@ type HTMLNoteContentProps = {
 function HTMLNoteContent(props: HTMLNoteContentProps) {
   const { content } = props;
   return content ? (
-    <div className="note-view-outer-container" data-testid="note-view-outer-container">
+    <div className="note-view-outer-container">
       <div className="note-view-text-area">
         <div className="note-view-preview note-editor-preview">
           <div
@@ -239,7 +235,7 @@ function HTMLNoteContent(props: HTMLNoteContentProps) {
             // @ts-expect-error TS(2322): Type 'string | undefined' is not assignable to typ... Remove this comment to see the full error message
             // eslint-disable-next-line react/no-danger
             dangerouslySetInnerHTML={{ __html: props.content }}
-          />
+          ></div>
         </div>
       </div>
     </div>

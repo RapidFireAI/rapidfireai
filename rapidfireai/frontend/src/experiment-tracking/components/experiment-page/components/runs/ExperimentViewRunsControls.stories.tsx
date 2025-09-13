@@ -59,7 +59,6 @@ const createComponentWrapper = (viewState: ExperimentPageViewState) => () => {
             refreshRuns={() => {}}
             uiState={createExperimentPageUIState()}
             isLoading={false}
-            isComparingExperiments={false}
           />
           <div
             css={{

@@ -9,14 +9,11 @@ import {
   DEFAULT_START_TIME,
 } from '../../../constants';
 import { ViewType } from '../../../sdk/MlflowEnums';
-import { LIFECYCLE_FILTER } from '../../../types';
-import { KeyValueEntity } from '../../../../common/types';
+import { KeyValueEntity, LIFECYCLE_FILTER } from '../../../types';
 import { EXPERIMENT_LOG_MODEL_HISTORY_TAG } from './experimentPage.common-utils';
 import { ThunkDispatch } from '../../../../redux-types';
 import type { ExperimentPageSearchFacetsState } from '../models/ExperimentPageSearchFacetsState';
 import { RUNS_SEARCH_MAX_RESULTS } from '../../../actions';
-import { getUUID } from '../../../../common/utils/ActionUtils';
-import { shouldUseRegexpBasedAutoRunsSearchFilter } from '../../../../common/utils/FeatureUtils';
 
 const START_TIME_COLUMN_OFFSET = {
   ALL: null,
@@ -27,29 +24,24 @@ const START_TIME_COLUMN_OFFSET = {
   LAST_YEAR: 12 * 30 * 24 * 60 * 60 * 1000,
 };
 
-const VALID_TABLE_ALIASES = [
-  'attribute',
-  'attributes',
-  'attr',
-  'run',
-  'metric',
-  'metrics',
-  'param',
-  'params',
-  'parameter',
-  'tag',
-  'tags',
-  'dataset',
-  'datasets',
-  'model',
-  'models',
-];
-const SQL_SYNTAX_PATTERN = new RegExp(
-  `(${VALID_TABLE_ALIASES.join('|')})\\.\\S+\\s*(>|<|>=|<=|=|!=| like| ilike| rlike| in)`,
-  'i',
-);
-
 export const RUNS_AUTO_REFRESH_INTERVAL = 30000;
+
+/**
+ * This function checks if the sort+model state update has
+ * been updated enough and if the change should invoke re-fetching
+ * the runs from the back-end. This enables differentiation between
+ * front-end and back-end filtering.
+ */
+export const shouldRefetchRuns = (
+  currentSearchFacetsState: ExperimentPageSearchFacetsState,
+  newSearchFacetsState: ExperimentPageSearchFacetsState,
+) =>
+  !isEqual(currentSearchFacetsState.searchFilter, newSearchFacetsState.searchFilter) ||
+  !isEqual(currentSearchFacetsState.orderByAsc, newSearchFacetsState.orderByAsc) ||
+  !isEqual(currentSearchFacetsState.orderByKey, newSearchFacetsState.orderByKey) ||
+  !isEqual(currentSearchFacetsState.lifecycleFilter, newSearchFacetsState.lifecycleFilter) ||
+  !isEqual(currentSearchFacetsState.startTime, newSearchFacetsState.startTime) ||
+  !isEqual(currentSearchFacetsState.datasetsFilter, newSearchFacetsState.datasetsFilter);
 
 /**
  * Creates "order by" SQL expression
@@ -87,13 +79,6 @@ const createDatasetsFilterExpression = ({ datasetsFilter }: ExperimentPageSearch
   return `dataset.name IN (${datasetNames}) AND dataset.digest IN (${datasetDigests})`;
 };
 
-export const detectSqlSyntaxInSearchQuery = (searchFilter: string) => {
-  return SQL_SYNTAX_PATTERN.test(searchFilter);
-};
-
-export const createQuickRegexpSearchFilter = (searchFilter: string) =>
-  `attributes.run_name RLIKE '${searchFilter.replace(/'/g, "\\'")}'`;
-
 /**
  * Combines search filter and start time SQL expressions
  */
@@ -102,14 +87,6 @@ const createFilterExpression = (
   startTimeExpression: string | null,
   datasetsFilterExpression: string | null,
 ) => {
-  if (
-    shouldUseRegexpBasedAutoRunsSearchFilter() &&
-    searchFilter.length > 0 &&
-    !detectSqlSyntaxInSearchQuery(searchFilter)
-  ) {
-    return createQuickRegexpSearchFilter(searchFilter);
-  }
-
   const activeFilters = [];
   if (searchFilter) activeFilters.push(searchFilter);
   if (startTimeExpression) activeFilters.push(startTimeExpression);
@@ -195,20 +172,10 @@ export const fetchModelVersionsForRuns = (
     run.data.tags.some((t) => t.key === EXPERIMENT_LOG_MODEL_HISTORY_TAG),
   );
 
-  const promises = chunk(runsWithLogModelHistory, MAX_RUNS_IN_SEARCH_MODEL_VERSIONS_FILTER).map((runsChunk) => {
-    // eslint-disable-next-line prefer-const
-    let maxResults = undefined;
-    const action = actionCreator(
-      {
-        run_id: runsChunk.map((run) => run.info.run_id),
-      },
-      getUUID(),
-      maxResults,
-    );
-    return dispatch(action);
+  chunk(runsWithLogModelHistory, MAX_RUNS_IN_SEARCH_MODEL_VERSIONS_FILTER).forEach((runsChunk) => {
+    const action = actionCreator({ run_id: runsChunk.map((run) => run.info.run_id) });
+    dispatch(action);
   });
-
-  return Promise.all(promises);
 };
 
 /**
