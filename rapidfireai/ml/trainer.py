@@ -46,7 +46,7 @@ def create_trainer_instance(
     compute_metrics = additional_trainer_kwargs.get("compute_metrics", None)
 
     # Configure training arguments
-    training_args = _configure_training_args(training_args)
+    training_args = _configure_training_args(training_args, trainer_config)
     trainer_config_obj = _create_trainer_config_object(trainer_type, training_args)
     # check if peft params is empty dict
     if config_leaf.get("peft_params") == {}:
