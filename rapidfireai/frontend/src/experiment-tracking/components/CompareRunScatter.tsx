@@ -10,6 +10,7 @@ import React, { Component } from 'react';
 import { getParams, getRunInfo } from '../reducers/Reducers';
 import { connect } from 'react-redux';
 import { FormUI, SimpleSelect, SimpleSelectOption, SimpleSelectOptionGroup, Spacer } from '@databricks/design-system';
+import './CompareRunView.css';
 import Utils from '../../common/utils/Utils';
 import { getLatestMetrics } from '../reducers/MetricReducer';
 import CompareRunUtil from './CompareRunUtil';
@@ -179,7 +180,7 @@ export class CompareRunScatterImpl extends Component<CompareRunScatterImplProps,
   renderSelect(axis: any) {
     return (
       <SimpleSelect
-        componentId="codegen_mlflow_app_src_experiment-tracking_components_comparerunscatter.tsx_182"
+        label={''}
         css={styles.select}
         id={axis + '-axis-selector'}
         onChange={({ target }) => {

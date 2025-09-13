@@ -19,11 +19,7 @@ import {
 import { getRunApi } from '../../experiment-tracking/actions';
 import { getModelVersion, getModelVersionSchemas } from '../reducers';
 import { ModelVersionView } from './ModelVersionView';
-import {
-  ActivityTypes,
-  PendingModelVersionActivity,
-  MODEL_VERSION_STATUS_POLL_INTERVAL as POLL_INTERVAL,
-} from '../constants';
+import { ActivityTypes, MODEL_VERSION_STATUS_POLL_INTERVAL as POLL_INTERVAL } from '../constants';
 import Utils from '../../common/utils/Utils';
 import { getRunInfo, getRunTags } from '../../experiment-tracking/reducers/Reducers';
 import RequestStateWrapper, { triggerError } from '../../common/components/RequestStateWrapper';
@@ -40,8 +36,6 @@ import { withErrorBoundary } from '../../common/utils/withErrorBoundary';
 import ErrorUtils from '../../common/utils/ErrorUtils';
 import type { ModelEntity, RunInfoEntity } from '../../experiment-tracking/types';
 import { ReduxState } from '../../redux-types';
-import { ErrorCodes } from '../../common/constants';
-import { injectIntl } from 'react-intl';
 
 type ModelVersionPageImplProps = WithRouterNextProps & {
   modelName: string;
@@ -61,7 +55,6 @@ type ModelVersionPageImplProps = WithRouterNextProps & {
   parseMlModelFile: (...args: any[]) => any;
   schema?: any;
   activities?: Record<string, unknown>[];
-  intl?: any;
 };
 
 type ModelVersionPageImplState = any;
@@ -90,7 +83,7 @@ export class ModelVersionPageImpl extends React.Component<ModelVersionPageImplPr
 
   loadData = (isInitialLoading: any) => {
     const promises = [this.getModelVersionDetailAndRunInfo(isInitialLoading)];
-    return Promise.all(promises);
+    return Promise.all([promises]);
   };
 
   pollData = () => {
@@ -103,7 +96,6 @@ export class ModelVersionPageImpl extends React.Component<ModelVersionPageImplPr
           this.props.deleteModelVersionApi(modelName, version, undefined, true);
           navigate(ModelRegistryRoutes.getModelPageRoute(modelName));
         } else {
-          // eslint-disable-next-line no-console -- TODO(FEINF-3587)
           console.error(e);
         }
       });
@@ -123,8 +115,7 @@ export class ModelVersionPageImpl extends React.Component<ModelVersionPageImplPr
         isInitialLoading === true ? this.initGetModelVersionDetailsRequestId : this.getModelVersionDetailsRequestId,
       )
       .then(({ value }: any) => {
-        // Do not fetch run info if there is no run_id (e.g. model version created directly from a logged model)
-        if (value && !value[getProtoField('model_version')].run_link && value[getProtoField('model_version')]?.run_id) {
+        if (value && !value[getProtoField('model_version')].run_link) {
           this.props.getRunApi(value[getProtoField('model_version')].run_id, this.getRunRequestId);
         }
       });
@@ -148,11 +139,7 @@ export class ModelVersionPageImpl extends React.Component<ModelVersionPageImplPr
       });
   }
 
-  // prettier-ignore
-  handleStageTransitionDropdownSelect = (
-    activity: PendingModelVersionActivity,
-    archiveExistingVersions?: boolean,
-  ) => {
+  handleStageTransitionDropdownSelect = (activity: any, archiveExistingVersions: any) => {
     const { modelName, version } = this.props;
     const toStage = activity.to_stage;
     if (activity.type === ActivityTypes.APPLIED_TRANSITION) {
@@ -171,17 +158,13 @@ export class ModelVersionPageImpl extends React.Component<ModelVersionPageImplPr
 
   handleEditDescription = (description: any) => {
     const { modelName, version } = this.props;
-    return (
-      this.props
-        .updateModelVersionApi(modelName, version, description, this.updateModelVersionRequestId)
-        .then(this.loadData)
-        // eslint-disable-next-line no-console -- TODO(FEINF-3587)
-        .catch(console.error)
-    );
+    return this.props
+      .updateModelVersionApi(modelName, version, description, this.updateModelVersionRequestId)
+      .then(this.loadData)
+      .catch(console.error);
   };
 
   componentDidMount() {
-    // eslint-disable-next-line no-console -- TODO(FEINF-3587)
     this.loadData(true).catch(console.error);
     this.loadModelDataWithAliases();
     this.pollIntervalId = setInterval(this.pollData, POLL_INTERVAL);
@@ -195,7 +178,6 @@ export class ModelVersionPageImpl extends React.Component<ModelVersionPageImplPr
   // Make a new initial load if model version or name has changed
   componentDidUpdate(prevProps: ModelVersionPageImplProps) {
     if (this.props.version !== prevProps.version || this.props.modelName !== prevProps.modelName) {
-      // eslint-disable-next-line no-console -- TODO(FEINF-3587)
       this.loadData(true).catch(console.error);
       this.getModelVersionMlModelFile();
     }
@@ -240,31 +222,6 @@ export class ModelVersionPageImpl extends React.Component<ModelVersionPageImplPr
                 );
               }
               // TODO(Zangr) Have a more generic boundary to handle all errors, not just 404.
-              const permissionDeniedErrors = requests.filter((request: any) => {
-                return (
-                  this.state.criticalInitialRequestIds.includes(request.id) &&
-                  request.error?.getErrorCode() === ErrorCodes.PERMISSION_DENIED
-                );
-              });
-              if (permissionDeniedErrors && permissionDeniedErrors[0]) {
-                return (
-                  <ErrorView
-                    statusCode={403}
-                    subMessage={this.props.intl.formatMessage(
-                      {
-                        defaultMessage: 'Permission denied for {modelName} version {version}. Error: "{errorMsg}"',
-                        description: 'Permission denied error message on model version detail page',
-                      },
-                      {
-                        modelName: modelName,
-                        version: version,
-                        errorMsg: permissionDeniedErrors[0].error?.getMessageField(),
-                      },
-                    )}
-                    fallbackHomePageReactRoute={ModelRegistryRoutes.modelListPageRoute}
-                  />
-                );
-              }
               triggerError(requests);
             } else if (loading) {
               return <Spinner />;
@@ -330,10 +287,7 @@ const mapDispatchToProps = {
   getRunApi,
 };
 
-const ModelVersionPageWithRouter = withRouterNext(
-  // @ts-expect-error TS(2769): No overload matches this call.
-  connect(mapStateToProps, mapDispatchToProps)(injectIntl(ModelVersionPageImpl)),
-);
+const ModelVersionPageWithRouter = withRouterNext(connect(mapStateToProps, mapDispatchToProps)(ModelVersionPageImpl));
 
 export const ModelVersionPage = withErrorBoundary(ErrorUtils.mlflowServices.MODEL_REGISTRY, ModelVersionPageWithRouter);
 

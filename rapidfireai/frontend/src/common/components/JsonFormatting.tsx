@@ -39,7 +39,7 @@ export const JsonPreview: React.FC<JsonPreviewProps> = ({ json, wrapperStyle, ov
           <CodeSnippet language="json" style={{ ...defaultCodeSnippetStyle, ...codeSnippetStyle }}>
             {formattedJson}
           </CodeSnippet>
-          <div css={{ ...defaultOverlayStyle, ...overlayStyle }} />
+          <div css={{ ...defaultOverlayStyle, ...overlayStyle }}></div>
         </>
       ) : (
         <>{json}</>
@@ -48,7 +48,7 @@ export const JsonPreview: React.FC<JsonPreviewProps> = ({ json, wrapperStyle, ov
   );
 };
 
-function useFormattedJson(json: string) {
+export function useFormattedJson(json: string) {
   return React.useMemo(() => {
     try {
       const parsed = JSON.parse(json);

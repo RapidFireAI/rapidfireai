@@ -7,12 +7,14 @@
 
 import React, { Component } from 'react';
 
-type Props = {
+type OwnProps = {
   onToggle?: (...args: any[]) => any;
   showLines?: number;
 };
 
 type State = any;
+
+type Props = OwnProps & typeof ExpandableList.defaultProps;
 
 class ExpandableList extends Component<Props, State> {
   state = {
@@ -33,7 +35,7 @@ class ExpandableList extends Component<Props, State> {
   };
 
   render() {
-    if ((this.props.children as any).length <= (this.props.showLines ?? 1)) {
+    if ((this.props.children as any).length <= this.props.showLines) {
       return (
         <div css={expandableListClassName}>
           {(this.props.children as any).map((item: any, index: any) => (
@@ -59,7 +61,7 @@ class ExpandableList extends Component<Props, State> {
       );
       const showMore = (
         <div onClick={this.handleToggle} className="expander-text">
-          +{(this.props.children as any).length - (this.props.showLines ?? 1)} more
+          +{(this.props.children as any).length - this.props.showLines} more
         </div>
       );
       return (

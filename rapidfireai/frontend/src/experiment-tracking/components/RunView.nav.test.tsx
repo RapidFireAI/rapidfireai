@@ -1,4 +1,4 @@
-import { renderWithIntl, screen, waitFor } from '@mlflow/mlflow/src/common/utils/TestUtils.react18';
+import { renderWithIntl, screen, waitFor } from 'common/utils/TestUtils.react18';
 import { RunPage } from './run-page/RunPage';
 import thunk from 'redux-thunk';
 import configureStore from 'redux-mock-store';
@@ -7,10 +7,9 @@ import { Provider } from 'react-redux';
 import { EXPERIMENT_RUNS_MOCK_STORE } from './experiment-page/fixtures/experiment-runs.fixtures';
 import { createMLflowRoutePath } from '../../common/utils/RoutingUtils';
 import { testRoute, TestRouter } from '../../common/utils/RoutingTestUtils';
-import userEvent from '@testing-library/user-event';
+import userEvent from '@testing-library/user-event-14';
 import { RoutePaths } from '../routes';
-import { useRunDetailsPageData } from './run-page/hooks/useRunDetailsPageData';
-import { QueryClient, QueryClientProvider } from '@mlflow/mlflow/src/common/utils/reactQueryHooks';
+import { useRunDetailsPageData } from './run-page/useRunDetailsPageData';
 
 // Mock tab contents
 jest.mock('./run-page/RunViewMetricCharts', () => ({
@@ -25,7 +24,7 @@ jest.mock('./run-page/RunViewArtifactTab', () => ({
 jest.mock('./run-page/RunViewHeaderRegisterModelButton', () => ({
   RunViewHeaderRegisterModelButton: jest.fn(() => <div>register model</div>),
 }));
-jest.mock('./run-page/hooks/useRunDetailsPageData', () => ({
+jest.mock('./run-page/useRunDetailsPageData', () => ({
   useRunDetailsPageData: jest.fn(),
 }));
 
@@ -39,15 +38,12 @@ describe('RunView navigation integration test', () => {
         hasComparedExperimentsBefore: false,
       },
     };
-    const queryClient = new QueryClient();
     const renderResult = renderWithIntl(
       <Provider store={mockStore(mockState)}>
-        <QueryClientProvider client={queryClient}>
-          <TestRouter
-            initialEntries={[createMLflowRoutePath(initialRoute)]}
-            routes={[testRoute(<RunPage />, RoutePaths.runPageWithTab)]}
-          />
-        </QueryClientProvider>
+        <TestRouter
+          initialEntries={[createMLflowRoutePath(initialRoute)]}
+          routes={[testRoute(<RunPage />, RoutePaths.runPageWithTab)]}
+        />
       </Provider>,
     );
 
@@ -57,12 +53,14 @@ describe('RunView navigation integration test', () => {
     jest.mocked(useRunDetailsPageData).mockImplementation(
       () =>
         ({
-          experiment: EXPERIMENT_RUNS_MOCK_STORE.entities.experimentsById['123456789'],
-          runInfo: EXPERIMENT_RUNS_MOCK_STORE.entities.runInfosByUuid['experiment123456789_run1'],
-          latestMetrics: {},
-          tags: {},
-          params: {},
-          error: null,
+          data: {
+            experiment: EXPERIMENT_RUNS_MOCK_STORE.entities.experimentsById['123456789'],
+            runInfo: EXPERIMENT_RUNS_MOCK_STORE.entities.runInfosByUuid['experiment123456789_run1'],
+            latestMetrics: {},
+            tags: {},
+            params: {},
+          },
+          errors: {},
           loading: false,
         } as any),
     );

@@ -2,13 +2,6 @@
 import { configure } from 'enzyme';
 import Adapter from '@wojtekmaj/enzyme-adapter-react-17';
 
-const setupMockFetch = () => {
-  // eslint-disable-next-line import/no-extraneous-dependencies, no-unreachable, global-require
-  require('whatwg-fetch');
-};
-
-setupMockFetch();
-
 configure({ adapter: new Adapter() });
 // Included to mock local storage in JS tests, see docs at
 // https://www.npmjs.com/package/jest-localstorage-mock#in-create-react-app
@@ -50,7 +43,7 @@ jest.mock('./i18n/loadMessages', () => ({
 
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: jest.fn((query) => ({
+  value: jest.fn().mockImplementation((query) => ({
     matches: false,
     media: query,
     onchange: null,

@@ -3,8 +3,8 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Control, useController } from 'react-hook-form';
 import { useIntl } from 'react-intl';
 
-import { PlusIcon, LegacySelect, LegacyTooltip, useDesignSystemTheme } from '@databricks/design-system';
-import { KeyValueEntity } from '../types';
+import { PlusIcon, LegacySelect, Tooltip, useDesignSystemTheme } from '@databricks/design-system';
+import { KeyValueEntity } from '../../experiment-tracking/types';
 
 /**
  * Will show an extra row at the bottom of the dropdown menu to create a new tag when
@@ -38,7 +38,7 @@ function DropdownMenu(menu: React.ReactElement, allAvailableTags: string[]) {
               color: isValidTagKey ? theme.colors.actionTertiaryTextDefault : theme.colors.actionDisabledText,
             },
             children: (
-              <LegacyTooltip
+              <Tooltip
                 title={
                   isValidTagKey
                     ? undefined
@@ -62,7 +62,7 @@ function DropdownMenu(menu: React.ReactElement, allAvailableTags: string[]) {
                     },
                   )}
                 </span>
-              </LegacyTooltip>
+              </Tooltip>
             ),
           },
           key: searchValue,

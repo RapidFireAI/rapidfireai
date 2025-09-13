@@ -9,7 +9,7 @@ import {
   SearchIcon,
   Spinner,
   Tag,
-  LegacyTooltip,
+  Tooltip,
   XCircleFillIcon,
   useDesignSystemTheme,
 } from '@databricks/design-system';
@@ -19,19 +19,15 @@ import { MLFLOW_INTERNAL_PREFIX } from '../../../../../common/utils/TagUtils';
 import {
   RunsGroupByConfig,
   createRunsGroupByKey,
-  isGroupedBy,
   normalizeRunsGroupByKey,
 } from '../../utils/experimentPage.group-row-utils';
 import { ExperimentRunsSelectorResult } from '../../utils/experimentRuns.selector';
 import { RunGroupingAggregateFunction, RunGroupingMode } from '../../utils/experimentPage.row-types';
-import { shouldEnableToggleIndividualRunsInGroups } from '../../../../../common/utils/FeatureUtils';
 
 export interface ExperimentViewRunsGroupBySelectorProps {
   runsData: ExperimentRunsSelectorResult;
   groupBy: RunsGroupByConfig | null | string;
   onChange: (newGroupByConfig: RunsGroupByConfig | null) => void;
-  useGroupedValuesInCharts?: boolean;
-  onUseGroupedValuesInChartsChange: (newValue: boolean) => void;
 }
 
 const messages = defineMessages({
@@ -85,13 +81,9 @@ const GroupBySelectorBody = ({
   runsData,
   onChange,
   groupBy,
-  useGroupedValuesInCharts,
-  onUseGroupedValuesInChartsChange,
 }: {
   groupBy: RunsGroupByConfig;
-  useGroupedValuesInCharts?: boolean;
   onChange: (newGroupBy: RunsGroupByConfig | null) => void;
-  onUseGroupedValuesInChartsChange: (newValue: boolean) => void;
   runsData: ExperimentRunsSelectorResult;
 }) => {
   const intl = useIntl();
@@ -182,11 +174,14 @@ const GroupBySelectorBody = ({
     }
   };
 
+  const isGroupedBy = (mode: RunGroupingMode, groupByData: string) => {
+    return groupByKeys.some((key) => key.mode === mode && key.groupByData === groupByData);
+  };
+
   return (
     <>
       <div css={{ display: 'flex', gap: theme.spacing.xs, padding: theme.spacing.sm }}>
         <Input
-          componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_191"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           prefix={<SearchIcon />}
@@ -205,7 +200,7 @@ const GroupBySelectorBody = ({
           }}
         />
         <DropdownMenu.Root>
-          <LegacyTooltip
+          <Tooltip
             placement="right"
             title={
               <FormattedMessage
@@ -224,27 +219,9 @@ const GroupBySelectorBody = ({
                 aria-label="Change aggregation function"
               />
             </DropdownMenu.Trigger>
-          </LegacyTooltip>
+          </Tooltip>
           <DropdownMenu.Content align="start" side="right">
-            {shouldEnableToggleIndividualRunsInGroups() && (
-              <>
-                <DropdownMenu.CheckboxItem
-                  componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_233"
-                  disabled={!groupByKeys.length}
-                  checked={useGroupedValuesInCharts}
-                  onCheckedChange={onUseGroupedValuesInChartsChange}
-                >
-                  <DropdownMenu.ItemIndicator />
-                  Use grouping from the runs table in charts
-                </DropdownMenu.CheckboxItem>
-                <DropdownMenu.Separator />
-              </>
-            )}
-            <DropdownMenu.RadioGroup
-              componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_244"
-              value={aggregateFunction}
-              onValueChange={aggregateFunctionChanged}
-            >
+            <DropdownMenu.RadioGroup value={aggregateFunction} onValueChange={aggregateFunctionChanged}>
               <DropdownMenu.RadioItem
                 disabled={!groupByKeys.length}
                 value={RunGroupingAggregateFunction.Min}
@@ -281,8 +258,7 @@ const GroupBySelectorBody = ({
             </DropdownMenu.Label>
             {datasetLabel.toLowerCase().includes(filter.toLowerCase()) && (
               <DropdownMenu.CheckboxItem
-                componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_280"
-                checked={isGroupedBy(groupBy, RunGroupingMode.Dataset, 'dataset')}
+                checked={isGroupedBy(RunGroupingMode.Dataset, 'dataset')}
                 key={createRunsGroupByKey(RunGroupingMode.Dataset, 'dataset', aggregateFunction)}
                 ref={attributeElementRef}
                 onCheckedChange={(checked) => groupByToggle(RunGroupingMode.Dataset, 'dataset', checked)}
@@ -304,8 +280,7 @@ const GroupBySelectorBody = ({
               const groupByKey = createRunsGroupByKey(RunGroupingMode.Tag, tagName, aggregateFunction);
               return (
                 <DropdownMenu.CheckboxItem
-                  componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_302"
-                  checked={isGroupedBy(groupBy, RunGroupingMode.Tag, tagName)}
+                  checked={isGroupedBy(RunGroupingMode.Tag, tagName)}
                   key={groupByKey}
                   ref={index === 0 ? tagElementRef : undefined}
                   onCheckedChange={(checked) => groupByToggle(RunGroupingMode.Tag, tagName, checked)}
@@ -316,10 +291,7 @@ const GroupBySelectorBody = ({
               );
             })}
             {!tagNames.length && (
-              <DropdownMenu.Item
-                componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_314"
-                disabled
-              >
+              <DropdownMenu.Item disabled>
                 <DropdownMenu.ItemIndicator /> <FormattedMessage {...messages.noTags} />
               </DropdownMenu.Item>
             )}
@@ -336,8 +308,7 @@ const GroupBySelectorBody = ({
               const groupByKey = createRunsGroupByKey(RunGroupingMode.Param, paramName, aggregateFunction);
               return (
                 <DropdownMenu.CheckboxItem
-                  componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_330"
-                  checked={isGroupedBy(groupBy, RunGroupingMode.Param, paramName)}
+                  checked={isGroupedBy(RunGroupingMode.Param, paramName)}
                   key={groupByKey}
                   ref={index === 0 ? paramElementRef : undefined}
                   onCheckedChange={(checked) => groupByToggle(RunGroupingMode.Param, paramName, checked)}
@@ -348,20 +319,14 @@ const GroupBySelectorBody = ({
               );
             })}
             {!runsData.paramKeyList.length && (
-              <DropdownMenu.Item
-                componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_342"
-                disabled
-              >
+              <DropdownMenu.Item disabled>
                 <FormattedMessage {...messages.noParams} />
               </DropdownMenu.Item>
             )}
           </>
         )}
         {!hasAnyResults && (
-          <DropdownMenu.Item
-            componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_349"
-            disabled
-          >
+          <DropdownMenu.Item disabled>
             <FormattedMessage {...messages.noResults} />
           </DropdownMenu.Item>
         )}
@@ -379,8 +344,6 @@ export const ExperimentViewRunsGroupBySelector = React.memo(
     groupBy,
     isLoading,
     onChange,
-    useGroupedValuesInCharts,
-    onUseGroupedValuesInChartsChange,
   }: ExperimentViewRunsGroupBySelectorProps & {
     isLoading: boolean;
   }) => {
@@ -420,12 +383,7 @@ export const ExperimentViewRunsGroupBySelector = React.memo(
               />
             )}
             {normalizedGroupBy.groupByKeys.length > 1 && (
-              <Tag
-                componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_426"
-                css={{ marginLeft: 4, marginRight: 0 }}
-              >
-                +{normalizedGroupBy.groupByKeys.length - 1}
-              </Tag>
+              <Tag css={{ marginLeft: 4, marginRight: 0 }}>+{normalizedGroupBy.groupByKeys.length - 1}</Tag>
             )}
             {groupBy && (
               <XCircleFillIcon
@@ -453,17 +411,11 @@ export const ExperimentViewRunsGroupBySelector = React.memo(
         </DropdownMenu.Trigger>
         <DropdownMenu.Content>
           {isLoading ? (
-            <DropdownMenu.Item componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunsgroupbyselector.tsx_436">
+            <DropdownMenu.Item>
               <Spinner />
             </DropdownMenu.Item>
           ) : (
-            <GroupBySelectorBody
-              groupBy={normalizedGroupBy}
-              onChange={onChange}
-              runsData={runsData}
-              onUseGroupedValuesInChartsChange={onUseGroupedValuesInChartsChange}
-              useGroupedValuesInCharts={useGroupedValuesInCharts}
-            />
+            <GroupBySelectorBody groupBy={normalizedGroupBy} onChange={onChange} runsData={runsData} />
           )}
         </DropdownMenu.Content>
       </DropdownMenu.Root>

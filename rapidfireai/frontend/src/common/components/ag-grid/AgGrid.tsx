@@ -8,7 +8,7 @@ import { AgGridFontInjector } from './AgGridFontInjector';
  * A local wrapper component that embeds imported AgGrid instance.
  * Extracted to a separate module to ensure that it will be in placed a single chunk.
  */
-const MLFlowAgGrid = (props: AgGridReactProps | AgReactUiProps) => (
+export const MLFlowAgGrid = (props: AgGridReactProps | AgReactUiProps) => (
   <>
     <AgGridFontInjector />
     <AgGridReact modules={[ClientSideRowModelModule]} {...props} />

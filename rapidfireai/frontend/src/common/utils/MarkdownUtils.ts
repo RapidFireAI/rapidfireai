@@ -5,7 +5,6 @@
  * annotations are already looking good, please remove this comment.
  */
 
-import { useCallback } from 'react';
 import sanitizeHtml from 'sanitize-html';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'show... Remove this comment to see the full error message
 import { Converter } from 'showdown';
@@ -14,16 +13,10 @@ import { Converter } from 'showdown';
 // simple line breaks, code blocks, emojis)
 const DEFAULT_MARKDOWN_FLAVOR = 'github';
 
-let _converter: Converter | null = null;
-
-export const getMarkdownConverter = () => {
-  // Reuse the same converter instance if available
-  if (_converter) {
-    return _converter;
-  }
-  _converter = new Converter();
-  _converter.setFlavor(DEFAULT_MARKDOWN_FLAVOR);
-  return _converter;
+export const getConverter = () => {
+  const converter = new Converter();
+  converter.setFlavor(DEFAULT_MARKDOWN_FLAVOR);
+  return converter;
 };
 
 // Options for HTML sanitizer.
@@ -99,10 +92,3 @@ export const sanitizeConvertedHtml = (dirtyHtml: any) => {
 export const forceAnchorTagNewTab = (html: any) => {
   return html.replace(new RegExp('<a', 'g'), '<a target="_blank"');
 };
-
-export const useMarkdownConverter = () =>
-  useCallback((markdown?: string) => {
-    const converter = getMarkdownConverter();
-    const html = converter.makeHtml(markdown);
-    return sanitizeConvertedHtml(html);
-  }, []);

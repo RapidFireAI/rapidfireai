@@ -15,7 +15,6 @@ import { getExperimentNameValidator } from '../../../common/forms/validations';
 
 import { updateExperimentApi, getExperimentApi } from '../../actions';
 import { getExperiments } from '../../reducers/Reducers';
-import Utils from '../../../common/utils/Utils';
 
 type RenameExperimentModalImplProps = {
   isOpen?: boolean;
@@ -25,20 +24,15 @@ type RenameExperimentModalImplProps = {
   onClose: (...args: any[]) => any;
   updateExperimentApi: (...args: any[]) => any;
   getExperimentApi: (...args: any[]) => any;
-  onExperimentRenamed: () => void;
 };
 
-class RenameExperimentModalImpl extends Component<RenameExperimentModalImplProps> {
+export class RenameExperimentModalImpl extends Component<RenameExperimentModalImplProps> {
   handleRenameExperiment = (values: any) => {
     // get value of input field
     const newExperimentName = values[NEW_NAME_FIELD];
     const updateExperimentPromise = this.props
       .updateExperimentApi(this.props.experimentId, newExperimentName)
-      .then(() => {
-        this.props.getExperimentApi(this.props.experimentId);
-        this.props.onExperimentRenamed();
-      })
-      .catch((e: any) => Utils.logErrorAndNotifyUser(e));
+      .then(() => this.props.getExperimentApi(this.props.experimentId));
 
     return updateExperimentPromise;
   };

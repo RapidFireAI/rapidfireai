@@ -9,6 +9,7 @@ import type { RunsChartsCardConfig, RunsChartsScatterCardConfig } from '../../ru
 import {
   RunsChartsMetricParamSelect,
   RunsChartsConfigureField,
+  RunsChartsRunNumberSelect,
   runsChartsRunCountDefaultOptions,
 } from './RunsChartsConfigure.common';
 
@@ -144,6 +145,11 @@ export const RunsChartsConfigureScatterChart = ({
           metricKeyList={metricKeyList}
         />
       </RunsChartsConfigureField>
+      <RunsChartsRunNumberSelect
+        value={state.runsCountToCompare}
+        onChange={updateVisibleRunCount}
+        options={scatterPlotDefaultOptions}
+      />
     </>
   );
 };

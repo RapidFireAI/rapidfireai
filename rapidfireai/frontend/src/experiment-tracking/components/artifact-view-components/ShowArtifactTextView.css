@@ -1,12 +1,12 @@
-.mlflow-ShowArtifactPage .text-area {
+.ShowArtifactPage .text-area {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
   font-family: Menlo, Consolas, monospace;
 }
 
-.mlflow-ShowArtifactPage,
-.mlflow-ShowArtifactPage .text-area-border-box {
+.ShowArtifactPage,
+.ShowArtifactPage .text-area-border-box {
   width: 100%;
   height: 100%;
   overflow: hidden;

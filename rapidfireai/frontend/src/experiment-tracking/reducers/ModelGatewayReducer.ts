@@ -18,7 +18,7 @@ export interface ModelGatewayReduxState {
   };
 }
 
-const modelGatewayRoutesLoading = (
+export const modelGatewayRoutesLoading = (
   state = {
     gatewayRoutesLoading: false,
     endpointRoutesLoading: false,
@@ -42,7 +42,7 @@ const modelGatewayRoutesLoading = (
 };
 
 type ModelGatewayReducerActions = AsyncFulfilledAction<SearchMlflowDeploymentsModelRoutesAction>;
-const modelGatewayRoutes = (
+export const modelGatewayRoutes = (
   state: Record<string, ModelGatewayRoute> = {},
   { payload, type }: ModelGatewayReducerActions,
 ): Record<string, ModelGatewayRoute> => {

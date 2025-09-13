@@ -15,6 +15,7 @@ type Props = {
   service?: string;
   notificationAPI?: any;
   notificationContextHolder?: React.ReactNode;
+  isDarkTheme?: boolean;
 };
 
 type State = any;
@@ -33,25 +34,26 @@ class AppErrorBoundary extends Component<React.PropsWithChildren<Props>, State> 
 
   componentDidCatch(error: any, errorInfo: any) {
     this.setState({ hasError: true });
-    // eslint-disable-next-line no-console -- TODO(FEINF-3587)
     console.error(error, errorInfo);
   }
 
   render() {
+    const { isDarkTheme } = this.props;
+    const textColor = isDarkTheme ? 'white' : 'black';
+
     return (
       <>
         {/* @ts-expect-error TS(4111): Property 'hasError' comes from an index signature,... Remove this comment to see the full error message */}
         {this.state.hasError ? (
           <div>
-            <img className="mlflow-error-image" alt="Error" src={defaultErrorImg} />
-            <h1 className="mlflow-center">Something went wrong</h1>
-            <h4 className="mlflow-center">
-              If this error persists, please report an issue {/* Reported during ESLint upgrade */}
+            <img className="error-image" alt="Error" src={defaultErrorImg} />
+            <h1 style={{ color: textColor }} className="center">Something went wrong. Please refresh the page.</h1>
+            <h4 style={{ color: textColor }} className="center">
+              If this error persists, please report an issue to the RapidFire team. {/* Reported during ESLint upgrade */}
               {/* eslint-disable-next-line react/jsx-no-target-blank */}
-              <a href={Utils.getSupportPageUrl()} target="_blank">
+              {/* <a href={Utils.getSupportPageUrl()} target="_blank">
                 here
-              </a>
-              .
+              </a> */}
             </h4>
           </div>
         ) : (

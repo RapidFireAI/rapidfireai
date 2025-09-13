@@ -20,8 +20,6 @@ export const EXPERIMENT_PAGE_QUERY_PARAM_KEYS = [
   'datasetsFilter',
 ];
 
-export const EXPERIMENT_PAGE_QUERY_PARAM_IS_PREVIEW = 'isPreview';
-
 export type ExperimentPageQueryParams = any;
 
 export type ExperimentQueryParamsSearchFacets = ExperimentPageSearchFacetsState & {
@@ -36,7 +34,7 @@ const getComparedExperimentIds = (comparedExperimentIds: string): string[] => {
   }
 };
 
-export const useExperimentPageSearchFacets = (): [ExperimentQueryParamsSearchFacets | null, string[], boolean] => {
+export const useExperimentPageSearchFacets = (): [ExperimentQueryParamsSearchFacets | null, string[]] => {
   const [queryParams] = useSearchParams();
 
   // Pick only the keys we care about
@@ -44,9 +42,6 @@ export const useExperimentPageSearchFacets = (): [ExperimentQueryParamsSearchFac
     () => pick(Object.fromEntries(queryParams.entries()), EXPERIMENT_PAGE_QUERY_PARAM_KEYS),
     [queryParams],
   );
-
-  // Check if the page is in preview mode. If so, it should not be persisted until explicitly changed
-  const isPreview = queryParams.get(EXPERIMENT_PAGE_QUERY_PARAM_IS_PREVIEW) === 'true';
 
   // Destructure to get raw values
   const { searchFilter, orderByKey, orderByAsc, startTime, lifecycleFilter, modelVersionFilter, datasetsFilter } =
@@ -102,7 +97,7 @@ export const useExperimentPageSearchFacets = (): [ExperimentQueryParamsSearchFac
     areValuesEmpty,
   ]);
 
-  return [searchFacets, experimentIds, isPreview];
+  return [searchFacets, experimentIds];
 };
 
 export const useUpdateExperimentPageSearchFacets = () => {
@@ -114,7 +109,6 @@ export const useUpdateExperimentPageSearchFacets = () => {
       entries(newParams).forEach(([key, value]) => {
         currentParams.set(key, value);
       });
-      currentParams.delete(EXPERIMENT_PAGE_QUERY_PARAM_IS_PREVIEW);
       return currentParams;
     }, options);
   };

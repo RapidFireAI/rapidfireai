@@ -5,10 +5,6 @@
  * annotations are already looking good, please remove this comment.
  */
 
-import { MLFLOW_LOGGED_ARTIFACTS_TAG } from '../constants';
-import { RunLoggedArtifactType, type RunLoggedArtifactsDeclaration } from '../types';
-import { KeyValueEntity } from '../../common/types';
-
 export class ArtifactNode {
   children: any;
   fileInfo: any;
@@ -75,28 +71,3 @@ export class ArtifactNode {
     return node.children === undefined || Object.keys(node.children).length === 0;
   }
 }
-
-/**
- * Extracts the list of tables logged in the run from the run tags.
- */
-export const extractLoggedTablesFromRunTags = (runTags: Record<string, KeyValueEntity>) => {
-  const rawLoggedArtifactsDeclaration = runTags?.[MLFLOW_LOGGED_ARTIFACTS_TAG]?.value;
-  const tablesInRun: Set<string> = new Set();
-  if (rawLoggedArtifactsDeclaration) {
-    try {
-      const loggedArtifacts: RunLoggedArtifactsDeclaration = JSON.parse(rawLoggedArtifactsDeclaration);
-
-      loggedArtifacts
-        .filter(({ type }) => type === RunLoggedArtifactType.TABLE)
-        .forEach(({ path }) => {
-          tablesInRun.add(path);
-        });
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        throw new SyntaxError(`The "${MLFLOW_LOGGED_ARTIFACTS_TAG}" tag is malformed!`);
-      }
-      throw error;
-    }
-  }
-  return Array.from(tablesInRun);
-};

@@ -6,6 +6,7 @@
  */
 
 import React from 'react';
+import { mount } from 'enzyme';
 import configureStore from 'redux-mock-store';
 import thunk from 'redux-thunk';
 import promiseMiddleware from 'redux-promise-middleware';
@@ -20,17 +21,11 @@ import Utils from '../../common/utils/Utils';
 import { ErrorWrapper } from '../../common/utils/ErrorWrapper';
 import { ErrorCodes } from '../../common/constants';
 import { ModelRegistryRoutes } from '../routes';
-import { mountWithIntl } from '@mlflow/mlflow/src/common/utils/TestUtils.enzyme';
+import { mountWithIntl } from 'common/utils/TestUtils.enzyme';
 import { getUUID } from '../../common/utils/ActionUtils';
-import { getModelVersionApi } from '../actions';
 
 jest.mock('../../common/utils/ActionUtils', () => ({
   getUUID: jest.fn(),
-}));
-
-jest.mock('../actions', () => ({
-  ...jest.requireActual<typeof import('../actions')>('../actions'),
-  getModelVersionApi: jest.fn(),
 }));
 
 describe('ModelVersionPage', () => {
@@ -41,17 +36,6 @@ describe('ModelVersionPage', () => {
   let minimalStore: any;
   const mockStore = configureStore([thunk, promiseMiddleware()]);
   const navigate = jest.fn();
-
-  const mountComponent = (props = minimalProps, store = minimalStore) => {
-    return mountWithIntl(
-      <Provider store={store}>
-        <MemoryRouter>
-          <ModelVersionPage {...props} />
-        </MemoryRouter>
-      </Provider>,
-    );
-  };
-
   beforeEach(() => {
     // Simple mock of getUUID
     let counter = 0;
@@ -59,9 +43,6 @@ describe('ModelVersionPage', () => {
     // TODO: remove global fetch mock by explicitly mocking all the service API calls
     // @ts-expect-error TS(2322): Type 'Mock<Promise<{ ok: true; status: number; tex... Remove this comment to see the full error message
     global.fetch = jest.fn(() => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') }));
-    jest
-      .mocked(getModelVersionApi)
-      .mockImplementation(jest.requireActual<typeof import('../actions')>('../actions').getModelVersionApi);
     minimalProps = {
       params: {
         modelName: encodeURIComponent('Model A'),
@@ -93,7 +74,13 @@ describe('ModelVersionPage', () => {
     });
   });
   test('should render with minimal props and store without exploding', () => {
-    wrapper = mountComponent();
+    wrapper = mount(
+      <Provider store={minimalStore}>
+        <MemoryRouter>
+          <ModelVersionPage {...minimalProps} />
+        </MemoryRouter>
+      </Provider>,
+    );
     expect(wrapper.find(ModelVersionPage).length).toBe(1);
     expect(wrapper.find(Spinner).length).toBe(1);
   });
@@ -108,9 +95,9 @@ describe('ModelVersionPage', () => {
       </Provider>
     );
     // Initial mount
-    wrapper = mountWithIntl(<TestComponent />);
+    wrapper = mount(<TestComponent />);
     // Assert first (original) call for model version
-    expect(global.fetch).toHaveBeenCalledWith(endpoint + '?name=Model+A&version=1', expect.anything());
+    expect(global.fetch).toBeCalledWith(endpoint + '?name=Model+A&version=1', expect.anything());
     // Update the mocked params object with new params
     wrapper.setProps({
       params: {
@@ -119,10 +106,16 @@ describe('ModelVersionPage', () => {
       },
     });
     // Assert second call for model version
-    expect(global.fetch).toHaveBeenCalledWith(endpoint + '?name=Model+A&version=5', expect.anything());
+    expect(global.fetch).toBeCalledWith(endpoint + '?name=Model+A&version=5', expect.anything());
   });
   test('should redirect to model page when model version is deleted', async () => {
-    wrapper = mountComponent();
+    wrapper = mount(
+      <Provider store={minimalStore}>
+        <MemoryRouter>
+          <ModelVersionPage {...minimalProps} />
+        </MemoryRouter>
+      </Provider>,
+    );
     instance = wrapper.find(ModelVersionPageImpl).instance();
     const mockError = {
       getErrorCode() {
@@ -148,34 +141,16 @@ describe('ModelVersionPage', () => {
         },
       },
     });
-    wrapper = mountComponent(minimalProps, myStore);
+    wrapper = mountWithIntl(
+      <Provider store={myStore}>
+        <MemoryRouter>
+          <ModelVersionPage {...minimalProps} />
+        </MemoryRouter>
+      </Provider>,
+    );
     expect(wrapper.find(ErrorView).length).toBe(1);
     expect(wrapper.find(ErrorView).prop('statusCode')).toBe(404);
     expect(wrapper.find(ErrorView).prop('subMessage')).toBe('Model Model A v1 does not exist');
-  });
-  test('should not crash runtime when API call rejects', () => {
-    const httpError = new ErrorWrapper(`{"error_code": "${ErrorCodes.RESOURCE_DOES_NOT_EXIST}"}`, 404);
-    jest.mocked(getModelVersionApi).mockImplementation(() => {
-      return {
-        type: 'GET_MODEL_VERSION',
-        payload: Promise.reject(httpError),
-        meta: { id: 'abc', modelName: 'abc', version: '1' },
-      };
-    });
-    (getUUID as any).mockImplementation(() => 'resource_not_found_error');
-    const myStore = mockStore({
-      ...minimalStoreState,
-      apis: {
-        resource_not_found_error: {
-          id: 'resource_not_found_error',
-          active: false,
-          error: httpError,
-        },
-      },
-    });
-
-    // This test would fail if any unhandled promise rejection occurs
-    expect(() => mountComponent(minimalProps, myStore)).not.toThrow();
   });
   test('should show ErrorView when resource conflict error is thrown', () => {
     const testMessage = 'Detected model version conflict';
@@ -194,7 +169,13 @@ describe('ModelVersionPage', () => {
         },
       },
     });
-    wrapper = mountComponent(minimalProps, myStore);
+    wrapper = mountWithIntl(
+      <Provider store={myStore}>
+        <MemoryRouter>
+          <ModelVersionPage {...minimalProps} />
+        </MemoryRouter>
+      </Provider>,
+    );
     expect(wrapper.find(ErrorView).length).toBe(1);
     expect(wrapper.find(ErrorView).prop('statusCode')).toBe(409);
     expect(wrapper.find(ErrorView).prop('subMessage')).toBe(testMessage);
