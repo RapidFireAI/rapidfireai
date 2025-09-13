@@ -15,16 +15,14 @@ type Props = {
   cancelText?: string;
   isOpen?: boolean;
   onClose: (...args: any[]) => any;
-  onCancel?: () => void;
+  onCancel?: (...args: any[]) => any;
   className?: string;
   footer?: React.ReactNode;
   handleSubmit: (...args: any[]) => any;
   title: React.ReactNode;
 };
 
-type State = {
-  isSubmitting: boolean;
-};
+type State = any;
 
 /**
  * Generic modal that has a title and an input field with a save/submit button.
@@ -40,12 +38,26 @@ export class GenericInputModal extends Component<Props, State> {
   onSubmit = async () => {
     this.setState({ isSubmitting: true });
     try {
-      const values = await (this as any).formRef.current.validateFields();
-      await this.props.handleSubmit(values);
-      this.resetAndClearModalForm();
-      this.onRequestCloseHandler();
+      let values;
+
+      // If we fail to validate fields from the form, catch it and submit as a failure
+      try {
+        values = await (this as any).formRef.current.validateFields();
+      } catch (e) {
+        this.handleSubmitFailure(e);
+        return;
+      }
+
+      // call handleSubmit from parent component, pass form values
+      // handleSubmit is expected to return a promise
+      return await this.props
+        .handleSubmit(values)
+        .then(this.resetAndClearModalForm)
+        .catch(this.handleSubmitFailure)
+        .finally(this.onRequestCloseHandler);
     } catch (e) {
-      this.handleSubmitFailure(e);
+      this.setState({ isSubmitting: false });
+      return Promise.reject(e);
     }
   };
 
@@ -60,13 +72,18 @@ export class GenericInputModal extends Component<Props, State> {
   };
 
   onRequestCloseHandler = () => {
-    this.resetAndClearModalForm();
-    this.props.onClose();
+    if (!this.state.isSubmitting) {
+      this.resetAndClearModalForm();
+      this.props.onClose();
+    }
   };
 
   handleCancel = () => {
     this.onRequestCloseHandler();
-    this.props.onCancel?.();
+    // Check for optional `onCancel` method prop.
+    if (this.props.onCancel !== undefined) {
+      this.props.onCancel();
+    }
   };
 
   render() {

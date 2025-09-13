@@ -2,7 +2,7 @@ import { IntlProvider } from 'react-intl';
 import { render, screen } from '../../../../../common/utils/TestUtils.react18';
 import { ExperimentRunsSelectorResult } from '../../utils/experimentRuns.selector';
 import { ExperimentViewRunsGroupBySelector } from './ExperimentViewRunsGroupBySelector';
-import userEventGlobal, { PointerEventsCheckLevel } from '@testing-library/user-event';
+import userEventGlobal, { PointerEventsCheckLevel } from '@testing-library/user-event-14';
 import { DesignSystemProvider } from '@databricks/design-system';
 import type { RunsGroupByConfig } from '../../utils/experimentPage.group-row-utils';
 import { RunGroupingAggregateFunction, RunGroupingMode } from '../../utils/experimentPage.row-types';
@@ -49,8 +49,6 @@ describe('ExperimentViewRunsGroupBySelector', () => {
           groupBy={groupBy}
           isLoading={false}
           runsData={runsData}
-          useGroupedValuesInCharts
-          onUseGroupedValuesInChartsChange={() => {}}
           onChange={(data) => {
             setGroupBy(data);
             onChangeListener(data);
@@ -121,7 +119,7 @@ describe('ExperimentViewRunsGroupBySelector', () => {
     await userEvent.click(screen.getByText('Group by'));
     await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'tag1' }));
 
-    expect(onChange).toHaveBeenCalledWith({
+    expect(onChange).toBeCalledWith({
       aggregateFunction: 'average',
       groupByKeys: [{ groupByData: 'tag1', mode: 'tag' }],
     });
@@ -134,7 +132,7 @@ describe('ExperimentViewRunsGroupBySelector', () => {
     await userEvent.click(screen.getByRole('button', { name: /Group by/ }));
     await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'param2' }));
 
-    expect(onChange).toHaveBeenCalledWith({
+    expect(onChange).toBeCalledWith({
       aggregateFunction: 'average',
       groupByKeys: [{ groupByData: 'param2', mode: 'param' }],
     });
@@ -147,7 +145,7 @@ describe('ExperimentViewRunsGroupBySelector', () => {
     await userEvent.click(screen.getByRole('button', { name: /Group by/ }));
     await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Dataset' }));
 
-    expect(onChange).toHaveBeenCalledWith({
+    expect(onChange).toBeCalledWith({
       aggregateFunction: 'average',
       groupByKeys: [{ groupByData: 'dataset', mode: 'dataset' }],
     });
@@ -207,7 +205,7 @@ describe('ExperimentViewRunsGroupBySelector', () => {
     await userEvent.click(screen.getByRole('button', { name: /Group by/ }));
     await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Dataset' }));
 
-    expect(onChange).toHaveBeenCalledWith({
+    expect(onChange).toBeCalledWith({
       aggregateFunction: 'average',
       groupByKeys: [{ groupByData: 'dataset', mode: 'dataset' }],
     });

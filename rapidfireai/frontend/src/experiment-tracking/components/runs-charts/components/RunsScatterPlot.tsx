@@ -1,10 +1,9 @@
 import { useDesignSystemTheme } from '@databricks/design-system';
-import { isNil } from 'lodash';
 import { Data, Datum, Layout, PlotMouseEvent } from 'plotly.js';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { LazyPlot } from '../../LazyPlot';
 import { useMutableChartHoverCallback } from '../hooks/useMutableHoverCallback';
-import { highlightScatterTraces, useRenderRunsChartTraceHighlight } from '../hooks/useRunsChartTraceHighlight';
+import { highlightScatterTraces, useRunsChartTraceHighlight } from '../hooks/useRunsChartTraceHighlight';
 import {
   commonRunsChartStyles,
   RunsChartsRunData,
@@ -18,7 +17,6 @@ import {
 } from './RunsCharts.common';
 import RunsMetricsLegendWrapper from './RunsMetricsLegendWrapper';
 import { createChartImageDownloadHandler } from '../hooks/useChartImageDownloadHandler';
-import { RunsChartCardLoadingPlaceholder } from './cards/ChartCard.common';
 
 export interface RunsScatterPlotProps extends RunsPlotsCommonProps {
   /**
@@ -43,7 +41,7 @@ const PLOT_CONFIG = {
   modeBarButtonsToRemove: ['toImage'],
 };
 
-const createTooltipTemplate = () =>
+export const createTooltipTemplate = () =>
   '<b>%{customdata[1]}:</b><br>' +
   '<b>%{xaxis.title.text}:</b> %{x:.2f}<br>' +
   '<b>%{yaxis.title.text}:</b> %{y:.2f}<br>' +
@@ -89,10 +87,10 @@ export const RunsScatterPlot = React.memo(
         const xAxisData = xAxis.type === 'METRIC' ? metrics : params;
         const yAxisData = yAxis.type === 'METRIC' ? metrics : params;
 
-        const x = xAxisData?.[xAxis.dataAccessKey ?? xAxis.key]?.value;
-        const y = yAxisData?.[yAxis.dataAccessKey ?? yAxis.key]?.value;
+        const x = xAxisData?.[xAxis.key]?.value || undefined;
+        const y = yAxisData?.[yAxis.key]?.value || undefined;
 
-        if (!isNil(x) && !isNil(y)) {
+        if (x && y) {
           xValues.push(x);
           yValues.push(y);
           colors.push(color || theme.colors.primary);
@@ -156,7 +154,7 @@ export const RunsScatterPlot = React.memo(
       });
     }, [layoutWidth, layoutHeight, margin, xAxis.key, yAxis.key, width, height]);
 
-    const { setHoveredPointIndex } = useRenderRunsChartTraceHighlight(
+    const { setHoveredPointIndex } = useRunsChartTraceHighlight(
       containerDiv,
       selectedRunUuid,
       runsData,
@@ -171,7 +169,7 @@ export const RunsScatterPlot = React.memo(
         setHoveredPointIndex(points[0]?.pointIndex ?? -1);
 
         if (pointCustomDataRunUuid) {
-          onHover?.(pointCustomDataRunUuid, undefined, {});
+          onHover?.(pointCustomDataRunUuid);
         }
       },
       [onHover, setHoveredPointIndex],
@@ -214,7 +212,6 @@ export const RunsScatterPlot = React.memo(
           onUpdate={onUpdate}
           onHover={mutableHoverCallback}
           onUnhover={unhoverCallback}
-          fallback={<RunsChartCardLoadingPlaceholder />}
         />
       </div>
     );

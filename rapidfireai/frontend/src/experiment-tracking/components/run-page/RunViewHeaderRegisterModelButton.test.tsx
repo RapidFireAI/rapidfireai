@@ -1,12 +1,11 @@
+import { openDropdownMenu } from '@databricks/design-system/test-utils/rtl';
 import { MemoryRouter, createMLflowRoutePath } from '../../../common/utils/RoutingUtils';
 import { MockedReduxStoreProvider } from '../../../common/utils/TestUtils';
-import { renderWithIntl, act, screen } from '@mlflow/mlflow/src/common/utils/TestUtils.react18';
+import { renderWithIntl, act, screen } from 'common/utils/TestUtils.react17';
 import Utils from '../../../common/utils/Utils';
+import { ReduxState } from '../../../redux-types';
 import { RunViewHeaderRegisterModelButton } from './RunViewHeaderRegisterModelButton';
-import { DesignSystemProvider } from '@databricks/design-system';
-import { KeyValueEntity } from '../../../common/types';
-import userEvent from '@testing-library/user-event';
-import { RunPageModelVersionSummary } from './hooks/useUnifiedRegisteredModelVersionsSummariesForRun';
+import { DesignSystemProvider, DesignSystemThemeProvider } from '@databricks/design-system';
 
 jest.mock('../../../model-registry/actions', () => ({
   searchRegisteredModelsApi: jest.fn(() => ({ type: 'MOCKED_ACTION', payload: Promise.resolve() })),
@@ -15,6 +14,8 @@ jest.mock('../../../model-registry/actions', () => ({
 
 const runUuid = 'testRunUuid';
 const experimentId = 'testExperimentId';
+
+const testArtifactRootUriByRunUuid = { [runUuid]: 'file://some/artifact/path' };
 
 const createModelArtifact = (artifactPath = 'random_forest_model') => ({
   artifact_path: artifactPath,
@@ -35,15 +36,11 @@ const createLoggedModelHistoryTag = (models: ReturnType<typeof createModelArtifa
   } as any);
 
 describe('RunViewHeaderRegisterModelButton', () => {
-  const mountComponent = ({
-    tags = {},
-    artifactRootUri,
-    registeredModelVersionSummaries = [],
-  }: {
-    artifactRootUri?: string;
-    tags?: Record<string, KeyValueEntity>;
-    registeredModelVersionSummaries?: RunPageModelVersionSummary[];
-  } = {}) => {
+  const mountComponent = (
+    entities: Partial<
+      Pick<ReduxState['entities'], 'modelVersionsByRunUuid' | 'tagsByRunUuid' | 'artifactRootUriByRunUuid'>
+    > = {},
+  ) => {
     renderWithIntl(
       <MemoryRouter>
         <DesignSystemProvider>
@@ -51,17 +48,14 @@ describe('RunViewHeaderRegisterModelButton', () => {
             state={{
               entities: {
                 modelVersionsByRunUuid: {},
+                tagsByRunUuid: {},
+                artifactRootUriByRunUuid: testArtifactRootUriByRunUuid,
+                ...entities,
               },
             }}
           >
             <div data-testid="container">
-              <RunViewHeaderRegisterModelButton
-                artifactRootUri={artifactRootUri}
-                runTags={tags}
-                runUuid={runUuid}
-                experimentId={experimentId}
-                registeredModelVersionSummaries={registeredModelVersionSummaries}
-              />
+              <RunViewHeaderRegisterModelButton runUuid={runUuid} experimentId={experimentId} />
             </div>
           </MockedReduxStoreProvider>
         </DesignSystemProvider>
@@ -75,8 +69,10 @@ describe('RunViewHeaderRegisterModelButton', () => {
 
   test('should render button for a single unregistered logged model', () => {
     mountComponent({
-      tags: {
-        [Utils.loggedModelsTag]: createLoggedModelHistoryTag([createModelArtifact()]),
+      tagsByRunUuid: {
+        [runUuid]: {
+          [Utils.loggedModelsTag]: createLoggedModelHistoryTag([createModelArtifact()]),
+        },
       },
     });
     expect(screen.getByRole('button', { name: 'Register model' })).toBeInTheDocument();
@@ -84,18 +80,19 @@ describe('RunViewHeaderRegisterModelButton', () => {
 
   test('should render simple link for a single registered logged model', () => {
     mountComponent({
-      registeredModelVersionSummaries: [
-        {
-          displayedName: 'test-model',
-          version: '7',
-          link: createMLflowRoutePath('/models/test-model/versions/7'),
-          status: 'READY',
-          source: 'file://some/artifact/path/artifact_path',
+      modelVersionsByRunUuid: {
+        [runUuid]: [
+          {
+            source: `${testArtifactRootUriByRunUuid[runUuid]}/artifact_path`,
+            version: '7',
+            name: 'test-model',
+          },
+        ] as any,
+      },
+      tagsByRunUuid: {
+        [runUuid]: {
+          [Utils.loggedModelsTag]: createLoggedModelHistoryTag([createModelArtifact('artifact_path')]),
         },
-      ],
-      artifactRootUri: 'file://some/artifact/path',
-      tags: {
-        [Utils.loggedModelsTag]: createLoggedModelHistoryTag([createModelArtifact('artifact_path')]),
       },
     });
     expect(screen.queryByRole('button', { name: 'Register model' })).not.toBeInTheDocument();
@@ -107,16 +104,20 @@ describe('RunViewHeaderRegisterModelButton', () => {
 
   test('should render button and dropdown for multiple models, all unregistered', async () => {
     mountComponent({
-      tags: {
-        [Utils.loggedModelsTag]: createLoggedModelHistoryTag([
-          createModelArtifact('artifact_path'),
-          createModelArtifact('another_artifact_path'),
-        ]),
+      tagsByRunUuid: {
+        [runUuid]: {
+          [Utils.loggedModelsTag]: createLoggedModelHistoryTag([
+            createModelArtifact('artifact_path'),
+            createModelArtifact('another_artifact_path'),
+          ]),
+        },
       },
     });
     expect(screen.getByRole('button', { name: 'Register model' })).toBeInTheDocument();
 
-    await userEvent.type(screen.getByRole('button', { name: 'Register model' }), '{arrowdown}');
+    await act(async () => {
+      await openDropdownMenu(screen.getByRole('button', { name: 'Register model' }));
+    });
 
     expect(screen.getByText('Unregistered models')).toBeInTheDocument();
     expect(screen.queryByText('Registered models')).not.toBeInTheDocument();
@@ -126,27 +127,30 @@ describe('RunViewHeaderRegisterModelButton', () => {
 
   test('should render button and dropdown for multiple models, at least one unregistered', async () => {
     mountComponent({
-      registeredModelVersionSummaries: [
-        {
-          displayedName: 'test-model',
-          version: '7',
-          link: createMLflowRoutePath('/models/test-model/versions/7'),
-          status: '',
-          source: 'file://some/artifact/path/artifact_path',
+      modelVersionsByRunUuid: {
+        [runUuid]: [
+          {
+            source: `${testArtifactRootUriByRunUuid[runUuid]}/artifact_path`,
+            version: '7',
+            name: 'test-model',
+          },
+        ] as any,
+      },
+      tagsByRunUuid: {
+        [runUuid]: {
+          [Utils.loggedModelsTag]: createLoggedModelHistoryTag([
+            createModelArtifact('artifact_path'),
+            createModelArtifact('another_artifact_path'),
+          ]),
         },
-      ],
-      artifactRootUri: 'file://some/artifact/path',
-      tags: {
-        [Utils.loggedModelsTag]: createLoggedModelHistoryTag([
-          createModelArtifact('artifact_path'),
-          createModelArtifact('another_artifact_path'),
-        ]),
       },
     });
 
     expect(screen.getByRole('button', { name: 'Register model' })).toBeInTheDocument();
 
-    await userEvent.type(screen.getByRole('button', { name: 'Register model' }), '{arrowdown}');
+    await act(async () => {
+      await openDropdownMenu(screen.getByRole('button', { name: 'Register model' }));
+    });
 
     expect(screen.getByText('Unregistered models')).toBeInTheDocument();
     expect(screen.getByText('Registered models')).toBeInTheDocument();
@@ -156,34 +160,34 @@ describe('RunViewHeaderRegisterModelButton', () => {
 
   test('should render button and dropdown for multiple models, all already registered', async () => {
     mountComponent({
-      registeredModelVersionSummaries: [
-        {
-          displayedName: 'test-model',
-          version: '7',
-          link: createMLflowRoutePath('/models/test-model/versions/7'),
-          status: '',
-          source: 'file://some/artifact/path/artifact_path',
+      modelVersionsByRunUuid: {
+        [runUuid]: [
+          {
+            source: `${testArtifactRootUriByRunUuid[runUuid]}/artifact_path`,
+            version: '7',
+            name: 'test-model',
+          },
+          {
+            source: `${testArtifactRootUriByRunUuid[runUuid]}/another_artifact_path`,
+            version: '8',
+            name: 'another-test-model',
+          },
+        ] as any,
+      },
+      tagsByRunUuid: {
+        [runUuid]: {
+          [Utils.loggedModelsTag]: createLoggedModelHistoryTag([
+            createModelArtifact('artifact_path'),
+            createModelArtifact('another_artifact_path'),
+          ]),
         },
-        {
-          displayedName: 'another-test-model',
-          version: '8',
-          link: createMLflowRoutePath('/models/another-test-model/versions/8'),
-          status: '',
-          source: 'file://some/artifact/path/another_artifact_path',
-        },
-      ],
-      artifactRootUri: 'file://some/artifact/path',
-      tags: {
-        [Utils.loggedModelsTag]: createLoggedModelHistoryTag([
-          createModelArtifact('artifact_path'),
-          createModelArtifact('another_artifact_path'),
-        ]),
       },
     });
 
     expect(screen.getByRole('button', { name: 'Register model' })).toBeInTheDocument();
-
-    await userEvent.type(screen.getByRole('button', { name: 'Register model' }), '{arrowdown}');
+    await act(async () => {
+      await openDropdownMenu(screen.getByRole('button', { name: 'Register model' }));
+    });
 
     expect(screen.queryByText('Unregistered models')).not.toBeInTheDocument();
     expect(screen.getByText('Registered models')).toBeInTheDocument();

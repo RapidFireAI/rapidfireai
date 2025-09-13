@@ -149,16 +149,6 @@ else
     sed -i "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
 fi
 
-# Update the JS constants version file
-print_info "Updating rapidfireai/frontend/src/common/constants.tsx..."
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    sed -i '' "s/^export const Version = '.*';/export const Version = '$NEW_VERSION';/" rapidfireai/frontend/src/common/constants.tsx
-else
-    # Linux
-    sed -i "s/^export const Version = '.*';/export const Version = '$NEW_VERSION';/" rapidfireai/frontend/src/common/constants.tsx
-fi
-
 # Verify the changes
 UPDATED_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
 if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
@@ -173,18 +163,11 @@ if [ "$UPDATED_VERSION_PY" != "$NEW_VERSION" ]; then
     exit 1
 fi
 
-# Verify JS constants was updated
-UPDATED_VERSION_JS=$(grep '^export const Version = ' rapidfireai/frontend/src/common/constants.tsx | sed "s/export const Version = '\\(.*\\)';/\\1/")
-if [ "$UPDATED_VERSION_JS" != "$NEW_VERSION" ]; then
-    print_error "Failed to update version in rapidfireai/frontend/src/common/constants.tsx"
-    exit 1
-fi
-
 print_success "Version updated to $NEW_VERSION"
 
 # Commit the changes
 print_info "Committing version bump..."
-git add pyproject.toml requirements.txt rapidfireai/version.py rapidfireai/frontend/src/common/constants.tsx
+git add pyproject.toml requirements.txt rapidfireai/version.py
 git commit -m "Bump version to $NEW_VERSION"
 
 # Create and push tag

@@ -1,10 +1,7 @@
-import React, { useMemo } from 'react';
-import { ApolloProvider } from '@mlflow/mlflow/src/common/utils/graphQLHooks';
-import { RawIntlProvider } from 'react-intl';
-
-import 'font-awesome/css/font-awesome.css';
+import React, { useEffect } from 'react';
+import { ApolloProvider } from '@apollo/client';
+import { IntlProvider } from 'react-intl';
 import './index.css';
-
 import { ApplyGlobalStyles } from '@databricks/design-system';
 import '@databricks/design-system/dist/index.css';
 import '@databricks/design-system/dist/index-dark.css';
@@ -12,25 +9,22 @@ import { Provider } from 'react-redux';
 import store from './store';
 import { useI18nInit } from './i18n/I18nUtils';
 import { DesignSystemContainer } from './common/components/DesignSystemContainer';
-import { QueryClient, QueryClientProvider } from '@mlflow/mlflow/src/common/utils/reactQueryHooks';
-import { createApolloClient } from './graphql/client';
+import { ConfigProvider } from 'antd';
 import { LegacySkeleton } from '@databricks/design-system';
 // eslint-disable-next-line no-useless-rename
 import { MlflowRouter as MlflowRouter } from './MlflowRouter';
 import { useMLflowDarkTheme } from './common/hooks/useMLflowDarkTheme';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './queryClient';
 
 export function MLFlowRoot() {
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  const intl = useI18nInit();
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const apolloClient = useMemo(() => createApolloClient(), []);
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const queryClient = useMemo(() => new QueryClient(), []);
+  const i18n = useI18nInit();
 
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const [isDarkTheme, setIsDarkTheme, MlflowThemeGlobalStyles] = useMLflowDarkTheme();
 
-  if (!intl) {
+  if (!i18n) {
     return (
       <DesignSystemContainer>
         <LegacySkeleton />
@@ -38,19 +32,21 @@ export function MLFlowRoot() {
     );
   }
 
+  const { locale, messages } = i18n;
+
   return (
-    <ApolloProvider client={apolloClient}>
-      <RawIntlProvider value={intl} key={intl.locale}>
-        <Provider store={store}>
+    <IntlProvider locale={locale} messages={messages}>
+      <Provider store={store}>
+        <QueryClientProvider client={queryClient}>
           <DesignSystemContainer isDarkTheme={isDarkTheme}>
             <ApplyGlobalStyles />
             <MlflowThemeGlobalStyles />
-            <QueryClientProvider client={queryClient}>
+            <ConfigProvider prefixCls="ant">
               <MlflowRouter isDarkTheme={isDarkTheme} setIsDarkTheme={setIsDarkTheme} />
-            </QueryClientProvider>
+            </ConfigProvider>
           </DesignSystemContainer>
-        </Provider>
-      </RawIntlProvider>
-    </ApolloProvider>
+        </QueryClientProvider>
+      </Provider>
+    </IntlProvider>
   );
 }

@@ -123,8 +123,8 @@ export const EvaluationTextCellRenderer = ({
                 display: '-webkit-box',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
-                WebkitBoxOrient: 'vertical',
-                WebkitLineClamp: '7',
+                '-webkit-box-orient': 'vertical',
+                '-webkit-line-clamp': '7',
               }}
             >
               {isGroupByColumn && context.highlightedText ? (

@@ -1,9 +1,9 @@
 import { Button } from '@databricks/design-system';
 import { Theme } from '@emotion/react';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { FormattedMessage } from 'react-intl';
 import { useNavigate } from '../../../../../common/utils/RoutingUtils';
-import { LegacyTooltip } from '@databricks/design-system';
+import { Tooltip } from '@databricks/design-system';
 import { LIFECYCLE_FILTER } from '../../../../constants';
 import Routes from '../../../../routes';
 import { ExperimentPageViewState } from '../../models/ExperimentPageViewState';
@@ -11,8 +11,6 @@ import { ExperimentRunsSelectorResult } from '../../utils/experimentRuns.selecto
 import { ExperimentViewRunModals } from './ExperimentViewRunModals';
 import { ExperimentPageSearchFacetsState } from '../../models/ExperimentPageSearchFacetsState';
 import { RunInfoEntity } from '../../../../types';
-import { useDesignSystemTheme } from '@databricks/design-system';
-import { ExperimentViewRunsControlsActionsSelectTags } from './ExperimentViewRunsControlsActionsSelectTags';
 
 export type ExperimentViewRunsControlsActionsProps = {
   viewState: ExperimentPageViewState;
@@ -26,11 +24,10 @@ const CompareRunsButtonWrapper: React.FC = ({ children }) => <>{children}</>;
 export const ExperimentViewRunsControlsActions = React.memo(
   ({ viewState, runsData, searchFacetsState, refreshRuns }: ExperimentViewRunsControlsActionsProps) => {
     const { runsSelected } = viewState;
-    const { runInfos, tagsList } = runsData;
+    const { runInfos } = runsData;
     const { lifecycleFilter } = searchFacetsState;
 
     const navigate = useNavigate();
-    const { theme } = useDesignSystemTheme();
 
     const [showDeleteRunModal, setShowDeleteRunModal] = useState(false);
     const [showRestoreRunModal, setShowRestoreRunModal] = useState(false);
@@ -70,7 +67,7 @@ export const ExperimentViewRunsControlsActions = React.memo(
     return (
       <>
         <div css={styles.controlBar}>
-          <Button
+          {/* <Button
             componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunscontrolsactions.tsx_110"
             data-testid="run-rename-button"
             onClick={renameButtonClicked}
@@ -80,8 +77,8 @@ export const ExperimentViewRunsControlsActions = React.memo(
               defaultMessage="Rename"
               description="Label for the rename run button above the experiment runs table"
             />
-          </Button>
-          {lifecycleFilter === LIFECYCLE_FILTER.ACTIVE ? (
+          </Button> */}
+          {/* {lifecycleFilter === LIFECYCLE_FILTER.ACTIVE ? (
             <Button
               componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunscontrolsactions.tsx_117"
               data-testid="runs-delete-button"
@@ -95,7 +92,7 @@ export const ExperimentViewRunsControlsActions = React.memo(
                 description="String for the delete button to delete a particular experiment run"
               />
             </Button>
-          ) : null}
+          ) : null} */}
           {lifecycleFilter === LIFECYCLE_FILTER.DELETED ? (
             <Button
               componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunscontrolsactions.tsx_126"
@@ -125,14 +122,6 @@ export const ExperimentViewRunsControlsActions = React.memo(
               />
             </Button>
           </CompareRunsButtonWrapper>
-
-          <div css={styles.buttonSeparator} />
-          <ExperimentViewRunsControlsActionsSelectTags
-            runsSelected={runsSelected}
-            runInfos={runInfos}
-            tagsList={tagsList}
-            refreshRuns={refreshRuns}
-          />
         </div>
         <ExperimentViewRunModals
           runsSelected={runsSelected}

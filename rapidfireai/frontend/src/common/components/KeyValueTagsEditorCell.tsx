@@ -1,6 +1,6 @@
 import { Button, PencilIcon, useDesignSystemTheme } from '@databricks/design-system';
 import { FormattedMessage } from 'react-intl';
-import { KeyValueEntity } from '../types';
+import { KeyValueEntity } from '../../experiment-tracking/types';
 import { KeyValueTag } from './KeyValueTag';
 
 interface KeyValueTagsEditorCellProps {

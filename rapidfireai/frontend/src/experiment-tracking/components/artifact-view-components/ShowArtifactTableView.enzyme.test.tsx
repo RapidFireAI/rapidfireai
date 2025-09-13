@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { shallow, mount } from 'enzyme';
-import { mountWithIntl } from '@mlflow/mlflow/src/common/utils/TestUtils.enzyme';
+import { mountWithIntl } from 'common/utils/TestUtils.enzyme';
 import ShowArtifactTableView from './ShowArtifactTableView';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'papa... Remove this comment to see the full error message
 import Papa from 'papaparse';
@@ -36,7 +36,6 @@ describe('ShowArtifactTableView', () => {
     expect(wrapper.length).toBe(1);
   });
 
-  // eslint-disable-next-line jest/no-done-callback -- TODO(FEINF-1337)
   test('should render raw file text if parsing invalid CSV', (done) => {
     const fileContents = 'abcd\n&&&&&';
     const getArtifact = jest.fn((artifactLocation) => {
@@ -46,14 +45,13 @@ describe('ShowArtifactTableView', () => {
     wrapper = mountWithIntl(<ShowArtifactTableView {...props} />);
     setImmediate(() => {
       wrapper.update();
-      expect(wrapper.find('.mlflow-ShowArtifactPage').length).toBe(1);
+      expect(wrapper.find('.ShowArtifactPage').length).toBe(1);
       expect(wrapper.find('.text-area-border-box').length).toBe(1);
       expect(wrapper.find('.text-area-border-box').text()).toBe(fileContents);
       done();
     });
   });
 
-  // eslint-disable-next-line jest/no-done-callback -- TODO(FEINF-1337)
   test('should only render the first 500 rows when the number of rows is larger than 500', (done) => {
     const data = Array(600).fill({ a: 0, b: 1 });
     const fileContents = Papa.unparse(data);
@@ -72,7 +70,6 @@ describe('ShowArtifactTableView', () => {
     });
   });
 
-  // eslint-disable-next-line jest/no-done-callback -- TODO(FEINF-1337)
   test('should render CSV file correctly', (done) => {
     const data = Array(2).fill({ a: '0', b: '1' });
     const fileContents = Papa.unparse(data);
@@ -105,7 +102,6 @@ describe('ShowArtifactTableView', () => {
     });
   });
 
-  // eslint-disable-next-line jest/no-done-callback -- TODO(FEINF-1337)
   test('should render TSV file correctly', (done) => {
     const data = Array(2).fill({ a: '0', b: '1' });
     const fileContents = Papa.unparse(data, { delimiter: '\t' });

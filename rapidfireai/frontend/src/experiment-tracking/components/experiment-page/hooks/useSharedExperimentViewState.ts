@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useIntl } from 'react-intl';
 import { EXPERIMENT_PAGE_QUERY_PARAM_KEYS, useUpdateExperimentPageSearchFacets } from './useExperimentPageSearchFacets';
 import { pick } from 'lodash';
 import { EXPERIMENT_PAGE_UI_STATE_FIELDS, ExperimentPageUIState } from '../models/ExperimentPageUIState';
 import { ExperimentPageSearchFacetsState } from '../models/ExperimentPageSearchFacetsState';
 import { ExperimentEntity } from '../../../types';
-import { KeyValueEntity } from '../../../../common/types';
 import { useNavigate, useSearchParams } from '../../../../common/utils/RoutingUtils';
 import Utils from '../../../../common/utils/Utils';
 import {
@@ -13,14 +12,6 @@ import {
   EXPERIMENT_PAGE_VIEW_STATE_SHARE_URL_PARAM_KEY,
 } from '../../../constants';
 import Routes from '../../../routes';
-import { isTextCompressedDeflate, textDecompressDeflate } from '../../../../common/utils/StringUtils';
-
-const deserializePersistedState = async (state: string) => {
-  if (isTextCompressedDeflate(state)) {
-    return JSON.parse(await textDecompressDeflate(state));
-  }
-  return JSON.parse(state);
-};
 
 /**
  * Hook that handles loading shared view state from URL and updating the search facets/UI state accordingly
@@ -38,14 +29,14 @@ export const useSharedExperimentViewState = (
 
   const updateSearchFacets = useUpdateExperimentPageSearchFacets();
 
-  const [sharedSearchFacetsState, setSharedSearchFacetsState] = useState<ExperimentPageSearchFacetsState | null>(null);
-  const [sharedUiState, setSharedUiState] = useState<ExperimentPageUIState | null>(null);
-  const [sharedStateError, setSharedStateError] = useState<string | null>(null);
-  const [sharedStateErrorMessage, setSharedStateErrorMessage] = useState<string | null>(null);
-
-  useEffect(() => {
+  const { sharedSearchFacetsState, sharedUiState, sharedStateError, sharedStateErrorMessage } = useMemo(() => {
     if (!viewStateShareKey || !experiment) {
-      return;
+      return {
+        sharedSearchFacetsState: null,
+        sharedUiState: null,
+        sharedStateError: null,
+        sharedStateErrorMessage: null,
+      };
     }
 
     // Find the tag with the given share key
@@ -53,9 +44,11 @@ export const useSharedExperimentViewState = (
       ({ key }) => key === `${EXPERIMENT_PAGE_VIEW_STATE_SHARE_TAG_PREFIX}${viewStateShareKey}`,
     );
 
-    const tryParseSharedStateFromTag = async (shareViewTag: KeyValueEntity) => {
+    // If the tag exists, parse the view state from the tag value
+    if (shareViewTag) {
       try {
-        const parsedSharedViewState = await deserializePersistedState(shareViewTag.value);
+        const parsedSharedViewState = JSON.parse(shareViewTag.value);
+
         // First, extract search facets part of the shared view state
         const sharedSearchFacetsState = pick(
           parsedSharedViewState,
@@ -65,43 +58,39 @@ export const useSharedExperimentViewState = (
         // Then, extract UI state part of the shared view state
         const sharedUiState = pick(parsedSharedViewState, EXPERIMENT_PAGE_UI_STATE_FIELDS) as ExperimentPageUIState;
 
-        setSharedSearchFacetsState(sharedSearchFacetsState);
-        setSharedUiState(sharedUiState);
-        setSharedStateError(null);
-        setSharedStateErrorMessage(null);
+        return {
+          sharedSearchFacetsState,
+          sharedUiState,
+          sharedStateError: null,
+          sharedStateErrorMessage: null,
+        };
       } catch (e) {
-        setSharedSearchFacetsState(null);
-        setSharedUiState(null);
-        setSharedStateError(`Error loading shared view state: share key is invalid`);
-        setSharedStateErrorMessage(
-          intl.formatMessage({
+        return {
+          sharedSearchFacetsState: null,
+          sharedUiState: null,
+          sharedStateError: `Error loading shared view state: share key is invalid`,
+          sharedStateErrorMessage: intl.formatMessage({
             defaultMessage: `Error loading shared view state: share key is invalid`,
             description: 'Experiment page > share viewstate > error > share key is invalid',
           }),
-        );
+        };
       }
-    };
-
-    // If the tag exists, parse the view state from the tag value
-    if (!shareViewTag) {
-      setSharedSearchFacetsState(null);
-      setSharedUiState(null);
-      setSharedStateError(`Error loading shared view state: share key ${viewStateShareKey} does not exist`);
-      setSharedStateErrorMessage(
-        intl.formatMessage(
-          {
-            defaultMessage: `Error loading shared view state: share key "{viewStateShareKey}" does not exist`,
-            description: 'Experiment page > share viewstate > error > share key does not exist',
-          },
-          {
-            viewStateShareKey,
-          },
-        ),
-      );
-      return;
     }
 
-    tryParseSharedStateFromTag(shareViewTag);
+    return {
+      sharedSearchFacetsState: null,
+      sharedUiState: null,
+      sharedStateError: `Error loading shared view state: share key ${viewStateShareKey} does not exist`,
+      sharedStateErrorMessage: intl.formatMessage(
+        {
+          defaultMessage: `Error loading shared view state: share key "{viewStateShareKey}" does not exist`,
+          description: 'Experiment page > share viewstate > error > share key does not exist',
+        },
+        {
+          viewStateShareKey,
+        },
+      ),
+    };
   }, [experiment, viewStateShareKey, intl]);
 
   useEffect(() => {

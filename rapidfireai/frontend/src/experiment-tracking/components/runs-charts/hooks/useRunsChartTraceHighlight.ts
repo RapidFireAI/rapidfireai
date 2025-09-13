@@ -1,16 +1,5 @@
-import { isUndefined, noop } from 'lodash';
-import {
-  type PropsWithChildren,
-  createContext,
-  createElement,
-  useContext,
-  useMemo,
-  useRef,
-  useEffect,
-  useState,
-  useCallback,
-} from 'react';
-import { shouldEnableUnifiedChartDataTraceHighlight } from '../../../../common/utils/FeatureUtils';
+import { useEffect, useMemo, useState } from 'react';
+import { RunsChartsRunData } from '../components/RunsCharts.common';
 
 /**
  * Function used to highlight particular trace in the experiment runs chart,
@@ -76,7 +65,7 @@ export const highlightLineTraces = highlightChartTracesFn('svg .scatterlayer g.t
 export const highlightScatterTraces = highlightChartTracesFn('svg .scatterlayer path.point', '.trace.scatter');
 
 /**
- * This hook provides mechanisms necessary for highlighting SVG trace paths
+ * This hook houses and exports various mechanisms necessary for highlighting traces
  * in experiment runs charts.
  *
  * @param containerDiv HTML element containing the chart
@@ -84,17 +73,13 @@ export const highlightScatterTraces = highlightChartTracesFn('svg .scatterlayer 
  * @param runsData array containing run informations, should be the same order as provided to the chart
  * @param highlightFn a styling function that will be called when the trace should be (un)highlighted, please refer to `highlightCallbackFn()`
  */
-export const useRenderRunsChartTraceHighlight = (
+export const useRunsChartTraceHighlight = (
   containerDiv: HTMLElement | null,
   selectedRunUuid: string | null | undefined,
   runsData: { uuid?: string }[],
   highlightFn: ReturnType<typeof highlightChartTracesFn>,
   numberOfBands = 0,
 ) => {
-  // Save the last runs data to be available immediately on non-stateful callbacks
-  const lastRunsData = useRef(runsData);
-  lastRunsData.current = runsData;
-
   const selectedTraceIndex = useMemo(() => {
     if (!containerDiv || !selectedRunUuid) {
       return -1;
@@ -103,123 +88,13 @@ export const useRenderRunsChartTraceHighlight = (
   }, [runsData, containerDiv, selectedRunUuid]);
 
   const [hoveredPointIndex, setHoveredPointIndex] = useState(-1);
-  const { onHighlightChange } = useRunsChartTraceHighlight();
 
   useEffect(() => {
-    // Disable this hook variant if new highlight model is enabled
-    if (shouldEnableUnifiedChartDataTraceHighlight()) {
-      return;
-    }
     if (!containerDiv) {
       return;
     }
     highlightFn(containerDiv, hoveredPointIndex, selectedTraceIndex, numberOfBands);
   }, [highlightFn, containerDiv, selectedTraceIndex, hoveredPointIndex, numberOfBands]);
 
-  useEffect(() => {
-    // Use this hook variant only if new highlight model is enabled
-    if (!shouldEnableUnifiedChartDataTraceHighlight()) {
-      return;
-    }
-    if (!containerDiv) {
-      return;
-    }
-    // Here, we don't report stateful hovered run UUID since it's handled by the new highlight model
-    highlightFn(containerDiv, -1, selectedTraceIndex, numberOfBands);
-  }, [highlightFn, containerDiv, selectedTraceIndex, numberOfBands]);
-
-  // Save the last selected trace index to be available immediately on non-stateful callbacks
-  const lastSelectedTraceIndex = useRef(selectedTraceIndex);
-  lastSelectedTraceIndex.current = selectedTraceIndex;
-
-  const highlightChangeListener = useCallback(
-    (newExtern: string | null) => {
-      if (!containerDiv) {
-        return;
-      }
-
-      const externallyHighlightedRunIndex = lastRunsData.current.findIndex(({ uuid }) => uuid === newExtern);
-      highlightFn(containerDiv, externallyHighlightedRunIndex, lastSelectedTraceIndex.current, numberOfBands);
-    },
-    [highlightFn, containerDiv, numberOfBands],
-  );
-
-  // Listen to the highlight change event
-  useEffect(() => onHighlightChange(highlightChangeListener), [onHighlightChange, highlightChangeListener]);
-
-  return {
-    selectedTraceIndex,
-    hoveredPointIndex,
-    // With the unified chart data trace highlight, we don't need to do costly state updates anymore
-    setHoveredPointIndex: shouldEnableUnifiedChartDataTraceHighlight() ? noop : setHoveredPointIndex,
-  };
+  return { selectedTraceIndex, hoveredPointIndex, setHoveredPointIndex };
 };
-
-export enum ChartsTraceHighlightSource {
-  NONE,
-  CHART,
-  TABLE,
-}
-
-interface RunsChartsSetHighlightContextType {
-  highlightDataTrace: (
-    traceUuid: string | null,
-    options?: { source?: ChartsTraceHighlightSource; shouldBlock?: boolean },
-  ) => void;
-  onHighlightChange: (fn: (traceUuid: string | null, source?: ChartsTraceHighlightSource) => void) => () => void;
-}
-
-const RunsChartsSetHighlightContext = createContext<RunsChartsSetHighlightContextType>({
-  highlightDataTrace: () => {},
-  onHighlightChange: () => () => {},
-});
-
-export const RunsChartsSetHighlightContextProvider = ({ children }: PropsWithChildren<unknown>) => {
-  const highlightListenerFns = useRef<((traceUuid: string | null, source?: ChartsTraceHighlightSource) => void)[]>([]);
-  const block = useRef(false);
-
-  // Stable and memoized context value
-  const contextValue = useMemo<RunsChartsSetHighlightContextType>(() => {
-    // If new highlight model is disabled, disable entire feature by providint empty logic to the context
-    if (!shouldEnableUnifiedChartDataTraceHighlight()) {
-      return {
-        highlightDataTrace: () => {},
-        onHighlightChange: () => () => {},
-      };
-    }
-
-    const notifyListeners = (traceUuid: string | null, source?: ChartsTraceHighlightSource) => {
-      for (const fn of highlightListenerFns.current) {
-        fn(traceUuid, source);
-      }
-    };
-
-    const highlightDataTrace = (
-      traceUuid: string | null,
-      { shouldBlock, source }: { source?: ChartsTraceHighlightSource; shouldBlock?: boolean } = {},
-    ) => {
-      if (!isUndefined(shouldBlock)) {
-        block.current = shouldBlock;
-      } else if (block.current) {
-        return;
-      }
-      notifyListeners(traceUuid, source);
-    };
-
-    const onHighlightChange = (listener: (traceUuid: string | null, source?: ChartsTraceHighlightSource) => void) => {
-      highlightListenerFns.current.push(listener);
-      return () => {
-        highlightListenerFns.current = highlightListenerFns.current.filter((fn) => fn !== listener);
-      };
-    };
-
-    return {
-      highlightDataTrace,
-      onHighlightChange,
-    };
-  }, []);
-
-  return createElement(RunsChartsSetHighlightContext.Provider, { value: contextValue }, children);
-};
-
-export const useRunsChartTraceHighlight = () => useContext(RunsChartsSetHighlightContext);

@@ -1,18 +1,17 @@
-import { Tag, LegacyTooltip, Typography } from '@databricks/design-system';
-import { KeyValueEntity } from '../types';
+import { Tag, Tooltip, Typography } from '@databricks/design-system';
+import { KeyValueEntity } from '../../experiment-tracking/types';
 import React, { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { KeyValueTagFullViewModal } from './KeyValueTagFullViewModal';
-import { Interpolation, Theme } from '@emotion/react';
 
 /**
  * An arbitrary number that is used to determine if a tag is too
  * long and should be truncated. We want to avoid short keys or values
  * in a long tag to be truncated
  * */
-const TRUNCATE_ON_CHARS_LENGTH = 30;
+export const TRUNCATE_ON_CHARS_LENGTH = 30;
 
-function getTruncatedStyles(shouldTruncate = true): Interpolation<Theme> {
+function getTruncatedStyles(shouldTruncate = true) {
   return shouldTruncate
     ? {
         overflow: 'hidden',
@@ -57,14 +56,8 @@ export const KeyValueTag = ({
 
   return (
     <div>
-      <Tag
-        componentId="codegen_mlflow_app_src_common_components_keyvaluetag.tsx_60"
-        closable={isClosable}
-        onClose={onClose}
-        title={tag.key}
-        className={className}
-      >
-        <LegacyTooltip title={allowFullViewModal ? fullViewModalLabel : ''}>
+      <Tag closable={isClosable} onClose={onClose} title={tag.key} className={className}>
+        <Tooltip title={allowFullViewModal ? fullViewModalLabel : ''}>
           <span
             css={{ maxWidth, display: 'inline-flex' }}
             onClick={() => (allowFullViewModal ? setIsKeyValueTagFullViewModalVisible(true) : undefined)}
@@ -78,7 +71,7 @@ export const KeyValueTag = ({
               </Typography.Text>
             )}
           </span>
-        </LegacyTooltip>
+        </Tooltip>
       </Tag>
       <div>
         {isKeyValueTagFullViewModalVisible && (

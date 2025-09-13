@@ -8,18 +8,9 @@ import Routes from '../../../../routes';
 import { CopyButton } from '../../../../../shared/building_blocks/CopyButton';
 import { ExperimentPageSearchFacetsState } from '../../models/ExperimentPageSearchFacetsState';
 import { ExperimentPageUIState } from '../../models/ExperimentPageUIState';
-import { getStringSHA256, textCompressDeflate } from '../../../../../common/utils/StringUtils';
+import { getStringSHA256 } from '../../../../../common/utils/StringUtils';
 import Utils from '../../../../../common/utils/Utils';
-import {
-  EXPERIMENT_PAGE_VIEW_STATE_SHARE_TAG_PREFIX,
-  EXPERIMENT_PAGE_VIEW_STATE_SHARE_URL_PARAM_KEY,
-} from '../../../../constants';
-import { shouldUseCompressedExperimentViewSharedState } from '../../../../../common/utils/FeatureUtils';
-import {
-  EXPERIMENT_PAGE_VIEW_MODE_QUERY_PARAM_KEY,
-  useExperimentPageViewMode,
-} from '../../hooks/useExperimentPageViewMode';
-import type { ExperimentViewRunsCompareMode } from '../../../../types';
+import { EXPERIMENT_PAGE_VIEW_STATE_SHARE_TAG_PREFIX } from '../../../../constants';
 
 type GetShareLinkModalProps = {
   onCancel: () => void;
@@ -30,41 +21,6 @@ type GetShareLinkModalProps = {
 };
 
 type ShareableViewState = ExperimentPageSearchFacetsState & ExperimentPageUIState;
-
-// Typescript-based test to ensure that the keys of the two states are disjoint.
-// If they are not disjoint, the state serialization will not work as expected.
-const _arePersistedStatesDisjoint: [
-  keyof ExperimentPageSearchFacetsState & keyof ExperimentPageUIState extends never ? true : false,
-] = [true];
-
-const serializePersistedState = async (state: ShareableViewState) => {
-  if (shouldUseCompressedExperimentViewSharedState()) {
-    return textCompressDeflate(JSON.stringify(state));
-  }
-  return JSON.stringify(state);
-};
-
-const getShareableUrl = (experimentId: string, shareStateHash: string, viewMode?: ExperimentViewRunsCompareMode) => {
-  // As a start, get the route
-  const route = Routes.getExperimentPageRoute(experimentId);
-
-  // Begin building the query params
-  const queryParams = new URLSearchParams();
-
-  // Add the share state hash
-  queryParams.set(EXPERIMENT_PAGE_VIEW_STATE_SHARE_URL_PARAM_KEY, shareStateHash);
-
-  // If the view mode is set, add it to the query params
-  if (viewMode) {
-    queryParams.set(EXPERIMENT_PAGE_VIEW_MODE_QUERY_PARAM_KEY, viewMode);
-  }
-
-  // In regular implementation, build the hash part of the URL
-  const params = queryParams.toString();
-  const hashParam = `${route}${params?.startsWith('?') ? '' : '?'}${params}`;
-  const shareURL = `${window.location.origin}${window.location.pathname}#${hashParam}`;
-  return shareURL;
-};
 
 /**
  * Modal that displays shareable link for the experiment page.
@@ -81,7 +37,6 @@ export const ExperimentGetShareLinkModal = ({
   const [sharedStateUrl, setSharedStateUrl] = useState<string>('');
   const [linkInProgress, setLinkInProgress] = useState(true);
   const [generatedState, setGeneratedState] = useState<ShareableViewState | null>(null);
-  const [viewMode] = useExperimentPageViewMode();
 
   const dispatch = useDispatch<ThunkDispatch>();
 
@@ -97,24 +52,25 @@ export const ExperimentGetShareLinkModal = ({
       }
       setLinkInProgress(true);
       const [experimentId] = experimentIds;
-      try {
-        const data = await serializePersistedState(state);
-        const hash = await getStringSHA256(data);
+      const data = JSON.stringify(state);
+      const hash = await getStringSHA256(data);
 
-        const tagName = `${EXPERIMENT_PAGE_VIEW_STATE_SHARE_TAG_PREFIX}${hash}`;
+      const tagName = `${EXPERIMENT_PAGE_VIEW_STATE_SHARE_TAG_PREFIX}${hash}`;
 
-        await dispatch(setExperimentTagApi(experimentId, tagName, data));
-
-        setLinkInProgress(false);
-        setGeneratedState(state);
-
-        setSharedStateUrl(getShareableUrl(experimentId, hash, viewMode));
-      } catch (e) {
-        Utils.logErrorAndNotifyUser('Failed to create shareable link for experiment');
-        throw e;
-      }
+      dispatch(setExperimentTagApi(experimentId, tagName, data))
+        .then(() => {
+          setLinkInProgress(false);
+          setGeneratedState(state);
+          const pageRoute = Routes.getExperimentPageRoute(experimentId, false, hash);
+          const shareURL = `${window.location.origin}${window.location.pathname}#${pageRoute}`;
+          setSharedStateUrl(shareURL);
+        })
+        .catch((e) => {
+          Utils.logErrorAndNotifyUser('Failed to create shareable link for experiment');
+          throw e;
+        });
     },
-    [dispatch, experimentIds, viewMode],
+    [dispatch, experimentIds],
   );
 
   useEffect(() => {
@@ -126,11 +82,10 @@ export const ExperimentGetShareLinkModal = ({
 
   return (
     <Modal
-      componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_header_experimentgetsharelinkmodal.tsx_101"
       title={
         <FormattedMessage
           defaultMessage="Get shareable link"
-          description='Title text for the experiment "Get link" modal'
+          description={'Title text for the experiment "Get link" modal'}
         />
       }
       visible={visible}
@@ -140,14 +95,9 @@ export const ExperimentGetShareLinkModal = ({
         {linkInProgress ? (
           <GenericSkeleton css={{ flex: 1 }} />
         ) : (
-          <Input
-            componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_header_experimentgetsharelinkmodal.tsx_115"
-            placeholder="Click button on the right to create shareable state"
-            value={sharedStateUrl}
-            readOnly
-          />
+          <Input placeholder="Click button on the right to create shareable state" value={sharedStateUrl} readOnly />
         )}
-        <CopyButton loading={linkInProgress} copyText={sharedStateUrl} data-testid="share-link-copy-button" />
+        <CopyButton loading={linkInProgress} copyText={sharedStateUrl} />
       </div>
     </Modal>
   );

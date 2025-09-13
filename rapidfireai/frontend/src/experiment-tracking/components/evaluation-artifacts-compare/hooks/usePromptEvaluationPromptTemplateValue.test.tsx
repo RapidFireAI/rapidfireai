@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react-hooks';
 import { usePromptEvaluationPromptTemplateValue } from './usePromptEvaluationPromptTemplateValue';
 import { extractPromptInputVariables } from '../../prompt-engineering/PromptEngineering.utils';
 

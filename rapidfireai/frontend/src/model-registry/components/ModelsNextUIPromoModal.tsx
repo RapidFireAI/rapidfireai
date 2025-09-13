@@ -13,7 +13,6 @@ export const ModelsNextUIPromoModal = ({
   onTryItNow: () => void;
 }) => (
   <Modal
-    componentId="codegen_mlflow_app_src_model-registry_components_modelsnextuipromomodal.tsx_15"
     visible={visible}
     title={
       <FormattedMessage

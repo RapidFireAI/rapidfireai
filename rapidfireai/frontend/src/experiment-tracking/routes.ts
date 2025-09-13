@@ -1,65 +1,18 @@
 import { createMLflowRoutePath, generatePath } from '../common/utils/RoutingUtils';
-import { ExperimentPageTabName } from './constants';
-
-/**
- * Page identifiers for MLflow experiment tracking pages.
- * Keys should correspond to route paths.
- */
-export enum PageId {
-  promptsPage = 'mlflow.prompts',
-  promptDetailsPage = 'mlflow.prompts.details',
-  experimentPageTabbed = 'mlflow.experiment.details.tab',
-  experimentLoggedModelDetailsPageTab = 'mlflow.logged-model.details.tab',
-  experimentLoggedModelDetailsPage = 'mlflow.logged-model.details',
-  experimentPage = 'mlflow.experiment.details',
-  // Child routes for experiment page:
-  experimentPageTabRuns = 'mlflow.experiment.tab.runs',
-  experimentPageTabModels = 'mlflow.experiment.tab.models',
-  experimentPageTabTraces = 'mlflow.experiment.tab.traces',
-  // Child routes for experiment page - end
-  experimentPageSearch = 'mlflow.experiment.details.search',
-  compareExperimentsSearch = 'mlflow.experiment.compare',
-  runPageWithTab = 'mlflow.experiment.run.details',
-  runPageDirect = 'mlflow.experiment.run.details.direct',
-  compareRuns = 'mlflow.experiment.run.compare',
-  metricPage = 'mlflow.metric.details',
-  experimentPrompt = 'mlflow.experiment.prompt',
-}
 
 // Route path definitions (used in defining route elements)
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- TODO(FEINF-4274)
 export class RoutePaths {
   static get rootRoute() {
     return createMLflowRoutePath('/');
   }
   static get experimentObservatory() {
-    return createMLflowRoutePath('/experiments');
+    return createMLflowRoutePath('/experiments/list');
   }
   static get experimentPage() {
     return createMLflowRoutePath('/experiments/:experimentId');
   }
-  // Child routes for experiment page:
-  static get experimentPageTabRuns() {
-    return createMLflowRoutePath('/experiments/:experimentId/runs');
-  }
-  static get experimentPageTabTraces() {
-    return createMLflowRoutePath('/experiments/:experimentId/traces');
-  }
-  static get experimentPageTabModels() {
-    return createMLflowRoutePath('/experiments/:experimentId/models');
-  }
-  // Child routes for experiment page - end
-  static get experimentLoggedModelDetailsPageTab() {
-    return createMLflowRoutePath('/experiments/:experimentId/models/:loggedModelId/:tabName');
-  }
-  static get experimentLoggedModelDetailsPage() {
-    return createMLflowRoutePath('/experiments/:experimentId/models/:loggedModelId');
-  }
-  static get experimentPageTabbed() {
-    return createMLflowRoutePath('/experiments/:experimentId/:tabName');
-  }
   static get experimentPageSearch() {
-    return createMLflowRoutePath('/experiments/:experimentId/s');
+    return createMLflowRoutePath('/experiments/:experimentId/:searchString');
   }
   static get runPage() {
     return createMLflowRoutePath('/experiments/:experimentId/runs/:runUuid');
@@ -71,12 +24,6 @@ export class RoutePaths {
   }
   static get runPageWithArtifact() {
     return createMLflowRoutePath('/experiments/:experimentId/runs/:runUuid/artifactPath/*');
-  }
-  static get experimentPromptsList() {
-    return createMLflowRoutePath('/experiments/:experimentId/prompts');
-  }
-  static get experimentPrompt() {
-    return createMLflowRoutePath('/experiments/:experimentId/prompts/:promptName');
   }
   static get runPageDirect() {
     return createMLflowRoutePath('/runs/:runUuid');
@@ -93,20 +40,12 @@ export class RoutePaths {
   static get compareExperimentsSearch() {
     return createMLflowRoutePath('/compare-experiments/:searchString');
   }
-  /**
-   * Route paths for prompts management.
-   * Featured exclusively in open source MLflow.
-   */
-  static get promptsPage() {
-    return createMLflowRoutePath('/prompts');
-  }
-  static get promptDetailsPage() {
-    return createMLflowRoutePath('/prompts/:promptName');
+  static get defaultExperimentsPath() {
+    return createMLflowRoutePath('/experiments/0');
   }
 }
 
 // Concrete routes and functions for generating parametrized paths
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- TODO(FEINF-4274)
 class Routes {
   static get rootRoute() {
     return RoutePaths.rootRoute;
@@ -124,6 +63,10 @@ class Routes {
     return RoutePaths.experimentPageSearch;
   }
 
+  static get experimentPageDefaultRoute() {
+    return RoutePaths.defaultExperimentsPath;
+  }
+
   static getExperimentPageRoute(experimentId: string, isComparingRuns = false, shareState?: string) {
     const path = generatePath(RoutePaths.experimentPage, { experimentId });
     if (shareState) {
@@ -135,28 +78,9 @@ class Routes {
     return path;
   }
 
-  static getExperimentPageTracesTabRoute(experimentId: string) {
-    return `${Routes.getExperimentPageRoute(experimentId)}/traces`;
-  }
-
-  static getExperimentPageTabRoute(experimentId: string, tabName: ExperimentPageTabName) {
-    return generatePath(RoutePaths.experimentPageTabbed, { experimentId, tabName });
-  }
-
-  static getExperimentLoggedModelDetailsPage(experimentId: string, loggedModelId: string) {
-    return generatePath(RoutePaths.experimentLoggedModelDetailsPage, { experimentId, loggedModelId });
-  }
-
-  static getExperimentLoggedModelDetailsPageRoute(experimentId: string, loggedModelId: string, tabName?: string) {
-    if (tabName) {
-      return generatePath(RoutePaths.experimentLoggedModelDetailsPageTab, { experimentId, loggedModelId, tabName });
-    }
-    return generatePath(RoutePaths.experimentLoggedModelDetailsPage, { experimentId, loggedModelId });
-  }
-
   static searchRunsByUser(experimentId: string, userId: string) {
     const path = generatePath(RoutePaths.experimentPage, { experimentId });
-    const filterString = `attributes.user_id = '${userId}'`;
+    const filterString = `user_id = '${userId}'`;
     return `${path}?searchFilter=${encodeURIComponent(filterString)}`;
   }
 
@@ -170,10 +94,6 @@ class Routes {
       return this.getRunPageTabRoute(experimentId, runUuid, ['artifacts', artifactPath].join('/'));
     }
     return generatePath(RoutePaths.runPage, { experimentId, runUuid });
-  }
-
-  static getDirectRunPageRoute(runUuid: string) {
-    return generatePath(RoutePaths.runPageDirect, { runUuid });
   }
 
   static getRunPageTabRoute(experimentId: string, runUuid: string, tabPath?: string) {
@@ -230,9 +150,9 @@ class Routes {
 
     const queryString =
       `?runs=${JSON.stringify(runUuids)}` +
-      `&metric=${encodeURIComponent(JSON.stringify(metricKey))}` +
+      `&metric=${JSON.stringify(metricKey)}` +
       `&experiments=${JSON.stringify(experimentIds)}` +
-      `&plot_metric_keys=${encodeURIComponent(JSON.stringify(finalPlotMetricKeys))}` +
+      `&plot_metric_keys=${JSON.stringify(finalPlotMetricKeys)}` +
       `&plot_layout=${JSON.stringify(plotLayout)}` +
       `&x_axis=${selectedXAxis}` +
       `&y_axis_scale=${yAxisScale}` +
@@ -259,18 +179,6 @@ class Routes {
     const queryString = `?experiments=${JSON.stringify(experimentIds.slice().sort())}`;
     const path = generatePath(RoutePaths.compareExperimentsSearch, { searchString: 's' });
     return `${path}${queryString}`;
-  }
-
-  /**
-   * Routes for prompts management.
-   * Featured exclusively in open source MLflow.
-   */
-  static get promptsPageRoute() {
-    return RoutePaths.promptsPage;
-  }
-
-  static getPromptDetailsPageRoute(promptName: string) {
-    return generatePath(RoutePaths.promptDetailsPage, { promptName });
   }
 }
 

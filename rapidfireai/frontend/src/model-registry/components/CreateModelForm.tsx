@@ -7,7 +7,7 @@
 
 import React, { Component } from 'react';
 
-import { LegacyForm, Input } from '@databricks/design-system';
+import { Form, Input } from '@databricks/design-system';
 import { ModelRegistryDocUrl } from '../../common/constants';
 import { FormattedMessage, injectIntl } from 'react-intl';
 
@@ -30,8 +30,8 @@ class CreateModelFormImpl extends Component<Props> {
     const learnMoreLinkUrl = CreateModelFormImpl.getLearnMoreLinkUrl();
     return (
       // @ts-expect-error TS(2322)
-      <LegacyForm ref={this.props.innerRef} layout="vertical" data-testid="create-model-form-modal">
-        <LegacyForm.Item
+      <Form ref={this.props.innerRef} layout="vertical" data-testid="create-model-form-modal">
+        <Form.Item
           name={MODEL_NAME_FIELD}
           label={this.props.intl.formatMessage({
             defaultMessage: 'Model name',
@@ -48,8 +48,8 @@ class CreateModelFormImpl extends Component<Props> {
             { validator: this.props.validator },
           ]}
         >
-          <Input componentId="codegen_mlflow_app_src_model-registry_components_createmodelform.tsx_62" autoFocus />
-        </LegacyForm.Item>
+          <Input autoFocus />
+        </Form.Item>
         <p className="create-modal-explanatory-text">
           <FormattedMessage
             defaultMessage="After creation, you can register logged models as new versions.&nbsp;"
@@ -71,7 +71,7 @@ class CreateModelFormImpl extends Component<Props> {
           />
           .
         </p>
-      </LegacyForm>
+      </Form>
     );
   }
 }

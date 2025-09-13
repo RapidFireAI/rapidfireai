@@ -5,6 +5,7 @@
  * annotations are already looking good, please remove this comment.
  */
 
+import React, { Component } from 'react';
 import { LegacyTable } from '@databricks/design-system';
 import './HtmlTableView.css';
 
@@ -16,17 +17,21 @@ type Props = {
   scroll?: any;
 };
 
-export function HtmlTableView({ columns, values, styles = {}, testId, scroll }: Props) {
-  return (
-    <LegacyTable
-      className="mlflow-html-table-view"
-      data-testid={testId}
-      dataSource={values}
-      columns={columns}
-      scroll={scroll}
-      size="middle"
-      pagination={false}
-      style={styles}
-    />
-  );
+export class HtmlTableView extends Component<Props> {
+  render() {
+    const styles = this.props.styles || {};
+
+    return (
+      <LegacyTable
+        className="html-table-view"
+        data-test-id={this.props.testId}
+        dataSource={this.props.values}
+        columns={this.props.columns}
+        scroll={this.props.scroll}
+        size="middle"
+        pagination={false}
+        style={styles}
+      />
+    );
+  }
 }

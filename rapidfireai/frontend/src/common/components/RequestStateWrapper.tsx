@@ -6,35 +6,26 @@
  */
 
 import React, { Component } from 'react';
+import './RequestStateWrapper.css';
 import { connect } from 'react-redux';
 import { getApis } from '../../experiment-tracking/reducers/Reducers';
 import { Spinner } from './Spinner';
 import { ErrorCodes } from '../constants';
-import { ErrorWrapper } from '../utils/ErrorWrapper';
-import { ReduxState } from '../../redux-types';
 
 export const DEFAULT_ERROR_MESSAGE = 'A request error occurred.';
 
-type RequestStateWrapperProps = {
-  children?: React.ReactNode;
+type OwnRequestStateWrapperProps = {
   customSpinner?: React.ReactNode;
   shouldOptimisticallyRender?: boolean;
   requests: any[];
-  requestIds?: string[];
   requestIdsWith404sToIgnore?: string[];
   description?: any; // TODO: PropTypes.oneOf(Object.values(LoadingDescription))
   permissionDeniedView?: React.ReactNode;
-  suppressErrorThrow?: boolean;
-  customRequestErrorHandlerFn?: (
-    failedRequests: {
-      id: string;
-      active?: boolean;
-      error: Error | ErrorWrapper;
-    }[],
-  ) => void;
 };
 
 type RequestStateWrapperState = any;
+
+type RequestStateWrapperProps = OwnRequestStateWrapperProps & typeof RequestStateWrapper.defaultProps;
 
 export class RequestStateWrapper extends Component<RequestStateWrapperProps, RequestStateWrapperState> {
   static defaultProps = {
@@ -79,8 +70,7 @@ export class RequestStateWrapper extends Component<RequestStateWrapperProps, Req
   }
 
   getRenderedContent() {
-    const { children, requests, customSpinner, permissionDeniedView, suppressErrorThrow, customRequestErrorHandlerFn } =
-      this.props;
+    const { children, requests, customSpinner, permissionDeniedView } = this.props;
     // @ts-expect-error TS(2339): Property 'requestErrors' does not exist on type '{... Remove this comment to see the full error message
     const { shouldRender, shouldRenderError, requestErrors } = this.state;
     const permissionDeniedErrors = requestErrors.filter((failedRequest: any) => {
@@ -93,13 +83,12 @@ export class RequestStateWrapper extends Component<RequestStateWrapperProps, Req
       if (permissionDeniedErrors.length > 0 && permissionDeniedView) {
         return permissionDeniedView;
       }
-      if (shouldRenderError && !suppressErrorThrow) {
-        customRequestErrorHandlerFn ? customRequestErrorHandlerFn(requestErrors) : triggerError(requestErrors);
+      if (shouldRenderError) {
+        triggerError(requestErrors);
       }
 
       return children;
     }
-
     return customSpinner || <Spinner />;
   }
 
@@ -110,12 +99,12 @@ export class RequestStateWrapper extends Component<RequestStateWrapperProps, Req
 
 export const triggerError = (requests: any) => {
   // This triggers the OOPS error boundary.
-  // eslint-disable-next-line no-console -- TODO(FEINF-3587)
   console.error('ERROR', requests);
   throw Error(`${DEFAULT_ERROR_MESSAGE}: ${requests.error}`);
 };
 
-const mapStateToProps = (state: ReduxState, ownProps: Omit<RequestStateWrapperProps, 'requests'>) => ({
+// @ts-expect-error TS(7006): Parameter 'state' implicitly has an 'any' type.
+const mapStateToProps = (state, ownProps) => ({
   requests: getApis(ownProps.requestIds, state),
 });
 

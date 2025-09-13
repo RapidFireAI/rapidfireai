@@ -16,14 +16,11 @@ import {
   Route,
   UNSAFE_NavigationContext,
   NavLink,
-  Outlet as OutletDirect,
   Link as LinkDirect,
   useNavigate as useNavigateDirect,
   useLocation as useLocationDirect,
   useParams as useParamsDirect,
   useSearchParams as useSearchParamsDirect,
-  createHashRouter,
-  RouterProvider,
   Routes,
   type To,
   type NavigateOptions,
@@ -46,8 +43,6 @@ const useParams = useParamsDirect;
 
 const useNavigate = useNavigateDirect;
 
-const Outlet = OutletDirect;
-
 const Link = LinkDirect;
 
 export const createMLflowRoutePath = (routePath: string) => {
@@ -60,6 +55,7 @@ export {
   MemoryRouter,
   HashRouter,
   Link,
+  NavLink,
   useNavigate,
   useLocation,
   useParams,
@@ -69,14 +65,14 @@ export {
   Navigate,
   Route,
   Routes,
-  Outlet,
-
-  // Exports used to build hash-based data router
-  createHashRouter,
-  RouterProvider,
 
   // Unsafe navigation context, will be improved after full migration to react-router v6
   UNSAFE_NavigationContext,
+
+  // React Router V5 API exports
+  HashRouterV5,
+  LinkV5,
+  NavLinkV5,
 };
 
 export const createLazyRouteElement = (

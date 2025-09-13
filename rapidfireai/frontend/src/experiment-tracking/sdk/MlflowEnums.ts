@@ -15,6 +15,14 @@ export enum SourceType {
   UNKNOWN = 'UNKNOWN',
 }
 
+export const RunStatus = {
+  RUNNING: 'RUNNING',
+  SCHEDULED: 'SCHEDULED',
+  FINISHED: 'FINISHED',
+  FAILED: 'FAILED',
+  KILLED: 'KILLED',
+};
+
 export const ViewType = {
   ACTIVE_ONLY: 'ACTIVE_ONLY',
   DELETED_ONLY: 'DELETED_ONLY',

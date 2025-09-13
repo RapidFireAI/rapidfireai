@@ -7,8 +7,9 @@ import {
   Typography,
   useDesignSystemTheme,
 } from '@databricks/design-system';
+import { Divider } from 'antd';
 import { FormattedMessage } from 'react-intl';
-import { PROMPT_TEMPLATE_EXAMPLES } from '@mlflow/mlflow/src/experiment-tracking/components/evaluation-artifacts-compare/utils/PromptExamples';
+import { PROMPT_TEMPLATE_EXAMPLES } from 'experiment-tracking/components/evaluation-artifacts-compare/utils/PromptExamples';
 
 const { TextArea } = Input;
 type Props = {
@@ -38,7 +39,6 @@ export const EvaluationCreatePromptRunModalExamples = ({
 
   return (
     <Modal
-      componentId="codegen_mlflow_app_src_experiment-tracking_components_evaluation-artifacts-compare_evaluationcreatepromptrunmodalexamples.tsx_42"
       verticalSizing="maxed_out"
       visible={isOpen}
       onCancel={closeModal}
@@ -73,7 +73,7 @@ export const EvaluationCreatePromptRunModalExamples = ({
             css={{
               boxSizing: 'border-box',
               border: `1px solid ${theme.colors.actionDefaultBorderDefault}`,
-              borderRadius: theme.legacyBorders.borderRadiusMd,
+              borderRadius: theme.borders.borderRadiusMd,
               background: theme.colors.backgroundPrimary,
               padding: theme.spacing.md,
               margin: 0,
@@ -104,14 +104,7 @@ export const EvaluationCreatePromptRunModalExamples = ({
             {promptTemplate.prompt.map((line) => (
               <Typography.Paragraph key={line}>{line}</Typography.Paragraph>
             ))}
-            <div
-              css={{
-                marginTop: theme.spacing.xs,
-                marginBottom: theme.spacing.xs,
-                borderTop: `1px solid ${theme.colors.border}`,
-                opacity: 0.5,
-              }}
-            />
+            <Divider css={{ marginTop: theme.spacing.xs, marginBottom: theme.spacing.xs }} />
             {promptTemplate.variables.map(({ name, value }) => (
               <div key={name}>
                 <Typography.Title level={4}>{name}</Typography.Title>

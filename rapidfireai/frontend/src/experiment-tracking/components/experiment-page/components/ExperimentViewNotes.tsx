@@ -5,8 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { CollapsibleSection } from '../../../../common/components/CollapsibleSection';
 import { EditableNote } from '../../../../common/components/EditableNote';
 import { getExperimentTags } from '../../../reducers/Reducers';
-import { ExperimentEntity } from '../../../types';
-import { KeyValueEntity } from '../../../../common/types';
+import { ExperimentEntity, KeyValueEntity } from '../../../types';
 import { NOTE_CONTENT_TAG } from '../../../utils/NoteUtils';
 import { useFetchExperiments } from '../hooks/useFetchExperiments';
 import { ThunkDispatch } from '../../../../redux-types';
@@ -71,7 +70,7 @@ export const ExperimentViewNotes = React.memo(({ experiment }: ExperimentViewNot
       }
       forceOpen={showNotesEditor}
       defaultCollapsed={!storedNote}
-      data-testid="experiment-notes-section"
+      data-test-id="experiment-notes-section"
     >
       <EditableNote
         defaultMarkdown={storedNote}

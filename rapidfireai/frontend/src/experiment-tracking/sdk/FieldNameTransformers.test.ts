@@ -16,31 +16,6 @@ describe('transformSearchRunsResponse', () => {
             run_uuid: '123',
             status: 'ACTIVE',
           },
-          inputs: {
-            model_inputs: [
-              {
-                model_id: 'm-1',
-              },
-            ],
-            dataset_inputs: [
-              {
-                dataset: {
-                  name: 'dataset',
-                  digest: '608a286f',
-                  source_type: 'code',
-                  source: '{}',
-                  profile: '{}',
-                },
-              },
-            ],
-          },
-          outputs: {
-            model_outputs: [
-              {
-                model_id: 'm-2',
-              },
-            ],
-          },
         },
         {
           info: {
@@ -65,27 +40,6 @@ describe('transformSearchRunsResponse', () => {
             runName: 'Run abc',
             runUuid: '123',
             status: 'ACTIVE',
-          }),
-          inputs: expect.objectContaining({
-            modelInputs: [
-              expect.objectContaining({
-                modelId: 'm-1',
-              }),
-            ],
-            datasetInputs: [
-              expect.objectContaining({
-                dataset: expect.objectContaining({
-                  name: 'dataset',
-                }),
-              }),
-            ],
-          }),
-          outputs: expect.objectContaining({
-            modelOutputs: [
-              expect.objectContaining({
-                modelId: 'm-2',
-              }),
-            ],
           }),
         },
         {

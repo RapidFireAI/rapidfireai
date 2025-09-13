@@ -6,30 +6,24 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { getArtifactContent } from '../../../common/utils/ArtifactUtils';
+import { getArtifactContent, getArtifactLocationUrl } from '../../../common/utils/ArtifactUtils';
 import { LegacyTable } from '@databricks/design-system';
 import { FormattedMessage } from 'react-intl';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'papa... Remove this comment to see the full error message
 import Papa from 'papaparse';
 import { ArtifactViewSkeleton } from './ArtifactViewSkeleton';
-import type { LoggedModelArtifactViewerProps } from './ArtifactViewComponents.types';
-import { fetchArtifactUnified } from './utils/fetchArtifactUnified';
 
-type Props = {
+type OwnProps = {
   runUuid: string;
   path: string;
-  getArtifact: typeof getArtifactContent;
-} & LoggedModelArtifactViewerProps;
+  getArtifact?: (...args: any[]) => any;
+};
 
-const ShowArtifactTableView = ({
-  runUuid,
-  path,
-  getArtifact,
-  isLoggedModelsMode,
-  loggedModelId,
-  experimentId,
-  entityTags,
-}: Props) => {
+// @ts-expect-error TS(2456): Type alias 'Props' circularly references itself.
+type Props = OwnProps & typeof ShowArtifactTableView.defaultProps;
+
+// @ts-expect-error TS(7022): 'ShowArtifactTableView' implicitly has type 'any' ... Remove this comment to see the full error message
+const ShowArtifactTableView = ({ runUuid, path, getArtifact }: Props) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState();
   const [data, setData] = useState();
@@ -40,42 +34,8 @@ const ShowArtifactTableView = ({
 
   useEffect(() => {
     resetState();
-
-    function fetchArtifacts() {
-      fetchArtifactUnified?.(
-        { runUuid, path, isLoggedModelsMode, loggedModelId, experimentId, entityTags },
-        getArtifact,
-      )
-        .then((artifactText: any) => {
-          try {
-            const result = Papa.parse(artifactText, {
-              header: true,
-              preview: MAX_NUM_ROWS,
-              skipEmptyLines: 'greedy',
-              dynamicTyping: true,
-            });
-            const dataPreview = result.data;
-
-            if (result.errors.length > 0) {
-              throw Error(result.errors[0].message);
-            }
-
-            setLoading(false);
-            setHeaders(result.meta.fields);
-            setData(dataPreview);
-          } catch (_) {
-            setLoading(false);
-            setText(artifactText);
-          }
-        })
-        .catch((e: any) => {
-          setError(e);
-          setLoading(false);
-        });
-    }
-
-    fetchArtifacts();
-  }, [runUuid, path, getArtifact, isLoggedModelsMode, loggedModelId, experimentId, entityTags]);
+    fetchArtifacts({ path, runUuid, getArtifact });
+  }, [runUuid, path, getArtifact]);
 
   function resetState() {
     // @ts-expect-error TS(2554): Expected 1 arguments, but got 0.
@@ -87,6 +47,38 @@ const ShowArtifactTableView = ({
     // @ts-expect-error TS(2554): Expected 1 arguments, but got 0.
     setText();
     setLoading(true);
+  }
+
+  function fetchArtifacts(artifactData: any) {
+    const artifactLocation = getArtifactLocationUrl(artifactData.path, artifactData.runUuid);
+    artifactData
+      .getArtifact(artifactLocation)
+      .then((artifactText: any) => {
+        try {
+          const result = Papa.parse(artifactText, {
+            header: true,
+            preview: MAX_NUM_ROWS,
+            skipEmptyLines: 'greedy',
+            dynamicTyping: true,
+          });
+          const dataPreview = result.data;
+
+          if (result.errors.length > 0) {
+            throw Error(result.errors[0].message);
+          }
+
+          setLoading(false);
+          setHeaders(result.meta.fields);
+          setData(dataPreview);
+        } catch (_) {
+          setLoading(false);
+          setText(artifactText);
+        }
+      })
+      .catch((e: any) => {
+        setError(e);
+        setLoading(false);
+      });
   }
 
   if (loading) {
@@ -133,7 +125,7 @@ const ShowArtifactTableView = ({
     );
   } else {
     return (
-      <div className="mlflow-ShowArtifactPage">
+      <div className="ShowArtifactPage">
         <div className="text-area-border-box">{text}</div>
       </div>
     );

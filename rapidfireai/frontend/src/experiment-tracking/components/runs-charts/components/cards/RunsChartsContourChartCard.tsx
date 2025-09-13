@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { RunsChartsRunData } from '../RunsCharts.common';
 import type { RunsChartsContourCardConfig } from '../../runs-charts.types';
 import {
+  ChartRunsCountIndicator,
   RunsChartCardFullScreenProps,
   RunsChartCardReorderProps,
   RunsChartCardWrapper,
@@ -9,16 +10,13 @@ import {
 } from './ChartCard.common';
 import { RunsContourPlot } from '../RunsContourPlot';
 import { useRunsChartsTooltip } from '../../hooks/useRunsChartsTooltip';
+import { shouldUseNewRunRowsVisibilityModel } from '../../../../../common/utils/FeatureUtils';
 import { useChartImageDownloadHandler } from '../../hooks/useChartImageDownloadHandler';
 import { downloadChartDataCsv } from '../../../experiment-page/utils/experimentPage.common-utils';
-import { intersection, uniq } from 'lodash';
-import { RunsChartsNoDataFoundIndicator } from '../RunsChartsNoDataFoundIndicator';
 
 export interface RunsChartsContourChartCardProps extends RunsChartCardReorderProps, RunsChartCardFullScreenProps {
   config: RunsChartsContourCardConfig;
   chartRunData: RunsChartsRunData[];
-
-  hideEmptyCharts?: boolean;
 
   onDelete: () => void;
   onEdit: () => void;
@@ -29,10 +27,13 @@ export const RunsChartsContourChartCard = ({
   chartRunData,
   onDelete,
   onEdit,
+  onReorderWith,
+  canMoveDown,
+  canMoveUp,
+  onMoveDown,
+  onMoveUp,
   fullScreen,
   setFullScreenChart,
-  hideEmptyCharts,
-  ...reorderProps
 }: RunsChartsContourChartCardProps) => {
   const title = `${config.xaxis.key} vs. ${config.yaxis.key} vs. ${config.zaxis.key}`;
 
@@ -40,17 +41,16 @@ export const RunsChartsContourChartCard = ({
     setFullScreenChart?.({
       config,
       title,
-      subtitle: null,
+      subtitle: <ChartRunsCountIndicator runsOrGroups={chartRunData} />,
     });
   };
 
-  const slicedRuns = useMemo(() => chartRunData.filter(({ hidden }) => !hidden), [chartRunData]);
-
-  const isEmptyDataset = useMemo(() => {
-    const metricKeys = [config.xaxis.key, config.yaxis.key, config.zaxis.key];
-    const metricsInRuns = slicedRuns.flatMap(({ metrics }) => Object.keys(metrics));
-    return intersection(metricKeys, uniq(metricsInRuns)).length === 0;
-  }, [config, slicedRuns]);
+  const slicedRuns = useMemo(() => {
+    if (shouldUseNewRunRowsVisibilityModel()) {
+      return chartRunData.filter(({ hidden }) => !hidden).reverse();
+    }
+    return chartRunData.slice(0, config.runsCountToCompare || 10).reverse();
+  }, [chartRunData, config]);
 
   const { setTooltip, resetTooltip, selectedRunUuid } = useRunsChartsTooltip(config);
 
@@ -79,11 +79,6 @@ export const RunsChartsContourChartCard = ({
     </div>
   );
 
-  // Do not render the card if the chart is empty and the user has enabled hiding empty charts
-  if (hideEmptyCharts && isEmptyDataset) {
-    return null;
-  }
-
   if (fullScreen) {
     return chartBody;
   }
@@ -93,10 +88,15 @@ export const RunsChartsContourChartCard = ({
       onEdit={onEdit}
       onDelete={onDelete}
       title={title}
+      subtitle={<ChartRunsCountIndicator runsOrGroups={slicedRuns} />}
       uuid={config.uuid}
       dragGroupKey={RunsChartsChartsDragGroup.GENERAL_AREA}
-      // Disable fullscreen button if the chart is empty
-      toggleFullScreenChart={isEmptyDataset ? undefined : toggleFullScreenChart}
+      onReorderWith={onReorderWith}
+      canMoveDown={canMoveDown}
+      canMoveUp={canMoveUp}
+      onMoveDown={onMoveDown}
+      onMoveUp={onMoveUp}
+      toggleFullScreenChart={toggleFullScreenChart}
       supportedDownloadFormats={['png', 'svg', 'csv']}
       onClickDownload={(format) => {
         const savedChartTitle = [config.xaxis.key, config.yaxis.key, config.zaxis.key].join('-');
@@ -115,9 +115,8 @@ export const RunsChartsContourChartCard = ({
         }
         imageDownloadHandler?.(format, savedChartTitle);
       }}
-      {...reorderProps}
     >
-      {isEmptyDataset ? <RunsChartsNoDataFoundIndicator /> : chartBody}
+      {chartBody}
     </RunsChartCardWrapper>
   );
 };

@@ -1,4 +1,4 @@
-import { useMemo, memo } from 'react';
+import { useMemo } from 'react';
 import { RunsChartType } from '../../runs-charts.types';
 import type {
   RunsChartsBarCardConfig,
@@ -11,41 +11,35 @@ import type {
   RunsChartsScatterCardConfig,
 } from '../../runs-charts.types';
 import { RunsChartsRunData } from '../RunsCharts.common';
+import {
+  shouldEnableDifferenceViewCharts,
+  shouldEnableImageGridCharts,
+  shouldUseNewRunRowsVisibilityModel,
+} from '../../../../../common/utils/FeatureUtils';
 import { RunsChartsBarChartCard } from './RunsChartsBarChartCard';
 import { RunsChartsLineChartCard } from './RunsChartsLineChartCard';
 import { RunsChartsScatterChartCard } from './RunsChartsScatterChartCard';
 import { RunsChartsContourChartCard } from './RunsChartsContourChartCard';
 import { RunsChartsParallelChartCard } from './RunsChartsParallelChartCard';
-import type {
-  RunsChartCardFullScreenProps,
-  RunsChartCardReorderProps,
-  RunsChartCardSizeProps,
-  RunsChartCardVisibilityProps,
-} from './ChartCard.common';
+import { RunsChartCardFullScreenProps, RunsChartCardReorderProps } from './ChartCard.common';
 import { RunsChartsDifferenceChartCard } from './RunsChartsDifferenceChartCard';
 import type { RunsGroupByConfig } from '../../../experiment-page/utils/experimentPage.group-row-utils';
 import { RunsChartsImageChartCard } from './RunsChartsImageChartCard';
-import { RunsChartsGlobalLineChartConfig } from '../../../experiment-page/models/ExperimentPageUIState';
 
-export interface RunsChartsCardProps
-  extends RunsChartCardReorderProps,
-    RunsChartCardFullScreenProps,
-    RunsChartCardVisibilityProps,
-    RunsChartCardSizeProps {
+export interface RunsChartsCardProps extends RunsChartCardReorderProps, RunsChartCardFullScreenProps {
   cardConfig: RunsChartsCardConfig;
   chartRunData: RunsChartsRunData[];
   onStartEditChart: (chart: RunsChartsCardConfig) => void;
   onRemoveChart: (chart: RunsChartsCardConfig) => void;
+  onReorderCharts: (sourceChartUuid: string, targetChartUuid: string) => void;
   onDownloadFullMetricHistoryCsv?: (runUuids: string[], metricKeys: string[]) => void;
   index: number;
-  sectionIndex?: number;
+  sectionIndex: number;
   autoRefreshEnabled?: boolean;
-  hideEmptyCharts?: boolean;
   groupBy: RunsGroupByConfig | null;
-  globalLineChartConfig?: RunsChartsGlobalLineChartConfig;
 }
 
-const RunsChartsCardRaw = ({
+export const RunsChartsCard = ({
   cardConfig,
   chartRunData,
   index,
@@ -57,63 +51,43 @@ const RunsChartsCardRaw = ({
   fullScreen,
   canMoveDown,
   canMoveUp,
-  previousChartUuid,
-  nextChartUuid,
+  onMoveDown,
+  onMoveUp,
   onReorderWith,
   autoRefreshEnabled,
   onDownloadFullMetricHistoryCsv,
-  hideEmptyCharts,
-  globalLineChartConfig,
-  height,
-  isInViewport,
-  isInViewportDeferred,
 }: RunsChartsCardProps) => {
-  const reorderProps = useMemo(
-    () => ({
-      onReorderWith,
-      canMoveDown,
-      canMoveUp,
-      previousChartUuid,
-      nextChartUuid,
-    }),
-    [onReorderWith, canMoveDown, canMoveUp, previousChartUuid, nextChartUuid],
-  );
+  const chartElementKey = `${cardConfig.uuid}-${index}-${sectionIndex}`;
 
-  const editProps = useMemo(
-    () => ({
-      onEdit: () => onStartEditChart(cardConfig),
-      onDelete: () => onRemoveChart(cardConfig),
-      setFullScreenChart,
-    }),
-    [onStartEditChart, onRemoveChart, setFullScreenChart, cardConfig],
-  );
+  const reorderProps = {
+    onReorderWith,
+    canMoveDown,
+    canMoveUp,
+    onMoveDown,
+    onMoveUp,
+  };
 
-  const commonChartProps = useMemo(
-    () => ({
-      fullScreen,
-      autoRefreshEnabled,
-      groupBy,
-      hideEmptyCharts,
-      height,
-      isInViewport,
-      isInViewportDeferred,
-      ...editProps,
-      ...reorderProps,
-    }),
-    [
-      fullScreen,
-      autoRefreshEnabled,
-      groupBy,
-      editProps,
-      reorderProps,
-      hideEmptyCharts,
-      height,
-      isInViewport,
-      isInViewportDeferred,
-    ],
-  );
+  const editProps = {
+    onEdit: () => onStartEditChart(cardConfig),
+    onDelete: () => onRemoveChart(cardConfig),
+    setFullScreenChart,
+  };
 
-  const slicedRuns = useMemo(() => chartRunData.filter(({ hidden }) => !hidden).reverse(), [chartRunData]);
+  const commonChartProps = {
+    fullScreen,
+    key: chartElementKey,
+    autoRefreshEnabled,
+    groupBy,
+    ...editProps,
+    ...reorderProps,
+  };
+
+  const slicedRuns = useMemo(() => {
+    if (shouldUseNewRunRowsVisibilityModel()) {
+      return chartRunData.filter(({ hidden }) => !hidden).reverse();
+    }
+    return chartRunData.slice(0, cardConfig.runsCountToCompare || 10).reverse();
+  }, [chartRunData, cardConfig]);
 
   if (cardConfig.type === RunsChartType.PARALLEL) {
     return (
@@ -125,7 +99,7 @@ const RunsChartsCardRaw = ({
     );
   }
 
-  if (cardConfig.type === RunsChartType.DIFFERENCE) {
+  if (shouldEnableDifferenceViewCharts() && cardConfig.type === RunsChartType.DIFFERENCE) {
     return (
       <RunsChartsDifferenceChartCard
         config={cardConfig as RunsChartsDifferenceCardConfig}
@@ -135,7 +109,7 @@ const RunsChartsCardRaw = ({
     );
   }
 
-  if (cardConfig.type === RunsChartType.IMAGE) {
+  if (shouldEnableImageGridCharts() && cardConfig.type === RunsChartType.IMAGE) {
     return (
       <RunsChartsImageChartCard
         config={cardConfig as RunsChartsImageCardConfig}
@@ -159,8 +133,6 @@ const RunsChartsCardRaw = ({
         config={cardConfig as RunsChartsLineCardConfig}
         chartRunData={slicedRuns}
         onDownloadFullMetricHistoryCsv={onDownloadFullMetricHistoryCsv}
-        globalLineChartConfig={globalLineChartConfig}
-        positionInSection={index}
         {...commonChartProps}
       />
     );
@@ -183,5 +155,3 @@ const RunsChartsCardRaw = ({
   }
   return null;
 };
-
-export const RunsChartsCard = memo(RunsChartsCardRaw);
