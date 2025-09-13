@@ -236,19 +236,19 @@ class SharedMemoryManager:
     def _save_full_model(self, model_id: str, model_data: dict, model_object_type: SHMObjectType):
         """Save the full model in shared memory. model_id can be either run_id or name of a base model"""
         with self._process_lock if self._process_lock else self._thread_lock:
-            if model_id in self._registry:
+            if model_id in self._registry and model_object_type!=SHMObjectType.FULL_MODEL:
                 self.logger.debug(f"Model {model_id} already exists in shared memory. Skipping save.")
                 return
 
             # verify sufficient shared memory space before saving model
-            _verify_sufficient_model_size(model_data[model_object_type], self.logger)
+            _verify_sufficient_model_size(model_data[model_object_type.value], self.logger)
 
             # create model entry in registry
             if model_id not in self._registry:
                 self._registry[model_id] = {model_object_type: {}}
 
             # move model to shared memory
-            model_cpu = model_data[model_object_type]
+            model_cpu = model_data[model_object_type.value]
             tokenizer = model_data["tokenizer"]
             model, bnb_modules = self._move_model_to_shared_memory(model_cpu)
             shared_model = {
@@ -286,7 +286,7 @@ class SharedMemoryManager:
             # create model entry in registry
             if model_id not in self._registry:
                 self._registry[model_id] = {SHMObjectType.CHECKPOINTS: {}}
-                
+
             model_entry = self._registry[model_id]
             if SHMObjectType.CHECKPOINTS not in model_entry:
                 model_entry[SHMObjectType.CHECKPOINTS] = {}
@@ -445,18 +445,22 @@ class SharedMemoryManager:
                     SHMObjectType.CHECKPOINTS: {},
                 }
 
+            # copy full_model, ref_state_dict, and checkpoints from warm_started_from to model_id
             model_entry = dict(self._registry[model_id])
-            model_entry[SHMObjectType.FULL_MODEL] = copy.deepcopy(
-                dict(self._registry[warm_started_from])[SHMObjectType.FULL_MODEL]
-            )
-            model_entry[SHMObjectType.REF_STATE_DICT] = copy.deepcopy(
-                dict(self._registry[warm_started_from])[SHMObjectType.REF_STATE_DICT]
-            )
-            model_entry[SHMObjectType.CHECKPOINTS] = copy.deepcopy(
-                dict(self._registry[warm_started_from])[SHMObjectType.CHECKPOINTS]
-            )
+            if SHMObjectType.FULL_MODEL in self._registry[warm_started_from]:
+                model_entry[SHMObjectType.FULL_MODEL] = copy.deepcopy(
+                    dict(self._registry[warm_started_from])[SHMObjectType.FULL_MODEL]
+                )
+            if SHMObjectType.REF_STATE_DICT in self._registry[warm_started_from]:
+                model_entry[SHMObjectType.REF_STATE_DICT] = copy.deepcopy(
+                    dict(self._registry[warm_started_from])[SHMObjectType.REF_STATE_DICT]
+                )
+            if SHMObjectType.CHECKPOINTS in self._registry[warm_started_from]:
+                model_entry[SHMObjectType.CHECKPOINTS] = copy.deepcopy(
+                    dict(self._registry[warm_started_from])[SHMObjectType.CHECKPOINTS]
+                )
             self._registry[model_id] = model_entry
-            self.logger.debug(f"Copied warm start checkpoint from {warm_started_from} to {model_id}")
+            self.logger.debug(f"Copied warm start checkpoint from run {warm_started_from} to run {model_id}")
 
     def list_models(self):
         """Get list of all model IDs currently in shared memory."""

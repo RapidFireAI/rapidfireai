@@ -101,10 +101,16 @@ def create_trainer_instance(
     return trainer, config_leaf["model_name"]
 
 
-def _configure_training_args(training_args: dict) -> dict:
+def _configure_training_args(training_args: dict, trainer_config: TrainerConfig) -> dict:
     """Configure training arguments with default values."""
-    training_args.pop("max_steps", None)
-    training_args["num_train_epochs"] = 1
+    steps_per_epoch = trainer_config.train_dataset.num_rows//(training_args.get("per_device_train_batch_size", 1)*training_args.get("gradient_accumulation_steps", 1))
+    left_over_steps = min(trainer_config.total_steps-trainer_config.completed_steps)
+    if left_over_steps > steps_per_epoch:
+        training_args["num_train_epochs"] = 1
+        training_args.pop("max_steps", None)
+    else:
+        training_args["max_steps"] = left_over_steps
+        training_args.pop("num_train_epochs", None)
     training_args["save_strategy"] = "no"
     training_args["do_train"] = True
     training_args["do_eval"] = True
