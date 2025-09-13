@@ -13,12 +13,12 @@ rm -rf dist/ *.egg-info/ .eggs/ && python -m build
 rsync -av dist/ user:~/rapidfire
 
 # from directory where dist/ folder is
-pip install rapidfireai-0.9.11-py3-none-any.whl
+pip install rapidfireai-0.9.12-py3-none-any.whl
 
 export PATH="$HOME/.local/bin:$PATH"
 
 rapidfireai --version
-# RapidFire AI 0.9.11
+# RapidFire AI 0.9.12
 
 # install specific dependencies and initialize rapidfire
 rapidfireai init
