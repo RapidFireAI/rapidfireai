@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Union
 
@@ -103,14 +104,26 @@ def create_trainer_instance(
 
 def _configure_training_args(training_args: dict, trainer_config: TrainerConfig) -> dict:
     """Configure training arguments with default values."""
+    completed_steps = trainer_config.completed_steps
     steps_per_epoch = trainer_config.train_dataset.num_rows//(training_args.get("per_device_train_batch_size", 1)*training_args.get("gradient_accumulation_steps", 1))
-    left_over_steps = min(trainer_config.total_steps-trainer_config.completed_steps)
+    left_over_steps = trainer_config.total_steps-completed_steps
     if left_over_steps > steps_per_epoch:
         training_args["num_train_epochs"] = 1
         training_args.pop("max_steps", None)
     else:
         training_args["max_steps"] = left_over_steps
         training_args.pop("num_train_epochs", None)
+
+    # if training_args.get("logging_steps") is not None:#TODO: finalize this logic
+    #     logging_steps = training_args.get("logging_steps")
+    #     if logging_steps > min(left_over_steps, steps_per_epoch):
+    #         if completed_steps % logging_steps == 0:
+    #             training_args["logging_steps"] = logging_steps
+    #         else:
+    #             training_args["logging_first_step"] = min(left_over_steps, steps_per_epoch) - (completed_steps % logging_steps)
+    #     else:
+    #         training_args["logging_steps"] = logging_steps
+    #         training_args["logging_first_step"] = completed_steps % logging_steps
     training_args["save_strategy"] = "no"
     training_args["do_train"] = True
     training_args["do_eval"] = True
