@@ -1,4 +1,5 @@
 import logging
+from math import e
 import os
 from typing import Union
 
@@ -7,7 +8,7 @@ from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dic
 from transformers.utils.logging import set_verbosity_error
 from trl import DPOConfig, DPOTrainer, GRPOConfig, GRPOTrainer, SFTConfig, SFTTrainer
 
-from rapidfireai.ml.callbacks import GenerationMetricsCallback, MLflowLoggingCallback
+from rapidfireai.ml.callbacks import GenerationMetricsCallback, MLflowLoggingCallback, LogLevelCallback
 from rapidfireai.ml.checkpoint_utils import (
     ensure_gradient_compatibility,
     load_checkpoint_from_disk,
@@ -47,7 +48,7 @@ def create_trainer_instance(
     compute_metrics = additional_trainer_kwargs.get("compute_metrics", None)
 
     # Configure training arguments
-    training_args = _configure_training_args(training_args, trainer_config)
+    training_args, global_step_args = _configure_training_args(training_args, trainer_config)
     trainer_config_obj = _create_trainer_config_object(trainer_type, training_args)
     # check if peft params is empty dict
     if config_leaf.get("peft_params") == {}:
@@ -90,6 +91,7 @@ def create_trainer_instance(
         tokenizer,
         training_args,
         formatting_func,
+        global_step_args,
     )
 
     if callbacks:
@@ -114,16 +116,27 @@ def _configure_training_args(training_args: dict, trainer_config: TrainerConfig)
         training_args["max_steps"] = left_over_steps
         training_args.pop("num_train_epochs", None)
 
-    # if training_args.get("logging_steps") is not None:#TODO: finalize this logic
-    #     logging_steps = training_args.get("logging_steps")
-    #     if logging_steps > min(left_over_steps, steps_per_epoch):
-    #         if completed_steps % logging_steps == 0:
-    #             training_args["logging_steps"] = logging_steps
-    #         else:
-    #             training_args["logging_first_step"] = min(left_over_steps, steps_per_epoch) - (completed_steps % logging_steps)
-    #     else:
-    #         training_args["logging_steps"] = logging_steps
-    #         training_args["logging_first_step"] = completed_steps % logging_steps
+    eval_first_step = 0
+    global_step_args = {}
+    actual_steps = min(left_over_steps, steps_per_epoch)
+    if training_args.get("eval_steps") is not None:
+        eval_steps = training_args.get("eval_steps")
+        eval_first_step = eval_steps - (completed_steps % eval_steps)
+        global_step_args["eval_first_step"] = eval_first_step
+    log_first_step = 0
+    if training_args.get("logging_steps") is not None:
+        logging_steps = training_args.get("logging_steps")
+        log_first_step = logging_steps - (completed_steps % logging_steps)
+        global_step_args["log_first_step"] = log_first_step
+    global_step_args["actual_steps"] = actual_steps
+
+
+    if training_args.get("eval_on_start", False) and completed_steps>0:
+        training_args.pop("eval_on_start")
+    if training_args.get("logging_first_step", False) and completed_steps>0:
+        training_args.pop("logging_first_step")
+
+
     training_args["save_strategy"] = "no"
     training_args["do_train"] = True
     training_args["do_eval"] = True
@@ -135,7 +148,7 @@ def _configure_training_args(training_args: dict, trainer_config: TrainerConfig)
     if "save_steps" in training_args:
         training_args.pop("save_steps")
 
-    return training_args
+    return training_args, global_step_args
 
 
 def _create_trainer_config_object(trainer_type: str, training_args: dict):
@@ -257,6 +270,7 @@ def _setup_callbacks(
     tokenizer,
     training_args,
     formatting_func,
+    global_step_args,
 ):
     """Setup callbacks for the trainer."""
     callbacks = []
@@ -291,6 +305,7 @@ def _setup_callbacks(
         callbacks.append(generation_callback)
         additional_trainer_kwargs.pop("generation_config")
         additional_trainer_kwargs.pop("compute_metrics")
+        callbacks.append(LogLevelCallback(global_step_args=global_step_args))
 
     return callbacks, additional_trainer_kwargs
 

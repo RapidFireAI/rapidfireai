@@ -4,7 +4,7 @@ import torch
 from datasets import Dataset
 from tqdm import tqdm
 from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
-
+from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
 class GenerationMetricsCallback(TrainerCallback):
     def __init__(
@@ -174,3 +174,57 @@ class MLflowLoggingCallback(TrainerCallback):
                 self.num_epochs_completed,
                 step=self.completed_steps + state.global_step,
             )
+
+
+class LogLevelCallback(TrainerCallback):
+    """
+    A [`TrainerCallback`] that handles the default flow of the training loop for logs, evaluation and checkpoints.
+    """
+    def __init__(self, global_step_args: Dict):
+        self.eval_first_step = global_step_args.get("eval_first_step",0)
+        self.actual_steps = global_step_args.get("actual_steps",0)
+        self.log_first_step = global_step_args.get("log_first_step",0)
+
+    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        # Log
+        control.should_log = False
+        control.should_evaluate = False
+        if state.global_step == 1 and args.logging_first_step:
+            control.should_log = True
+        if args.logging_strategy == IntervalStrategy.STEPS and (self.log_first_step <= state.global_step and (state.global_step-self.log_first_step) % state.logging_steps == 0):
+            control.should_log = True
+
+        # Evaluate
+        if args.eval_strategy == IntervalStrategy.STEPS and (self.eval_first_step <= state.global_step and (state.global_step-self.eval_first_step) % state.eval_steps == 0):
+            control.should_evaluate = True
+        # Save
+        if (
+            args.save_strategy == SaveStrategy.STEPS
+            and state.save_steps > 0
+            and state.global_step % state.save_steps == 0
+        ):
+            control.should_save = True
+
+        # End training
+        if state.global_step >= state.max_steps:
+            control.should_training_stop = True
+            # Save the model at the end if we have a save strategy
+            if args.save_strategy == SaveStrategy.STEPS:
+                control.should_save = True
+
+        return control
+
+    def on_epoch_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        # Log
+        if args.logging_strategy == IntervalStrategy.EPOCH:
+            control.should_log = True
+
+        # Evaluate
+        if args.eval_strategy == IntervalStrategy.EPOCH and args.eval_delay <= state.epoch:
+            control.should_evaluate = True
+
+        # Save
+        if args.save_strategy == SaveStrategy.EPOCH:
+            control.should_save = True
+
+        return control
