@@ -165,7 +165,7 @@ fi
 
 print_success "Version updated to $NEW_VERSION"
 
-if [ "$2" == "test"]; then
+if [ "$2" == "test" b]; then
     IS_TEST=test
 else
     IS_TEST=""
