@@ -165,18 +165,34 @@ fi
 
 print_success "Version updated to $NEW_VERSION"
 
+if [ "$2" == "test" ]; then
+    IS_TEST=test
+else
+    IS_TEST=""
+fi
+
 # Commit the changes
 print_info "Committing version bump..."
-git add pyproject.toml requirements.txt rapidfireai/version.py
-git commit -m "Bump version to $NEW_VERSION"
+git add pyproject.toml requirements.txt rapidfireai/version.py BUILD.md README.md
+git commit -m "Bump $IS_TEST version to $NEW_VERSION"
 
 # Create and push tag
-print_info "Creating git tag v$NEW_VERSION..."
-git tag -a "v$NEW_VERSION" -m "Release version $NEW_VERSION"
+if [ "$IS_TEST" == "test" ]; then
+    print_info "Creating git tag test$NEW_VERSION..."
+    git tag -a "test$NEW_VERSION" -m "Test Release version $NEW_VERSION"
+else
+    print_info "Creating git tag v$NEW_VERSION..."
+    git tag -a "v$NEW_VERSION" -m "Release version $NEW_VERSION"
+fi
 
 print_success "Version $NEW_VERSION has been bumped and tagged!"
-print_info "To deploy to TestPyPI, push the tag:"
-echo "  git push origin v$NEW_VERSION"
+if [ "$IS_TEST" == "test" ]; then
+    print_info "To deploy to TestPyPI, push the tag:"
+    echo "  git push origin test$NEW_VERSION"
+else
+    print_info "To deploy to PyPI, push the tag and create a release:"
+    echo "  git push origin v$NEW_VERSION"
+fi
 echo
 print_info "Or push all tags:"
 echo "  git push --tags" 
