@@ -23,7 +23,7 @@ from rapidfireai.ml.checkpoint_utils import (
     save_model_to_shared_memory,
 )
 from rapidfireai.ml.trainer import create_trainer_instance
-from rapidfireai.utils.constants import MLFLOW_URL, RunStatus, TaskStatus, WorkerTask
+from rapidfireai.utils.constants import MLFLOW_URL, RunStatus, SHMObjectType, TaskStatus, WorkerTask
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
@@ -148,10 +148,6 @@ class Worker:
 
         self.logger.debug(f"Beginning training for run {run_id} on chunk {chunk_id}")
 
-        # update base model name in db for run
-        trainer_config.config_leaf["model_name"] = trainer_instance.model.config._name_or_path
-        self.db.set_run_details(run_id, config_leaf=trainer_config.config_leaf)
-
         # Train the model
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
@@ -168,18 +164,18 @@ class Worker:
         new_completed_steps = completed_steps + trainer_instance.state.global_step
         self.db.set_completed_steps(run_id, new_completed_steps)
 
-        save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
-
+        save_strategy = config_leaf.get("training_args", {}).get("save_strategy", "epoch")
         # Save checkpoints to shared memory
         if use_shared_memory:
             save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager)
-            if not trainer_config.config_leaf.get("peft_params"):
+            if not config_leaf.get("peft_params"):
+
                 save_model_to_shared_memory(
                     trainer_instance.model,
                     trainer_instance.tokenizer,
                     trainer_config,
                     self.shm_manager,
-                    "full_model",
+                    SHMObjectType.FULL_MODEL,
                     trainer_config.run_id,
                 )
             self.logger.debug(f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}")

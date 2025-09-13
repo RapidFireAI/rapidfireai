@@ -252,14 +252,14 @@ def save_model_to_shared_memory(
     tokenizer: AutoTokenizer,
     trainer_config: TrainerConfig,
     shm_manager: SharedMemoryManager,
-    model_type: str,
+    model_type: SHMObjectType,
     model_id: str,
 ) -> None:
     """Save model to shared memory"""
     if model_type != SHMObjectType.FULL_MODEL and shm_manager.model_exists(model_id):
         return
     model_cpu = model.cpu()
-    model_data = {model_type: model_cpu, "tokenizer": tokenizer}
+    model_data = {model_type.value: model_cpu, "tokenizer": tokenizer}
     shm_manager.save_model_object(model_id, model_type, model_data)
 
 
