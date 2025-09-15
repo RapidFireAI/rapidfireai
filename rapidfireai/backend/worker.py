@@ -23,6 +23,7 @@ from rapidfireai.ml.checkpoint_utils import (
     save_checkpoint_to_shared_memory,
     save_model_to_shared_memory,
 )
+from rapidfireai.utils.shm_manager import SHMObjectType
 from rapidfireai.ml.trainer import create_trainer_instance
 from rapidfireai.utils.constants import MLFLOW_URL, USE_SHARED_MEMORY, RunStatus, SHMObjectType, TaskStatus, WorkerTask
 from rapidfireai.utils.datapaths import DataPath
@@ -113,7 +114,7 @@ class Worker:
             use_fsdp = True
         else:
             use_fsdp = False
-
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
         # Initialize distributed training if FSDP is enabled for this run
         if use_fsdp:
             try:
@@ -206,7 +207,6 @@ class Worker:
         # Synchronize all workers before training starts
         if use_fsdp and is_distributed_initialized():
             barrier()
-
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
         start_time = time.time()
@@ -245,7 +245,7 @@ class Worker:
 
             # save checkpoints to shared memory
             save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager, use_fsdp=use_fsdp)
-            if not trainer_config.config_leaf.get("peft_params"):
+            if not config_leaf.get("peft_params"):
                 save_model_to_shared_memory(
                     trainer_instance.model,
                     trainer_instance.tokenizer,
@@ -282,6 +282,8 @@ class Worker:
 
         if use_fsdp and is_distributed_initialized():
             barrier()
+        if hasattr(trainer_instance.model, '_fix_weakref'):
+            trainer_instance.model._fix_weakref()
 
         # clean up all references to shared memory objects
         if hasattr(trainer_instance, "model"):
@@ -293,6 +295,9 @@ class Worker:
                 trainer_instance.ref_model.cpu()
             del trainer_instance.ref_model
         if hasattr(trainer_instance, "optimizer"):
+            trainer_instance.optimizer.zero_grad(set_to_none=True)
+            if hasattr(trainer_instance.optimizer, 'state'):
+                trainer_instance.optimizer.state.clear()
             del trainer_instance.optimizer
         if hasattr(trainer_instance, "lr_scheduler"):
             del trainer_instance.lr_scheduler
