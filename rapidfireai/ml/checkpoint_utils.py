@@ -107,10 +107,11 @@ def _collect_fsdp_peft_state_dict(model, adapter_name: str = "default"):
     
     # Configure FSDP to collect full state dict
     full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
-    
-    # Use new API instead of deprecated state_dict_type
     with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
         peft_state_dict = get_peft_model_state_dict(model, adapter_name=adapter_name)
+    print("total peft params", sum(p.numel() for p in model.parameters()))
+    print("params in peft state dict", sum(p.numel() for p in peft_state_dict.values()))
+
     return peft_state_dict
 
 
@@ -142,10 +143,8 @@ def save_checkpoint_to_shared_memory(
                 optimizer_state = trainer.optimizer.state_dict()
             if optimizer_state is not None:
                 checkpoint["optimizer_state"] = move_tensors_to_cpu(optimizer_state)
-            print("collected optimizer state")
         else:
             checkpoint["optimizer_state"] = move_tensors_to_cpu(trainer.optimizer.state_dict())
-            print("collected optimizer state")
 
     if trainer.lr_scheduler is not None:
         checkpoint["scheduler_state"] = move_tensors_to_cpu(trainer.lr_scheduler.state_dict())
@@ -282,19 +281,27 @@ def load_model_from_shared_memory(
     return model, tokenizer
 
 
-def _collect_fsdp_full_model(model):
+def _collect_fsdp_full_model(model, rank):
     """Collect full model state from FSDP model efficiently"""
     from torch.distributed.fsdp import FullStateDictConfig, StateDictType
-    from torch.distributed.checkpoint.state_dict import get_state_dict, set_state_dict
-    full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)    
+        
+    full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True) 
     with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
         full_state_dict = model.state_dict()
-        
         if full_state_dict is None:
             return None
-        model_cpu = model.cpu()
+        print("params in full state dict", sum(p.numel() for p in full_state_dict.values()))
         
-        model_cpu.load_state_dict(full_state_dict)
+
+        
+        model_cpu = model.cpu()
+        if rank==0:
+            full_state_dict = {k: v.detach().cpu().clone() if isinstance(v, torch.Tensor) else v for k, v in full_state_dict.items()}
+            print("params in full state dict after clone", sum(p.numel() for p in full_state_dict.values()))
+            total_params = sum(p.numel() for p in model_cpu.parameters())
+            trainable_params = sum(p.numel() for p in model_cpu.parameters() if p.requires_grad)
+            print(f"Total parameters: {total_params}, Trainable parameters: {trainable_params} for worker {rank}")        
+            model_cpu.load_state_dict(full_state_dict)
     
     return model_cpu
 
@@ -304,27 +311,27 @@ def save_model_to_shared_memory(
     tokenizer: AutoTokenizer,
     trainer_config: TrainerConfig,
     shm_manager: SharedMemoryManager,
-    model_type: str,
+    model_type: SHMObjectType,
     model_id: str,
     use_fsdp: bool = False,
 ) -> None:
     """Save model to shared memory with FSDP support"""
     rank = trainer_config.local_rank if use_fsdp else 0
     
-    if use_fsdp and rank != 0:
-        return
+    # if use_fsdp and rank != 0:
+    #     return
         
     if model_type != SHMObjectType.FULL_MODEL and shm_manager.model_exists(model_id):
         return
-    
+
     if use_fsdp and model_type == SHMObjectType.FULL_MODEL:
-        model_cpu = _collect_fsdp_full_model(model)
+        model_cpu = _collect_fsdp_full_model(model, trainer_config.worker_id)
         if model_cpu is None:
             return
     else:
         model_cpu = model.cpu()
     
-    model_data = {model_type: model_cpu, "tokenizer": tokenizer}
+    model_data = {model_type.value: model_cpu, "tokenizer": tokenizer}
     shm_manager.save_model_object(model_id, model_type, model_data, is_fsdp=use_fsdp)
 
 
@@ -356,7 +363,7 @@ def load_or_create_ref_model(
         elif trainer_config.completed_steps == 0:
             if use_fsdp:
                 # For FSDP, create reference model efficiently
-                ref_model_instance = _collect_fsdp_full_model(model_instance)
+                ref_model_instance = _collect_fsdp_full_model(model_instance, trainer_config.worker_id)
             else:
                 ref_model_instance = copy.deepcopy(model_instance)
         
