@@ -214,7 +214,9 @@ class Controller:
             elif run_state["status"] == RunStatus.DELETED:
                 # process deleted tasks
                 # clear run from shm
-                self._clear_run_from_shm(run_id)
+                # TODO: commented out to prevent clone of deleted runs issue (see Issue # 22)
+                # self._clear_run_from_shm(run_id)
+
                 # delete run from MLFlow
                 mlflow_run_id = self.db.get_run(run_id)["mlflow_run_id"]
                 self.mlflow_manager.delete_run(mlflow_run_id)
