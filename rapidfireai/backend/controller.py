@@ -3,10 +3,11 @@
 import math
 import random
 import time
+from collections.abc import Callable
 from logging import Logger
 from pathlib import Path
 from pprint import pformat
-from typing import Any, Callable
+from typing import Any
 
 import mlflow
 import torch
@@ -86,7 +87,7 @@ class Controller:
         seed: int,
         len_train_dataset: int,
         num_chunks: int,
-        warm_start_info: dict[str, Any] | None = None,
+        clone_modify_info: dict[str, Any] | None = None,
     ) -> list[int]:
         """Create the models."""
 
@@ -100,6 +101,11 @@ class Controller:
             # print("flattened_config: ",flattened_config)
             total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks)
 
+            # get clone modify info
+            start_chunk_id = clone_modify_info.get("start_chunk_id", 0) if clone_modify_info else 0
+            warm_started_from = clone_modify_info.get("warm_started_from") if clone_modify_info else None
+            cloned_from = clone_modify_info.get("cloned_from") if clone_modify_info else None
+
             run_id = self.db.create_run(
                 config_leaf=config_leaf,
                 status=RunStatus.NEW,
@@ -108,8 +114,9 @@ class Controller:
                 error="",
                 source=source,
                 ended_by=None,
-                start_chunk_id=warm_start_info["start_chunk_id"] if warm_start_info else 0,
-                warm_started_from=warm_start_info["parent_run_id"] if warm_start_info else None,
+                start_chunk_id=start_chunk_id,
+                warm_started_from=warm_started_from,
+                cloned_from=cloned_from,
             )
             runs[run_id] = flattened_config
 
@@ -136,8 +143,10 @@ class Controller:
                 # populate MLFlow with model config info
                 for key, value in flattened_config.items():
                     self.mlflow_manager.log_param(mlflow_run_id, key, value)
-                if warm_start_info:
-                    self.mlflow_manager.log_param(mlflow_run_id, "warm-start", str(warm_start_info))
+                if warm_started_from:
+                    self.mlflow_manager.log_param(mlflow_run_id, "warm-start", str(warm_started_from))
+                if cloned_from:
+                    self.mlflow_manager.log_param(mlflow_run_id, "parent-run", str(cloned_from))
                 self.logger.debug(f"Populated MLFlow with model config info for run {run_id}.")
                 self.db.set_run_details(
                     run_id=run_id,
@@ -249,17 +258,23 @@ class Controller:
             # create model for the new run
             try:
                 if ic_op == ControllerTask.IC_CLONE_MODIFY:
+                    clone_modify_info = {
+                        "cloned_from": parent_run_id,
+                        "start_chunk_id": 0,
+                    }
                     run_ids = self._create_models(
                         config_leaf,
                         RunSource.INTERACTIVE_CONTROL,
                         seed,
                         len_train_dataset,
                         num_chunks=num_chunks,
+                        clone_modify_info=clone_modify_info,
                     )
                 elif ic_op == ControllerTask.IC_CLONE_MODIFY_WARM:
-                    warm_start_info = {
-                        "parent_run_id": parent_run_id,
+                    clone_modify_info = {
+                        "cloned_from": parent_run_id,
                         "start_chunk_id": parent_run_details["num_chunks_visited_curr_epoch"],
+                        "warm_started_from": parent_run_details["warm_started_from"],
                     }
                     run_ids = self._create_models(
                         config_leaf,
@@ -267,7 +282,7 @@ class Controller:
                         seed,
                         len_train_dataset,
                         num_chunks,
-                        warm_start_info,
+                        clone_modify_info,
                     )
                 else:
                     raise ValueError(f"Unsupported IC operation {ic_op}")

@@ -5,10 +5,12 @@ MLFLOW_URL = "http://127.0.0.1:5002"
 # Shared Memory Constants
 SHM_WARN_THRESHOLD = 80
 SHM_MIN_FREE_SPACE = 1.0
+USE_SHARED_MEMORY = True
 
 # Logging Constants
 LOG_FILENAME = "rapidfire.log"
 TRAINING_LOG_FILENAME = "training.log"
+
 
 class LogType(Enum):
     """Enum class for log types"""
@@ -32,7 +34,7 @@ class DBConfig:
     # Use user's home directory for database path
     import os
 
-    DB_PATH: str = os.path.join(os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~","db"))), "rapidfire.db")
+    DB_PATH: str = os.path.join(os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~", "db"))), "rapidfire.db")
 
     # Connection settings
     CONNECTION_TIMEOUT: float = 30.0

@@ -1,7 +1,6 @@
 import logging
 from math import e
 import os
-from typing import Union
 
 import torch
 from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict
@@ -37,7 +36,7 @@ def create_trainer_instance(
     use_shared_memory: bool = False,
     mlflow_manager=None,
     chunk_id: int = 0,
-) -> tuple[Union[SFTTrainer, DPOTrainer, GRPOTrainer, None], str]:
+) -> tuple[SFTTrainer | DPOTrainer | GRPOTrainer | None, str]:
     """
     Create a trainer instance with proper state restoration.
     """
@@ -57,10 +56,7 @@ def create_trainer_instance(
     )
     trainer_config_obj = _create_trainer_config_object(trainer_type, training_args)
     # check if peft params is empty dict
-    if config_leaf.get("peft_params") == {}:
-        is_peft = False
-    else:
-        is_peft = True
+    is_peft = bool(config_leaf.get("peft_params"))
     # Load model and tokenizer
     if use_shared_memory:
         model_instance, tokenizer = load_checkpoint_from_shared_memory(
