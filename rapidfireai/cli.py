@@ -292,7 +292,9 @@ def get_compute_capability():
                               capture_output=True, text=True, check=True)
         match = re.search(r'(\d+)\.(\d+)', result.stdout)
         if match:
-            return int(match.group(1))
+            major = int(match.group(1))
+            minor = int(match.group(2))
+            return major + minor / 10.0  # Return as float (e.g., 7.5, 8.0, 8.6)
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
@@ -302,22 +304,42 @@ def install_packages():
     # Generate CUDA requirements file
     cuda_major = get_cuda_version()
     compute_capability = get_compute_capability()
-    if cuda_major == 12:
-        print(f"\n🎯 Detected CUDA {cuda_major}.x")
-        packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu126"]})
-    elif cuda_major == 11:
-        print(f"\n🎯 Detected CUDA {cuda_major}.x")
-        packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu118"]})
+
+    ## TODO: re-enable once trl has fix
+    # if cuda_major == 12:
+    #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
+    #     packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu126"]})
+    # elif cuda_major == 11:
+    #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
+    #     packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu118"]})
+    # else:
+    #     print("\n⚠️  CUDA version not detected or unsupported.")
+    
+    if compute_capability is not None:
+        print(f"\n🎯 Detected CUDA Compute Capability {compute_capability}")
+        
+        if compute_capability < 8.0:
+            # flash-attn 1.x for CUDA Arch <8.0 (Tesla, Volta GPUs e.g. T4, V100)
+            print("Installing flash-attn 1.x for older GPU architecture (CC < 8.0)")
+            packages.append({"package": "flash-attn==1.0.9", "extra_args": ["--no-build-isolation"]})
+        elif 8.0 <= compute_capability < 9.0:
+            # flash-attn 2.x for CUDA Arch 8.x (Ampere GPUs e.g. A100, RTX 3090, RTX 4090)
+            print("Installing flash-attn 2.x for Ampere architecture (CC 8.x)")
+            packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
+        elif 9.0 <= compute_capability < 10.0:
+            # flash-attn 3.x for CUDA Arch 9.x (Hopper GPUs e.g. H100)
+            print("Installing flash-attn 3.x for Hopper architecture (CC 9.x)")
+            packages.append({"package": "flash-attn==3.0.0", "extra_args": ["--no-build-isolation"]})
+        elif compute_capability >= 10.0:
+            # flash-attn latest for CUDA Arch 10.x+ (Blackwell GPUs e.g. B100, RTX 5090)
+            print(f"Installing latest flash-attn for newer architecture (CC {compute_capability})")
+            packages.append({"package": "flash-attn", "extra_args": ["--no-build-isolation"]})
+        else:
+            print(f"⚠️  Unsupported CUDA Compute Capability {compute_capability}")
+            print("Skipping flash-attn installation")
     else:
-        print("\n⚠️  CUDA version not detected or unsupported.")
-    if compute_capability == 7:
-        print(f"\n🎯 Detected CUDA Compute Capability {compute_capability}.x")
+        print("\n⚠️  CUDA Compute Capability not detected.")
         print("Skipping flash-attn installation")
-    elif compute_capability == 8:
-        print(f"\n🎯 Detected CUDA Compute Capability {compute_capability}.x")
-        packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
-    else:
-        print("\n⚠️  CUDA Compute Capability not detected or unsupported.")
 
     for package_info in packages:
         try:
