@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS runs (
     error TEXT DEFAULT '',
     source TEXT DEFAULT '',
     ended_by TEXT DEFAULT '',
-    warm_started_from INTEGER DEFAULT NULL
+    warm_started_from INTEGER DEFAULT NULL,
+    cloned_from INTEGER DEFAULT NULL
 );
 
 -- Interactive Control table
