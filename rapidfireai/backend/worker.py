@@ -23,7 +23,6 @@ from rapidfireai.ml.checkpoint_utils import (
     save_checkpoint_to_shared_memory,
     save_model_to_shared_memory,
 )
-from rapidfireai.utils.shm_manager import SHMObjectType
 from rapidfireai.ml.trainer import create_trainer_instance
 from rapidfireai.utils.constants import MLFLOW_URL, USE_SHARED_MEMORY, RunStatus, SHMObjectType, TaskStatus, WorkerTask
 from rapidfireai.utils.datapaths import DataPath
@@ -32,7 +31,7 @@ from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
 from rapidfireai.utils.mlflow_manager import MLflowManager
 from rapidfireai.utils.serialize import decode_db_payload
-from rapidfireai.utils.shm_manager import SharedMemoryManager
+from rapidfireai.utils.shm_manager import SharedMemoryManager, SHMObjectType
 from rapidfireai.utils.trainer_config import TrainerConfig
 
 
@@ -124,8 +123,8 @@ class Worker:
                 master_addr = multi_worker_details["master_address"]
                 master_port = multi_worker_details["master_port"]
                 world_size = multi_worker_details["world_size"]
-                rank = self.worker_id  # FIXME: check if this is correct
-
+                rank = multi_worker_details["local_rank"]
+                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, multi_worker_details["worker_ids"]))
                 setup_distributed_environment(
                     rank=rank, world_size=world_size, master_addr=master_addr, master_port=master_port
                 )
@@ -282,7 +281,7 @@ class Worker:
 
         if use_fsdp and is_distributed_initialized():
             barrier()
-        if hasattr(trainer_instance.model, '_fix_weakref'):
+        if hasattr(trainer_instance.model, "_fix_weakref"):
             trainer_instance.model._fix_weakref()
 
         # clean up all references to shared memory objects
@@ -296,7 +295,7 @@ class Worker:
             del trainer_instance.ref_model
         if hasattr(trainer_instance, "optimizer"):
             trainer_instance.optimizer.zero_grad(set_to_none=True)
-            if hasattr(trainer_instance.optimizer, 'state'):
+            if hasattr(trainer_instance.optimizer, "state"):
                 trainer_instance.optimizer.state.clear()
             del trainer_instance.optimizer
         if hasattr(trainer_instance, "lr_scheduler"):

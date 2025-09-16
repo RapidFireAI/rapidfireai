@@ -103,12 +103,12 @@ def _collect_fsdp_peft_state_dict(model, adapter_name: str = "default"):
     """Collect PEFT state dict from FSDP model efficiently"""
     from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 
+    print("params in peft state dict before collecting", sum(p.numel() for p in model.parameters()))
     # Configure FSDP to collect full state dict
     full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
     with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
         peft_state_dict = get_peft_model_state_dict(model, adapter_name=adapter_name)
     print("total peft params", sum(p.numel() for p in model.parameters()))
-    print("params in peft state dict", sum(p.numel() for p in peft_state_dict.values()))
 
     return peft_state_dict
 
@@ -126,8 +126,15 @@ def save_checkpoint_to_shared_memory(
         if use_fsdp:
             adapter_name = trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
             peft_state_dict = _collect_fsdp_peft_state_dict(trainer.model, adapter_name)
-            if peft_state_dict is not None:
-                checkpoint["state_dict"] = {k: v.cpu().clone() for k, v in peft_state_dict.items()}
+            print(
+                "params in peft state dict after collecting on worker ",
+                trainer_config.worker_id,
+                ": ",
+                sum(p.numel() for p in peft_state_dict.values()),
+            )
+            if rank == 0:
+                if peft_state_dict is not None:
+                    checkpoint["state_dict"] = {k: v.cpu().clone() for k, v in peft_state_dict.items()}
         else:
             peft_state_dict = get_peft_model_state_dict(
                 trainer.model,
@@ -236,6 +243,15 @@ def load_checkpoint_from_shared_memory(
     peft_config = LoraConfig(**trainer_config.config_leaf.get("peft_params", {}))
     if is_peft:
         model = get_peft_model(model, peft_config)
+        peft_state_dict = get_peft_model_state_dict(
+            model, adapter_name=trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
+        )
+        print(
+            "params in peft state dict after getting peft model on worker ",
+            trainer_config.worker_id,
+            ": ",
+            sum(p.numel() for p in peft_state_dict.values()),
+        )
 
     # Load weights from shared memory
     if trainer_config.completed_steps > 0 or trainer_config.warm_started_from is not None:
@@ -299,13 +315,15 @@ def _collect_fsdp_full_model(model, rank):
     from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 
     full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+    model_cpu = None
     with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
         full_state_dict = model.state_dict()
         if full_state_dict is None:
             return None
         print("params in full state dict", sum(p.numel() for p in full_state_dict.values()))
-
+        print("model class and config :", model.__class__, model.config)
         model_cpu = model.cpu()
+        print("model class and config after cpu :", model_cpu.__class__, model_cpu.config)
         if rank == 0:
             full_state_dict = {
                 k: v.detach().cpu().clone() if isinstance(v, torch.Tensor) else v for k, v in full_state_dict.items()
@@ -315,7 +333,6 @@ def _collect_fsdp_full_model(model, rank):
             trainable_params = sum(p.numel() for p in model_cpu.parameters() if p.requires_grad)
             print(f"Total parameters: {total_params}, Trainable parameters: {trainable_params} for worker {rank}")
             model_cpu.load_state_dict(full_state_dict)
-
     return model_cpu
 
 

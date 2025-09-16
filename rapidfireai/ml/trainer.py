@@ -74,14 +74,11 @@ def create_trainer_instance(
     """
     if not use_fsdp:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(trainer_config.worker_id)
-    else:
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, trainer_config.world_worker_ids))
+    # else:
+    #     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, trainer_config.world_worker_ids))
 
     # Set device based on distributed training
-    if use_fsdp:
-        device = "cpu"
-    else:
-        device = "cuda:0"
+    device = "cpu" if use_fsdp else "cuda:0"
 
     trainer = None
     config_leaf = trainer_config.config_leaf
@@ -329,7 +326,7 @@ def _prepare_trainer_kwargs(
         reward_funcs = config_leaf.get("reward_funcs")
         if reward_funcs is not None:
             trainer_kwargs["reward_funcs"] = reward_funcs
-
+    additional_trainer_kwargs.pop("num_gpus", None)
     return trainer_kwargs, formatting_func, additional_trainer_kwargs
 
 
