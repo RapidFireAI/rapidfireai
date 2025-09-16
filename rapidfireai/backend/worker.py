@@ -115,8 +115,8 @@ class Worker:
                 master_addr = multi_worker_details["master_address"]
                 master_port = multi_worker_details["master_port"]
                 world_size = multi_worker_details["world_size"]
-                rank = self.worker_id  #FIXME: check if this is correct
-                
+                rank = multi_worker_details["local_rank"]
+                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, multi_worker_details["worker_ids"]))
                 setup_distributed_environment(
                     rank=rank,
                     world_size=world_size,
