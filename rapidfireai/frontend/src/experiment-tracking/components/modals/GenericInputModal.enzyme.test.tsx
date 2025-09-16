@@ -72,7 +72,7 @@ describe('GenericInputModal', () => {
     await onValidationPromise;
     // We expect submission to succeed, and for the form fields to be reset and for the form to
     // no longer be submitting
-    expect(resetFieldsMock).toHaveBeenCalled();
+    expect(resetFieldsMock).toBeCalled();
     expect(instance.state.isSubmitting).toEqual(false);
   });
 
@@ -98,15 +98,13 @@ describe('GenericInputModal', () => {
     } catch (e) {
       // For validation errors, the form should not be reset (so that the user can fix the
       // validation error)
-      expect(resetFieldsMock).not.toHaveBeenCalled();
-      expect(handleSubmit).not.toHaveBeenCalled();
+      expect(resetFieldsMock).not.toBeCalled();
+      expect(handleSubmit).not.toBeCalled();
       expect(instance.state.isSubmitting).toEqual(false);
     }
   });
 
-  // TODO: it seems that https://github.com/mlflow/mlflow/pull/15059 introduced test regression, to be investigated and fixed
-  // eslint-disable-next-line jest/no-disabled-tests
-  test.skip('should validate form contents and set submitting state in submission handler: failed submission case', async () => {
+  test('should validate form contents and set submitting state in submission handler: failed submission case', async () => {
     // Test that validateFields() is called, and that handleSubmit is not called
     // when validation fails (and submitting state remains false)
     // @ts-expect-error TS(2769): No overload matches this call.
@@ -128,7 +126,7 @@ describe('GenericInputModal', () => {
     await onValidationPromise;
     // For validation errors, the form should not be reset (so that the user can fix the
     // validation error)
-    expect(resetFieldsMock).toHaveBeenCalled();
+    expect(resetFieldsMock).toBeCalled();
     expect(instance.state.isSubmitting).toEqual(false);
   });
 });

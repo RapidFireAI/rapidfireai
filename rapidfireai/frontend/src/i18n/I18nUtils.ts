@@ -5,10 +5,9 @@
  * annotations are already looking good, please remove this comment.
  */
 
-import { createIntlCache, createIntl, IntlShape } from 'react-intl';
+import { createIntlCache, createIntl } from 'react-intl';
 import { DEFAULT_LOCALE, loadMessages } from './loadMessages';
 import { useEffect, useState } from 'react';
-import Utils from '../common/utils/Utils';
 
 const FALLBACK_LOCALES: Record<string, string> = {
   es: 'es-ES',
@@ -29,7 +28,7 @@ export const I18nUtils = {
   async initI18n() {
     const locale = I18nUtils.getCurrentLocale();
     await I18nUtils.loadMessages(locale);
-    return I18nUtils.createIntlWithLocale();
+    return { locale, messages: loadedMessages[locale] };
   },
 
   getIntlProviderParams() {
@@ -46,9 +45,7 @@ export const I18nUtils = {
    */
   createIntlWithLocale() {
     const params = I18nUtils.getIntlProviderParams();
-    const intl = createIntl({ locale: params.locale, messages: params.messages }, cache);
-
-    return intl;
+    return createIntl({ locale: params.locale, messages: params.messages }, cache);
   },
 
   getCurrentLocale() {
@@ -88,6 +85,11 @@ export const I18nUtils = {
   },
 };
 
+export type UseI18nInitResult = {
+  locale: string;
+  messages: Record<string, any>;
+};
+
 /**
  * Ensure initialization of i18n subsystem and return
  * an object with current locale and messages storage.
@@ -97,17 +99,17 @@ export const I18nUtils = {
  * This hook is intended to be used once in the top-level components.
  */
 export const useI18nInit = () => {
-  const [intl, setIntl] = useState<IntlShape | null>(null);
+  const [intlState, setIntlState] = useState<UseI18nInitResult | null>(null);
   useEffect(() => {
     I18nUtils.initI18n()
       .then((initializedIntlState) => {
-        setIntl(initializedIntlState);
+        setIntlState(initializedIntlState);
       })
       .catch((error) => {
         // Fall back to the defaults if loading translation fails
-        setIntl(I18nUtils.createIntlWithLocale());
+        setIntlState(I18nUtils.getIntlProviderParams());
       });
   }, []);
 
-  return intl;
+  return intlState;
 };

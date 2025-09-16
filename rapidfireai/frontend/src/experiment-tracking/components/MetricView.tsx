@@ -105,7 +105,7 @@ export class MetricViewImpl extends Component<MetricViewImplProps> {
     const breadcrumbs = [this.getExperimentPageLink(), this.getRunPageLink()];
     return (
       <div>
-        <PageHeader title={title} breadcrumbs={breadcrumbs} hideSpacer />
+        <PageHeader title={title} breadcrumbs={breadcrumbs} />
         <MetricsPlotPanel {...{ experimentIds, runUuids, metricKey }} />
       </div>
     );

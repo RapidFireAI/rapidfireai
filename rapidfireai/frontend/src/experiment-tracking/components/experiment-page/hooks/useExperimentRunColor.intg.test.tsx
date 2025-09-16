@@ -1,6 +1,6 @@
 import { applyMiddleware, combineReducers, compose, createStore } from 'redux';
 import { colorByRunUuid } from '../../../reducers/RunColorReducer';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react-for-react-18';
 import { Provider, useDispatch } from 'react-redux';
 import { RunColorPill } from '../components/RunColorPill';
 import {
@@ -11,7 +11,7 @@ import {
 import { MlflowService } from '../../../sdk/MlflowService';
 import { ThunkDispatch } from '../../../../redux-types';
 import { searchRunsApi } from '../../../actions';
-import userEventGlobal from '@testing-library/user-event';
+import userEventGlobal from '@testing-library/user-event-14';
 
 import thunk from 'redux-thunk';
 import promiseMiddleware from 'redux-promise-middleware';

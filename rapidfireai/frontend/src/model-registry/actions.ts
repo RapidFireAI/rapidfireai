@@ -9,10 +9,9 @@ import { Services } from './services';
 import { getUUID } from '../common/utils/ActionUtils';
 import { getArtifactContent } from '../common/utils/ArtifactUtils';
 import yaml from 'js-yaml';
-import type { ModelVersionInfoEntity } from '../experiment-tracking/types';
-import { KeyValueEntity } from '../common/types';
+import type { KeyValueEntity, ModelVersionInfoEntity } from '../experiment-tracking/types';
 
-const CREATE_REGISTERED_MODEL = 'CREATE_REGISTERED_MODEL';
+export const CREATE_REGISTERED_MODEL = 'CREATE_REGISTERED_MODEL';
 // @ts-expect-error TS(7006): Parameter 'name' implicitly has an 'any' type.
 export const createRegisteredModelApi = (name, id = getUUID()) => ({
   type: CREATE_REGISTERED_MODEL,
@@ -40,7 +39,7 @@ export const searchRegisteredModelsApi = (
   };
 };
 
-const UPDATE_REGISTERED_MODEL = 'UPDATE_REGISTERED_MODEL';
+export const UPDATE_REGISTERED_MODEL = 'UPDATE_REGISTERED_MODEL';
 // @ts-expect-error TS(7006): Parameter 'name' implicitly has an 'any' type.
 export const updateRegisteredModelApi = (name, description, id = getUUID()) => ({
   type: UPDATE_REGISTERED_MODEL,
@@ -94,17 +93,11 @@ export const deleteRegisteredModelTagApi = (modelName, key, id = getUUID()) => (
   meta: { id, modelName, key },
 });
 
-const CREATE_MODEL_VERSION = 'CREATE_MODEL_VERSION';
-export const createModelVersionApi = (
-  name?: string,
-  source?: string,
-  runId?: string,
-  tags: any[] = [],
-  id = getUUID(),
-  loggedModelId?: string,
-) => ({
+export const CREATE_MODEL_VERSION = 'CREATE_MODEL_VERSION';
+// @ts-expect-error TS(7006): Parameter 'name' implicitly has an 'any' type.
+export const createModelVersionApi = (name, source, runId, tags: any[] = [], id = getUUID()) => ({
   type: CREATE_MODEL_VERSION,
-  payload: Services.createModelVersion({ name, source, run_id: runId, tags, model_id: loggedModelId }),
+  payload: Services.createModelVersion({ name, source, run_id: runId, tags }),
   meta: { id, name, runId },
 });
 
@@ -134,7 +127,6 @@ export const parseMlModelFile = (modelName: any, version: any, mlModelFile: any,
         meta: { id, modelName, version },
       };
     } catch (error) {
-      // eslint-disable-next-line no-console -- TODO(FEINF-3587)
       console.error(error);
       return {
         type: PARSE_MLMODEL_FILE,
@@ -172,14 +164,7 @@ export const resolveFilterValue = (value: any, includeWildCard = false) => {
 };
 
 export const SEARCH_MODEL_VERSIONS = 'SEARCH_MODEL_VERSIONS';
-
-export const searchModelVersionsApi = (
-  filterObj: Record<string, any>,
-  id: string = getUUID(),
-  maxResults?: number,
-  orderBy?: string,
-  pageToken?: string,
-) => {
+export const searchModelVersionsApi = (filterObj: any, id = getUUID()) => {
   const filter = Object.keys(filterObj)
     .map((key) => {
       if (Array.isArray(filterObj[key]) && filterObj[key].length > 1) {
@@ -191,19 +176,15 @@ export const searchModelVersionsApi = (
       }
     })
     .join('&');
+
   return {
     type: SEARCH_MODEL_VERSIONS,
-    payload: Services.searchModelVersions({
-      filter,
-      ...(maxResults !== undefined && maxResults > 0 ? { max_results: maxResults } : null),
-      ...(orderBy !== undefined ? { order_by: orderBy } : null),
-      ...(pageToken ? { page_token: pageToken } : null),
-    }),
+    payload: Services.searchModelVersions({ filter }),
     meta: { id },
   };
 };
 
-const UPDATE_MODEL_VERSION = 'UPDATE_MODEL_VERSION';
+export const UPDATE_MODEL_VERSION = 'UPDATE_MODEL_VERSION';
 // @ts-expect-error TS(7006): Parameter 'modelName' implicitly has an 'any' type... Remove this comment to see the full error message
 export const updateModelVersionApi = (modelName, version, description, id = getUUID()) => ({
   type: UPDATE_MODEL_VERSION,
@@ -310,7 +291,7 @@ export const deleteModelVersionTagApi = (modelName, version, key, id = getUUID()
   meta: { id, modelName, version, key },
 });
 
-const SET_MODEL_VERSION_ALIASES = 'SET_MODEL_VERSION_ALIASES';
+export const SET_MODEL_VERSION_ALIASES = 'SET_MODEL_VERSION_ALIASES';
 
 export const setModelVersionAliasesApi = (
   modelName: string,
@@ -340,6 +321,7 @@ export const setModelVersionAliasesApi = (
   };
 };
 
+export const UPDATE_MODEL_VERSION_TAGS = 'UPDATE_MODEL_VERSION_TAGS';
 export const updateModelVersionTagsApi = (
   { name, version }: ModelVersionInfoEntity,
   existingTags: KeyValueEntity[],

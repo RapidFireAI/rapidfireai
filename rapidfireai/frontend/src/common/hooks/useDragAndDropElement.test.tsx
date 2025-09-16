@@ -33,7 +33,7 @@ describe('useDragAndDropElement', () => {
     onDrop.mockClear();
   });
 
-  test('drag and drop within single group', async () => {
+  test('Test drag and drop within single group', async () => {
     render(
       <div>
         <DragAndDropProvider>

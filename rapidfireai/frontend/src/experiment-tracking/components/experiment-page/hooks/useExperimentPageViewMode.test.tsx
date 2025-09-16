@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react-hooks';
 import { getExperimentPageDefaultViewMode, useExperimentPageViewMode } from './useExperimentPageViewMode';
 import { useLocation } from '../../../../common/utils/RoutingUtils';
 import { TestRouter, testRoute } from '../../../../common/utils/RoutingTestUtils';

@@ -36,14 +36,14 @@ export const ExperimentViewRunModals = ({
 
   return (
     <>
-      <DeleteRunModal
+      {/* <DeleteRunModal
         isOpen={showDeleteRunModal}
         onClose={onCloseDeleteRunModal}
         selectedRunIds={selectedRunIds}
         onSuccess={() => {
           refreshRuns();
         }}
-      />
+      /> */}
       <RestoreRunModal
         isOpen={showRestoreRunModal}
         onClose={onCloseRestoreRunModal}

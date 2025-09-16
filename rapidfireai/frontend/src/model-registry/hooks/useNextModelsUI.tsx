@@ -24,15 +24,7 @@ export const useNextModelsUIContext = () => useContext(NextModelsUIContext);
  * function components, use `useNextModelsUIContext()` hook.
  */
 export const withNextModelsUIContext =
-  <
-    BaseProps,
-    P extends JSX.IntrinsicAttributes &
-      JSX.LibraryManagedAttributes<React.ComponentType<BaseProps>, React.PropsWithChildren<BaseProps>> & {
-        usingNextModelsUI?: boolean;
-      },
-  >(
-    Component: React.ComponentType<BaseProps>,
-  ) =>
+  <P,>(Component: React.ComponentType<P & { usingNextModelsUI?: boolean }>) =>
   (props: P) => {
     const [usingNextModelsUI, setUsingNextModelsUI] = useState(
       localStorage.getItem(useOldModelsUIStorageKey) !== 'true',

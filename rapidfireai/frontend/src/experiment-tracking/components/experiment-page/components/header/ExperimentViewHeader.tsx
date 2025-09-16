@@ -1,18 +1,19 @@
 import React, { useMemo } from 'react';
-import { Button, GenericSkeleton, NewWindowIcon, Typography, useDesignSystemTheme } from '@databricks/design-system';
+import { Button, NewWindowIcon, Typography, useDesignSystemTheme } from '@databricks/design-system';
 import { FormattedMessage } from 'react-intl';
 import { PageHeader } from '../../../../../shared/building_blocks/PageHeader';
 import { ExperimentViewCopyTitle } from './ExperimentViewCopyTitle';
 import { ExperimentViewHeaderShareButton } from './ExperimentViewHeaderShareButton';
 import { ExperimentEntity } from '../../../../types';
+import { useExperimentPageFeedbackUrl } from '../../hooks/useExperimentPageFeedbackUrl';
 import { ExperimentPageSearchFacetsState } from '../../models/ExperimentPageSearchFacetsState';
 import { ExperimentPageUIState } from '../../models/ExperimentPageUIState';
 import { ExperimentViewArtifactLocation } from '../ExperimentViewArtifactLocation';
 import { ExperimentViewCopyExperimentId } from './ExperimentViewCopyExperimentId';
 import { ExperimentViewCopyArtifactLocation } from './ExperimentViewCopyArtifactLocation';
-import { InfoPopover } from '@databricks/design-system';
-import { Link } from '@mlflow/mlflow/src/common/utils/RoutingUtils';
-import Routes from '@mlflow/mlflow/src/experiment-tracking/routes';
+import { Tooltip } from '@databricks/design-system';
+import { InfoIcon } from '@databricks/design-system';
+import { Popover } from '@databricks/design-system';
 
 /**
  * Header for a single experiment page. Displays title, breadcrumbs and provides
@@ -32,21 +33,8 @@ export const ExperimentViewHeader = React.memo(
     showAddDescriptionButton: boolean;
     setEditing: (editing: boolean) => void;
   }) => {
-    const breadcrumbs = useMemo(
-      () => [
-        <Link
-          key={Routes.experimentsObservatoryRoute}
-          to={Routes.experimentsObservatoryRoute}
-          data-testid="experiment-observatory-link"
-        >
-          <FormattedMessage
-            defaultMessage="Experiments"
-            description="Breadcrumb nav item to link to the list of experiments page"
-          />
-        </Link>,
-      ],
-      [],
-    );
+    // eslint-disable-next-line prefer-const
+    let breadcrumbs: React.ReactNode[] = [];
     const experimentIds = useMemo(() => (experiment ? [experiment?.experimentId] : []), [experiment]);
 
     const { theme } = useDesignSystemTheme();
@@ -56,45 +44,92 @@ export const ExperimentViewHeader = React.memo(
      */
     const normalizedExperimentName = useMemo(() => experiment.name.split('/').pop(), [experiment.name]);
 
+    const feedbackFormUrl = useExperimentPageFeedbackUrl();
+
+    const renderFeedbackForm = () => {
+      const feedbackLink = (
+        <Button
+          href={feedbackFormUrl}
+          target="_blank"
+          rel="noreferrer"
+          componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_header_experimentviewheaderv2.tsx_100"
+          css={{ marginLeft: theme.spacing.sm }}
+          type="link"
+          size="small"
+          endIcon={<NewWindowIcon />}
+        >
+          <FormattedMessage
+            defaultMessage="Provide Feedback"
+            description="Link to a survey for users to give feedback"
+          />
+        </Button>
+      );
+      return feedbackLink;
+    };
+
+    const getShareButton = () => {
+      const shareButtonElement = (
+        <ExperimentViewHeaderShareButton
+          experimentIds={experimentIds}
+          searchFacetsState={searchFacetsState}
+          uiState={uiState}
+        />
+      );
+      return shareButtonElement;
+    };
+
     const getInfoTooltip = () => {
       return (
         <div style={{ display: 'flex' }}>
-          <InfoPopover iconTitle="Info">
-            <div
-              css={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: theme.spacing.xs,
-                flexWrap: 'nowrap',
-              }}
-              data-testid="experiment-view-header-info-tooltip-content"
-            >
-              <div style={{ whiteSpace: 'nowrap' }}>
-                <FormattedMessage
-                  defaultMessage="Path"
-                  description="Label for displaying the current experiment path"
-                />
-                : {experiment.name + ' '}
-                <ExperimentViewCopyTitle experiment={experiment} size="md" />
+          <Tooltip
+            placement="bottomLeft"
+            dangerouslySetAntdProps={{ overlayStyle: { maxWidth: 'none' } }}
+            arrowPointAtCenter
+            title={
+              <div
+                css={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flexWrap: 'nowrap',
+                }}
+                data-testid="experiment-view-header-info-tooltip-content"
+              >
+                <div style={{ whiteSpace: 'nowrap' }}>
+                  <FormattedMessage
+                    defaultMessage="Path"
+                    description="Label for displaying the current experiment path"
+                  />
+                  : {experiment.name + ' '}
+                  <ExperimentViewCopyTitle experiment={experiment} size="md" />
+                </div>
+                <div style={{ whiteSpace: 'nowrap' }}>
+                  <FormattedMessage
+                    defaultMessage="Experiment ID"
+                    description="Label for displaying the current experiment in view"
+                  />
+                  : {experiment.experimentId + ' '}
+                  <ExperimentViewCopyExperimentId experiment={experiment} />
+                </div>
+                <div style={{ whiteSpace: 'nowrap' }}>
+                  <FormattedMessage
+                    defaultMessage="Artifact Location"
+                    description="Label for displaying the experiment artifact location"
+                  />
+                  : <ExperimentViewArtifactLocation artifactLocation={experiment.artifactLocation} />{' '}
+                  <ExperimentViewCopyArtifactLocation experiment={experiment} />
+                </div>
               </div>
-              <div style={{ whiteSpace: 'nowrap' }}>
-                <FormattedMessage
-                  defaultMessage="Experiment ID"
-                  description="Label for displaying the current experiment in view"
-                />
-                : {experiment.experimentId + ' '}
-                <ExperimentViewCopyExperimentId experiment={experiment} />
-              </div>
-              <div style={{ whiteSpace: 'nowrap' }}>
-                <FormattedMessage
-                  defaultMessage="Artifact Location"
-                  description="Label for displaying the experiment artifact location"
-                />
-                : <ExperimentViewArtifactLocation artifactLocation={experiment.artifactLocation} />{' '}
-                <ExperimentViewCopyArtifactLocation experiment={experiment} />
-              </div>
-            </div>
-          </InfoPopover>
+            }
+          >
+            <Button
+              size="small"
+              type="link"
+              componentId="mlflow.experiment_page.header.info_tooltip"
+              icon={<InfoIcon css={{ color: theme.colors.textSecondary }} />}
+              data-testid="experiment-view-header-info-tooltip"
+              aria-label="Info"
+            />
+          </Tooltip>
         </div>
       );
     };
@@ -117,6 +152,8 @@ export const ExperimentViewHeader = React.memo(
       );
     };
 
+    const HEADER_MAX_WIDTH = '70%';
+
     return (
       <PageHeader
         title={
@@ -130,57 +167,27 @@ export const ExperimentViewHeader = React.memo(
                 display: 'inline-block',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
+                maxWidth: HEADER_MAX_WIDTH,
                 textOverflow: 'ellipsis',
                 verticalAlign: 'middle',
               },
             }}
-            title={normalizedExperimentName}
           >
             {normalizedExperimentName}
           </div>
         }
-        titleAddOns={[
-          getInfoTooltip(),
-          showAddDescriptionButton && getAddDescriptionButton(),
-        ].filter(Boolean)}
+        titleAddOns={
+          <>
+            {getInfoTooltip()}
+            {/* {feedbackFormUrl && renderFeedbackForm()} */}
+            {showAddDescriptionButton && getAddDescriptionButton()}
+          </>
+        }
         breadcrumbs={breadcrumbs}
         spacerSize="sm"
-        dangerouslyAppendEmotionCSS={{
-          [theme.responsive.mediaQueries.sm]: {
-            // Do not wrap the title and buttons on >= small screens
-            '& > div': {
-              flexWrap: 'nowrap',
-            },
-            // The title itself should display elements horizontally
-            h2: {
-              display: 'flex',
-              overflow: 'hidden',
-            },
-          },
-        }}
       >
+        {getShareButton()}
       </PageHeader>
     );
   },
 );
-
-export function ExperimentViewHeaderSkeleton() {
-  const { theme } = useDesignSystemTheme();
-
-  return (
-    <div css={{ height: 2 * theme.general.heightSm }}>
-      <div css={{ height: theme.spacing.lg }}>
-        <GenericSkeleton css={{ width: 100, height: theme.spacing.md }} loading />
-      </div>
-      <div css={{ display: 'flex', justifyContent: 'space-between' }}>
-        <div>
-          <GenericSkeleton css={{ width: 160, height: theme.general.heightSm }} loading />
-        </div>
-        <div css={{ display: 'flex', gap: theme.spacing.sm }}>
-          <GenericSkeleton css={{ width: 100, height: theme.general.heightSm }} loading />
-          <GenericSkeleton css={{ width: 60, height: theme.general.heightSm }} loading />
-        </div>
-      </div>
-    </div>
-  );
-}

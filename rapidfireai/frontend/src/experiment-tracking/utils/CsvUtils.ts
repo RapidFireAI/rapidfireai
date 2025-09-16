@@ -1,11 +1,9 @@
 import { compact, uniq } from 'lodash';
 import Utils from '../../common/utils/Utils';
 import type { RunsChartsRunData } from '../components/runs-charts/components/RunsCharts.common';
-import type { MetricEntity, RunInfoEntity } from '../types';
-import { KeyValueEntity } from '../../common/types';
-import moment from 'moment';
+import type { KeyValueEntity, MetricEntity, RunInfoEntity } from '../types';
 
-const { getDuration, getRunNameFromTags, getSourceType, getSourceName, getUser } = Utils;
+const { formatTimestamp, getDuration, getRunNameFromTags, getSourceType, getSourceName, getUser } = Utils;
 
 /**
  * Turn a list of params/metrics to a map of metric key to metric.
@@ -14,25 +12,16 @@ const toMap = <T extends MetricEntity | KeyValueEntity>(params: T[]) =>
   params.reduce((result, entity) => ({ ...result, [entity.key]: entity }), {} as Record<string, T>);
 
 /**
- * Escapes a string for safe inclusion in a CSV file to prevent CSV injection attacks.
- * See https://owasp.org/www-community/attacks/CSV_Injection for more information.
+ * Format a string for insertion into a CSV file.
  */
-const csvEscape = (x: any) => {
-  if (x === null || x === undefined) {
+const csvEscape = (str: string) => {
+  if (str === undefined) {
     return '';
   }
-  let sanitized = typeof x === 'string' ? x : x.toString();
-
-  // Escape double quotes by doubling them
-  sanitized = sanitized.replace(/"/g, '""');
-
-  // If the string starts with a character that could be interpreted as a formula, escape it
-  // by prepending a single quote
-  if (/^[=+\-@\r\t]/.test(sanitized)) {
-    sanitized = `'${sanitized}`;
+  if (/[,"\r\n]/.test(str)) {
+    return '"' + str.replace(/"/g, '""') + '"';
   }
-
-  return `"${sanitized}"`;
+  return str;
 };
 
 /**
@@ -96,10 +85,8 @@ export const runInfosToCsv = (params: {
   ];
 
   const data = runInfos.map((runInfo, index) => {
-    // To avoid including a comma in the timestamp string, use manual formatting instead of one from intl
-    const startTime = moment(new Date(runInfo.startTime)).format('YYYY-MM-DD HH:mm:ss');
     const row = [
-      startTime,
+      formatTimestamp(runInfo.startTime),
       getDuration(runInfo.startTime, runInfo.endTime) || '',
       runInfo.runUuid,
       runInfo.runName || getRunNameFromTags(tagsList[index]), // add run name to csv export row

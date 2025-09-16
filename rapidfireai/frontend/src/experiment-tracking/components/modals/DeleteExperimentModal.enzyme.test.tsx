@@ -31,6 +31,7 @@ describe('DeleteExperimentModal', () => {
         const response = { value: { experiment_id: fakeExperimentId } };
         return Promise.resolve(response);
       },
+      searchExperimentsApi: () => Promise.resolve([]),
       navigate,
     };
     wrapper = shallow(<DeleteExperimentModalImpl {...minimalProps} />);
@@ -43,14 +44,14 @@ describe('DeleteExperimentModal', () => {
   test('handleSubmit redirects user to root page if current experiment is the only active experiment', async () => {
     instance = wrapper.instance();
     await instance.handleSubmit();
-    expect(navigate).toHaveBeenCalledWith(createMLflowRoutePath('/'));
+    expect(navigate).toBeCalledWith(createMLflowRoutePath('/'));
   });
   test('handleSubmit redirects to compare experiment page if current experiment is one of several active experiments', async () => {
     const props = Object.assign({}, minimalProps, { activeExperimentIds: ['0', '1', '2'] });
     instance = shallow(<DeleteExperimentModalImpl {...props} />).instance();
     await instance.handleSubmit();
 
-    expect(navigate).toHaveBeenCalledWith(createMLflowRoutePath('/compare-experiments/s?experiments=["1","2"]'));
+    expect(navigate).toBeCalledWith(createMLflowRoutePath('/compare-experiments/s?experiments=["1","2"]'));
   });
   test('handleSubmit does not perform redirection if DeleteExperiment request fails', async () => {
     const props = {
@@ -61,13 +62,13 @@ describe('DeleteExperimentModal', () => {
     instance = wrapper.instance();
     await instance.handleSubmit();
 
-    expect(navigate).not.toHaveBeenCalled();
+    expect(navigate).not.toBeCalled();
   });
   test('handleSubmit does not perform redirection if deleted experiment is not active experiment', async () => {
     wrapper = shallow(<DeleteExperimentModalImpl {...{ ...minimalProps, activeExperimentIds: undefined }} />);
     instance = wrapper.instance();
     await instance.handleSubmit();
 
-    expect(navigate).not.toHaveBeenCalled();
+    expect(navigate).not.toBeCalled();
   });
 });

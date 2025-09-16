@@ -44,6 +44,7 @@ describe('ModelListPage', () => {
     minimalProps = {
       models: [],
       searchRegisteredModelsApi: jest.fn(() => Promise.resolve({})),
+      listEndpointsApi: jest.fn(() => Promise.resolve({})),
       getRegistryWidePermissionsApi: jest.fn(() => Promise.resolve({})),
       apis: {},
       navigate: navigateSpy,

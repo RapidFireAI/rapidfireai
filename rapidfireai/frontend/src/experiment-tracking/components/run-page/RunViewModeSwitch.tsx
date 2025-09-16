@@ -1,13 +1,10 @@
-import { InfoPopover, LegacyTabs, useDesignSystemTheme, Typography } from '@databricks/design-system';
+import { Tabs } from '@databricks/design-system';
 import { FormattedMessage } from 'react-intl';
-import { useNavigate, useParams } from '../../../common/utils/RoutingUtils';
+import { Link, useNavigate, useParams } from '../../../common/utils/RoutingUtils';
 import Routes from '../../routes';
 import { RunPageTabName } from '../../constants';
 import { useRunViewActiveTab } from './useRunViewActiveTab';
 import { useState } from 'react';
-
-// Set of tabs that when active, the margin of the tab selector should be removed for better displaying
-const TABS_WITHOUT_MARGIN = [RunPageTabName.ARTIFACTS, RunPageTabName.EVALUATIONS];
 
 /**
  * Mode switcher for the run details page.
@@ -15,16 +12,15 @@ const TABS_WITHOUT_MARGIN = [RunPageTabName.ARTIFACTS, RunPageTabName.EVALUATION
 export const RunViewModeSwitch = () => {
   const { experimentId, runUuid } = useParams<{ runUuid: string; experimentId: string }>();
   const navigate = useNavigate();
-  const { theme } = useDesignSystemTheme();
   const currentTab = useRunViewActiveTab();
-  const [removeTabMargin, setRemoveTabMargin] = useState(TABS_WITHOUT_MARGIN.includes(currentTab));
+  const [removeTabMargin, setRemoveTabMargin] = useState(currentTab === RunPageTabName.ARTIFACTS);
 
   const onTabChanged = (newTabKey: string) => {
     if (!experimentId || !runUuid || currentTab === newTabKey) {
       return;
     }
 
-    setRemoveTabMargin(TABS_WITHOUT_MARGIN.includes(newTabKey as RunPageTabName));
+    setRemoveTabMargin(newTabKey === RunPageTabName.ARTIFACTS);
 
     if (newTabKey === RunPageTabName.OVERVIEW) {
       navigate(Routes.getRunPageRoute(experimentId, runUuid));
@@ -33,26 +29,16 @@ export const RunViewModeSwitch = () => {
     navigate(Routes.getRunPageTabRoute(experimentId, runUuid, newTabKey));
   };
 
-  const getLegacyTracesTabLink = () => {
-    return (
-      <LegacyTabs.TabPane
-        tab={<FormattedMessage defaultMessage="Traces" description="Run details page > tab selector > Traces tab" />}
-        key={RunPageTabName.TRACES}
-      />
-    );
-  };
-
   return (
     // @ts-expect-error TS(2322)
-    <LegacyTabs activeKey={currentTab} onChange={onTabChanged} tabBarStyle={{ margin: removeTabMargin && '0px' }}>
-      <LegacyTabs.TabPane
+    <Tabs activeKey={currentTab} onChange={onTabChanged} tabBarStyle={{ margin: removeTabMargin && '0px' }}>
+      <Tabs.TabPane
         tab={
           <FormattedMessage defaultMessage="Overview" description="Run details page > tab selector > overview tab" />
         }
         key={RunPageTabName.OVERVIEW}
       />
-
-      <LegacyTabs.TabPane
+      <Tabs.TabPane
         tab={
           <FormattedMessage
             defaultMessage="Model metrics"
@@ -61,7 +47,7 @@ export const RunViewModeSwitch = () => {
         }
         key={RunPageTabName.MODEL_METRIC_CHARTS}
       />
-      <LegacyTabs.TabPane
+      <Tabs.TabPane
         tab={
           <FormattedMessage
             defaultMessage="System metrics"
@@ -70,13 +56,12 @@ export const RunViewModeSwitch = () => {
         }
         key={RunPageTabName.SYSTEM_METRIC_CHARTS}
       />
-      {getLegacyTracesTabLink()}
-      <LegacyTabs.TabPane
+      <Tabs.TabPane
         tab={
           <FormattedMessage defaultMessage="Artifacts" description="Run details page > tab selector > artifacts tab" />
         }
         key={RunPageTabName.ARTIFACTS}
       />
-    </LegacyTabs>
+    </Tabs>
   );
 };

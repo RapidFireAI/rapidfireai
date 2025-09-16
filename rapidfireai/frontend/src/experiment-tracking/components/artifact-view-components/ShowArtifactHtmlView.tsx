@@ -6,16 +6,10 @@
  */
 
 import React, { Component } from 'react';
-import {
-  getArtifactContent,
-  getArtifactLocationUrl,
-  getLoggedModelArtifactLocationUrl,
-} from '../../../common/utils/ArtifactUtils';
+import { getArtifactContent, getArtifactLocationUrl } from '../../../common/utils/ArtifactUtils';
 import './ShowArtifactHtmlView.css';
 import Iframe from 'react-iframe';
 import { ArtifactViewSkeleton } from './ArtifactViewSkeleton';
-import type { LoggedModelArtifactViewerProps } from './ArtifactViewComponents.types';
-import { fetchArtifactUnified, type FetchArtifactUnifiedFn } from './utils/fetchArtifactUnified';
 
 type ShowArtifactHtmlViewState = {
   loading: boolean;
@@ -27,8 +21,8 @@ type ShowArtifactHtmlViewState = {
 type ShowArtifactHtmlViewProps = {
   runUuid: string;
   path: string;
-  getArtifact: FetchArtifactUnifiedFn;
-} & LoggedModelArtifactViewerProps;
+  getArtifact: (artifactLocation: string) => Promise<string>;
+};
 
 class ShowArtifactHtmlView extends Component<ShowArtifactHtmlViewProps, ShowArtifactHtmlViewState> {
   constructor(props: ShowArtifactHtmlViewProps) {
@@ -37,7 +31,7 @@ class ShowArtifactHtmlView extends Component<ShowArtifactHtmlViewProps, ShowArti
   }
 
   static defaultProps = {
-    getArtifact: fetchArtifactUnified,
+    getArtifact: getArtifactContent,
   };
 
   state = {
@@ -62,19 +56,18 @@ class ShowArtifactHtmlView extends Component<ShowArtifactHtmlViewProps, ShowArti
       return <ArtifactViewSkeleton className="artifact-html-view-loading" />;
     }
     if (this.state.error) {
-      // eslint-disable-next-line no-console -- TODO(FEINF-3587)
       console.error('Unable to load HTML artifact, got error ' + this.state.error);
       return <div className="artifact-html-view-error">Oops we couldn't load your file because of an error.</div>;
     } else {
       return (
-        <div className="mlflow-artifact-html-view">
+        <div className="artifact-html-view">
           <Iframe
             url=""
             src={this.getBlobURL(this.state.html, 'text/html')}
             width="100%"
             height="100%"
             id="html"
-            className="mlflow-html-iframe"
+            className="html-iframe"
             display="block"
             position="relative"
             sandbox="allow-scripts"
@@ -91,10 +84,9 @@ class ShowArtifactHtmlView extends Component<ShowArtifactHtmlViewProps, ShowArti
 
   /** Fetches artifacts and updates component state with the result */
   fetchArtifacts() {
-    const { path, runUuid, isLoggedModelsMode, loggedModelId, experimentId, entityTags } = this.props;
-
+    const artifactLocation = getArtifactLocationUrl(this.props.path, this.props.runUuid);
     this.props
-      .getArtifact?.({ path, runUuid, isLoggedModelsMode, loggedModelId, experimentId, entityTags }, getArtifactContent)
+      .getArtifact(artifactLocation)
       .then((html: string) => {
         this.setState({ html: html, loading: false, path: this.props.path });
       })

@@ -1,28 +1,16 @@
 import { DeepPartial } from 'redux';
 import { MockedReduxStoreProvider } from '../../../common/utils/TestUtils';
-import { waitFor, renderWithIntl, screen, within } from '@mlflow/mlflow/src/common/utils/TestUtils.react18';
+import { renderWithIntl, act, screen, within } from 'common/utils/TestUtils.react18';
 import { RunViewOverview } from './RunViewOverview';
 import { ReduxState } from '../../../redux-types';
 import { MemoryRouter } from '../../../common/utils/RoutingUtils';
 import { cloneDeep, merge } from 'lodash';
-import userEvent from '@testing-library/user-event';
+import userEvent from '@testing-library/user-event-14';
 import { getRunApi, setTagApi } from '../../actions';
-import { usePromptVersionsForRunQuery } from '../../pages/prompts/hooks/usePromptVersionsForRunQuery';
 import { NOTE_CONTENT_TAG } from '../../utils/NoteUtils';
 import { DesignSystemProvider } from '@databricks/design-system';
 import { EXPERIMENT_PARENT_ID_TAG } from '../experiment-page/utils/experimentPage.common-utils';
-import type { RunInfoEntity } from '../../types';
-import { KeyValueEntity } from '../../../common/types';
-import { TestApolloProvider } from '../../../common/utils/TestApolloProvider';
-import { QueryClient, QueryClientProvider } from '@mlflow/mlflow/src/common/utils/reactQueryHooks';
-import type { LoggedModelProto } from '../../types';
-import { type RunPageModelVersionSummary } from './hooks/useUnifiedRegisteredModelVersionsSummariesForRun';
-import { useExperimentTrackingDetailsPageLayoutStyles } from '../../hooks/useExperimentTrackingDetailsPageLayoutStyles';
-import { LINKED_PROMPTS_TAG_KEY } from '../../pages/prompts/utils';
-
-jest.mock('../../hooks/useExperimentTrackingDetailsPageLayoutStyles', () => ({
-  useExperimentTrackingDetailsPageLayoutStyles: jest.fn(),
-}));
+import type { KeyValueEntity } from '../../types';
 
 jest.mock('../../../common/components/Prompt', () => ({
   Prompt: jest.fn(() => <div />),
@@ -33,46 +21,27 @@ jest.mock('../../actions', () => ({
   getRunApi: jest.fn(() => ({ type: 'getRunApi', payload: Promise.resolve() })),
 }));
 
-const testPromptName = 'test-prompt';
-const testPromptVersion = 1;
-const testPromptName2 = 'test-prompt-2';
-
-jest.mock('../../pages/prompts/hooks/usePromptVersionsForRunQuery', () => ({
-  usePromptVersionsForRunQuery: jest.fn(() => ({
-    data: {
-      model_versions: [
-        {
-          name: testPromptName,
-          version: testPromptVersion,
-        },
-      ],
-    },
-  })),
-}));
-
 jest.setTimeout(30000); // Larget timeout for integration testing
 
 const testRunUuid = 'test-run-uuid';
 const testRunName = 'Test run name';
 const testExperimentId = '12345';
 
-const testRunInfo = {
-  artifactUri: 'file:/mlflow/tracking/12345/artifacts',
-  startTime: 1672578000000, // 2023-01-01 14:00:00
-  endTime: 1672578300000, // 2023-01-01 14:05:00
-  experimentId: testExperimentId,
-  lifecycleStage: 'active',
-  runName: testRunName,
-  runUuid: testRunUuid,
-  status: 'FINISHED' as const,
-};
-
 const testEntitiesState: Partial<ReduxState['entities']> = {
   tagsByRunUuid: {
     [testRunUuid]: {},
   },
   runInfosByUuid: {
-    [testRunUuid]: testRunInfo,
+    [testRunUuid]: {
+      artifactUri: 'file:/mlflow/tracking/12345/artifacts',
+      startTime: 1672578000000, // 2023-01-01 14:00:00
+      endTime: 1672578300000, // 2023-01-01 14:05:00
+      experimentId: testExperimentId,
+      lifecycleStage: 'active',
+      runName: testRunName,
+      runUuid: testRunUuid,
+      status: 'FINISHED',
+    } as any,
   },
   runDatasetsByUuid: {
     [testRunUuid]: [],
@@ -98,70 +67,29 @@ const testEntitiesState: Partial<ReduxState['entities']> = {
 
 describe('RunViewOverview integration', () => {
   const onRunDataUpdated = jest.fn();
-
-  beforeEach(() => {
-    jest.mocked<any>(useExperimentTrackingDetailsPageLayoutStyles).mockReturnValue({
-      usingUnifiedDetailsLayout: false,
-    });
-  });
-  const renderComponent = ({
-    tags = {},
-    runInfo,
-    reduxStoreEntities = {},
-    loggedModelsV3,
-    registeredModelVersionSummaries = [],
-  }: {
-    tags?: Record<string, KeyValueEntity>;
-    reduxStoreEntities?: DeepPartial<ReduxState['entities']>;
-    runInfo?: Partial<RunInfoEntity>;
-    registeredModelVersionSummaries?: RunPageModelVersionSummary[];
-    loggedModelsV3?: LoggedModelProto[] | undefined;
-  } = {}) => {
+  const renderComponent = (entities?: DeepPartial<ReduxState['entities']>) => {
     const state: DeepPartial<ReduxState> = {
-      entities: merge(
-        cloneDeep(testEntitiesState),
-        {
-          tagsByRunUuid: {
-            [testRunUuid]: tags,
-          },
-        },
-        reduxStoreEntities,
-      ),
+      entities: merge(cloneDeep(testEntitiesState), entities),
     };
-
-    const queryClient = new QueryClient();
 
     return renderWithIntl(
       <DesignSystemProvider>
-        <QueryClientProvider client={queryClient}>
-          <MockedReduxStoreProvider state={state}>
-            <TestApolloProvider>
-              <MemoryRouter>
-                <RunViewOverview
-                  onRunDataUpdated={onRunDataUpdated}
-                  runUuid={testRunUuid}
-                  latestMetrics={testEntitiesState.latestMetricsByRunUuid?.[testRunUuid] || {}}
-                  params={testEntitiesState.paramsByRunUuid?.[testRunUuid] || {}}
-                  runInfo={{ ...testRunInfo, ...runInfo }}
-                  tags={merge({}, testEntitiesState.tagsByRunUuid?.[testRunUuid], tags) || {}}
-                  registeredModelVersionSummaries={registeredModelVersionSummaries}
-                  loggedModelsV3={loggedModelsV3}
-                />
-              </MemoryRouter>
-            </TestApolloProvider>
-          </MockedReduxStoreProvider>
-        </QueryClientProvider>
+        <MockedReduxStoreProvider state={state}>
+          <MemoryRouter>
+            <RunViewOverview onRunDataUpdated={onRunDataUpdated} runUuid={testRunUuid} />
+          </MemoryRouter>
+        </MockedReduxStoreProvider>
       </DesignSystemProvider>,
     );
   };
-  test('Render component in the simplest form and assert minimal set of values', async () => {
+  test('Render component in the simplest form and assert minimal set of values', () => {
     renderComponent();
 
     // Empty description
     expect(screen.getByText('No description')).toBeInTheDocument();
 
     // Start time
-    expect(screen.getByRole('row', { name: /Created at\s+01\/01\/2023, 01:00:00 PM/ })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /Created at\s+2023-01-01 13:00:00/ })).toBeInTheDocument();
 
     // Status
     expect(screen.getByRole('row', { name: /Status\s+Finished/ })).toBeInTheDocument();
@@ -175,10 +103,8 @@ describe('RunViewOverview integration', () => {
     // Datasets
     expect(screen.getByRole('row', { name: /Datasets used\s+—/ })).toBeInTheDocument();
 
-    await waitFor(() => {
-      // Logged models
-      expect(screen.getByRole('row', { name: /Logged models\s+—/ })).toBeInTheDocument();
-    });
+    // Logged models
+    expect(screen.getByRole('row', { name: /Logged models\s+—/ })).toBeInTheDocument();
 
     // Registered models
     expect(screen.getByRole('row', { name: /Registered models\s+—/ })).toBeInTheDocument();
@@ -188,8 +114,10 @@ describe('RunViewOverview integration', () => {
   });
   test('Render and change run description', async () => {
     renderComponent({
-      tags: {
-        [NOTE_CONTENT_TAG]: { key: NOTE_CONTENT_TAG, value: 'existing description' },
+      tagsByRunUuid: {
+        [testRunUuid]: {
+          [NOTE_CONTENT_TAG]: { key: NOTE_CONTENT_TAG, value: 'existing description' },
+        },
       },
     });
 
@@ -201,7 +129,7 @@ describe('RunViewOverview integration', () => {
     await userEvent.type(screen.getByTestId('text-area'), 'hello');
     await userEvent.click(screen.getByTestId('editable-note-save-button'));
 
-    expect(setTagApi).toHaveBeenCalledWith('test-run-uuid', NOTE_CONTENT_TAG, 'hello');
+    expect(setTagApi).toBeCalledWith('test-run-uuid', NOTE_CONTENT_TAG, 'hello');
   });
 
   test.each([
@@ -211,7 +139,9 @@ describe('RunViewOverview integration', () => {
     ['1.3h', 10, 4500010],
   ])('Properly render %s formatted run duration', (expectedDuration, startTime, endTime) => {
     renderComponent({
-      runInfo: { startTime, endTime },
+      runInfosByUuid: {
+        [testRunUuid]: { startTime, endTime },
+      },
     });
 
     expect(screen.getByRole('cell', { name: expectedDuration })).toBeInTheDocument();
@@ -219,8 +149,10 @@ describe('RunViewOverview integration', () => {
 
   test("Render cell with run's author", () => {
     renderComponent({
-      tags: {
-        'mlflow.user': { key: 'mlflow.user', value: 'test.joe@databricks.com' },
+      tagsByRunUuid: {
+        [testRunUuid]: {
+          'mlflow.user': { key: 'mlflow.user', value: 'test.joe@databricks.com' },
+        },
       },
     });
 
@@ -229,30 +161,30 @@ describe('RunViewOverview integration', () => {
 
   test('Render cell with logged models and display dropdown menu', async () => {
     renderComponent({
-      runInfo: {
-        artifactUri: 'file:/mlflow/tracking/12345/artifacts',
-      },
-      tags: {
-        'mlflow.log-model.history': {
-          key: 'mlflow.log-model.history',
-          value: JSON.stringify([
-            {
-              artifact_path: 'path/to/model',
-              flavors: { sklearn: {} },
-              utc_time_created: 1672578000000,
-            },
-            {
-              artifact_path: 'path/to/xgboost/model',
-              flavors: { xgboost: {} },
-              utc_time_created: 1672578000000,
-            },
-          ]),
+      runInfosByUuid: {
+        [testRunUuid]: {
+          artifactUri: 'file:/mlflow/tracking/12345/artifacts',
         },
       },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByRole('cell', { name: /sklearn/ })).toBeInTheDocument();
+      tagsByRunUuid: {
+        [testRunUuid]: {
+          'mlflow.log-model.history': {
+            key: 'mlflow.log-model.history',
+            value: JSON.stringify([
+              {
+                artifact_path: 'path/to/model',
+                flavors: { sklearn: {} },
+                utc_time_created: 1672578000000,
+              },
+              {
+                artifact_path: 'path/to/xgboost/model',
+                flavors: { xgboost: {} },
+                utc_time_created: 1672578000000,
+              },
+            ]),
+          },
+        },
+      },
     });
 
     const modelsCell = screen.getByRole('cell', { name: /sklearn/ });
@@ -269,68 +201,25 @@ describe('RunViewOverview integration', () => {
     expect(screen.getByText('xgboost')).toBeInTheDocument();
   });
 
-  test('Render cell with registered models and display dropdown menu', async () => {
-    renderComponent({
-      runInfo: {
-        artifactUri: 'file:/mlflow/tracking/12345/artifacts',
-      },
-      registeredModelVersionSummaries: [
-        {
-          displayedName: 'test-registered-model',
-          version: '1',
-          link: '/models/test-registered-model/versions/1',
-          source: 'file:/mlflow/tracking/12345/artifacts',
-          status: 'READY',
-        },
-        {
-          displayedName: 'another-test-registered-model',
-          version: '2',
-          link: '/models/another-test-registered-model/versions/2',
-          source: 'file:/mlflow/tracking/12345/artifacts',
-          status: 'READY',
-        },
-      ],
-      tags: {},
-    });
-
-    await waitFor(() => {
-      expect(screen.getByRole('cell', { name: /test-registered-model/ })).toBeInTheDocument();
-    });
-
-    const modelsCell = screen.getByRole('cell', { name: /test-registered-model/ });
-
-    expect(modelsCell).toBeInTheDocument();
-    expect(within(modelsCell).getByRole('link')).toHaveAttribute(
-      'href',
-      expect.stringMatching(/test-registered-model\/versions\/1$/),
-    );
-
-    expect(within(modelsCell).getByRole('button', { name: '+1' })).toBeInTheDocument();
-
-    await userEvent.click(within(modelsCell).getByRole('button', { name: '+1' }));
-
-    expect(screen.getByText('another-test-registered-model')).toBeInTheDocument();
-  });
-
   test('Render child run and check for the existing parent run link', () => {
     const testParentRunUuid = 'test-parent-run-uuid';
     const testParentRunName = 'Test parent run name';
 
     renderComponent({
-      tags: {
-        [EXPERIMENT_PARENT_ID_TAG]: {
-          key: EXPERIMENT_PARENT_ID_TAG,
-          value: testParentRunUuid,
-        } as KeyValueEntity,
+      runInfosByUuid: {
+        [testRunUuid]: {},
+        [testParentRunUuid]: {
+          experimentId: testExperimentId,
+          runUuid: testParentRunUuid,
+          runName: testParentRunName,
+        },
       },
-      runInfo: {},
-      reduxStoreEntities: {
-        runInfosByUuid: {
-          [testParentRunUuid]: {
-            experimentId: testExperimentId,
-            runUuid: testParentRunUuid,
-            runName: testParentRunName,
-          },
+      tagsByRunUuid: {
+        [testRunUuid]: {
+          [EXPERIMENT_PARENT_ID_TAG]: {
+            key: EXPERIMENT_PARENT_ID_TAG,
+            value: testParentRunUuid,
+          } as KeyValueEntity,
         },
       },
     });
@@ -339,46 +228,25 @@ describe('RunViewOverview integration', () => {
     expect(screen.getByRole('link', { name: /Test parent run name/ })).toBeInTheDocument();
   });
 
-  test('Render child run and load the parent run name if it does not exist', async () => {
+  test('Render child run and load the parent run name if it does not exist', () => {
     const testParentRunUuid = 'test-parent-run-uuid';
 
     renderComponent({
-      tags: {
-        [EXPERIMENT_PARENT_ID_TAG]: {
-          key: EXPERIMENT_PARENT_ID_TAG,
-          value: testParentRunUuid,
+      runInfosByUuid: {
+        [testRunUuid]: {},
+      },
+      tagsByRunUuid: {
+        [testRunUuid]: {
+          [EXPERIMENT_PARENT_ID_TAG]: {
+            key: EXPERIMENT_PARENT_ID_TAG,
+            value: testParentRunUuid,
+          } as KeyValueEntity,
         },
       },
     });
 
-    await waitFor(() => {
-      expect(screen.getByText('Parent run name loading')).toBeInTheDocument();
-      expect(getRunApi).toHaveBeenCalledWith(testParentRunUuid);
-    });
-  });
-
-  test('Run overview contains prompts from run tags', async () => {
-    renderComponent({
-      tags: {
-        [LINKED_PROMPTS_TAG_KEY]: {
-          key: LINKED_PROMPTS_TAG_KEY,
-          value: JSON.stringify([{ name: testPromptName2, version: testPromptVersion.toString() }]),
-        },
-      },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(`${testPromptName2} (v${testPromptVersion})`)).toBeInTheDocument();
-    });
-  });
-
-  test('Run overview contains prompts from prompt version tags', async () => {
-    renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText(`${testPromptName} (v${testPromptVersion})`)).toBeInTheDocument();
-      expect(usePromptVersionsForRunQuery).toHaveBeenCalledWith({ runUuid: testRunUuid });
-    });
+    expect(screen.getByText('Parent run name loading')).toBeInTheDocument();
+    expect(getRunApi).toBeCalledWith(testParentRunUuid);
   });
 
   // TODO: expand integration tests when tags, params, metrics and models are complete

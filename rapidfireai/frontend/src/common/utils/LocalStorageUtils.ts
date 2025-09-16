@@ -8,7 +8,6 @@
 /**
  * Utils for working with local storage.
  */
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- TODO(FEINF-4274)
 export default class LocalStorageUtils {
   /**
    * Protocol version of MLflow's local storage. Should be incremented on any breaking change in how

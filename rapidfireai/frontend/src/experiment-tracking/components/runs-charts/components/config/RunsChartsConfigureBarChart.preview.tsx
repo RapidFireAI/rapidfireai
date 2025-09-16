@@ -13,14 +13,12 @@ export const RunsChartsConfigureBarChartPreview = ({
 }) => {
   const { resetTooltip, setTooltip } = useRunsChartsTooltip(cardConfig);
 
-  const dataKey = cardConfig.dataAccessKey ?? cardConfig.metricKey;
-
   return (
     <RunsMetricsBarPlot
       useDefaultHoverBox={false}
       displayRunNames={false}
       displayMetricKey={false}
-      metricKey={dataKey}
+      metricKey={cardConfig.metricKey}
       runsData={previewData}
       margin={barChartCardDefaultMargin}
       onHover={setTooltip}

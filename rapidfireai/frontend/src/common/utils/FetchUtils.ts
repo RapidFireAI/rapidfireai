@@ -52,10 +52,11 @@ export const getDefaultHeaders = (cookieStr: any) => {
 };
 
 export const getAjaxUrl = (relativeUrl: any) => {
-  // @ts-expect-error TS(4111): Property 'MLFLOW_USE_ABSOLUTE_AJAX_URLS' comes from an in... Remove this comment to see the full error message
-  if (process.env.MLFLOW_USE_ABSOLUTE_AJAX_URLS === 'true' && !relativeUrl.startsWith('/')) {
+  // @ts-expect-error TS(4111): Property 'USE_ABSOLUTE_AJAX_URLS' comes from an in... Remove this comment to see the full error message
+  if (process.env.USE_REMOTE_AJAX_URLS === 'true' && !relativeUrl.startsWith('/')) {
     return '/' + relativeUrl;
   }
+
   return relativeUrl;
 };
 
@@ -87,7 +88,6 @@ export const yamlResponseParser = ({ resolve, response }: any) =>
   parseResponse({ resolve, response, parser: yaml.safeLoad });
 
 export const defaultError = ({ reject, response, err }: any) => {
-  // eslint-disable-next-line no-console -- TODO(FEINF-3587)
   console.error('Fetch failed: ', response || err);
   if (response) {
     response.text().then((text: any) => reject(new ErrorWrapper(text, response.status)));
@@ -116,11 +116,13 @@ export const fetchEndpointRaw = ({
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     ...getDefaultHeaders(document.cookie),
+    'x-user-id': getUserId(),
     ...headerOptions,
   };
 
   const defaultOptions = {
     dataType: 'json',
+    credentials: 'include',
   };
   // use an abort controller for setting request timeout if defined
   // https://stackoverflow.com/questions/46946380/fetch-api-request-timeout
@@ -137,7 +139,7 @@ export const fetchEndpointRaw = ({
     ...options,
     ...(timeoutMs && { signal: abortController.signal }),
   };
-  // eslint-disable-next-line no-restricted-globals -- See go/spog-fetch
+
   return fetch(url, fetchOptions);
 };
 
@@ -204,6 +206,14 @@ export const retry = async (
 // not a 200 and also not a retryable HTTP status code
 const defaultFetchErrorConditionFn = (res: any) => !res || (!res.ok && !HTTPRetryStatuses.includes(res.status));
 
+// Add this function to get the user ID
+const getUserId = () => {
+  // TODO: Replace this with your actual method of getting the user ID
+  // This could be from local storage, a global state, etc.
+  return localStorage.getItem('userId') || 'default';
+};
+
+
 /**
  * Makes a fetch request.
  * @param relativeUrl: relative URL to the shard URL
@@ -234,7 +244,7 @@ export const fetchEndpoint = ({
   error = defaultError,
   errorCondition = defaultFetchErrorConditionFn,
 }: any) => {
-  return new Promise((resolve, reject) =>
+  return new Promise((resolve, reject) => {
     retry(
       () =>
         fetchEndpointRaw({
@@ -242,7 +252,10 @@ export const fetchEndpoint = ({
           method,
           body,
           headerOptions,
-          options,
+          options: {
+            ...options,
+            credentials: 'include',
+          },
           timeoutMs,
         }),
       {
@@ -252,13 +265,19 @@ export const fetchEndpoint = ({
         // 200s
         // @ts-expect-error TS(2322): Type '(res: any) => any' is not assignable to type... Remove this comment to see the full error message
         successCondition: (res: any) => res && res.ok,
+        // errorCondition: (res: any) => {
+        //   if (res && res.status === 401) return true;
+        //   return errorCondition(res);
+        // },
         success: ({ res }) => success({ resolve, reject, response: res }),
         errorCondition,
         // @ts-expect-error TS(2322): Type '({ res, err }: any) => any' is not assignabl... Remove this comment to see the full error message
-        error: ({ res, err }) => error({ resolve, reject, response: res, err: err }),
+        error: ({ res, err }) => {
+            error({ resolve, reject, response: res, err: err });
+        },
       },
-    ),
-  );
+    );
+  });
 };
 
 const filterUndefinedFields = (data: any) => {
@@ -339,14 +358,28 @@ export const deleteJson = (props: any) => {
   });
 };
 
-export const getBigIntJson = (props: any) => {
-  const { relativeUrl, data } = props;
-  const queryParams = new URLSearchParams(filterUndefinedFields(data));
+
+interface GetBigIntJsonProps {
+  url: string;
+  data?: Record<string, any>;
+  [key: string]: any;
+}
+
+export const getBigIntJson = (props: GetBigIntJsonProps) => {
+  const { url, data, ...restProps } = props;
+  
+  // Create URL object to handle both absolute and relative URLs
+  const urlObject = new URL(url, window.location.origin);
+
+  // Append query parameters if data is provided
+  if (data) {
+    const queryParams = new URLSearchParams(filterUndefinedFields(data));
+    urlObject.search = queryParams.toString();
+  }
+
   return fetchEndpoint({
-    ...props,
-    ...(String(queryParams).length > 0 && {
-      relativeUrl: `${relativeUrl}?${queryParams}`,
-    }),
+    ...restProps,
+    relativeUrl: urlObject.toString(),
     method: HTTPMethods.GET,
     success: jsonBigIntResponseParser,
   });

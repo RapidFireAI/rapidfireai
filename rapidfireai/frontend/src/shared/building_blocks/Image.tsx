@@ -11,7 +11,6 @@ import {
 import { useContext } from 'react';
 import RcImage from 'rc-image';
 import './Image.css';
-import { MLflowImagePreviewContainer } from '../../common/components/DesignSystemContainer';
 
 const icons = {
   rotateLeft: <UndoIcon />,
@@ -32,14 +31,14 @@ export const ImagePreviewGroup = ({
   visible: boolean;
   onVisibleChange: (v: boolean) => void;
 }) => {
-  const { getImagePreviewPopupContainer } = useContext(MLflowImagePreviewContainer);
+  const { getPopupContainer } = useContext(DesignSystemContext);
 
   return (
     <RcImage.PreviewGroup
       icons={icons}
       preview={{
         visible: visible,
-        getContainer: getImagePreviewPopupContainer,
+        getContainer: getPopupContainer,
         onVisibleChange: (v) => onVisibleChange(v),
       }}
     >

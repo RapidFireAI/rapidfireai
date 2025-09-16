@@ -1,18 +1,24 @@
 @import 'components/ModelVersionTable.css';
 @import 'components/ModelVersionView.css';
 @import 'components/ModelStageTransitionDropdown.css';
+@import 'components/DirectTransitionForm.css';
 
 /** TODO(Zangr) migrate globally common components and styles into src/common folder */
-.mlflow-metadata-container {
+.metadata-container {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
 }
 
-.mlflow-metadata-entry {
+.metadata-entry {
   margin-bottom: 16px;
 }
 
-.mlflow-icon-fail {
+.icon-pending,
+.icon-ready {
+  color: green;
+}
+
+.icon-fail {
   color: red;
 }

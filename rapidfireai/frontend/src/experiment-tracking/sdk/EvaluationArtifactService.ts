@@ -4,10 +4,8 @@ import { EvaluationArtifactTable, EvaluationArtifactTableEntry } from '../types'
 // Reflects structure logged by mlflow.log_table()
 export interface RawEvaluationArtifact {
   columns: string[];
-  data: (string | number | null | boolean | Record<string, any>)[][];
+  data: string[][];
 }
-
-export class EvaluationTableParseError extends Error {}
 
 /**
  * Service function that fetches and parses evaluation artifact table.
@@ -23,7 +21,7 @@ export const fetchEvaluationTableArtifact = async (
       try {
         return JSON.parse(artifactContent);
       } catch {
-        throw new EvaluationTableParseError(`Artifact ${artifactPath} is malformed and/or not valid JSON`);
+        throw new Error(`Artifact ${artifactPath} is malformed and/or not valid JSON`);
       }
     })
     .then((data) => parseEvaluationTableArtifact(artifactPath, data));

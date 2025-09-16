@@ -44,7 +44,7 @@ const Selector = ({
   const intl = useIntl();
   return (
     <SimpleSelect
-      componentId="codegen_mlflow_app_src_experiment-tracking_components_comparerunbox.tsx_46"
+      label={id}
       id={id}
       css={{ width: '100%', marginBottom: '16px' }}
       placeholder={intl.formatMessage({

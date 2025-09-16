@@ -7,7 +7,7 @@
 
 import React, { Component } from 'react';
 import { ConfirmModal } from './ConfirmModal';
-import { deleteExperimentApi } from '../../actions';
+import { deleteExperimentApi, searchExperimentsApi } from '../../actions';
 import Routes from '../../routes';
 import Utils from '../../../common/utils/Utils';
 import { connect } from 'react-redux';
@@ -22,7 +22,7 @@ type Props = {
   experimentId: string;
   experimentName: string;
   deleteExperimentApi: (...args: any[]) => any;
-  onExperimentDeleted: () => void;
+  searchExperimentsApi: (...args: any[]) => any;
   navigate: NavigateFunction;
 };
 
@@ -49,7 +49,7 @@ export class DeleteExperimentModalImpl extends Component<Props> {
           }
         }
       })
-      .then(() => this.props.onExperimentDeleted())
+      .then(() => this.props.searchExperimentsApi(deleteExperimentRequestId))
       .catch((e: any) => {
         Utils.logErrorAndNotifyUser(e);
       });
@@ -71,8 +71,8 @@ export class DeleteExperimentModalImpl extends Component<Props> {
                 Experiment "{this.props.experimentName}" (Experiment ID: {this.props.experimentId}) will be deleted.
               </b>
             </p>
-            {/* @ts-expect-error TS(4111): Property 'MLFLOW_SHOW_GDPR_PURGING_MESSAGES' comes from a... Remove this comment to see the full error message */}
-            {process.env.MLFLOW_SHOW_GDPR_PURGING_MESSAGES === 'true' ? (
+            {/* @ts-expect-error TS(4111): Property 'SHOW_GDPR_PURGING_MESSAGES' comes from a... Remove this comment to see the full error message */}
+            {process.env.SHOW_GDPR_PURGING_MESSAGES === 'true' ? (
               <p>
                 Deleted experiments are restorable for 30 days, after which they are purged along with their associated
                 runs, including metrics, params, tags, and artifacts.
@@ -90,6 +90,7 @@ export class DeleteExperimentModalImpl extends Component<Props> {
 
 const mapDispatchToProps = {
   deleteExperimentApi,
+  searchExperimentsApi,
 };
 
 export const DeleteExperimentModal = withRouterNext(connect(undefined, mapDispatchToProps)(DeleteExperimentModalImpl));

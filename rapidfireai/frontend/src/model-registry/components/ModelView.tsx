@@ -6,12 +6,12 @@
  */
 
 import React from 'react';
-import _ from 'lodash';
 import { ModelVersionTable } from './ModelVersionTable';
 import Utils from '../../common/utils/Utils';
 import { Link, NavigateFunction } from '../../common/utils/RoutingUtils';
 import { ModelRegistryRoutes } from '../routes';
-import { ACTIVE_STAGES, MODEL_VERSIONS_PER_PAGE_COMPACT, MODEL_VERSIONS_SEARCH_TIMESTAMP_FIELD } from '../constants';
+import { message } from 'antd';
+import { ACTIVE_STAGES } from '../constants';
 import { CollapsibleSection } from '../../common/components/CollapsibleSection';
 import { EditableNote } from '../../common/components/EditableNote';
 import { EditableTagsTableView } from '../../common/components/EditableTagsTableView';
@@ -20,24 +20,12 @@ import { setRegisteredModelTagApi, deleteRegisteredModelTagApi } from '../action
 import { connect } from 'react-redux';
 import { OverflowMenu, PageHeader } from '../../shared/building_blocks/PageHeader';
 import { FormattedMessage, type IntlShape, injectIntl } from 'react-intl';
-import {
-  Button,
-  SegmentedControlGroup,
-  SegmentedControlButton,
-  DangerModal,
-  CursorPagination,
-} from '@databricks/design-system';
-import { KeyValueEntity } from '../../common/types';
+import { Button, SegmentedControlGroup, SegmentedControlButton, DangerModal } from '@databricks/design-system';
 import { Descriptions } from '../../common/components/Descriptions';
-import { TagList } from '../../common/components/TagList';
 import { ModelVersionInfoEntity, type ModelEntity } from '../../experiment-tracking/types';
-import { shouldShowModelsNextUI, shouldUseSharedTaggingUI } from '../../common/utils/FeatureUtils';
+import { shouldShowModelsNextUI } from '../../common/utils/FeatureUtils';
 import { ModelsNextUIToggleSwitch } from './ModelsNextUIToggleSwitch';
 import { withNextModelsUIContext } from '../hooks/useNextModelsUI';
-import { ErrorWrapper } from '../../common/utils/ErrorWrapper';
-import { ColumnSort } from '@tanstack/react-table';
-
-const CREATION_TIMESTAMP_COLUMN_INDEX = 'creation_timestamp';
 
 export const StageFilters = {
   ALL: 'ALL',
@@ -61,16 +49,6 @@ type ModelViewImplProps = {
   intl: IntlShape;
   onMetadataUpdated: () => void;
   usingNextModelsUI: boolean;
-  orderByKey: string;
-  orderByAsc: boolean;
-  currentPage: number;
-  nextPageToken: string | null;
-  onClickNext: () => void;
-  onClickPrev: () => void;
-  onClickSortableColumn: (fieldName: string | null, isDescending: boolean) => void;
-  onSetMaxResult: (key: number) => void;
-  maxResultValue: number;
-  loading?: boolean;
 };
 
 type ModelViewImplState = any;
@@ -82,7 +60,6 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
   }
 
   state = {
-    maxResultsSelection: MODEL_VERSIONS_PER_PAGE_COMPACT,
     stageFilter: StageFilters.ALL,
     showDescriptionEditor: false,
     isDeleteModalVisible: false,
@@ -90,38 +67,15 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
     runsSelected: {},
     isTagsRequestPending: false,
     updatingEmailPreferences: false,
-    isTagAssignmentModalVisible: false,
-    isSavingTags: false,
-    tagSavingError: undefined,
   };
 
   formRef = React.createRef();
-
-  sharedTaggingUIEnabled = shouldUseSharedTaggingUI();
 
   componentDidMount() {
     // @ts-expect-error TS(2532): Object is possibly 'undefined'.
     const pageTitle = `${this.props.model.name} - MLflow Model`;
     Utils.updatePageTitle(pageTitle);
   }
-
-  handleSetMaxResult = ({ key }: { key: number }) => {
-    this.props.onSetMaxResult(key);
-  };
-
-  getSortFieldName = (column: any) => {
-    switch (column) {
-      case CREATION_TIMESTAMP_COLUMN_INDEX:
-        return MODEL_VERSIONS_SEARCH_TIMESTAMP_FIELD;
-      default:
-        return null;
-    }
-  };
-
-  handleSortChange = (params: { sorter: ColumnSort }) => {
-    const sorter = params.sorter;
-    this.props.onClickSortableColumn(this.getSortFieldName(sorter.id), sorter.desc);
-  };
 
   handleStageFilterChange = (e: any) => {
     this.setState({ stageFilter: e.target.value });
@@ -196,24 +150,6 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
       });
   };
 
-  getTags = () =>
-    _.sortBy(
-      Utils.getVisibleTagValues(this.props.tags).map((values) => ({
-        key: values[0],
-        name: values[0],
-        value: values[1],
-      })),
-      'name',
-    );
-
-  handleEditTags = () => {
-    this.setState({ isTagAssignmentModalVisible: true, tagSavingError: undefined });
-  };
-
-  handleCloseTagAssignmentModal = () => {
-    this.setState({ isTagAssignmentModalVisible: false, tagSavingError: undefined });
-  };
-
   handleAddTag = (values: any) => {
     const form = this.formRef.current;
     const { model } = this.props;
@@ -226,12 +162,10 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
         this.setState({ isTagsRequestPending: false });
         (form as any).resetFields();
       })
-      .catch((ex: ErrorWrapper | Error) => {
+      .catch((ex: any) => {
         this.setState({ isTagsRequestPending: false });
-        // eslint-disable-next-line no-console -- TODO(FEINF-3587)
         console.error(ex);
-        const message = ex instanceof ErrorWrapper ? ex.getMessageField() : ex.message;
-        Utils.displayGlobalErrorNotification('Failed to add tag. Error: ' + message);
+        message.error('Failed to add tag. Error: ' + ex.getUserVisibleError());
       });
   };
 
@@ -239,11 +173,9 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
     const { model } = this.props;
     // @ts-expect-error TS(2532): Object is possibly 'undefined'.
     const modelName = model.name;
-    return this.props.setRegisteredModelTagApi(modelName, name, value).catch((ex: ErrorWrapper | Error) => {
-      // eslint-disable-next-line no-console -- TODO(FEINF-3587)
+    return this.props.setRegisteredModelTagApi(modelName, name, value).catch((ex: any) => {
       console.error(ex);
-      const message = ex instanceof ErrorWrapper ? ex.getMessageField() : ex.message;
-      Utils.displayGlobalErrorNotification('Failed to set tag. Error: ' + message);
+      message.error('Failed to set tag. Error: ' + ex.getUserVisibleError());
     });
   };
 
@@ -251,33 +183,10 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
     const { model } = this.props;
     // @ts-expect-error TS(2532): Object is possibly 'undefined'.
     const modelName = model.name;
-    return this.props.deleteRegisteredModelTagApi(modelName, name).catch((ex: ErrorWrapper | Error) => {
-      // eslint-disable-next-line no-console -- TODO(FEINF-3587)
+    return this.props.deleteRegisteredModelTagApi(modelName, name).catch((ex: any) => {
       console.error(ex);
-      const message = ex instanceof ErrorWrapper ? ex.getMessageField() : ex.message;
-      Utils.displayGlobalErrorNotification('Failed to delete tag. Error: ' + message);
+      message.error('Failed to delete tag. Error: ' + ex.getUserVisibleError());
     });
-  };
-
-  handleSaveTags = (newTags: KeyValueEntity[], deletedTags: KeyValueEntity[]): Promise<void> => {
-    this.setState({ isSavingTags: true });
-    const { model } = this.props;
-    // @ts-expect-error TS(2532): Object is possibly 'undefined'.
-    const modelName = model.name;
-
-    const newTagsToSet = newTags.map(({ key, value }) => this.props.setRegisteredModelTagApi(modelName, key, value));
-
-    const deletedTagsToDelete = deletedTags.map(({ key }) => this.props.deleteRegisteredModelTagApi(modelName, key));
-
-    return Promise.all([...newTagsToSet, ...deletedTagsToDelete])
-      .then(() => {
-        this.setState({ isSavingTags: false });
-      })
-      .catch((error: ErrorWrapper | Error) => {
-        const message = error instanceof ErrorWrapper ? error.getMessageField() : error.message;
-
-        this.setState({ isSavingTags: false, tagSavingError: message });
-      });
   };
 
   onChange = (selectedRowKeys: any, selectedRows: any) => {
@@ -320,7 +229,7 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
   }
 
   renderDetails = () => {
-    const { model, modelVersions, tags, currentPage, nextPageToken } = this.props;
+    const { model, modelVersions, tags } = this.props;
     const {
       stageFilter,
       showDescriptionEditor,
@@ -343,7 +252,7 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
             })}
           >
             {/* @ts-expect-error TS(2532): Object is possibly 'undefined'. */}
-            {Utils.formatTimestamp(model.creation_timestamp, this.props.intl)}
+            {Utils.formatTimestamp(model.creation_timestamp)}
           </Descriptions.Item>
           <Descriptions.Item
             data-testid="model-view-metadata-item"
@@ -353,7 +262,7 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
             })}
           >
             {/* @ts-expect-error TS(2532): Object is possibly 'undefined'. */}
-            {Utils.formatTimestamp(model.last_updated_timestamp, this.props.intl)}
+            {Utils.formatTimestamp(model.last_updated_timestamp)}
           </Descriptions.Item>
           {/* Reported during ESLint upgrade */}
           {/* eslint-disable-next-line react/prop-types */}
@@ -370,16 +279,11 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
             </Descriptions.Item>
           )}
         </Descriptions>
-        {this.sharedTaggingUIEnabled && (
-          <Descriptions columns={1} data-testid="model-view-tags">
-            <Descriptions.Item label="Tags">
-              <TagList tags={this.getTags()} onEdit={this.handleEditTags} />
-            </Descriptions.Item>
-          </Descriptions>
-        )}
+
         {/* Page Sections */}
         <CollapsibleSection
-          css={styles.collapsiblePanel}
+          // @ts-expect-error TS(2322): Type '{ children: Element; css: any; title: Elemen... Remove this comment to see the full error message
+          css={(styles as any).collapsiblePanel}
           title={
             <span>
               <FormattedMessage
@@ -403,34 +307,30 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
             showEditor={showDescriptionEditor}
           />
         </CollapsibleSection>
-        {!this.sharedTaggingUIEnabled && (
-          <div data-test-id="tags-section">
-            <CollapsibleSection
-              css={styles.collapsiblePanel}
-              title={
-                <FormattedMessage
-                  defaultMessage="Tags"
-                  description="Title text for the tags section under details tab on the model view
+        <div data-test-id="tags-section">
+          <CollapsibleSection
+            title={
+              <FormattedMessage
+                defaultMessage="Tags"
+                description="Title text for the tags section under details tab on the model view
                    page"
-                />
-              }
-              defaultCollapsed={Utils.getVisibleTagValues(tags).length === 0}
-              data-test-id="model-tags-section"
-            >
-              <EditableTagsTableView
-                // @ts-expect-error TS(2322): Type '{ innerRef: RefObject<unknown>; handleAddTag... Remove this comment to see the full error message
-                innerRef={this.formRef}
-                handleAddTag={this.handleAddTag}
-                handleDeleteTag={this.handleDeleteTag}
-                handleSaveEdit={this.handleSaveEdit}
-                tags={tags}
-                isRequestPending={isTagsRequestPending}
               />
-            </CollapsibleSection>
-          </div>
-        )}
+            }
+            defaultCollapsed={Utils.getVisibleTagValues(tags).length === 0}
+            data-test-id="model-tags-section"
+          >
+            <EditableTagsTableView
+              // @ts-expect-error TS(2322): Type '{ innerRef: RefObject<unknown>; handleAddTag... Remove this comment to see the full error message
+              innerRef={this.formRef}
+              handleAddTag={this.handleAddTag}
+              handleDeleteTag={this.handleDeleteTag}
+              handleSaveEdit={this.handleSaveEdit}
+              tags={tags}
+              isRequestPending={isTagsRequestPending}
+            />
+          </CollapsibleSection>
+        </div>
         <CollapsibleSection
-          css={styles.collapsiblePanel}
           title={
             <>
               <div css={styles.versionsTabButtons}>
@@ -443,11 +343,9 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
                 </span>
                 {!this.props.usingNextModelsUI && (
                   <SegmentedControlGroup
-                    componentId="codegen_mlflow_app_src_model-registry_components_modelview.tsx_600"
                     name="stage-filter"
                     value={this.state.stageFilter}
                     onChange={(e) => this.handleStageFilterChange(e)}
-                    css={{ fontWeight: 'normal' }}
                   >
                     <SegmentedControlButton value={StageFilters.ALL}>
                       <FormattedMessage
@@ -467,7 +365,7 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
                 )}
                 <Button
                   componentId="codegen_mlflow_app_src_model-registry_components_modelview.tsx_619"
-                  data-testid="compareButton"
+                  data-test-id="compareButton"
                   disabled={compareDisabled}
                   onClick={this.onCompare}
                 >
@@ -494,7 +392,6 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
             </div>
           )}
           <ModelVersionTable
-            isLoading={this.props.loading || false}
             activeStageOnly={stageFilter === StageFilters.ACTIVE && !this.props.usingNextModelsUI}
             modelName={modelName}
             modelVersions={modelVersions}
@@ -503,37 +400,11 @@ export class ModelViewImpl extends React.Component<ModelViewImplProps, ModelView
             onMetadataUpdated={this.props.onMetadataUpdated}
             usingNextModelsUI={this.props.usingNextModelsUI}
             aliases={model?.aliases}
-            orderByKey={this.props.orderByKey}
-            orderByAsc={this.props.orderByAsc}
-            onSortChange={this.handleSortChange}
-            getSortFieldName={this.getSortFieldName}
-            pagination={
-              <div
-                data-testid="model-view-pagination-section"
-                css={{ width: '100%', alignItems: 'center', display: 'flex' }}
-              >
-                <div css={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                  <CursorPagination
-                    componentId="codegen_mlflow_app_src_model-registry_components_modelview.tsx_646"
-                    hasNextPage={Boolean(nextPageToken)}
-                    hasPreviousPage={currentPage > 1}
-                    onNextPage={this.props.onClickNext}
-                    onPreviousPage={this.props.onClickPrev}
-                    pageSizeSelect={{
-                      onChange: (num) => this.handleSetMaxResult({ key: num }),
-                      default: this.props.maxResultValue,
-                      options: [10, 25, 50, 100],
-                    }}
-                  />
-                </div>
-              </div>
-            }
           />
         </CollapsibleSection>
 
         {/* Delete Model Dialog */}
         <DangerModal
-          componentId="codegen_mlflow_app_src_model-registry_components_modelview.tsx_662"
           data-testid="mlflow-input-modal"
           title={this.props.intl.formatMessage({
             defaultMessage: 'Delete Model',
@@ -608,10 +479,11 @@ const styles = {
     paddingLeft: theme.spacing.sm,
     paddingRight: theme.spacing.sm,
   }),
-  collapsiblePanel: (theme: any) => ({
-    marginBottom: theme.spacing.md,
-  }),
   wrapper: (theme: any) => ({
+    '.collapsible-panel': {
+      marginBottom: theme.spacing.md,
+    },
+
     /**
      * This seems to be a best and most stable method to catch
      * antd's collapsible section buttons without hacks

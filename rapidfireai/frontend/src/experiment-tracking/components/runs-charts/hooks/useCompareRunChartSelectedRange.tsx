@@ -1,46 +1,38 @@
 import { useMemo, useState } from 'react';
 import { findChartStepsByTimestampForRuns } from '../utils/findChartStepsByTimestamp';
 import { SampledMetricsByRunUuidState } from '../../../types';
-import { isNumber, isString, isUndefined } from 'lodash';
+import { isNumber, isString } from 'lodash';
 import { RunsChartsLineChartXAxisType } from '../components/RunsCharts.common';
-import { RunsChartsLineCardConfig } from '../runs-charts.types';
 
 /**
  * Hook used in compare run charts. It's responsible for converting selected range
  * (which can be either step or timestamp) to step range, based on chart axis type.
- * @param config Line chart configuration
+ *
  * @param xAxisKey Can be 'step', 'time' or 'time-relative'
  * @param metricKey
  * @param sampledMetricsByRunUuid Recorded history for metrics for runs in compare chart
  * @param runUuids List of run UUIDs in compare chart
- * @param scaleType Scale type for the chart
  */
 export const useCompareRunChartSelectedRange = (
-  config: RunsChartsLineCardConfig,
   xAxisKey: RunsChartsLineChartXAxisType,
   metricKey: string,
   sampledMetricsByRunUuid: SampledMetricsByRunUuidState,
   runUuids: string[],
   scaleType: 'linear' | 'log' = 'linear',
 ) => {
-  const [xRangeLocal, setXRangeLocal] = useState<[number | string, number | string] | undefined>(() => {
-    if (config.range && !isUndefined(config.range.xMin) && !isUndefined(config.range.xMax)) {
-      return [config.range.xMin, config.range.xMax];
-    }
-    return undefined;
-  });
+  const [range, setRange] = useState<[number | string, number | string] | undefined>(undefined);
   const [offsetTimestamp, setOffsetTimestamp] = useState<[number, number] | undefined>(undefined);
   const stepRange = useMemo<[number, number] | undefined>(() => {
-    if (!xRangeLocal) {
+    if (!range) {
       return undefined;
     }
-    if (xAxisKey === RunsChartsLineChartXAxisType.TIME && isString(xRangeLocal[0]) && isString(xRangeLocal[1])) {
+    if (xAxisKey === RunsChartsLineChartXAxisType.TIME && isString(range[0]) && isString(range[1])) {
       // If we're dealing with absolute time-based chart axis, find corresponding steps based on timestamp
       const bounds = findChartStepsByTimestampForRuns(
         sampledMetricsByRunUuid,
         runUuids,
         metricKey,
-        xRangeLocal as [string, string],
+        range as [string, string],
       );
       return bounds;
     }
@@ -48,8 +40,8 @@ export const useCompareRunChartSelectedRange = (
     if (
       xAxisKey === RunsChartsLineChartXAxisType.TIME_RELATIVE &&
       offsetTimestamp &&
-      isNumber(xRangeLocal[0]) &&
-      isNumber(xRangeLocal[1])
+      isNumber(range[0]) &&
+      isNumber(range[1])
     ) {
       // If we're dealing with absolute time-based chart axis, find corresponding steps based on timestamp
       const bounds = findChartStepsByTimestampForRuns(
@@ -61,19 +53,23 @@ export const useCompareRunChartSelectedRange = (
       return bounds;
     }
 
-    if (xAxisKey === RunsChartsLineChartXAxisType.STEP && isNumber(xRangeLocal[0]) && isNumber(xRangeLocal[1])) {
+    if (xAxisKey === RunsChartsLineChartXAxisType.STEP && isNumber(range[0]) && isNumber(range[1])) {
       // If we're dealing with step-based chart axis, use those steps but incremented/decremented
-      const lowerBound = Math.floor(scaleType === 'log' ? 10 ** xRangeLocal[0] : xRangeLocal[0]);
-      const upperBound = Math.ceil(scaleType === 'log' ? 10 ** xRangeLocal[1] : xRangeLocal[1]);
+      const lowerBound = Math.floor(scaleType === 'log' ? 10 ** range[0] : range[0]);
+      const upperBound = Math.ceil(scaleType === 'log' ? 10 ** range[1] : range[1]);
       return lowerBound && upperBound ? [lowerBound - 1, upperBound + 1] : undefined;
     }
 
     // return undefined for xAxisKey === 'metric' because there isn't
     // necessarily a mapping between value range and step range
     return undefined;
-  }, [xAxisKey, metricKey, xRangeLocal, sampledMetricsByRunUuid, runUuids, offsetTimestamp, scaleType]);
+  }, [xAxisKey, metricKey, range, sampledMetricsByRunUuid, runUuids, offsetTimestamp, scaleType]);
 
   return {
+    /**
+     * Sets actually selected range in chart (can be timestamp, seconds range or step range)
+     */
+    setRange,
     /**
      * If there's an offset timestamp calculated from relative runs, set it using this function
      */
@@ -83,12 +79,8 @@ export const useCompareRunChartSelectedRange = (
      */
     stepRange,
     /**
-     * Local range selected by user
+     * Actual raw range to be passed down to the chart component
      */
-    xRangeLocal,
-    /**
-     * Set selected range
-     */
-    setXRangeLocal,
+    range,
   };
 };

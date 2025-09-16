@@ -13,7 +13,6 @@ import {
   getAllParamKeysByRunUuids,
   getAllMetricKeysByRunUuids,
   getSharedMetricKeysByRunUuids,
-  getRunInfo,
 } from '../reducers/Reducers';
 import _ from 'lodash';
 import { CompareRunPlotContainer } from './CompareRunPlotContainer';
@@ -113,10 +112,7 @@ export const getDiffParams = (allParamKeys: any, runUuids: any, paramsByRunUuid:
 };
 
 const mapStateToProps = (state: any, ownProps: any) => {
-  const { runUuids: allRunUuids } = ownProps;
-
-  // Filter out runUuids that do not have corresponding runInfos
-  const runUuids = (allRunUuids ?? []).filter((uuid: string) => getRunInfo(uuid, state));
+  const { runUuids } = ownProps;
   const allParamKeys = getAllParamKeysByRunUuids(runUuids, state);
   const allMetricKeys = getAllMetricKeysByRunUuids(runUuids, state);
   const sharedMetricKeys = getSharedMetricKeysByRunUuids(runUuids, state);

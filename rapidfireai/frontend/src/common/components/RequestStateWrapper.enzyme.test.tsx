@@ -37,6 +37,7 @@ const non404ErrorRequest = {
 
 test('Renders loading page when requests are not complete', () => {
   const wrapper = shallow(
+    // @ts-expect-error TS(2769): No overload matches this call.
     <RequestStateWrapper requests={[activeRequest, completeRequest]}>
       <div>I am the child</div>
     </RequestStateWrapper>,
@@ -46,6 +47,7 @@ test('Renders loading page when requests are not complete', () => {
 
 test('Renders custom loading page when requests are not complete', () => {
   const wrapper = shallow(
+    // @ts-expect-error TS(2769): No overload matches this call.
     <RequestStateWrapper
       requests={[activeRequest, completeRequest]}
       customSpinner={<h1 className="custom-spinner">a custom spinner</h1>}
@@ -58,6 +60,7 @@ test('Renders custom loading page when requests are not complete', () => {
 
 test('Renders children when requests are complete', () => {
   const wrapper = shallow(
+    // @ts-expect-error TS(2769): No overload matches this call.
     <RequestStateWrapper requests={[completeRequest]}>
       <div className="child">I am the child</div>
     </RequestStateWrapper>,
@@ -69,6 +72,7 @@ test('Renders children when requests are complete', () => {
 test('Throws exception if child is a React element and wrapper has bad request.', () => {
   try {
     shallow(
+      // @ts-expect-error TS(2769): No overload matches this call.
       <RequestStateWrapper requests={[errorRequest]}>
         <div className="child">I am the child</div>
       </RequestStateWrapper>,
@@ -81,7 +85,13 @@ test('Throws exception if child is a React element and wrapper has bad request.'
 test('Throws exception if errorRenderFunc returns undefined and wrapper has bad request.', () => {
   try {
     shallow(
-      <RequestStateWrapper requests={[errorRequest]}>
+      <RequestStateWrapper
+        // @ts-expect-error TS(2769): No overload matches this call.
+        requests={[errorRequest]}
+        errorRenderFunc={() => {
+          return undefined;
+        }}
+      >
         <div className="child">I am the child</div>
       </RequestStateWrapper>,
     );
@@ -94,6 +104,7 @@ test('Throws exception if errorRenderFunc returns undefined and wrapper has bad 
 
 test('Renders child if request expectedly returns a 404', () => {
   const wrapper = shallow(
+    // @ts-expect-error TS(2769): No overload matches this call.
     <RequestStateWrapper requests={[errorRequest]} requestIdsWith404sToIgnore={[errorRequest.id]}>
       <div className="child">I am the child</div>
     </RequestStateWrapper>,
@@ -105,7 +116,14 @@ test('Renders child if request expectedly returns a 404', () => {
 test('Does not render child if request returns a non-404 error', () => {
   try {
     shallow(
-      <RequestStateWrapper requests={[non404ErrorRequest]} requestIdsWith404sToIgnore={[errorRequest.id]}>
+      // @ts-expect-error TS(2769): No overload matches this call.
+      <RequestStateWrapper
+        requests={[non404ErrorRequest]}
+        requestIdsWith404sToIgnore={[errorRequest.id]}
+        errorRenderFunc={() => {
+          return undefined;
+        }}
+      >
         <div className="child">I am the child</div>
       </RequestStateWrapper>,
     );
@@ -118,6 +136,7 @@ test('Does not render child if request returns a non-404 error', () => {
 
 test('Render func works if wrapper has bad request.', () => {
   const wrapper = shallow(
+    // @ts-expect-error TS(2769): No overload matches this call.
     <RequestStateWrapper requests={[activeRequest, completeRequest, errorRequest]}>
       {(isLoading: any, shouldRenderError: any, requests: any) => {
         if (shouldRenderError) {
