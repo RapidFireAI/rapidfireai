@@ -587,6 +587,7 @@ export const useRunsColumnDefinitions = ({
     expandRows,
     usingCompactViewport,
     selectedColumns,
+    onOpenController,
   ]);
 
   const canonicalSortKeys = useMemo(
