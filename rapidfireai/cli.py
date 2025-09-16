@@ -292,7 +292,9 @@ def get_compute_capability():
                               capture_output=True, text=True, check=True)
         match = re.search(r'(\d+)\.(\d+)', result.stdout)
         if match:
-            return int(match.group(1))
+            major = int(match.group(1))
+            minor = int(match.group(2))
+            return major + minor / 10.0  # Return as float (e.g., 7.5, 8.0, 8.6)
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
@@ -302,22 +304,36 @@ def install_packages():
     # Generate CUDA requirements file
     cuda_major = get_cuda_version()
     compute_capability = get_compute_capability()
-    if cuda_major == 12:
+
+    ## TODO: re-enable once trl has fix
+    # if cuda_major == 12:
+    #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
+    #     packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu126"]})
+    # elif cuda_major == 11:
+    #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
+    #     packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu118"]})
+    # else:
+    #     print("\n⚠️  CUDA version not detected or unsupported.")
+    
+    if cuda_major is not None:
         print(f"\n🎯 Detected CUDA {cuda_major}.x")
-        packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu126"]})
-    elif cuda_major == 11:
-        print(f"\n🎯 Detected CUDA {cuda_major}.x")
-        packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu118"]})
+        
+        # Determine flash-attn version based on CUDA version
+        if cuda_major < 8:
+            # flash-attn 1.x for CUDA < 8.0
+            print("Installing latest flash-attn 1.x for CUDA < 8.0")
+            packages.append({"package": "flash-attn<2.0", "extra_args": ["--no-build-isolation"]})
+        elif cuda_major == 9:
+            # flash-attn 3.x for CUDA 9.0 specifically
+            print("Installing latest flash-attn 3.x for CUDA 9.0")
+            packages.append({"package": "flash-attn>=3.0,<4.0", "extra_args": ["--no-build-isolation"]})
+        elif cuda_major >= 8:
+            # flash-attn 2.x for CUDA >= 8.0 (but not 9.0)
+            print("Installing flash-attn 2.8.3 for CUDA >= 8.0")
+            packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
     else:
-        print("\n⚠️  CUDA version not detected or unsupported.")
-    if compute_capability == 7:
-        print(f"\n🎯 Detected CUDA Compute Capability {compute_capability}.x")
+        print("\n⚠️  CUDA version not detected.")
         print("Skipping flash-attn installation")
-    elif compute_capability == 8:
-        print(f"\n🎯 Detected CUDA Compute Capability {compute_capability}.x")
-        packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
-    else:
-        print("\n⚠️  CUDA Compute Capability not detected or unsupported.")
 
     for package_info in packages:
         try:
