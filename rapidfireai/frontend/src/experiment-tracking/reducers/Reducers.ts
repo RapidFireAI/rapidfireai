@@ -11,7 +11,7 @@ import {
   GET_EXPERIMENT_API,
   GET_RUN_API,
   LIST_ARTIFACTS_API,
-  SEARCH_EXPERIMENTS_API,
+  LIST_ARTIFACTS_LOGGED_MODEL_API,
   OPEN_ERROR_MODAL,
   SEARCH_RUNS_API,
   LOAD_MORE_RUNS_API,
@@ -25,24 +25,24 @@ import { Param, RunTag, ExperimentTag } from '../sdk/MlflowMessages';
 import { ArtifactNode } from '../utils/ArtifactUtils';
 import { metricsByRunUuid, latestMetricsByRunUuid, minMetricsByRunUuid, maxMetricsByRunUuid } from './MetricReducer';
 import modelRegistryReducers from '../../model-registry/reducers';
-import _, { isArray, merge, update } from 'lodash';
+import _, { isArray, isEqual, merge, update } from 'lodash';
 import { fulfilled, isFulfilledApi, isPendingApi, isRejectedApi, rejected } from '../../common/utils/ActionUtils';
 import { SEARCH_MODEL_VERSIONS } from '../../model-registry/actions';
 import { getProtoField } from '../../model-registry/utils';
 import Utils from '../../common/utils/Utils';
 import { evaluationDataReducer as evaluationData } from './EvaluationDataReducer';
-import { modelGatewayReducer as modelGateway } from './/ModelGatewayReducer';
+import { modelGatewayReducer as modelGateway } from './ModelGatewayReducer';
 import type {
   DatasetSummary,
   ExperimentEntity,
   ModelVersionInfoEntity,
   RunInfoEntity,
-} from 'experiment-tracking/types';
+} from '@mlflow/mlflow/src/experiment-tracking/types';
 import { sampledMetricsByRunUuid } from './SampledMetricsReducer';
 import { ErrorWrapper } from '../../common/utils/ErrorWrapper';
 import { imagesByRunUuid } from './ImageReducer';
 import { colorByRunUuid } from './RunColorReducer';
-import { clusterReducer as clusters } from './ClusterReducer';
+import { runInputsOutputsByUuid } from './InputsOutputsReducer';
 
 export type ApisReducerReduxState = Record<
   string,
@@ -69,21 +69,6 @@ export const getExperiment = (id: any, state: any) => {
 
 export const experimentsById = (state = {}, action: any): any => {
   switch (action.type) {
-    case fulfilled(SEARCH_EXPERIMENTS_API): {
-      let newState = Object.assign({}, state);
-      if (action.payload && action.payload.experiments) {
-        // reset experimentsById state
-        // doing this enables us to capture if an experiment was deleted
-        // if we kept the old state and updated the experiments based on their id,
-        // deleted experiments (via CLI or UI) would remain until the page is refreshed
-        newState = {};
-        action.payload.experiments.forEach((eJson: any) => {
-          const experiment: ExperimentEntity = eJson;
-          newState = Object.assign(newState, { [experiment.experimentId]: experiment });
-        });
-      }
-      return newState;
-    }
     case fulfilled(GET_EXPERIMENT_API): {
       const { experiment } = action.payload;
 
@@ -190,6 +175,40 @@ export const runInfosByUuid = (state = {}, action: any) => {
         });
       }
       return newState;
+    }
+    default:
+      return state;
+  }
+};
+
+export const runInfoOrderByUuid = (state: string[] = [], action: any) => {
+  switch (action.type) {
+    case fulfilled(SEARCH_RUNS_API): {
+      const newState: Set<string> = new Set();
+      if (action.payload && action.payload.runs) {
+        action.payload.runs.forEach((rJson: any) => {
+          const runInfo: RunInfoEntity = rJson.info;
+          newState.add(runInfo.runUuid);
+        });
+      }
+      const newStateArray = Array.from(newState);
+      if (isEqual(state, newStateArray)) {
+        return state;
+      }
+      return newStateArray;
+    }
+    case fulfilled(LOAD_MORE_RUNS_API): {
+      const newState: Set<string> = new Set(state);
+      if (action.payload && action.payload.runs) {
+        action.payload.runs.forEach((rJson: any) => {
+          const runInfo: RunInfoEntity = rJson.info;
+          newState.add(runInfo.runUuid);
+        });
+      }
+      return Array.from(newState);
+    }
+    case rejected(SEARCH_RUNS_API): {
+      return [];
     }
     default:
       return state;
@@ -401,11 +420,16 @@ export const getArtifacts = (runUuid: any, state: any) => {
 
 export const artifactsByRunUuid = (state = {}, action: any) => {
   switch (action.type) {
+    case fulfilled(LIST_ARTIFACTS_LOGGED_MODEL_API):
     case fulfilled(LIST_ARTIFACTS_API): {
       const queryPath = action.meta.path;
-      const { runUuid } = action.meta;
+      const { runUuid, loggedModelId } = action.meta;
+
+      // If the artifact belongs to a logged model instead of run, use its id as a store identifier
+      const storeIdentifier = loggedModelId ?? runUuid;
+
       // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      let artifactNode = state[runUuid] || new ArtifactNode(true);
+      let artifactNode = state[storeIdentifier] || new ArtifactNode(true);
       // Make deep copy.
       artifactNode = artifactNode.deepCopy();
       const { files } = action.payload;
@@ -413,7 +437,7 @@ export const artifactsByRunUuid = (state = {}, action: any) => {
       if (files === undefined) {
         return {
           ...state,
-          [runUuid]: artifactNode,
+          [storeIdentifier]: artifactNode,
         };
       }
       // Sort files to list directories first in the artifact tree view.
@@ -444,7 +468,7 @@ export const artifactsByRunUuid = (state = {}, action: any) => {
       }
       return {
         ...state,
-        [runUuid]: artifactNode,
+        [storeIdentifier]: artifactNode,
       };
     }
     default:
@@ -484,7 +508,7 @@ export const artifactRootUriByRunUuid = (state = {}, action: any) => {
   }
 };
 
-export const getExperimentDatasets = (experimentId: string, state: any) => {
+const getExperimentDatasets = (experimentId: string, state: any) => {
   return state.entities.datasetsByExperimentId[experimentId];
 };
 
@@ -508,10 +532,12 @@ export const datasetsByExperimentId = (state = {}, action: any) => {
   }
 };
 
-export const entities = combineReducers({
+const entities = combineReducers({
   experimentsById,
   runInfosByUuid,
+  runInfoOrderByUuid,
   runDatasetsByUuid,
+  runInputsOutputsByUuid,
   runUuidsMatchingFilter,
   metricsByRunUuid,
   imagesByRunUuid,
@@ -588,7 +614,7 @@ const defaultCompareExperimentsState: ComparedExperimentsReducerReduxState = {
   // Should be set to false when the user navigates to `/experiments/<experiment_id>`
   hasComparedExperimentsBefore: false,
 };
-export const compareExperiments = (
+const compareExperiments = (
   state: ComparedExperimentsReducerReduxState = defaultCompareExperimentsState,
   action: any,
 ): ComparedExperimentsReducerReduxState => {
@@ -647,7 +673,6 @@ export const rootReducer = combineReducers({
   compareExperiments,
   evaluationData,
   modelGateway,
-  clusters,
 });
 
 export const getEntities = (state: any) => {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { ExperimentRunsChartsUIConfiguration } from '../../experiment-page/models/ExperimentPageUIState';
 import { RunsChartsCardConfig } from '../runs-charts.types';
 import { getUUID } from '../../../../common/utils/ActionUtils';
@@ -7,9 +7,9 @@ export type RunsChartsUIConfigurationSetter = (
   state: ExperimentRunsChartsUIConfiguration,
 ) => ExperimentRunsChartsUIConfiguration;
 
-const RunsChartsUIConfigurationContext = React.createContext<(stateSetter: RunsChartsUIConfigurationSetter) => void>(
-  () => {},
-);
+const RunsChartsUIConfigurationContext = React.createContext<
+  (stateSetter: RunsChartsUIConfigurationSetter, isSeeding?: boolean) => void
+>(() => {});
 
 /**
  * Creates a localized context to manage the UI state of the runs charts.
@@ -20,7 +20,7 @@ export const RunsChartsUIConfigurationContextProvider = ({
   updateChartsUIState,
 }: {
   children: React.ReactNode;
-  updateChartsUIState: (stateSetter: RunsChartsUIConfigurationSetter) => void;
+  updateChartsUIState: (stateSetter: RunsChartsUIConfigurationSetter, isSeeding?: boolean) => void;
 }) => (
   <RunsChartsUIConfigurationContext.Provider value={updateChartsUIState}>
     {children}
@@ -35,138 +35,150 @@ export const useUpdateRunsChartsUIConfiguration = () => React.useContext(RunsCha
 export const useReorderRunsChartsFn = () => {
   const updateChartsUIState = useUpdateRunsChartsUIConfiguration();
 
-  return (sourceChartUuid: string, targetChartUuid: string) => {
-    updateChartsUIState((current) => {
-      const newChartsOrder = current.compareRunCharts?.slice();
-      const newSectionsState = current.compareRunSections?.slice();
-      if (!newChartsOrder || !newSectionsState) {
-        return current;
-      }
+  return useCallback(
+    (sourceChartUuid: string, targetChartUuid: string) => {
+      updateChartsUIState((current) => {
+        const newChartsOrder = current.compareRunCharts?.slice();
+        const newSectionsState = current.compareRunSections?.slice();
+        if (!newChartsOrder || !newSectionsState) {
+          return current;
+        }
 
-      const indexSource = newChartsOrder.findIndex((c) => c.uuid === sourceChartUuid);
-      const indexTarget = newChartsOrder.findIndex((c) => c.uuid === targetChartUuid);
+        const indexSource = newChartsOrder.findIndex((c) => c.uuid === sourceChartUuid);
+        const indexTarget = newChartsOrder.findIndex((c) => c.uuid === targetChartUuid);
 
-      // If one of the charts is not found, do nothing
-      if (indexSource < 0 || indexTarget < 0) {
-        return current;
-      }
+        // If one of the charts is not found, do nothing
+        if (indexSource < 0 || indexTarget < 0) {
+          return current;
+        }
 
-      const sourceChart = newChartsOrder[indexSource];
-      const targetChart = newChartsOrder[indexTarget];
+        const sourceChart = newChartsOrder[indexSource];
+        const targetChart = newChartsOrder[indexTarget];
 
-      const isSameMetricSection = targetChart.metricSectionId === sourceChart.metricSectionId;
+        const isSameMetricSection = targetChart.metricSectionId === sourceChart.metricSectionId;
 
-      // Update the sections to indicate that the charts have been reordered
-      const sourceSectionIdx = newSectionsState.findIndex((c) => c.uuid === sourceChart.metricSectionId);
-      const targetSectionIdx = newSectionsState.findIndex((c) => c.uuid === targetChart.metricSectionId);
-      newSectionsState.splice(sourceSectionIdx, 1, { ...newSectionsState[sourceSectionIdx], isReordered: true });
-      newSectionsState.splice(targetSectionIdx, 1, { ...newSectionsState[targetSectionIdx], isReordered: true });
+        // Update the sections to indicate that the charts have been reordered
+        const sourceSectionIdx = newSectionsState.findIndex((c) => c.uuid === sourceChart.metricSectionId);
+        const targetSectionIdx = newSectionsState.findIndex((c) => c.uuid === targetChart.metricSectionId);
+        newSectionsState.splice(sourceSectionIdx, 1, { ...newSectionsState[sourceSectionIdx], isReordered: true });
+        newSectionsState.splice(targetSectionIdx, 1, { ...newSectionsState[targetSectionIdx], isReordered: true });
 
-      // Set new chart metric group
-      const newSourceChart = { ...sourceChart };
-      newSourceChart.metricSectionId = targetChart.metricSectionId;
+        // Set new chart metric group
+        const newSourceChart = { ...sourceChart };
+        newSourceChart.metricSectionId = targetChart.metricSectionId;
 
-      // Remove the source graph from array
-      newChartsOrder.splice(indexSource, 1);
-      if (!isSameMetricSection) {
-        // Insert the source graph into target
-        newChartsOrder.splice(
-          newChartsOrder.findIndex((c) => c.uuid === targetChartUuid),
-          0,
-          newSourceChart,
-        );
-      } else {
-        // The indexTarget is not neccessarily the target now, but it will work as the insert index
-        newChartsOrder.splice(indexTarget, 0, newSourceChart);
-      }
+        // Remove the source graph from array
+        newChartsOrder.splice(indexSource, 1);
+        if (!isSameMetricSection) {
+          // Insert the source graph into target
+          newChartsOrder.splice(
+            newChartsOrder.findIndex((c) => c.uuid === targetChartUuid),
+            0,
+            newSourceChart,
+          );
+        } else {
+          // The indexTarget is not neccessarily the target now, but it will work as the insert index
+          newChartsOrder.splice(indexTarget, 0, newSourceChart);
+        }
 
-      return {
-        ...current,
-        compareRunCharts: newChartsOrder,
-        compareRunSections: newSectionsState,
-      };
-    });
-  };
+        return {
+          ...current,
+          compareRunCharts: newChartsOrder,
+          compareRunSections: newSectionsState,
+        };
+      });
+    },
+    [updateChartsUIState],
+  );
 };
 
 export const useConfirmChartCardConfigurationFn = () => {
   const updateChartsUIState = useUpdateRunsChartsUIConfiguration();
-  return (configuredCard: Partial<RunsChartsCardConfig>) => {
-    const serializedCard = RunsChartsCardConfig.serialize({
-      ...configuredCard,
-      uuid: getUUID(),
-    });
+  return useCallback(
+    (configuredCard: Partial<RunsChartsCardConfig>) => {
+      const serializedCard = RunsChartsCardConfig.serialize({
+        ...configuredCard,
+        uuid: getUUID(),
+      });
 
-    // Creating new chart
-    if (!configuredCard.uuid) {
-      updateChartsUIState((current) => ({
-        ...current,
-        // This condition ensures that chart collection will remain undefined if not set previously
-        compareRunCharts: current.compareRunCharts && [...current.compareRunCharts, serializedCard],
-      }));
-    } /* Editing existing chart */ else {
-      updateChartsUIState((current) => ({
-        ...current,
-        compareRunCharts: current.compareRunCharts?.map((existingChartCard) => {
-          if (existingChartCard.uuid === configuredCard.uuid) {
-            return serializedCard;
-          }
-          return existingChartCard;
-        }),
-      }));
-    }
-  };
+      // Creating new chart
+      if (!configuredCard.uuid) {
+        updateChartsUIState((current) => ({
+          ...current,
+          // This condition ensures that chart collection will remain undefined if not set previously
+          compareRunCharts: current.compareRunCharts && [...current.compareRunCharts, serializedCard],
+        }));
+      } /* Editing existing chart */ else {
+        updateChartsUIState((current) => ({
+          ...current,
+          compareRunCharts: current.compareRunCharts?.map((existingChartCard) => {
+            if (existingChartCard.uuid === configuredCard.uuid) {
+              return { ...serializedCard, uuid: existingChartCard.uuid };
+            }
+            return existingChartCard;
+          }),
+        }));
+      }
+    },
+    [updateChartsUIState],
+  );
 };
 
 export const useInsertRunsChartsFn = () => {
   const updateChartsUIState = useUpdateRunsChartsUIConfiguration();
-  return (sourceChartUuid: string, targetSectionId: string) => {
-    updateChartsUIState((current) => {
-      const newChartsOrder = current.compareRunCharts?.slice();
-      const newSectionsState = current.compareRunSections?.slice();
-      if (!newChartsOrder || !newSectionsState) {
-        return current;
-      }
+  return useCallback(
+    (sourceChartUuid: string, targetSectionId: string) => {
+      updateChartsUIState((current) => {
+        const newChartsOrder = current.compareRunCharts?.slice();
+        const newSectionsState = current.compareRunSections?.slice();
+        if (!newChartsOrder || !newSectionsState) {
+          return current;
+        }
 
-      const indexSource = newChartsOrder.findIndex((c) => c.uuid === sourceChartUuid);
-      if (indexSource < 0) {
-        return current;
-      }
-      const sourceChart = newChartsOrder[indexSource];
-      // Set new chart metric group
-      const newSourceChart = { ...sourceChart };
-      newSourceChart.metricSectionId = targetSectionId;
+        const indexSource = newChartsOrder.findIndex((c) => c.uuid === sourceChartUuid);
+        if (indexSource < 0) {
+          return current;
+        }
+        const sourceChart = newChartsOrder[indexSource];
+        // Set new chart metric group
+        const newSourceChart = { ...sourceChart };
+        newSourceChart.metricSectionId = targetSectionId;
 
-      // Update the sections to indicate that the charts have been reordered
-      const sourceSectionIdx = newSectionsState.findIndex((c) => c.uuid === sourceChart.metricSectionId);
-      const targetSectionIdx = newSectionsState.findIndex((c) => c.uuid === targetSectionId);
-      newSectionsState.splice(sourceSectionIdx, 1, { ...newSectionsState[sourceSectionIdx], isReordered: true });
-      newSectionsState.splice(targetSectionIdx, 1, { ...newSectionsState[targetSectionIdx], isReordered: true });
+        // Update the sections to indicate that the charts have been reordered
+        const sourceSectionIdx = newSectionsState.findIndex((c) => c.uuid === sourceChart.metricSectionId);
+        const targetSectionIdx = newSectionsState.findIndex((c) => c.uuid === targetSectionId);
+        newSectionsState.splice(sourceSectionIdx, 1, { ...newSectionsState[sourceSectionIdx], isReordered: true });
+        newSectionsState.splice(targetSectionIdx, 1, { ...newSectionsState[targetSectionIdx], isReordered: true });
 
-      // Remove the source graph from array and append
-      newChartsOrder.splice(indexSource, 1);
-      newChartsOrder.push(newSourceChart);
+        // Remove the source graph from array and append
+        newChartsOrder.splice(indexSource, 1);
+        newChartsOrder.push(newSourceChart);
 
-      return {
-        ...current,
-        compareRunCharts: newChartsOrder,
-        compareRunSections: newSectionsState,
-      };
-    });
-  };
+        return {
+          ...current,
+          compareRunCharts: newChartsOrder,
+          compareRunSections: newSectionsState,
+        };
+      });
+    },
+    [updateChartsUIState],
+  );
 };
 
 export const useRemoveRunsChartFn = () => {
   const updateChartsUIState = useUpdateRunsChartsUIConfiguration();
 
-  return (configToDelete: RunsChartsCardConfig) => {
-    updateChartsUIState((current) => ({
-      ...current,
-      compareRunCharts: configToDelete.isGenerated
-        ? current.compareRunCharts?.map((setup) =>
-            setup.uuid === configToDelete.uuid ? { ...setup, deleted: true } : setup,
-          )
-        : current.compareRunCharts?.filter((setup) => setup.uuid !== configToDelete.uuid),
-    }));
-  };
+  return useCallback(
+    (configToDelete: RunsChartsCardConfig) => {
+      updateChartsUIState((current) => ({
+        ...current,
+        compareRunCharts: configToDelete.isGenerated
+          ? current.compareRunCharts?.map((setup) =>
+              setup.uuid === configToDelete.uuid ? { ...setup, deleted: true } : setup,
+            )
+          : current.compareRunCharts?.filter((setup) => setup.uuid !== configToDelete.uuid),
+      }));
+    },
+    [updateChartsUIState],
+  );
 };

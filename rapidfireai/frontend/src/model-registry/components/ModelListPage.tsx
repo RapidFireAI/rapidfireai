@@ -20,7 +20,6 @@ import { searchRegisteredModelsApi } from '../actions';
 import LocalStorageUtils from '../../common/utils/LocalStorageUtils';
 import { withRouterNext } from '../../common/utils/withRouterNext';
 import type { WithRouterNextProps } from '../../common/utils/withRouterNext';
-import { ScrollablePageWrapper } from '../../common/components/ScrollablePageWrapper';
 import { createMLflowRoutePath } from '../../common/utils/RoutingUtils';
 
 type ModelListPageImplProps = WithRouterNextProps & {
@@ -50,7 +49,7 @@ export class ModelListPageImpl extends React.Component<ModelListPageImplProps, M
       pageTokens: {},
       loading: true,
       error: undefined,
-      searchInput: constructSearchInputFromURLState(this.getUrlState()),
+      searchInput: constructSearchInputFromURLState(this.getUrlState() as Record<string, string>),
     };
   }
   modelListPageStoreKey = 'ModelListPageStore';
@@ -264,30 +263,29 @@ export class ModelListPageImpl extends React.Component<ModelListPageImplProps, M
       orderByAsc,
       // eslint-disable-nextline
     } = this.state;
-    // TODO: change back to loading: true and uncoment search for registered models
-    this.setState({ loading: false, error: undefined });
+    this.setState({ loading: true, error: undefined });
     this.updateUrlWithSearchFilter(searchInput, orderByKey, orderByAsc, page);
-    // this.props
-    //   .searchRegisteredModelsApi(
-    //     getCombinedSearchFilter({
-    //       query: searchInput,
-    //       // eslint-disable-nextline
-    //     }),
-    //     this.state.maxResultsSelection,
-    //     ModelListPageImpl.getOrderByExpr(orderByKey, orderByAsc),
-    //     pageTokens[page],
-    //     isInitialLoading ? this.initialSearchRegisteredModelsApiId : this.searchRegisteredModelsApiId,
-    //   )
-    //   .then((r: any) => {
-    //     this.updatePageState(page, r);
-    //   })
-    //   .catch((e: any) => {
-    //     this.setState({ currentPage: 1, error: e });
-    //     this.resetHistoryState();
-    //   })
-    //   .finally(() => {
-    //     this.setState({ loading: false });
-    //   });
+    this.props
+      .searchRegisteredModelsApi(
+        getCombinedSearchFilter({
+          query: searchInput,
+          // eslint-disable-nextline
+        }),
+        this.state.maxResultsSelection,
+        ModelListPageImpl.getOrderByExpr(orderByKey, orderByAsc),
+        pageTokens[page],
+        isInitialLoading ? this.initialSearchRegisteredModelsApiId : this.searchRegisteredModelsApiId,
+      )
+      .then((r: any) => {
+        this.updatePageState(page, r);
+      })
+      .catch((e: any) => {
+        this.setState({ currentPage: 1, error: e });
+        this.resetHistoryState();
+      })
+      .finally(() => {
+        this.setState({ loading: false });
+      });
   }
 
   render() {
@@ -301,25 +299,23 @@ export class ModelListPageImpl extends React.Component<ModelListPageImplProps, M
     } = this.state;
     const { models } = this.props;
     return (
-      <ScrollablePageWrapper>
-        <ModelListView
-          // @ts-expect-error TS(2322): Type '{ models: any[] | undefined; loading: any; e... Remove this comment to see the full error message
-          models={models}
-          loading={this.state.loading}
-          error={this.state.error}
-          searchInput={searchInput}
-          orderByKey={orderByKey}
-          orderByAsc={orderByAsc}
-          currentPage={currentPage}
-          nextPageToken={pageTokens[currentPage + 1]}
-          onSearch={this.handleSearch}
-          onClickNext={this.handleClickNext}
-          onClickPrev={this.handleClickPrev}
-          onClickSortableColumn={this.handleClickSortableColumn}
-          onSetMaxResult={this.handleMaxResultsChange}
-          maxResultValue={this.getMaxResultsSelection()}
-        />
-      </ScrollablePageWrapper>
+      <ModelListView
+        // @ts-expect-error TS(2322): Type '{ models: any[] | undefined; loading: any; e... Remove this comment to see the full error message
+        models={models}
+        loading={this.state.loading}
+        error={this.state.error}
+        searchInput={searchInput}
+        orderByKey={orderByKey}
+        orderByAsc={orderByAsc}
+        currentPage={currentPage}
+        nextPageToken={pageTokens[currentPage + 1]}
+        onSearch={this.handleSearch}
+        onClickNext={this.handleClickNext}
+        onClickPrev={this.handleClickPrev}
+        onClickSortableColumn={this.handleClickSortableColumn}
+        onSetMaxResult={this.handleMaxResultsChange}
+        maxResultValue={this.getMaxResultsSelection()}
+      />
     );
   }
 }
