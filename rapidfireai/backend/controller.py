@@ -404,11 +404,10 @@ class Controller:
             # total_steps = num_epochs to num_steps =
             per_device_train_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1)
             gradient_accumulation_steps = config_leaf["training_args"].get("gradient_accumulation_steps", 1)
-            total_steps = (
-                math.ceil(len_train_dataset / (num_chunks * per_device_train_batch_size * gradient_accumulation_steps))
-                * num_chunks
-                * num_train_epochs
-            )
+            total_steps = math.ceil((len_train_dataset / (per_device_train_batch_size * gradient_accumulation_steps)) * num_train_epochs)
+            if config_leaf.get("trainer_type", "SFT") == "GRPO":
+                num_generations = config_leaf["training_args"].get("num_generations", 8)
+                total_steps = total_steps * num_generations
         return total_steps
 
     def run_fit(

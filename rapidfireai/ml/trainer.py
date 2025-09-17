@@ -131,6 +131,8 @@ def _configure_training_args(
         training_args.get("per_device_train_batch_size", 1)
         * training_args.get("gradient_accumulation_steps", 1)
     )
+    if trainer_config.trainer_type == "GRPO":
+        steps_per_epoch = steps_per_epoch * training_args.get("num_generations", 8)
     left_over_steps = trainer_config.total_steps - completed_steps
     if left_over_steps > steps_per_epoch:
         training_args["num_train_epochs"] = 1
