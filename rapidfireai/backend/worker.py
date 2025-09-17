@@ -185,12 +185,9 @@ class Worker:
             trainer_instance, base_model_name = create_trainer_instance(
                 trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id, use_fsdp=use_fsdp
             )
-
-        # if first time, save checkpoint to disk
-        if completed_steps == 0 and not USE_SHARED_MEMORY:
-            save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
-
-        # write logs to user logger
+        self.logger.debug(
+            f"device checkkkkkkkk: {trainer_instance.model.hf_device_map.values()}, {trainer_instance.accelerator.device}"
+        )
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
         if stderr_buffer.getvalue():
@@ -209,9 +206,13 @@ class Worker:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
         start_time = time.time()
+        # for param in trainer_instance.model.parameters():
+        #     if (param.dtype == torch.float32):
+        #         param.data = param.data.to(torch.bfloat16)
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             trainer_instance.train()
         end_time = time.time()
+        self.logger.debug(f"accelerator device: {trainer_instance.accelerator.device} on worker {self.worker_id}")
 
         # Synchronize all workers after training completes
         if use_fsdp and is_distributed_initialized():
@@ -241,6 +242,7 @@ class Worker:
         if USE_SHARED_MEMORY:
             if use_fsdp and is_distributed_initialized():
                 barrier()
+                self.logger.debug(f"Worker {self.worker_id} passed barrier after training")
 
             # save checkpoints to shared memory
             save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager, use_fsdp=use_fsdp)
@@ -286,12 +288,12 @@ class Worker:
 
         # clean up all references to shared memory objects
         if hasattr(trainer_instance, "model"):
-            if hasattr(trainer_instance.model, "cpu"):
-                trainer_instance.model.cpu()
+            # if hasattr(trainer_instance.model, "cpu"):
+            #     trainer_instance.model.cpu()
             del trainer_instance.model
         if hasattr(trainer_instance, "ref_model"):
-            if hasattr(trainer_instance.ref_model, "cpu"):
-                trainer_instance.ref_model.cpu()
+            # if hasattr(trainer_instance.ref_model, "cpu"):
+            #     trainer_instance.ref_model.cpu()
             del trainer_instance.ref_model
         if hasattr(trainer_instance, "optimizer"):
             trainer_instance.optimizer.zero_grad(set_to_none=True)

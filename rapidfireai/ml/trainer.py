@@ -74,8 +74,6 @@ def create_trainer_instance(
     """
     if not use_fsdp:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(trainer_config.worker_id)
-    # else:
-    #     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, trainer_config.world_worker_ids))
 
     # Set device based on distributed training
     device = "cpu" if use_fsdp else "cuda:0"
@@ -118,6 +116,10 @@ def create_trainer_instance(
 
     model_instance = model_instance.to(device)
 
+    # Prepare model for FSDP if needed
+    # if use_fsdp:
+    #     model_instance = prepare_model_for_fsdp(model_instance, is_peft)
+
     trainer_kwargs, formatting_func, additional_trainer_kwargs = _prepare_trainer_kwargs(
         model_instance,
         trainer_config_obj,
@@ -126,6 +128,7 @@ def create_trainer_instance(
         additional_trainer_kwargs,
         ref_model_instance,
         config_leaf,
+        use_fsdp=use_fsdp,
     )
 
     callbacks, additional_trainer_kwargs = _setup_callbacks(  # FIXME: avoid returning additional_trainer_kwargs
@@ -244,11 +247,10 @@ def _setup_reference_model(
                 if trainer_config.completed_steps == 0 and trainer_config.warm_started_from is None:
                     reference_state_dict = get_peft_model_state_dict(model_instance)
                     reference_state_dict = move_tensors_to_cpu(reference_state_dict)
-                    shm_manager.save_model_object(
-                        trainer_config.run_id,
-                        SHMObjectType.REF_STATE_DICT,
-                        reference_state_dict,
-                    )
+                    if not use_fsdp or trainer_config.local_rank == 0:
+                        shm_manager.save_model_object(
+                            trainer_config.run_id, SHMObjectType.REF_STATE_DICT, reference_state_dict
+                        )
                 else:
                     reference_state_dict = shm_manager.load_model_object(
                         trainer_config.run_id, SHMObjectType.REF_STATE_DICT
@@ -290,12 +292,14 @@ def _prepare_trainer_kwargs(
     additional_trainer_kwargs,
     ref_model_instance,
     config_leaf,
+    use_fsdp=False,
 ):
     """Prepare keyword arguments for trainer creation."""
+    # Ensure gradient compatibility for DPO training with FSDP
     if config_leaf.get("trainer_type") == "DPO":
         model_instance = ensure_gradient_compatibility(
-            model_instance, hasattr(model_instance, "peft_config")
-        )  # FIXME: change function for DPO
+            model_instance, hasattr(model_instance, "peft_config"), use_fsdp=use_fsdp
+        )
     trainer_kwargs = {
         "model": model_instance,
         "args": trainer_config_obj,
