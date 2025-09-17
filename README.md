@@ -21,8 +21,8 @@ RapidFire AI is a new experiment execution framework that transforms your LLM cu
 ### Installation/Starting
 
 ```bash
-virtualenv -p python3 oss_venv
-source oss_venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 
 # from pypi
 pip install rapidfireai
@@ -41,7 +41,7 @@ rapidfireai start
 ### Running tutorial notebooks
 
 ```bash
-source oss_venv/bin/activate
+source .venv/bin/activate
 
 # from replace <your_token> with your hugging face token
 # https://huggingface.co/docs/hub/en/security-tokens
@@ -147,7 +147,7 @@ A fork of MLflow that enables full tracking and visualization of all experiments
 
 ### Prerequisites
 
-- Python 3.x
+- Python 3.12.x
 - Git
 - Ubuntu/Debian system (for apt package manager)
 
@@ -164,9 +164,9 @@ git clone https://github.com/RapidFireAI/rapidfireai.git
 cd ./rapidfireai
 
 # install basic dependencies
-sudo apt install -y python3-virtualenv
-virtualenv -p python3 oss_venv
-source oss_venv/bin/activate
+sudo apt install -y python3.12-venv
+python3 -m venv .venv
+source .venv/bin/activate
 pip3 install ipykernel
 pip3 install jupyter
 pip3 install "huggingface-hub[cli]"
@@ -201,8 +201,8 @@ chmod +x ./rapidfireai/start_dev.sh
 ./rapidfireai/start_dev.sh start
 
 # run the notebook from within your IDE
-# make sure the notebook is running in the oss_venv virtual environment
-# head to settings in Cursor/VSCode and search for venv and add the path - $HOME/rapidfireai/oss_venv
+# make sure the notebook is running in the .venv virtual environment
+# head to settings in Cursor/VSCode and search for venv and add the path - $HOME/rapidfireai/.venv
 # we cannot run a Jupyter notebook directly since there are restrictions on Jupyter being able to create child processes
 
 # VSCode can port-forward localhost:3000 where the rf-frontend server will be running

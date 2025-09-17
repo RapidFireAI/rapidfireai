@@ -102,7 +102,7 @@ setup_python_env() {
     else
         print_error "Failed to install rapidfireai package"
         print_warning "If you're getting permission errors, try:"
-        print_warning "1. Activate a virtual environment: python -m venv venv && source venv/bin/activate"
+        print_warning "1. Activate a virtual environment: python3 -m venv .venv && source .venv/bin/activate"
         print_warning "2. Or run with sudo (not recommended): sudo pip install -e ."
         return 1
     fi

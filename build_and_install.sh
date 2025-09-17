@@ -39,7 +39,7 @@ fi
 if [[ -z "$VIRTUAL_ENV" ]] && [[ -z "$CONDA_DEFAULT_ENV" ]]; then
     print_warning "Not in a virtual environment. This may cause permission issues."
     print_status "Consider activating a virtual environment first:"
-    print_status "  python -m venv venv && source venv/bin/activate"
+    print_status "  python3 -m venv .venv && source .venv/bin/activate"
     read -p "Continue anyway? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
