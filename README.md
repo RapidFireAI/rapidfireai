@@ -11,7 +11,7 @@ RapidFire AI is a new experiment execution framework that transforms your LLM cu
 RapidFire AI’s adaptive execution engine enables interruptible, chunk-based scheduling so you can compare many configurations concurrently—even on a single GPU—with dynamic real-time control over runs.
 
 - **Hyperparallelized Execution**: Higher throughput, simultaneous, data chunk-at-a-time training to show side-by-side differences.
-- **Interactive control (IC Ops)**: Stop, Resume, Clone-Modify, and optionally warm start runs from the dashboard.
+- **Interactive control (IC Ops)**: Stop, Resume, Clone-Modify, and optionally warm start runs in real-time from the dashboard.
 - **Automatic Optimization**: Smart swapping of adapters/base models with minimal overhead and native multi-GPU orchestration.
 
 ![Chunk-based concurrent execution (1 GPU)](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/en/latest/_images/gantt-1gpu.png)
