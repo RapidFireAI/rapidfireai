@@ -18,7 +18,6 @@ CREATE TABLE IF NOT EXISTS runs (
     config_leaf TEXT DEFAULT '{}',
     completed_steps INTEGER DEFAULT 0,
     total_steps INTEGER DEFAULT 0,
-    start_chunk_id INTEGER DEFAULT 0,
     num_chunks_visited_curr_epoch INTEGER DEFAULT 0,
     num_epochs_completed INTEGER DEFAULT 0,
     error TEXT DEFAULT '',

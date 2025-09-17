@@ -275,7 +275,6 @@ class RfDb:
         flattened_config: dict[str, Any] | None = None,
         completed_steps: int = 0,
         total_steps: int = 0,
-        start_chunk_id: int = 0,
         num_chunks_visited_curr_epoch: int = 0,
         num_epochs_completed: int = 0,
         error: str = "",
@@ -287,9 +286,9 @@ class RfDb:
         """Create a new run"""
         query = """
             INSERT INTO runs (status, mlflow_run_id, flattened_config, config_leaf,
-            completed_steps, total_steps, start_chunk_id, num_chunks_visited_curr_epoch,
+            completed_steps, total_steps, num_chunks_visited_curr_epoch,
             num_epochs_completed, error, source, ended_by, warm_started_from, cloned_from)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         self.db.execute(
             query,
@@ -300,7 +299,6 @@ class RfDb:
                 encode_payload(config_leaf) if config_leaf else "{}",
                 completed_steps,
                 total_steps,
-                start_chunk_id,
                 num_chunks_visited_curr_epoch,
                 num_epochs_completed,
                 error,
@@ -325,7 +323,6 @@ class RfDb:
         config_leaf: dict[str, Any] | None = None,
         completed_steps: int | None = None,
         total_steps: int | None = None,
-        start_chunk_id: int | None = None,
         num_chunks_visited_curr_epoch: int | None = None,
         num_epochs_completed: int | None = None,
         error: str | None = None,
@@ -343,7 +340,6 @@ class RfDb:
             "config_leaf": encode_payload(config_leaf) if config_leaf else None,
             "completed_steps": completed_steps,
             "total_steps": total_steps,
-            "start_chunk_id": start_chunk_id,
             "num_chunks_visited_curr_epoch": num_chunks_visited_curr_epoch,
             "num_epochs_completed": num_epochs_completed,
             "error": error,
@@ -376,7 +372,7 @@ class RfDb:
     def get_run(self, run_id: int) -> dict[str, Any]:
         """Get a run's details"""
         query = """
-            SELECT status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps, start_chunk_id,
+            SELECT status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, error, source, ended_by, warm_started_from, cloned_from
             FROM runs
             WHERE run_id = ?
@@ -392,14 +388,13 @@ class RfDb:
                 "config_leaf": decode_db_payload(run_details[3]) if run_details[3] and run_details[3] != "{}" else {},
                 "completed_steps": run_details[4],
                 "total_steps": run_details[5],
-                "start_chunk_id": run_details[6],
-                "num_chunks_visited_curr_epoch": run_details[7],
-                "num_epochs_completed": run_details[8],
-                "error": run_details[9],
-                "source": RunSource(run_details[10]) if run_details[10] else None,
-                "ended_by": RunEndedBy(run_details[11]) if run_details[11] else None,
-                "warm_started_from": run_details[12],
-                "cloned_from": run_details[13],
+                "num_chunks_visited_curr_epoch": run_details[6],
+                "num_epochs_completed": run_details[7],
+                "error": run_details[8],
+                "source": RunSource(run_details[9]) if run_details[9] else None,
+                "ended_by": RunEndedBy(run_details[10]) if run_details[10] else None,
+                "warm_started_from": run_details[11],
+                "cloned_from": run_details[12],
             }
             return formatted_details
         raise DBException("No run found")
@@ -413,7 +408,7 @@ class RfDb:
         placeholders = ",".join(["?"] * len(statuses))
         query = f"""
             SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
-            start_chunk_id, num_chunks_visited_curr_epoch, num_epochs_completed, error, source, ended_by,
+            num_chunks_visited_curr_epoch, num_epochs_completed, error, source, ended_by,
             warm_started_from, cloned_from
             FROM runs
             WHERE status IN ({placeholders})
@@ -431,14 +426,13 @@ class RfDb:
                     "config_leaf": decode_db_payload(run[4]) if run[4] and run[4] != "{}" else {},
                     "completed_steps": run[5],
                     "total_steps": run[6],
-                    "start_chunk_id": run[7],
-                    "num_chunks_visited_curr_epoch": run[8],
-                    "num_epochs_completed": run[9],
-                    "error": run[10],
-                    "source": RunSource(run[11]) if run[11] else None,
-                    "ended_by": RunEndedBy(run[12]) if run[12] else None,
-                    "warm_started_from": run[13],
-                    "cloned_from": run[14],
+                    "num_chunks_visited_curr_epoch": run[7],
+                    "num_epochs_completed": run[8],
+                    "error": run[9],
+                    "source": RunSource(run[10]) if run[10] else None,
+                    "ended_by": RunEndedBy(run[11]) if run[11] else None,
+                    "warm_started_from": run[12],
+                    "cloned_from": run[13],
                 }
         return formatted_details
 
@@ -446,7 +440,7 @@ class RfDb:
         """Get all runs for UI display (ignore all complex fields)"""
         query = """
             SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
-            start_chunk_id, num_chunks_visited_curr_epoch, num_epochs_completed, error, source, ended_by,
+            num_chunks_visited_curr_epoch, num_epochs_completed, error, source, ended_by,
             warm_started_from, cloned_from
             FROM runs
         """
@@ -462,14 +456,13 @@ class RfDb:
                     "config_leaf": decode_db_payload(run[4]) if run[4] and run[4] != "{}" else {},
                     "completed_steps": run[5],
                     "total_steps": run[6],
-                    "start_chunk_id": run[7],
-                    "num_chunks_visited_curr_epoch": run[8],
-                    "num_epochs_completed": run[9],
-                    "error": run[10],
-                    "source": RunSource(run[11]) if run[11] else None,
-                    "ended_by": RunEndedBy(run[12]) if run[12] else None,
-                    "warm_started_from": run[13],
-                    "cloned_from": run[14],
+                    "num_chunks_visited_curr_epoch": run[7],
+                    "num_epochs_completed": run[8],
+                    "error": run[9],
+                    "source": RunSource(run[10]) if run[10] else None,
+                    "ended_by": RunEndedBy(run[11]) if run[11] else None,
+                    "warm_started_from": run[12],
+                    "cloned_from": run[13],
                 }
         return formatted_details
 
