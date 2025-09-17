@@ -12,7 +12,7 @@ RapidFire AI’s adaptive execution engine enables interruptible, chunk-based sc
 
 - **Hyperparallelized Execution**: Higher throughput, simultaneous, data chunk-at-a-time training to show side-by-side differences.
 - **Interactive control (IC Ops)**: Stop, Resume, Clone-Modify, and optionally warm start runs in real-time from the dashboard.
-- **Automatic Optimization**: Smart swapping of adapters/base models with minimal overhead and native multi-GPU orchestration.
+- **Automatic Optimization**: Intelligent single and multi-GPU orchestration to optimze utilization with minimal overhead.
 
 ![Chunk-based concurrent execution (1 GPU)](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/en/latest/_images/gantt-1gpu.png)
 
