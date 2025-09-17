@@ -276,7 +276,7 @@ class Controller:
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
                         "start_chunk_id": parent_run_details["num_chunks_visited_curr_epoch"],
-                        "warm_started_from": parent_run_details["warm_started_from"],
+                        "warm_started_from": parent_run_id,
                     }
                     run_ids = self._create_models(
                         config_leaf,
