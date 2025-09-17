@@ -8,6 +8,15 @@ RapidFire AI is a new experiment execution framework that transforms your LLM cu
 
 ![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/usage.png)
 
+RapidFire AI’s adaptive execution engine enables interruptible, chunk-based scheduling so you can compare many configurations concurrently—even on a single GPU—with dynamic real-time control over runs.
+
+- **Faster results**: Hyperparallelized, chunk-at-a-time execution surfaces comparative learning behaviors early.
+- **Interactive control (IC Ops)**: Stop, Resume, Clone-Modify, and optionally warm start runs from the dashboard.
+- **Efficient utilization**: Smart swapping of adapters/base models with minimal overhead and native multi-GPU orchestration.
+
+![Chunk-based concurrent execution (1 GPU)](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/en/latest/_images/gantt-1gpu.png)
+
+For additional context, see the overview: [RapidFire AI Overview](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/en/latest/overview.html)
 
 ## Getting Started
 
@@ -54,11 +63,13 @@ hf auth login --token <your_token>
 ### Troubleshooting
 
 For a quick system diagnostics report (Python env, relevant packages, GPU/CUDA, and key environment variables), run:
+
 ```bash
 rapidfireai doctor
 ```
 
 If you encounter port conflicts, you can kill existing processes:
+
 ```bash
 lsof -t -i:5002 | xargs kill -9  # mlflow
 lsof -t -i:8080 | xargs kill -9  # dispatcher
@@ -67,7 +78,7 @@ lsof -t -i:3000 | xargs kill -9  # frontend server
 
 ## Documentation
 
-Browse or reference the full documentation, example use case tutorials, all API details, dashboard details, and more [here](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/).
+Browse or reference the full documentation, example use case tutorials, all API details, dashboard details, and more in the [RapidFire AI Documentation](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/).
 
 ## Key Features
 
@@ -78,6 +89,7 @@ Full MLflow support for experiment tracking and metrics visualization. A named R
 ### Interactive Control Operations (IC Ops)
 
 First-of-its-kind dynamic real-time control over runs in flight. Can be invoked through the dashboard:
+
 - Stop active runs; puts them in a dormant state
 - Resume stopped runs; makes them active again
 - Clone and modify existing runs, with or without warm starting from parent’s weights
@@ -93,7 +105,7 @@ Built-in procedures for searching over configuration knob combinations, includin
 
 ## Directory Structure
 
-```
+```text
 rapidfireai/
 ├── automl/          # Search and AutoML algorithms for knob tuning
 ├── backend/         # Core backend components (controller, scheduler, worker)
@@ -145,7 +157,7 @@ A fork of MLflow that enables full tracking and visualization of all experiments
 
 ## Developing with RapidFire AI
 
-### Prerequisites
+### Development prerequisites
 
 - Python 3.x
 - Git
