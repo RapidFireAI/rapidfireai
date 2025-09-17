@@ -486,10 +486,19 @@ show_status() {
     print_status "RapidFire AI Services Status:"
     echo "=================================="
 
+    local frontend_running=false
+    local services_running=0
+    local total_services=0
+
     if [[ -f "$RF_PID_FILE" ]]; then
         while read -r pid service; do
+            total_services=$((total_services + 1))
             if kill -0 "$pid" 2>/dev/null; then
                 print_success "$service is running (PID: $pid)"
+                services_running=$((services_running + 1))
+                if [[ "$service" == "Frontend_Flask" ]]; then
+                    frontend_running=true
+                fi
             else
                 print_error "$service is not running (PID: $pid)"
             fi
@@ -499,9 +508,19 @@ show_status() {
     fi
 
     echo ""
-    print_success "🚀 RapidFire Frontend is ready!"
-    print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
-    print_status "   (Click the link above or copy/paste the URL into your browser)"
+    if [[ $services_running -gt 0 ]]; then
+        print_success "Services running: $services_running/$total_services"
+        
+        if [[ "$frontend_running" == true ]]; then
+            print_success "🚀 RapidFire Frontend is ready!"
+            print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
+            print_status "   (Click the link above or copy/paste the URL into your browser)"
+        else
+            print_warning "Frontend is not running - services may not be fully available"
+        fi
+    else
+        print_warning "No services are currently running"
+    fi
 
     # Show log file status
     echo ""
