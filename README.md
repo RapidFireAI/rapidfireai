@@ -173,8 +173,7 @@ pip3 install "huggingface-hub[cli]"
 export PATH="$HOME/.local/bin:$PATH"
 hf auth login --token <your_token>
 
-# checkout the develop branch
-git checkout develop
+# create feature branch from main
 
 # install the repository as a python package
 pip3 install -r requirements.txt
