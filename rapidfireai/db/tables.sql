@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS runs (
     total_steps INTEGER DEFAULT 0,
     num_chunks_visited_curr_epoch INTEGER DEFAULT 0,
     num_epochs_completed INTEGER DEFAULT 0,
+    chunk_offset INTEGER DEFAULT 0,
     error TEXT DEFAULT '',
     source TEXT DEFAULT '',
     ended_by TEXT DEFAULT '',

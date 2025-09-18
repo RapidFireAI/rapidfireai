@@ -277,6 +277,7 @@ class RfDb:
         total_steps: int = 0,
         num_chunks_visited_curr_epoch: int = 0,
         num_epochs_completed: int = 0,
+        chunk_offset: int = 0,
         error: str = "",
         source: RunSource | None = None,
         ended_by: RunEndedBy | None = None,
@@ -287,8 +288,8 @@ class RfDb:
         query = """
             INSERT INTO runs (status, mlflow_run_id, flattened_config, config_leaf,
             completed_steps, total_steps, num_chunks_visited_curr_epoch,
-            num_epochs_completed, error, source, ended_by, warm_started_from, cloned_from)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            num_epochs_completed, chunk_offset, error, source, ended_by, warm_started_from, cloned_from)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         self.db.execute(
             query,
@@ -301,6 +302,7 @@ class RfDb:
                 total_steps,
                 num_chunks_visited_curr_epoch,
                 num_epochs_completed,
+                chunk_offset,
                 error,
                 source.value if source else "",
                 ended_by.value if ended_by else "",
@@ -325,6 +327,7 @@ class RfDb:
         total_steps: int | None = None,
         num_chunks_visited_curr_epoch: int | None = None,
         num_epochs_completed: int | None = None,
+        chunk_offset: int | None = None,
         error: str | None = None,
         source: RunSource | None = None,
         ended_by: RunEndedBy | None = None,
@@ -342,6 +345,7 @@ class RfDb:
             "total_steps": total_steps,
             "num_chunks_visited_curr_epoch": num_chunks_visited_curr_epoch,
             "num_epochs_completed": num_epochs_completed,
+            "chunk_offset": chunk_offset,
             "error": error,
             "source": source.value if source else None,
             "ended_by": ended_by.value if ended_by else None,
@@ -373,7 +377,8 @@ class RfDb:
         """Get a run's details"""
         query = """
             SELECT status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
-            num_chunks_visited_curr_epoch, num_epochs_completed, error, source, ended_by, warm_started_from, cloned_from
+            num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
+            warm_started_from, cloned_from
             FROM runs
             WHERE run_id = ?
         """
@@ -390,11 +395,12 @@ class RfDb:
                 "total_steps": run_details[5],
                 "num_chunks_visited_curr_epoch": run_details[6],
                 "num_epochs_completed": run_details[7],
-                "error": run_details[8],
-                "source": RunSource(run_details[9]) if run_details[9] else None,
-                "ended_by": RunEndedBy(run_details[10]) if run_details[10] else None,
-                "warm_started_from": run_details[11],
-                "cloned_from": run_details[12],
+                "chunk_offset": run_details[8],
+                "error": run_details[9],
+                "source": RunSource(run_details[10]) if run_details[10] else None,
+                "ended_by": RunEndedBy(run_details[11]) if run_details[11] else None,
+                "warm_started_from": run_details[12],
+                "cloned_from": run_details[13],
             }
             return formatted_details
         raise DBException("No run found")
@@ -408,7 +414,7 @@ class RfDb:
         placeholders = ",".join(["?"] * len(statuses))
         query = f"""
             SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
-            num_chunks_visited_curr_epoch, num_epochs_completed, error, source, ended_by,
+            num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
             warm_started_from, cloned_from
             FROM runs
             WHERE status IN ({placeholders})
@@ -428,11 +434,12 @@ class RfDb:
                     "total_steps": run[6],
                     "num_chunks_visited_curr_epoch": run[7],
                     "num_epochs_completed": run[8],
-                    "error": run[9],
-                    "source": RunSource(run[10]) if run[10] else None,
-                    "ended_by": RunEndedBy(run[11]) if run[11] else None,
-                    "warm_started_from": run[12],
-                    "cloned_from": run[13],
+                    "chunk_offset": run[9],
+                    "error": run[10],
+                    "source": RunSource(run[11]) if run[11] else None,
+                    "ended_by": RunEndedBy(run[12]) if run[12] else None,
+                    "warm_started_from": run[13],
+                    "cloned_from": run[14],
                 }
         return formatted_details
 
@@ -440,7 +447,7 @@ class RfDb:
         """Get all runs for UI display (ignore all complex fields)"""
         query = """
             SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
-            num_chunks_visited_curr_epoch, num_epochs_completed, error, source, ended_by,
+            num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
             warm_started_from, cloned_from
             FROM runs
         """
@@ -458,11 +465,12 @@ class RfDb:
                     "total_steps": run[6],
                     "num_chunks_visited_curr_epoch": run[7],
                     "num_epochs_completed": run[8],
-                    "error": run[9],
-                    "source": RunSource(run[10]) if run[10] else None,
-                    "ended_by": RunEndedBy(run[11]) if run[11] else None,
-                    "warm_started_from": run[12],
-                    "cloned_from": run[13],
+                    "chunk_offset": run[9],
+                    "error": run[10],
+                    "source": RunSource(run[11]) if run[11] else None,
+                    "ended_by": RunEndedBy(run[12]) if run[12] else None,
+                    "warm_started_from": run[13],
+                    "cloned_from": run[14],
                 }
         return formatted_details
 

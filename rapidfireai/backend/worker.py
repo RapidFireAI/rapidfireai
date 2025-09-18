@@ -79,9 +79,8 @@ class Worker:
         DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_name))
 
         # load datasets
-        train_dataset, self.eval_dataset, self.num_chunks = self.load_datasets()
-        self.len_train_dataset = len(train_dataset)
-        self.train_dataset_chunks = DatasetChunks(train_dataset, self.num_chunks)
+        self.train_dataset, self.eval_dataset, self.num_chunks = self.load_datasets()
+        self.len_train_dataset = len(self.train_dataset)
 
     def load_datasets(
         self,
@@ -115,7 +114,13 @@ class Worker:
         # random.seed(run_details["seed"])
 
         # fetch train dataset chunk
-        train_dataset_chunk = self.train_dataset_chunks.get_chunk(chunk_id)
+        train_dataset_chunker = DatasetChunks(
+            self.len_train_dataset,
+            self.num_chunks,
+            batch_size=config_leaf["training_args"]["per_device_train_batch_size"],
+            offset=run_details["chunk_offset"],
+        )
+        train_dataset_chunk = train_dataset_chunker.get_chunk(self.train_dataset, chunk_id)
         # create worker config
         trainer_config = TrainerConfig(
             worker_id=self.worker_id,

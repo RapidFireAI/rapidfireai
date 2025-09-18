@@ -14,6 +14,7 @@ import torch
 from torch.utils.data import Dataset
 
 from rapidfireai.automl import AutoMLAlgorithm
+from rapidfireai.backend.chunks import DatasetChunks
 from rapidfireai.backend.scheduler import Scheduler
 from rapidfireai.db.rf_db import RfDb
 from rapidfireai.utils.automl_utils import get_flattened_config_leaf, get_runs
@@ -104,6 +105,7 @@ class Controller:
             # get clone modify info
             warm_started_from = clone_modify_info.get("warm_started_from") if clone_modify_info else None
             cloned_from = clone_modify_info.get("cloned_from") if clone_modify_info else None
+            chunk_offset = clone_modify_info.get("chunk_offset") if clone_modify_info else 0
 
             run_id = self.db.create_run(
                 config_leaf=config_leaf,
@@ -113,6 +115,7 @@ class Controller:
                 error="",
                 source=source,
                 ended_by=None,
+                chunk_offset=chunk_offset,
                 warm_started_from=warm_started_from,
                 cloned_from=cloned_from,
             )
@@ -270,9 +273,18 @@ class Controller:
                         clone_modify_info=clone_modify_info,
                     )
                 elif ic_op == ControllerTask.IC_CLONE_MODIFY_WARM:
+                    # calculate clone chunk offset
+                    chunker = DatasetChunks(
+                        len_train_dataset,
+                        num_chunks,
+                        batch_size=parent_run_details["config_leaf"]["training_args"]["per_device_train_batch_size"],
+                        offset=parent_run_details["chunk_offset"],
+                    )
+                    clone_chunk_offset = chunker.get_clone_offset(parent_run_details["num_chunks_visited_curr_epoch"])
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
                         "warm_started_from": parent_run_id,
+                        "chunk_offset": clone_chunk_offset,
                     }
                     run_ids = self._create_models(
                         config_leaf,
