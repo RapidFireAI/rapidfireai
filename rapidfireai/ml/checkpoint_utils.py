@@ -107,8 +107,9 @@ def create_model_instance(
     create_model_fn: Callable,
     checkpoint_path: str | None = None,
     is_peft: bool = False,
-    device: Optional[str] = None,
+    device: str | None = None,
     use_fsdp: bool = False,
+    rank: int = 0,
 ) -> tuple[nn.Module, AutoTokenizer]:
     """Create a model instance from a model configuration"""
     if use_fsdp and "model_kwargs" in model_config:
@@ -117,11 +118,16 @@ def create_model_instance(
         model_config["model_kwargs"]["device_map"] = {"": device}
     if checkpoint_path and not is_peft:
         model_config["model_name"] = checkpoint_path
-
+    print("model_config:: ", model_config)
     model_instance, tokenizer = create_model_fn(model_config)
 
     if is_peft and checkpoint_path:
         model_instance = PeftModel.from_pretrained(model_instance, checkpoint_path)
+
+    # Clear device map to ensure clean device assignment
+    # if hasattr(model_instance, 'hf_device_map'):
+    #     model_instance.hf_device_map = None
+
     _configure_tokenizer(tokenizer)
 
     return model_instance, tokenizer
@@ -232,7 +238,7 @@ def load_checkpoint_from_shared_memory(
     run_id = trainer_config.run_id
     base_model = None
     model_id = trainer_config.config_leaf.get("model_name")
-
+    rank = trainer_config.local_rank if use_fsdp else 0
     if trainer_config.warm_started_from is not None and not shm_manager.model_exists(run_id):
         shm_manager.create_warm_start_checkpoint(run_id, trainer_config.warm_started_from)
 
@@ -248,15 +254,16 @@ def load_checkpoint_from_shared_memory(
             )
             if model_id is None:
                 model_id = base_model.config._name_or_path
-            save_model_to_shared_memory(
-                base_model,
-                tokenizer,
-                trainer_config,
-                shm_manager,
-                SHMObjectType.BASE_MODEL,
-                model_id,
-                use_fsdp=use_fsdp,
-            )
+            if rank == 0:
+                save_model_to_shared_memory(
+                    base_model,
+                    tokenizer,
+                    trainer_config,
+                    shm_manager,
+                    SHMObjectType.BASE_MODEL,
+                    model_id,
+                    use_fsdp=use_fsdp,
+                )
         else:
             base_model, tokenizer = load_model_from_shared_memory(
                 trainer_config, shm_manager, SHMObjectType.BASE_MODEL, model_id, device
@@ -270,13 +277,14 @@ def load_checkpoint_from_shared_memory(
             is_peft=is_peft,
             device=device,
             use_fsdp=use_fsdp,
+            rank=rank,
         )
 
     model = base_model
     peft_config = LoraConfig(**trainer_config.config_leaf.get("peft_params", {}))
     if is_peft:
         # model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
-        model = get_peft_model(model, peft_config, autocast_adapter_dtype=False)
+        model = get_peft_model(model, peft_config)  # , autocast_adapter_dtype=False
         peft_state_dict = get_peft_model_state_dict(
             model, adapter_name=trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
         )
@@ -345,9 +353,11 @@ def load_model_from_shared_memory(
     """Load model from shared memory"""
     model_data = shm_manager.load_model_object(model_id, model_object_type)
     model = copy.deepcopy(model_data[model_object_type])
+    # model.hf_device_map = None
     tokenizer = model_data["tokenizer"]
     bnb_modules = move_tensors_to_device(model_data["bnb_modules"], device=device)
     model = get_model_to_device(model, bnb_modules, device=device)
+    print(f"checkkkkkkkk----> model.hf_device_map: {model.hf_device_map}")
     return model, tokenizer
 
 
@@ -367,7 +377,10 @@ def _collect_fsdp_full_model(model, trainer_config):
 
             with init_empty_weights():
                 model_cpu, _ = create_model_instance(
-                    trainer_config.config_leaf, trainer_config.create_model_fn, use_fsdp=True
+                    trainer_config.config_leaf,
+                    trainer_config.create_model_fn,
+                    use_fsdp=True,
+                    rank=trainer_config.local_rank,
                 )
                 model_cpu = model_cpu.to_empty(device="cpu")
             full_state_dict = {
@@ -383,11 +396,15 @@ def _collect_fsdp_full_model(model, trainer_config):
             print("checkkkk model cpu params", sum(p.numel() for p in model_cpu.parameters()))
             model_cpu.load_state_dict(full_state_dict)
             print("checkkkk model cpu params after load state dict", sum(p.numel() for p in model_cpu.parameters()))
+
+            # Clear device map to avoid device conflicts when loading on different workers
+            # if hasattr(model_cpu, 'hf_device_map'):
+            #     model_cpu.hf_device_map = None
     return model_cpu
 
 
 def save_model_to_shared_memory(
-    model: nn.Module | str,
+    model,
     tokenizer: AutoTokenizer,
     trainer_config: TrainerConfig,
     shm_manager: SharedMemoryManager,
@@ -407,6 +424,10 @@ def save_model_to_shared_memory(
             return
     else:
         model_cpu = model.cpu()
+
+    # Clear device map to avoid device conflicts when loading on different workers
+    # if hasattr(model_cpu, 'hf_device_map'):
+    #     model_cpu.hf_device_map = None
 
     model_data = {model_type.value: model_cpu, "tokenizer": tokenizer}
     shm_manager.save_model_object(model_id, model_type, model_data, is_fsdp=use_fsdp)
@@ -435,7 +456,11 @@ def load_or_create_ref_model(
     else:
         if ref_model_name is not None:
             ref_model_instance, _ = create_model_instance(
-                config_leaf.get("ref_model_config"), trainer_config.create_model_fn, device=device, use_fsdp=use_fsdp
+                config_leaf.get("ref_model_config"),
+                trainer_config.create_model_fn,
+                device=device,
+                use_fsdp=use_fsdp,
+                rank=rank,
             )
         elif trainer_config.completed_steps == 0:
             ref_model_instance = copy.deepcopy(model_instance)
@@ -533,7 +558,7 @@ def get_model_to_device(model, bnb_modules, device="cuda:0"):
                 module.weight.data = move_tensors_to_device(module.weight.data, device)
 
     model = model.to(device)
-    print(f"checkkkkkkkk----> model.hf_device_map: {model.hf_device_map}")
+    # print(f"checkkkkkkkk----> model.hf_device_map: {model.hf_device_map}")
 
     # Update hf_device_map to reflect the actual device placement
     # if hasattr(model, 'hf_device_map'):

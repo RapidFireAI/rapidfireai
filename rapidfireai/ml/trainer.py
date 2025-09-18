@@ -114,7 +114,7 @@ def create_trainer_instance(
             use_fsdp=use_fsdp,
         )
 
-    model_instance = model_instance.to(device)
+    # model_instance = model_instance.to(device)FIXME: cuda/cpu fix
 
     # Prepare model for FSDP if needed
     # if use_fsdp:
@@ -246,8 +246,8 @@ def _setup_reference_model(
                 peft_config = LoraConfig(**config_leaf["peft_params"])
                 if trainer_config.completed_steps == 0 and trainer_config.warm_started_from is None:
                     reference_state_dict = get_peft_model_state_dict(model_instance)
-                    reference_state_dict = move_tensors_to_cpu(reference_state_dict)
                     if not use_fsdp or trainer_config.local_rank == 0:
+                        reference_state_dict = move_tensors_to_cpu(reference_state_dict)
                         shm_manager.save_model_object(
                             trainer_config.run_id, SHMObjectType.REF_STATE_DICT, reference_state_dict
                         )

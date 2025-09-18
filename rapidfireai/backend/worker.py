@@ -185,6 +185,8 @@ class Worker:
             trainer_instance, base_model_name = create_trainer_instance(
                 trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id, use_fsdp=use_fsdp
             )
+        trainer_instance.model.hf_device_map = {"": trainer_config.local_rank}
+        # trainer_instance.model = trainer_instance.model.to(f"cuda:{trainer_config.local_rank}")
         self.logger.debug(
             f"device checkkkkkkkk: {trainer_instance.model.hf_device_map.values()}, {trainer_instance.accelerator.device}"
         )
