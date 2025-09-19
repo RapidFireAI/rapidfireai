@@ -17,7 +17,6 @@ class Scheduler:
         # create data structures
         self.worker_running_current_run: dict[int, int] = dict.fromkeys(range(self.n_workers), -1)
         self.run_visited_num_chunks: dict[int, int] = dict.fromkeys(self.run_ids, 0)
-        self.run_start_chunk_id: dict[int, int] = dict.fromkeys(self.run_ids, 0)
 
         # add runs to scheduler
         for run_id in run_ids:
@@ -34,14 +33,13 @@ class Scheduler:
                 if self.worker_running_current_run[worker_id] == run_id:
                     self.worker_running_current_run[worker_id] = -1
 
-    def add_run(self, run_id: int, run_visited_num_chunks: int, run_start_chunk_id: int = 0) -> None:
+    def add_run(self, run_id: int, run_visited_num_chunks: int) -> None:
         """Add a new run to the scheduler."""
         if run_id not in self.run_ids:
             self.run_ids.append(run_id)
             self.n_runs = len(self.run_ids)
 
         self.run_visited_num_chunks[run_id] = run_visited_num_chunks
-        self.run_start_chunk_id[run_id] = run_start_chunk_id
 
     def set_completed_task(self, worker_id: int) -> None:
         """Set a task as completed."""
@@ -66,7 +64,6 @@ class Scheduler:
 
         # Remove from all data structures
         self.run_visited_num_chunks.pop(run_id, None)
-        self.run_start_chunk_id.pop(run_id, None)
 
         if run_id in self.run_ids:
             self.run_ids.remove(run_id)
@@ -93,7 +90,7 @@ class Scheduler:
             return {"run_id": None, "worker_id": None, "chunk_id": None, "is_last_chunk": None}
 
         # Get busy runs and available runs
-        busy_runs = set(run_id for run_id in self.worker_running_current_run.values() if run_id != -1)
+        busy_runs = {run_id for run_id in self.worker_running_current_run.values() if run_id != -1}
         available_runs = [
             run_id
             for run_id in self.run_ids
@@ -110,9 +107,7 @@ class Scheduler:
 
         run_id = min(available_runs, key=lambda run_id: (self.run_visited_num_chunks[run_id], run_id))
         worker_id = available_workers[0]  # Pick first available worker
-        chunk_id = (
-            self.run_visited_num_chunks[run_id] + self.run_start_chunk_id[run_id]
-        ) % self.n_chunks  # Next chunk in sequence starting from run_start_chunk_id (chunk_id is 0-indexed)
+        chunk_id = self.run_visited_num_chunks[run_id] % self.n_chunks  # Next chunk in sequence starting from 0
         is_last_chunk = chunk_id == self.n_chunks - 1
 
         # Update internal state immediately

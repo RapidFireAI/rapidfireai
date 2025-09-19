@@ -14,6 +14,7 @@ import torch
 from torch.utils.data import Dataset
 
 from rapidfireai.automl import AutoMLAlgorithm
+from rapidfireai.backend.chunks import DatasetChunks
 from rapidfireai.backend.scheduler import Scheduler
 from rapidfireai.db.rf_db import RfDb
 from rapidfireai.utils.automl_utils import get_flattened_config_leaf, get_runs
@@ -102,9 +103,9 @@ class Controller:
             total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks)
 
             # get clone modify info
-            start_chunk_id = clone_modify_info.get("start_chunk_id", 0) if clone_modify_info else 0
             warm_started_from = clone_modify_info.get("warm_started_from") if clone_modify_info else None
             cloned_from = clone_modify_info.get("cloned_from") if clone_modify_info else None
+            chunk_offset = clone_modify_info.get("chunk_offset") if clone_modify_info else 0
 
             run_id = self.db.create_run(
                 config_leaf=config_leaf,
@@ -114,7 +115,7 @@ class Controller:
                 error="",
                 source=source,
                 ended_by=None,
-                start_chunk_id=start_chunk_id,
+                chunk_offset=chunk_offset,
                 warm_started_from=warm_started_from,
                 cloned_from=cloned_from,
             )
@@ -262,7 +263,6 @@ class Controller:
                 if ic_op == ControllerTask.IC_CLONE_MODIFY:
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
-                        "start_chunk_id": 0,
                     }
                     run_ids = self._create_models(
                         config_leaf,
@@ -273,10 +273,18 @@ class Controller:
                         clone_modify_info=clone_modify_info,
                     )
                 elif ic_op == ControllerTask.IC_CLONE_MODIFY_WARM:
+                    # calculate clone chunk offset
+                    chunker = DatasetChunks(
+                        len_train_dataset,
+                        num_chunks,
+                        batch_size=parent_run_details["config_leaf"]["training_args"]["per_device_train_batch_size"],
+                        offset=parent_run_details["chunk_offset"],
+                    )
+                    clone_chunk_offset = chunker.get_clone_offset(parent_run_details["num_chunks_visited_curr_epoch"])
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
-                        "start_chunk_id": parent_run_details["num_chunks_visited_curr_epoch"],
                         "warm_started_from": parent_run_id,
+                        "chunk_offset": clone_chunk_offset,
                     }
                     run_ids = self._create_models(
                         config_leaf,
@@ -592,8 +600,7 @@ class Controller:
                     # add active runs to scheduler
                     if run_details["status"] in (RunStatus.ONGOING, RunStatus.NEW) and run_id not in scheduler.run_ids:
                         chunks_visited = all_run_details[run_id]["num_chunks_visited_curr_epoch"]
-                        start_chunk_id = all_run_details[run_id]["start_chunk_id"]
-                        scheduler.add_run(run_id, chunks_visited, start_chunk_id)
+                        scheduler.add_run(run_id, chunks_visited)
                         self.logger.debug(f"Added run {run_id} to scheduler with {chunks_visited} chunks visited")
                     # remove inactive runs from scheduler
                     elif (
