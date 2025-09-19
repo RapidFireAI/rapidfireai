@@ -8,9 +8,7 @@ import { ExperimentViewRunsControlsFilters } from './ExperimentViewRunsControlsF
 import { ErrorWrapper } from '../../../../../common/utils/ErrorWrapper';
 import { ToggleButton, useDesignSystemTheme } from '@databricks/design-system';
 import { FormattedMessage } from 'react-intl';
-import { ExperimentViewRunsSortSelector } from './ExperimentViewRunsSortSelector';
 import { ExperimentViewRunsColumnSelector } from './ExperimentViewRunsColumnSelector';
-import { shouldUseNewExperimentPageSortSelector } from '../../../../../common/utils/FeatureUtils';
 import { ExperimentViewRunsModeSwitch } from './ExperimentViewRunsModeSwitch';
 import { useExperimentPageViewMode } from '../../hooks/useExperimentPageViewMode';
 import Utils from '../../../../../common/utils/Utils';
@@ -20,6 +18,7 @@ import { ExperimentViewRunsGroupBySelector } from './ExperimentViewRunsGroupBySe
 import { useUpdateExperimentViewUIState } from '../../contexts/ExperimentPageUIStateContext';
 import { ExperimentPageSearchFacetsState } from '../../models/ExperimentPageSearchFacetsState';
 import { ExperimentViewRunsSortSelectorV2 } from './ExperimentViewRunsSortSelectorV2';
+import { shouldEnableExperimentPageHeaderV2 } from '@mlflow/mlflow/src/common/utils/FeatureUtils';
 
 type ExperimentViewRunsControlsProps = {
   viewState: ExperimentPageViewState;
@@ -34,11 +33,12 @@ type ExperimentViewRunsControlsProps = {
   expandRows: boolean;
   updateExpandRows: (expandRows: boolean) => void;
 
-  requestError: ErrorWrapper | null;
+  requestError: ErrorWrapper | Error | null;
 
   refreshRuns: () => void;
   uiState: ExperimentPageUIState;
   isLoading: boolean;
+  isComparingExperiments: boolean;
 };
 
 /**
@@ -58,6 +58,7 @@ export const ExperimentViewRunsControls = React.memo(
     refreshRuns,
     uiState,
     isLoading,
+    isComparingExperiments,
   }: ExperimentViewRunsControlsProps) => {
     const [compareRunsMode, setCompareRunsMode] = useExperimentPageViewMode();
 
@@ -68,8 +69,6 @@ export const ExperimentViewRunsControls = React.memo(
 
     const isComparingRuns = compareRunsMode !== 'TABLE';
     const isEvaluationMode = compareRunsMode === 'ARTIFACT';
-    const isViewLogsMode = compareRunsMode === 'LOGS';
-    const isViewICLogsMode = compareRunsMode === 'IC_LOGS';
 
     const { theme } = useDesignSystemTheme();
 
@@ -111,9 +110,19 @@ export const ExperimentViewRunsControls = React.memo(
           display: 'flex',
           gap: theme.spacing.sm,
           flexDirection: 'column' as const,
-          marginTop: uiState.viewMaximized ? undefined : theme.spacing.md,
+          marginBottom: theme.spacing.sm,
         }}
       >
+        {/* skip mode switcher if v2 header is enabled
+        since the tab selector has been moved into the header */}
+        {!shouldEnableExperimentPageHeaderV2() && !isComparingExperiments && (
+          <ExperimentViewRunsModeSwitch
+            hideBorder={false}
+            viewState={viewState}
+            runsAreGrouped={Boolean(uiState.groupBy)}
+          />
+        )}
+
         {showActionButtons && (
           <ExperimentViewRunsControlsActions
             runsData={runsData}
@@ -135,22 +144,16 @@ export const ExperimentViewRunsControls = React.memo(
             refreshRuns={refreshRuns}
             viewMaximized={uiState.viewMaximized}
             autoRefreshEnabled={uiState.autoRefreshEnabled}
+            hideEmptyCharts={uiState.hideEmptyCharts}
+            areRunsGrouped={Boolean(uiState.groupBy)}
             additionalControls={
               <>
-                {shouldUseNewExperimentPageSortSelector() ? (
-                  <ExperimentViewRunsSortSelectorV2
-                    orderByAsc={orderByAsc}
-                    orderByKey={orderByKey}
-                    metricKeys={filteredMetricKeys}
-                    paramKeys={filteredParamKeys}
-                  />
-                ) : (
-                  <ExperimentViewRunsSortSelector
-                    orderByAsc={orderByAsc}
-                    orderByKey={orderByKey}
-                    sortOptions={sortOptions}
-                  />
-                )}
+                <ExperimentViewRunsSortSelectorV2
+                  orderByAsc={orderByAsc}
+                  orderByKey={orderByKey}
+                  metricKeys={filteredMetricKeys}
+                  paramKeys={filteredParamKeys}
+                />
 
                 {!isComparingRuns && (
                   <ExperimentViewRunsColumnSelector
@@ -162,7 +165,10 @@ export const ExperimentViewRunsControls = React.memo(
                 )}
 
                 {!isComparingRuns && multipleDatasetsArePresent && (
-                  <ToggleButton onClick={toggleExpandedRows}>
+                  <ToggleButton
+                    componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewrunscontrols.tsx_175"
+                    onClick={toggleExpandedRows}
+                  >
                     <FormattedMessage
                       defaultMessage="Expand rows"
                       description="Label for the expand rows button above the experiment runs table"
@@ -177,15 +183,16 @@ export const ExperimentViewRunsControls = React.memo(
                     }}
                     runsData={runsData}
                     isLoading={isLoading}
+                    useGroupedValuesInCharts={uiState.useGroupedValuesInCharts ?? true}
+                    onUseGroupedValuesInChartsChange={(useGroupedValuesInCharts) => {
+                      updateUIState((state) => ({ ...state, useGroupedValuesInCharts }));
+                    }}
                   />
                 )}
               </>
             }
           />
         )}
-        <div>
-          <ExperimentViewRunsModeSwitch viewState={viewState} runsAreGrouped={Boolean(uiState.groupBy)} />
-        </div>
       </div>
     );
   },

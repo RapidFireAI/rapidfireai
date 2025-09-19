@@ -4,13 +4,14 @@ import { EvaluationArtifactCompareView } from './EvaluationArtifactCompareView';
 import configureStore from 'redux-mock-store';
 import { RunRowType } from '../experiment-page/utils/experimentPage.row-types';
 import { ExperimentPageViewState } from '../experiment-page/models/ExperimentPageViewState';
-import { renderWithIntl, act, within, screen } from 'common/utils/TestUtils.react18';
+import { renderWithIntl, act, within, screen } from '@mlflow/mlflow/src/common/utils/TestUtils.react18';
+
 import { getEvaluationTableArtifact } from '../../actions';
 import { MLFLOW_LOGGED_ARTIFACTS_TAG, MLFLOW_RUN_SOURCE_TYPE_TAG, MLflowRunSourceType } from '../../constants';
 import { EvaluationArtifactCompareTableProps } from './components/EvaluationArtifactCompareTable';
 import thunk from 'redux-thunk';
 import promiseMiddleware from 'redux-promise-middleware';
-import userEventGlobal, { PointerEventsCheckLevel } from '@testing-library/user-event-14';
+import userEventGlobal, { PointerEventsCheckLevel } from '@testing-library/user-event';
 import { useState } from 'react';
 
 // Disable pointer events check for DialogCombobox which masks the elements we want to click
@@ -125,6 +126,44 @@ const SAMPLE_STATE = {
   evaluationArtifactsLoadingByRunUuid: {},
 };
 
+const IMAGE_JSON = {
+  type: 'image',
+  filepath: 'fakePathUncompressed',
+  compressed_filepath: 'fakePath',
+};
+
+const SAMPLE_STATE_WITH_IMAGES = {
+  evaluationArtifactsBeingUploaded: {},
+  evaluationArtifactsByRunUuid: {
+    run_a: {
+      '/table.json': {
+        columns: ['col_group', 'col_group_2', 'col_output'],
+        path: '/table.json',
+        entries: [
+          { col_group: 'question_1', col_group_2: 'question_1', col_output: IMAGE_JSON },
+          { col_group: 'question_2', col_group_2: 'question_2', col_output: IMAGE_JSON },
+        ],
+      },
+    },
+    run_b: {
+      '/table.json': {
+        columns: ['col_group', 'col_output'],
+        path: '/table.json',
+        entries: [
+          { col_group: 'question_1', col_group_2: 'question_1', col_output: IMAGE_JSON },
+          { col_group: 'question_2', col_group_2: 'question_2', col_output: IMAGE_JSON },
+        ],
+      },
+    },
+  },
+
+  evaluationDraftInputValues: [],
+  evaluationPendingDataByRunUuid: {},
+  evaluationPendingDataLoadingByRunUuid: {},
+  evaluationArtifactsErrorByRunUuid: {},
+  evaluationArtifactsLoadingByRunUuid: {},
+};
+
 describe('EvaluationArtifactCompareView', () => {
   const mountTestComponent = ({
     comparedRuns = SAMPLE_COMPARED_RUNS,
@@ -168,8 +207,8 @@ describe('EvaluationArtifactCompareView', () => {
   test('checks if the initial tables are properly fetched', async () => {
     mountTestComponent();
 
-    expect(getEvaluationTableArtifact).toBeCalledWith('run_a', '/table.json', false);
-    expect(getEvaluationTableArtifact).toBeCalledWith('run_b', '/table.json', false);
+    expect(getEvaluationTableArtifact).toHaveBeenCalledWith('run_a', '/table.json', false);
+    expect(getEvaluationTableArtifact).toHaveBeenCalledWith('run_b', '/table.json', false);
   });
   test('checks if the newly selected table is being fetched', async () => {
     const { renderResult } = mountTestComponent();
@@ -178,7 +217,7 @@ describe('EvaluationArtifactCompareView', () => {
 
     await userEvent.click(within(screen.getByRole('listbox')).getByLabelText('/table_c.json'));
 
-    expect(getEvaluationTableArtifact).toBeCalledWith('run_c', '/table_c.json', false);
+    expect(getEvaluationTableArtifact).toHaveBeenCalledWith('run_c', '/table_c.json', false);
   });
 
   test('checks if the fetch artifact is properly called for differing tables', async () => {
@@ -208,10 +247,10 @@ describe('EvaluationArtifactCompareView', () => {
     await userEvent.click(renderResult.getByTestId('dropdown-tables'));
     await userEvent.click(within(screen.getByRole('listbox')).getByLabelText('/table_a.json'));
 
-    expect(getEvaluationTableArtifact).toBeCalledWith('run_a', '/table_a.json', false);
-    expect(getEvaluationTableArtifact).not.toBeCalledWith('run_a', '/table_b.json', false);
-    expect(getEvaluationTableArtifact).not.toBeCalledWith('run_b', '/table_a.json', false);
-    expect(getEvaluationTableArtifact).not.toBeCalledWith('run_b', '/table_b.json', false);
+    expect(getEvaluationTableArtifact).toHaveBeenCalledWith('run_a', '/table_a.json', false);
+    expect(getEvaluationTableArtifact).not.toHaveBeenCalledWith('run_a', '/table_b.json', false);
+    expect(getEvaluationTableArtifact).not.toHaveBeenCalledWith('run_b', '/table_a.json', false);
+    expect(getEvaluationTableArtifact).not.toHaveBeenCalledWith('run_b', '/table_b.json', false);
   });
 
   test('checks if the table component receives proper result set based on the store data and selected table', async () => {
@@ -490,5 +529,21 @@ describe('EvaluationArtifactCompareView', () => {
 
     expect(renderResult.getByTestId('dropdown-tables')).toBeDisabled();
     expect(renderResult.getByText(/No evaluation tables logged/)).toBeInTheDocument();
+  });
+
+  test('checks that image columns are correctly assigned to only be output columns', async () => {
+    mountTestComponent({ mockState: SAMPLE_STATE_WITH_IMAGES });
+
+    expect(getEvaluationTableArtifact).toHaveBeenCalledWith('run_a', '/table.json', false);
+    expect(getEvaluationTableArtifact).toHaveBeenCalledWith('run_b', '/table.json', false);
+
+    await userEvent.click(screen.getByLabelText('Select "group by" columns'));
+
+    // Check that the group by columns are properly populated and recognizes image columns as non-groupable
+    expect(within(screen.getByRole('listbox')).queryByLabelText('col_group')).toBeChecked();
+    expect(within(screen.getByRole('listbox')).queryByLabelText('col_group')).toBeInTheDocument();
+    expect(within(screen.getByRole('listbox')).queryByLabelText('col_group_2')).toBeInTheDocument();
+    expect(within(screen.getByRole('listbox')).queryByLabelText('col_group_2')).not.toBeChecked();
+    expect(within(screen.getByRole('listbox')).queryByLabelText('col_output')).not.toBeInTheDocument();
   });
 });
