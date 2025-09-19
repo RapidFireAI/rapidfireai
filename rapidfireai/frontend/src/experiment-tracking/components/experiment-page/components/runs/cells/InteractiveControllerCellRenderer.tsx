@@ -1,6 +1,6 @@
 import { Button } from '@databricks/design-system';
 import { css } from '@emotion/react';
-import { InteractiveControllerIcon } from 'common/components/InteractiveControllerIcon';
+import { InteractiveControllerIcon } from '../../../../../../common/components/InteractiveControllerIcon';
 
 const styles = {
   cellWrapper: css`

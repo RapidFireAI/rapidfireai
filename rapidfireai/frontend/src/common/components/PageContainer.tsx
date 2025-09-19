@@ -8,38 +8,33 @@
 import React from 'react';
 import { PageWrapper, Spacer } from '@databricks/design-system';
 
-type PageContainerProps = {
+type OwnProps = {
   usesFullHeight?: boolean;
   children?: React.ReactNode;
-  className?: string;
-  [key: string]: any;
 };
 
-export function PageContainer({
-  usesFullHeight = false,
-  children,
-  className,
-  ...restProps
-}: PageContainerProps) {
+// @ts-expect-error TS(2565): Property 'defaultProps' is used before being assig... Remove this comment to see the full error message
+type Props = OwnProps & typeof PageContainer.defaultProps;
+
+export function PageContainer(props: Props) {
+  const { usesFullHeight, ...restProps } = props;
   return (
     // @ts-expect-error TS(2322): Type '{ height: string; display: string; flexDirec... Remove this comment to see the full error message
     <PageWrapper css={usesFullHeight ? styles.useFullHeightLayout : styles.wrapper}>
       {/* @ts-expect-error TS(2322): Type '{ css: { flexShrink: number; }; }' is not as... Remove this comment to see the full error message */}
       <Spacer css={styles.fixedSpacer} />
-      {usesFullHeight ? (
-        children
-      ) : (
-        <div className={className} {...restProps} css={styles.container}>
-          {children}
-        </div>
-      )}
+      {usesFullHeight ? props.children : <div {...restProps} css={styles.container} />}
     </PageWrapper>
   );
 }
 
+PageContainer.defaultProps = {
+  usesFullHeight: false,
+};
+
 const styles = {
   useFullHeightLayout: {
-    height: '100%',
+    height: 'calc(100% - 60px)', // 60px comes from header height
     display: 'flex',
     flexDirection: 'column',
     '&:last-child': {

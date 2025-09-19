@@ -5,12 +5,12 @@ import {
   Button,
   ChevronDoubleDownIcon,
   ChevronDoubleUpIcon,
-  Tooltip,
+  LegacyTooltip,
   Typography,
   useDesignSystemTheme,
 } from '@databricks/design-system';
 import { ModelRegistryRoutes } from '../../routes';
-import { KeyValueEntity } from '../../../experiment-tracking/types';
+import { KeyValueEntity } from '../../../common/types';
 import { MLFLOW_INTERNAL_PREFIX } from '../../../common/utils/TagUtils';
 
 const EmptyCell = () => <>&mdash;</>;
@@ -37,7 +37,7 @@ export const ModelListTagsCell = ({ tags }: { tags: KeyValueEntity[] }) => {
   return (
     <div>
       {tagsToDisplay.map((tag) => (
-        <Tooltip
+        <LegacyTooltip
           key={tag.key}
           title={
             <>
@@ -53,7 +53,7 @@ export const ModelListTagsCell = ({ tags }: { tags: KeyValueEntity[] }) => {
           >
             <Typography.Text bold>{tag.key}</Typography.Text>: {tag.value || noValue}
           </div>
-        </Tooltip>
+        </LegacyTooltip>
       ))}
       {tags.length > tagsToShowInitially && (
         <Button
