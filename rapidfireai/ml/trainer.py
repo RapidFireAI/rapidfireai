@@ -1,5 +1,5 @@
 import logging
-from math import e
+import math
 import os
 
 import torch
@@ -127,20 +127,26 @@ def _configure_training_args(
 ) -> dict:
     """Configure training arguments with default values."""
     completed_steps = trainer_config.completed_steps
-    steps_per_epoch = trainer_config.train_dataset.num_rows // (
-        training_args.get("per_device_train_batch_size", 1)
-        * training_args.get("gradient_accumulation_steps", 1)
+    per_device_train_batch_size = training_args.get("per_device_train_batch_size", 1)
+    gradient_accumulation_steps = training_args.get("gradient_accumulation_steps", 1)
+    len_dataloader = math.ceil(trainer_config.train_dataset.num_rows / per_device_train_batch_size)
+    steps_per_epoch = max(
+        len_dataloader // gradient_accumulation_steps
+        + int(len_dataloader % gradient_accumulation_steps > 0),
+        1,
     )
+    
     if trainer_config.trainer_type == "GRPO":
-        steps_per_epoch = steps_per_epoch * training_args.get("num_generations", 8)
+        num_generations = training_args.get("num_generations", 8)
+        steps_per_epoch = (num_generations * trainer_config.train_dataset.num_rows) // (gradient_accumulation_steps * per_device_train_batch_size) 
     left_over_steps = trainer_config.total_steps - completed_steps
+    
     if left_over_steps > steps_per_epoch:
         training_args["num_train_epochs"] = 1
         training_args.pop("max_steps", None)
     else:
         training_args["max_steps"] = left_over_steps
         training_args.pop("num_train_epochs", None)
-
     eval_first_step = 0
     global_step_args = {}
     actual_steps = min(left_over_steps, steps_per_epoch)
@@ -159,7 +165,6 @@ def _configure_training_args(
         training_args.pop("eval_on_start")
     if training_args.get("logging_first_step", False) and completed_steps > 0:
         training_args.pop("logging_first_step")
-
     training_args["save_strategy"] = "no"
     training_args["do_train"] = True
     training_args["do_eval"] = True

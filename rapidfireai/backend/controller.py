@@ -401,13 +401,19 @@ class Controller:
             # ceil to nearest chunk multiple
             total_steps = config_leaf["training_args"]["max_steps"]
         elif num_train_epochs:
-            # total_steps = num_epochs to num_steps =
             per_device_train_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1)
             gradient_accumulation_steps = config_leaf["training_args"].get("gradient_accumulation_steps", 1)
-            total_steps = math.ceil((len_train_dataset / (per_device_train_batch_size * gradient_accumulation_steps)) * num_train_epochs)
+            len_dataloader = math.ceil(len_train_dataset / per_device_train_batch_size)
+            num_update_steps_per_epoch = max(
+                len_dataloader // gradient_accumulation_steps
+                + int(len_dataloader % gradient_accumulation_steps > 0),
+                1,
+            )
+            total_steps = math.ceil(num_train_epochs * num_update_steps_per_epoch)
+            
             if config_leaf.get("trainer_type", "SFT") == "GRPO":
                 num_generations = config_leaf["training_args"].get("num_generations", 8)
-                total_steps = total_steps * num_generations
+                total_steps = (num_generations * len_train_dataset*num_train_epochs) // (gradient_accumulation_steps * per_device_train_batch_size)
         return total_steps
 
     def run_fit(
