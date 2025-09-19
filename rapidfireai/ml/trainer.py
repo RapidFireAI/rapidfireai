@@ -1,5 +1,5 @@
 import logging
-from math import e
+import math
 import os
 
 import torch
@@ -127,10 +127,22 @@ def _configure_training_args(
 ) -> dict:
     """Configure training arguments with default values."""
     completed_steps = trainer_config.completed_steps
-    steps_per_epoch = trainer_config.train_dataset.num_rows // (
-        training_args.get("per_device_train_batch_size", 1)
-        * training_args.get("gradient_accumulation_steps", 1)
+    per_device_train_batch_size = training_args.get("per_device_train_batch_size", 1)
+    gradient_accumulation_steps = training_args.get("gradient_accumulation_steps", 1)
+    len_dataloader = math.ceil(
+        trainer_config.train_dataset.num_rows / per_device_train_batch_size
     )
+    steps_per_epoch = max(
+        len_dataloader // gradient_accumulation_steps
+        + int(len_dataloader % gradient_accumulation_steps > 0),
+        1,
+    )
+
+    if trainer_config.config_leaf.get("trainer_type","SFT") == "GRPO":
+        num_generations = training_args.get("num_generations", 8)
+        steps_per_epoch = (num_generations * trainer_config.train_dataset.num_rows) // (
+            gradient_accumulation_steps * per_device_train_batch_size
+        )
     left_over_steps = trainer_config.total_steps - completed_steps
     if left_over_steps > steps_per_epoch:
         training_args["num_train_epochs"] = 1
