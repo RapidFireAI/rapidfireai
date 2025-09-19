@@ -138,7 +138,7 @@ def _configure_training_args(
         1,
     )
 
-    if trainer_config.trainer_type == "GRPO":
+    if trainer_config.config_leaf.get("trainer_type","SFT") == "GRPO":
         num_generations = training_args.get("num_generations", 8)
         steps_per_epoch = (num_generations * trainer_config.train_dataset.num_rows) // (
             gradient_accumulation_steps * per_device_train_batch_size
