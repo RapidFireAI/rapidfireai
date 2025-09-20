@@ -14,8 +14,6 @@ from rapidfireai.ml.checkpoint_utils import (
     load_or_create_ref_model,
     move_tensors_to_cpu,
     move_tensors_to_device,
-    restore_trainer_from_disk,
-    restore_trainer_from_shared_memory,
 )
 from rapidfireai.utils.constants import SHMObjectType
 from rapidfireai.utils.datapaths import DataPath
@@ -78,6 +76,10 @@ def create_trainer_instance(
     # Set device based on distributed training
     device = "cpu" if use_fsdp else "cuda:0"
 
+    print(
+        f"Worker {trainer_config.worker_id}, rank {trainer_config.local_rank}, device: {device}, use_fsdp: {use_fsdp}"
+    )
+
     trainer = None
     config_leaf = trainer_config.config_leaf
     trainer_type = config_leaf.get("trainer_type", "SFT")
@@ -114,7 +116,17 @@ def create_trainer_instance(
             use_fsdp=use_fsdp,
         )
 
-    # model_instance = model_instance.to(device)FIXME: cuda/cpu fix
+    # Add CUDA synchronization before moving model to device
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        print(f"Worker {trainer_config.worker_id} CUDA synchronized before model.to(device)")
+
+    model_instance = model_instance.to(device)  # IXME: cuda/cpu fix
+
+    # Add CUDA synchronization after moving model to device
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        print(f"Worker {trainer_config.worker_id} CUDA synchronized after model.to(device)")
 
     # Prepare model for FSDP if needed
     # if use_fsdp:
@@ -275,7 +287,7 @@ def _setup_reference_model(
                     device_map={"": device},
                 )
                 model_instance.set_adapter(model_adapter_name)
-            model_instance = model_instance.to(device)
+            model_instance = model_instance.to(device)  # FIXME: cuda/cpu fix
     else:
         ref_model_instance = load_or_create_ref_model(
             model_instance, trainer_config, device, use_shared_memory, shm_manager, use_fsdp=use_fsdp
@@ -388,12 +400,12 @@ def _create_trainer_by_type(
 ):
     """Create trainer instance based on type with proper state restoration."""
     # Create trainer using the factory function
-    trainer = create_rf_trainer(trainer_type, trainer_config=trainer_config, **trainer_kwargs)
-
-    if trainer_config.completed_steps > 0:
-        if use_shared_memory:
-            trainer = restore_trainer_from_shared_memory(trainer, trainer_config, shm_manager)
-        else:
-            trainer = restore_trainer_from_disk(trainer, trainer_config, device)
+    # trainer = create_rf_trainer(trainer_type, trainer_config=trainer_config, **trainer_kwargs)
+    trainer = DPOTrainer(**trainer_kwargs)
+    # if trainer_config.completed_steps > 0:
+    #     if use_shared_memory:
+    #         trainer = restore_trainer_from_shared_memory(trainer, trainer_config, shm_manager)
+    #     else:
+    #         trainer = restore_trainer_from_disk(trainer, trainer_config, device)
 
     return trainer

@@ -56,11 +56,11 @@ def setup_distributed_environment(
         rank=rank,
         world_size=world_size,
         timeout=timeout,
-        device_id=rank if torch.cuda.is_available() else None
+        device_id=0 if torch.cuda.is_available() else None
     )
     
-    if torch.cuda.is_available():
-        torch.cuda.set_device(rank)
+    # if torch.cuda.is_available():
+    #     torch.cuda.set_device(rank)
 
 
 def cleanup_distributed() -> None:
