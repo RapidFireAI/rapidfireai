@@ -111,7 +111,7 @@ class Controller:
             # get clone modify info
             warm_started_from = clone_modify_info.get("warm_started_from") if clone_modify_info else None
             cloned_from = clone_modify_info.get("cloned_from") if clone_modify_info else None
-            chunk_offset = clone_modify_info.get("chunk_offset") if clone_modify_info else 0
+            chunk_offset = clone_modify_info.get("chunk_offset",0) if clone_modify_info else 0
 
             run_id = self.db.create_run(
                 config_leaf=config_leaf,
@@ -311,10 +311,11 @@ class Controller:
                     )
                 elif ic_op == ControllerTask.IC_CLONE_MODIFY_WARM:
                     # calculate clone chunk offset
+                    effective_batch_size = parent_run_details["config_leaf"]["training_args"].get("per_device_train_batch_size", 1) * parent_run_details["config_leaf"]["training_args"].get("gradient_accumulation_steps", 1)
                     chunker = DatasetChunks(
                         len_train_dataset,
                         num_chunks,
-                        batch_size=parent_run_details["config_leaf"]["training_args"]["per_device_train_batch_size"],
+                        batch_size=effective_batch_size,
                         offset=parent_run_details["chunk_offset"],
                     )
                     clone_chunk_offset = chunker.get_clone_offset(parent_run_details["num_chunks_visited_curr_epoch"])
