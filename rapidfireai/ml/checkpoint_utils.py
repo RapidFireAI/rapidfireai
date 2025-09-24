@@ -20,10 +20,7 @@ from rapidfireai.utils.trainer_config import TrainerConfig
 def move_tensors_to_device(obj, device: torch.device):
     """Recursively move all tensors in a nested structure to device"""
     if isinstance(obj, torch.Tensor):
-        if device == "cpu":
-            return obj.cpu().contiguous().clone().detach()
-        else:
-            return obj.clone().detach().to(device, non_blocking=True)
+        return obj.to(device, non_blocking=True)
     elif isinstance(obj, dict):
         return {key: move_tensors_to_device(value, device) for key, value in obj.items()}
     elif isinstance(obj, list):
@@ -37,7 +34,7 @@ def move_tensors_to_device(obj, device: torch.device):
 def move_tensors_to_cpu(obj):
     """Recursively move all tensors in a nested structure to CPU"""
     if isinstance(obj, torch.Tensor):
-        return obj.cpu().contiguous().clone().detach()
+        return obj.cpu().clone()
     elif isinstance(obj, dict):
         return {key: move_tensors_to_cpu(value) for key, value in obj.items()}
     elif isinstance(obj, list):
@@ -126,6 +123,10 @@ def create_model_instance(
 
     if is_peft and checkpoint_path:
         model_instance = PeftModel.from_pretrained(model_instance, checkpoint_path)
+
+    # Clear device map to ensure clean device assignment
+    # if hasattr(model_instance, 'hf_device_map'):
+    #     model_instance.hf_device_map = None
 
     _configure_tokenizer(tokenizer)
 
@@ -267,15 +268,6 @@ def load_checkpoint_from_shared_memory(
             base_model, tokenizer = load_model_from_shared_memory(
                 trainer_config, shm_manager, SHMObjectType.BASE_MODEL, model_id, device
             )
-            # base_model, tokenizer = create_model_instance(
-            #     trainer_config.config_leaf,
-            #     trainer_config.create_model_fn,
-            #     checkpoint_path=None,
-            #     is_peft=is_peft,
-            #     device=device,
-            #     use_fsdp=use_fsdp,
-            # )
-    # base_model.hf_device_map = {"": 0}
 
     if base_model == "" or (not is_peft and not shm_manager.model_exists(run_id)):
         base_model, tokenizer = create_model_instance(
@@ -365,7 +357,7 @@ def load_model_from_shared_memory(
     tokenizer = model_data["tokenizer"]
     bnb_modules = move_tensors_to_device(model_data["bnb_modules"], device=device)
     model = get_model_to_device(model, bnb_modules, device=device)
-    # print(f"checkkkkkkkk----> model.hf_device_map: {model.hf_device_map}")
+    print(f"checkkkkkkkk----> model.hf_device_map: {model.hf_device_map}")
     return model, tokenizer
 
 
@@ -431,16 +423,9 @@ def save_model_to_shared_memory(
         if model_cpu is None:
             return
     else:
-        # Move model to CPU and detach all parameters from computation graph
         model_cpu = model.cpu()
-        # for param in model_cpu.parameters():
-        #     if param.requires_grad:
-        #         param.detach_()
-        # for buffer in model_cpu.buffers():
-        #     if buffer.requires_grad:
-        #         buffer.detach_()
+
     # Clear device map to avoid device conflicts when loading on different workers
-    # print(f"checkkkkkkkk----> model_cpu.hf_device_map: {model_cpu.hf_device_map}")
     # if hasattr(model_cpu, 'hf_device_map'):
     #     model_cpu.hf_device_map = None
 
@@ -572,8 +557,17 @@ def get_model_to_device(model, bnb_modules, device="cuda:0"):
             if name not in bnb_modules:
                 module.weight.data = move_tensors_to_device(module.weight.data, device)
 
-    model = model.to(device)  # FIXME: cpu vs cuda fix
+    model = model.to(device)
     # print(f"checkkkkkkkk----> model.hf_device_map: {model.hf_device_map}")
+
+    # Update hf_device_map to reflect the actual device placement
+    # if hasattr(model, 'hf_device_map'):
+    #     # Create a new device map with all modules mapped to the target device
+    #     new_device_map = {}
+    #     for name, module in model.named_modules():
+    #         if name:  # Skip empty name (root module)
+    #             new_device_map[name] = device
+    #     model.hf_device_map = new_device_map
 
     return model
 

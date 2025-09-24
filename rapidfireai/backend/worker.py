@@ -110,13 +110,6 @@ class Worker:
         else:
             use_fsdp = False
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        # Temporarily disable CUDA_LAUNCH_BLOCKING to get proper error tracebacks
-        # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # Enable synchronous CUDA operations for debugging
-        os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"  # Enable detailed distributed debugging
-        os.environ["TORCH_SHOW_CPP_STACKTRACES"] = "1"  # Show C++ stack traces
-        os.environ["CUDA_LAUNCH_BLOCKING"] = "0"  # Disable to get proper error tracebacks
-        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # Ensure consistent device ordering
-        # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"  # Limit memory fragmentation
         # Initialize distributed training if FSDP is enabled for this run
         if use_fsdp:
             try:
@@ -127,9 +120,7 @@ class Worker:
                 master_port = multi_worker_details["master_port"]
                 world_size = multi_worker_details["world_size"]
                 rank = multi_worker_details["local_rank"]
-                os.environ["CUDA_VISIBLE_DEVICES"] = (
-                    f"{self.worker_id}"  # ",".join(map(str, multi_worker_details["worker_ids"]))
-                )
+                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, multi_worker_details["worker_ids"]))
                 setup_distributed_environment(
                     rank=rank, world_size=world_size, master_addr=master_addr, master_port=master_port
                 )
@@ -190,42 +181,15 @@ class Worker:
             trainer_instance, base_model_name = create_trainer_instance(
                 trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id, use_fsdp=use_fsdp
             )
-        # Set hf_device_map on the main model
-        # trainer_instance.model.hf_device_map = {"": trainer_config.local_rank}
-
-        # if hasattr(trainer_instance.model, 'base_model') and hasattr(trainer_instance.model.base_model, 'hf_device_map'):
-        #     trainer_instance.model.base_model.hf_device_map = {"": trainer_config.local_rank}
-
-        # print(f"checkkkkkkkk----> trainer_instance.model.hf_device_map: {trainer_instance.model.hf_device_map}")
-        # if hasattr(trainer_instance.model, 'base_model'):
-        #     print(f"checkkkkkkkk----> trainer_instance.model.base_model.hf_device_map: {trainer_instance.model.base_model.hf_device_map}")
+        trainer_instance.model.hf_device_map = {"": trainer_config.local_rank}
         # trainer_instance.model = trainer_instance.model.to(f"cuda:{trainer_config.local_rank}")
-        self.logger.debug(f"model is on device: {trainer_instance.model.device}")
-        self.logger.debug(f"device checkkkkkkkk:  {trainer_instance.accelerator.device}")
-
+        self.logger.debug(
+            f"device checkkkkkkkk: {trainer_instance.model.hf_device_map.values()}, {trainer_instance.accelerator.device}"
+        )
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
         if stderr_buffer.getvalue():
             self.training_logger.error(stderr_buffer.getvalue())
-
-        def assert_all_cpu(model, where=""):
-            for n, p in model.named_parameters(recurse=True):
-                if p is not None and p.is_cuda:
-                    self.logger.debug(f"[{where}] parameter {n} still on {p.device}")
-            for n, b in model.named_buffers(recurse=True):
-                if isinstance(b, torch.Tensor) and b.is_cuda:
-                    self.logger.debug(f"[{where}] buffer {n} still on {b.device}")
-
-            for name, mod in model.named_modules():
-                w = getattr(mod, "weight", None)
-                if hasattr(w, "quant_state") and w.quant_state is not None:
-                    for attr in ("absmax", "code", "quant_map", "state1", "state2"):
-                        q = getattr(w.quant_state, attr, None)
-                        if isinstance(q, torch.Tensor) and q.is_cuda:
-                            print("bnb cross-device:", name, attr, q.device)
-
-        if trainer_config.local_rank != 0:
-            self.logger.debug(f"asserting all cpu: {assert_all_cpu(trainer_instance.model)}")
 
         # if first time, save checkpoint to disk
         if completed_steps == 0 and not USE_SHARED_MEMORY:
@@ -241,59 +205,20 @@ class Worker:
         # Synchronize all workers before training starts
         if use_fsdp and is_distributed_initialized():
             barrier()
-            self.logger.debug(f"Worker {self.worker_id} passed barrier before training")
-
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
         start_time = time.time()
-
-        # Add CUDA synchronization before training
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-            self.logger.debug(f"Worker {self.worker_id} CUDA synchronized before training")
-
         # for param in trainer_instance.model.parameters():
         #     if (param.dtype == torch.float32):
         #         param.data = param.data.to(torch.bfloat16)
-        if use_fsdp and is_distributed_initialized():
-            barrier()
-            self.logger.debug(f"Worker {self.worker_id} passed barrier before training call")
-
-        try:
-            with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-                trainer_instance.train()
-        except RuntimeError as e:
-            if "CUDA" in str(e) or "cuda" in str(e):
-                self.logger.error(f"CUDA error on worker {self.worker_id}: {e}")
-                self.logger.error(f"Full traceback: {traceback.format_exc()}")
-                # Log CUDA memory info for debugging
-                if torch.cuda.is_available():
-                    self.logger.error(f"CUDA memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
-                    self.logger.error(f"CUDA memory cached: {torch.cuda.memory_reserved() / 1024**3:.2f} GB")
-                    torch.cuda.synchronize()
-            else:
-                self.logger.error(f"Runtime error on worker {self.worker_id}: {e}")
-                self.logger.error(f"Full traceback: {traceback.format_exc()}")
-            raise
-        except Exception as e:
-            self.logger.error(f"Training failed on worker {self.worker_id}: {e}")
-            self.logger.error(f"Full traceback: {traceback.format_exc()}")
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-            raise
-
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+            trainer_instance.train()
         end_time = time.time()
         self.logger.debug(f"accelerator device: {trainer_instance.accelerator.device} on worker {self.worker_id}")
-
-        # Add CUDA synchronization after training
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-            self.logger.debug(f"Worker {self.worker_id} CUDA synchronized after training")
 
         # Synchronize all workers after training completes
         if use_fsdp and is_distributed_initialized():
             barrier()
-            self.logger.debug(f"Worker {self.worker_id} passed barrier after training")
 
         # update estimated runtime in database for scheduler optimization
         if trainer_config.local_rank == 0:
@@ -322,7 +247,7 @@ class Worker:
                 self.logger.debug(f"Worker {self.worker_id} passed barrier after training")
 
             # save checkpoints to shared memory
-            # save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager, use_fsdp=use_fsdp)
+            save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager, use_fsdp=use_fsdp)
             if not config_leaf.get("peft_params"):
                 save_model_to_shared_memory(
                     trainer_instance.model,
