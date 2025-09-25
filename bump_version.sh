@@ -38,10 +38,10 @@ check_string_format() {
     if [[ "$input_string" =~ ^[0-9]+[.][0-9]+[.][0-9]+rc[0-9]+$ ]]; then
         echo "rc"
         return 0 # Success
-    elif [[ "$input_string" =~ ^[0-9]+[.][0-9]+[.][0-9]+alpha[0-9]+$ ]]; then
+    elif [[ "$input_string" =~ ^[0-9]+[.][0-9]+[.][0-9]+a[0-9]+$ ]]; then
         echo "alpha"
         return 0 # Success
-    elif [[ "$input_string" =~ ^[0-9]+[.][0-9]+[.][0-9]+beta[0-9]+$ ]]; then
+    elif [[ "$input_string" =~ ^[0-9]+[.][0-9]+[.][0-9]+b[0-9]+$ ]]; then
         echo "beta"
         return 0 # Success
     elif [[ "$input_string" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
@@ -60,15 +60,15 @@ bump_number() {
         rc_version=${input_string##*rc}
         echo "${patch_version}rc$((rc_version + 1))"
         return 0
-    elif [[ "$input_string" =~ ^[0-9]+alpha[0-9]+$ ]]; then
-        patch_version=${input_string%%alpha*}
-        alpha_version=${input_string##*alpha}
-        echo "${patch_version}alpha$((alpha_version + 1))"
+    elif [[ "$input_string" =~ ^[0-9]+a[0-9]+$ ]]; then
+        patch_version=${input_string%%a*}
+        alpha_version=${input_string##*a}
+        echo "${patch_version}a$((alpha_version + 1))"
         return 0
-    elif [[ "$input_string" =~ ^[0-9]+beta[0-9]+$ ]]; then
-        patch_version=${input_string%%beta*}
-        beta_version=${input_string##*beta}
-        echo "${patch_version}beta$((beta_version + 1))"
+    elif [[ "$input_string" =~ ^[0-9]+b[0-9]+$ ]]; then
+        patch_version=${input_string%%b*}
+        beta_version=${input_string##*b}
+        echo "${patch_version}b$((beta_version + 1))"
         return 0
     elif [[ "$input_string" =~ ^[0-9]+$ ]]; then
         echo $((input_string + 1))
@@ -76,6 +76,110 @@ bump_number() {
     else
         echo "\"$input_string\" does not match the number, rc alpha, or beta pattern."
         return 1
+    fi
+}
+
+update_pyproject_toml_file() {
+    local NEW_VERSION="$1"
+
+    IFS='.' read -ra VERSION_PARTS <<< "$NEW_VERSION"
+    local NEW_MAJOR=${VERSION_PARTS[0]}
+    local NEW_MINOR=${VERSION_PARTS[1]}
+    local NEW_PATCH=${VERSION_PARTS[2]}
+
+    # Update pyproject.toml
+    print_info "Updating pyproject.toml..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+    else
+        # Linux
+        sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+    fi
+
+    # Verify the changes
+    UPDATED_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+    if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
+        print_error "Failed to update version in pyproject.toml"
+        exit 1
+    fi
+}
+
+update_build_md_file() {
+    local NEW_VERSION="$1"
+    # Update BUILD.md if it has a version comment
+    if grep -q "^# RapidFire AI" BUILD.md; then
+        print_info "Updating BUILD.md version comment and wheel version..."
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s/^# RapidFire AI .*/# RapidFire AI $NEW_VERSION/" BUILD.md
+            sed -i '' "s/^pip install rapidfireai-.*/pip install rapidfireai-$NEW_VERSION-py3-none-any.whl/" BUILD.md
+        else
+            sed -i "s/^# RapidFire AI .*/# RapidFire AI $NEW_VERSION/" BUILD.md
+            sed -i "s/^pip install rapidfireai-.*/pip install rapidfireai-$NEW_VERSION-py3-none-any.whl/" BUILD.md
+        fi
+    fi
+    # Verify the changes
+    UPDATED_VERSION=$(grep '^pip install rapidfireai-' BUILD.md | sed 's/pip install rapidfireai-\(.*\)-py3-none-any.whl/\1/')
+    if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
+        print_error "Failed to update version in BUILD.md"
+        exit 1
+    fi
+}
+
+update_requirements_txt_file() {
+    local NEW_VERSION="$1"
+
+    # Update requirements.txt if it has a version comment
+    if grep -q "^# version " requirements.txt; then
+        print_info "Updating requirements.txt version comment..."
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s/^# version .*/# version $NEW_VERSION/" requirements.txt
+        else
+            sed -i "s/^# version .*/# version $NEW_VERSION/" requirements.txt
+        fi
+    fi
+}
+
+update_version_py_file() {
+    local NEW_VERSION="$1"
+    # Update the central version file
+    print_info "Updating rapidfireai/version.py..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" rapidfireai/version.py
+        sed -i '' "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
+    else
+        # Linux
+        sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" rapidfireai/version.py
+        sed -i "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
+    fi
+
+    # Verify version.py was updated
+    UPDATED_VERSION_PY=$(grep '^__version__ = ' rapidfireai/version.py | sed 's/__version__ = "\(.*\)"/\1/')
+    if [ "$UPDATED_VERSION_PY" != "$NEW_VERSION" ]; then
+        print_error "Failed to update version in rapidfireai/version.py"
+        exit 1
+    fi
+}
+
+update_constants_tsx_file() {
+    local NEW_VERSION="$1"
+
+
+    # Update the JS constants version file
+    print_info "Updating rapidfireai/frontend/src/common/constants.tsx..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' "s/^export const Version = '.*';/export const Version = '$NEW_VERSION';/" rapidfireai/frontend/src/common/constants.tsx
+    else
+        # Linux
+        sed -i "s/^export const Version = '.*';/export const Version = '$NEW_VERSION';/" rapidfireai/frontend/src/common/constants.tsx
+    fi
+    # Verify JS constants was updated
+    UPDATED_VERSION_JS=$(grep '^export const Version = ' rapidfireai/frontend/src/common/constants.tsx | sed "s/export const Version = '\\(.*\\)';/\\1/")
+    if [ "$UPDATED_VERSION_JS" != "$NEW_VERSION" ]; then
+        print_error "Failed to update version in rapidfireai/frontend/src/common/constants.tsx"
+        exit 1
     fi
 }
 
@@ -137,9 +241,9 @@ case $BUMP_TYPE in
         if [ "$(check_string_format $CURRENT_VERSION)" == "rc" ]; then
             NEW_PATCH=${PATCH%%rc*}
         elif [ "$(check_string_format $CURRENT_VERSION)" == "alpha" ]; then
-            NEW_PATCH=${PATCH%%alpha*}
+            NEW_PATCH=${PATCH%%a*}
         elif [ "$(check_string_format $CURRENT_VERSION)" == "beta" ]; then
-            NEW_PATCH=${PATCH%%beta*}
+            NEW_PATCH=${PATCH%%b*}
         else
             NEW_PATCH=$(bump_number "$PATCH")
         fi
@@ -151,9 +255,9 @@ case $BUMP_TYPE in
         if [ "$(check_string_format $CURRENT_VERSION)" == "number" ]; then
             NEW_PATCH=$(bump_number "$PATCH")rc1
         elif [ "$(check_string_format $CURRENT_VERSION)" == "alpha" ]; then
-            NEW_PATCH=${PATCH%%alpha*}rc1
+            NEW_PATCH=${PATCH%%a*}rc1
         elif [ "$(check_string_format $CURRENT_VERSION)" == "beta" ]; then
-            NEW_PATCH=${PATCH%%beta*}rc1
+            NEW_PATCH=${PATCH%%b*}rc1
         else
             NEW_PATCH=$(bump_number "$PATCH")
         fi
@@ -163,11 +267,11 @@ case $BUMP_TYPE in
         NEW_MAJOR=$MAJOR
         NEW_MINOR=$MINOR
         if [ "$(check_string_format $CURRENT_VERSION)" == "number" ]; then
-            NEW_PATCH=$(bump_number "$PATCH")alpha1
+            NEW_PATCH=$(bump_number "$PATCH")a1
         elif [ "$(check_string_format $CURRENT_VERSION)" == "beta" ]; then
-            NEW_PATCH=$(bump_number ${PATCH%%beta*})alpha1
+            NEW_PATCH=$(bump_number ${PATCH%%b*})a1
         elif [ "$(check_string_format $CURRENT_VERSION)" == "rc" ]; then
-            NEW_PATCH=$(bump_number ${PATCH%%rc*})alpha1
+            NEW_PATCH=$(bump_number ${PATCH%%rc*})a1
         else
             NEW_PATCH=$(bump_number "$PATCH")
         fi
@@ -177,11 +281,11 @@ case $BUMP_TYPE in
         NEW_MAJOR=$MAJOR
         NEW_MINOR=$MINOR
         if [ "$(check_string_format $CURRENT_VERSION)" == "number" ]; then
-            NEW_PATCH=$(bump_number "$PATCH")beta1
+            NEW_PATCH=$(bump_number "$PATCH")b1
         elif [ "$(check_string_format $CURRENT_VERSION)" == "alpha" ]; then
-            NEW_PATCH=${PATCH%%alpha*}beta1
+            NEW_PATCH=${PATCH%%a*}b1
         elif [ "$(check_string_format $CURRENT_VERSION)" == "rc" ]; then
-            NEW_PATCH=$(bump_number ${PATCH%%rc*})beta1
+            NEW_PATCH=$(bump_number ${PATCH%%rc*})b1
         else
             NEW_PATCH=$(bump_number "$PATCH")
         fi
@@ -206,92 +310,11 @@ esac
 
 NEW_VERSION="$NEW_MAJOR.$NEW_MINOR.$NEW_PATCH"
 
-# Update pyproject.toml
-print_info "Updating pyproject.toml..."
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    sed -i '' "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
-else
-    # Linux
-    sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
-fi
-
-# Update requirements.txt if it has a version comment
-if grep -q "^# version " requirements.txt; then
-    print_info "Updating requirements.txt version comment..."
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s/^# version .*/# version $NEW_VERSION/" requirements.txt
-    else
-        sed -i "s/^# version .*/# version $NEW_VERSION/" requirements.txt
-    fi
-fi
-
-# Update README.md if it has a version comment
-if grep -q "^# RapidFire AI " README.md; then
-    print_info "Updating README.md version comment and wheel version..."
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s/^# RapidFire AI .*/# RapidFire AI $NEW_VERSION/" README.md
-        sed -i '' "s/^pip install rapidfireai-.*/pip install rapidfireai-$NEW_VERSION-py3-none-any.whl/" README.md
-    else
-        sed -i "s/^# RapidFire AI .*/# RapidFire AI$NEW_VERSION/" README.md
-        sed -i "s/^pip install rapidfireai-.*/pip install rapidfireai-$NEW_VERSION-py3-none-any.whl/" README.md
-    fi
-fi
-
-# Update BUILD.md if it has a version comment
-if grep -q "^# RapidFire AI" BUILD.md; then
-    print_info "Updating BUILD.md version comment and wheel version..."
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s/^# RapidFire AI .*/# RapidFire AI $NEW_VERSION/" BUILD.md
-        sed -i '' "s/^pip install rapidfireai-.*/pip install rapidfireai-$NEW_VERSION-py3-none-any.whl/" BUILD.md
-    else
-        sed -i "s/^# RapidFire AI .*/# RapidFire AI $NEW_VERSION/" BUILD.md
-        sed -i "s/^pip install rapidfireai-.*/pip install rapidfireai-$NEW_VERSION-py3-none-any.whl/" BUILD.md
-    fi
-fi
-
-# Update the central version file
-print_info "Updating rapidfireai/version.py..."
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    sed -i '' "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" rapidfireai/version.py
-    sed -i '' "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
-else
-    # Linux
-    sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" rapidfireai/version.py
-    sed -i "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
-fi
-
-# Update the JS constants version file
-print_info "Updating rapidfireai/frontend/src/common/constants.tsx..."
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    sed -i '' "s/^export const Version = '.*';/export const Version = '$NEW_VERSION';/" rapidfireai/frontend/src/common/constants.tsx
-else
-    # Linux
-    sed -i "s/^export const Version = '.*';/export const Version = '$NEW_VERSION';/" rapidfireai/frontend/src/common/constants.tsx
-fi
-
-# Verify the changes
-UPDATED_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
-    print_error "Failed to update version in pyproject.toml"
-    exit 1
-fi
-
-# Verify version.py was updated
-UPDATED_VERSION_PY=$(grep '^__version__ = ' rapidfireai/version.py | sed 's/__version__ = "\(.*\)"/\1/')
-if [ "$UPDATED_VERSION_PY" != "$NEW_VERSION" ]; then
-    print_error "Failed to update version in rapidfireai/version.py"
-    exit 1
-fi
-
-# Verify JS constants was updated
-UPDATED_VERSION_JS=$(grep '^export const Version = ' rapidfireai/frontend/src/common/constants.tsx | sed "s/export const Version = '\\(.*\\)';/\\1/")
-if [ "$UPDATED_VERSION_JS" != "$NEW_VERSION" ]; then
-    print_error "Failed to update version in rapidfireai/frontend/src/common/constants.tsx"
-    exit 1
-fi
+update_pyproject_toml_file "$NEW_VERSION"
+update_version_py_file "$NEW_VERSION"
+update_constants_tsx_file "$NEW_VERSION"
+update_build_md_file "$NEW_VERSION"
+update_requirements_txt_file "$NEW_VERSION"
 
 print_success "Version updated to $NEW_VERSION"
 
