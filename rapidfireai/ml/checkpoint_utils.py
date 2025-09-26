@@ -20,27 +20,17 @@ from rapidfireai.utils.trainer_config import TrainerConfig
 def move_tensors_to_device(obj, device: torch.device):
     """Recursively move all tensors in a nested structure to device"""
     if isinstance(obj, torch.Tensor):
-        return obj.to(device, non_blocking=True)
+        if device == "cpu":
+            # Only clone if the tensor is not already on CPU to avoid unnecessary copying
+            return obj.cpu().clone()
+        else:
+            return obj.to(device, non_blocking=True)
     elif isinstance(obj, dict):
         return {key: move_tensors_to_device(value, device) for key, value in obj.items()}
     elif isinstance(obj, list):
         return [move_tensors_to_device(item, device) for item in obj]
     elif isinstance(obj, tuple):
         return tuple(move_tensors_to_device(item, device) for item in obj)
-    else:
-        return obj
-
-
-def move_tensors_to_cpu(obj):
-    """Recursively move all tensors in a nested structure to CPU"""
-    if isinstance(obj, torch.Tensor):
-        return obj.cpu().clone()
-    elif isinstance(obj, dict):
-        return {key: move_tensors_to_cpu(value) for key, value in obj.items()}
-    elif isinstance(obj, list):
-        return [move_tensors_to_cpu(item) for item in obj]
-    elif isinstance(obj, tuple):
-        return tuple(move_tensors_to_cpu(item) for item in obj)
     else:
         return obj
 
@@ -66,30 +56,6 @@ def ensure_gradient_compatibility(model, use_peft: bool = False, use_fsdp: bool 
     torch.set_grad_enabled(True)
 
     return model
-
-
-# def prepare_model_for_fsdp(model, use_peft: bool = False):
-#     """Prepare model for FSDP wrapping by ensuring proper parameter state"""
-#     if use_peft and hasattr(model, 'peft_config'):
-#         # For PEFT models, ensure base model is in eval mode and adapters are trainable
-#         model.base_model.eval()
-#         for name, param in model.named_parameters():
-#             if any(adapter_key in name.lower() for adapter_key in ["lora", "adapter", "modules_to_save"]):
-#                 param.requires_grad = True
-#             else:
-#                 param.requires_grad = False
-
-#     # Clear any existing gradient states that might interfere with FSDP
-#     for param in model.parameters():
-#         if param.requires_grad:
-#             param.grad = None
-#             # Initialize FSDP-specific attributes
-#             if not hasattr(param, '_post_backward_hook_state'):
-#                 param._post_backward_hook_state = None
-#             if not hasattr(param, '_fsdp_state'):
-#                 param._fsdp_state = None
-
-#     return model
 
 
 def _configure_tokenizer(tokenizer: AutoTokenizer) -> None:
@@ -118,16 +84,10 @@ def create_model_instance(
         model_config["model_kwargs"]["device_map"] = {"": device}
     if checkpoint_path and not is_peft:
         model_config["model_name"] = checkpoint_path
-    print("model_config:: ", model_config)
     model_instance, tokenizer = create_model_fn(model_config)
 
     if is_peft and checkpoint_path:
         model_instance = PeftModel.from_pretrained(model_instance, checkpoint_path)
-
-    # Clear device map to ensure clean device assignment
-    # if hasattr(model_instance, 'hf_device_map'):
-    #     model_instance.hf_device_map = None
-
     _configure_tokenizer(tokenizer)
 
     return model_instance, tokenizer
@@ -135,19 +95,44 @@ def create_model_instance(
 
 def _collect_fsdp_peft_state_dict(model, adapter_name: str = "default"):
     """Collect PEFT state dict from FSDP model efficiently"""
-    from torch.distributed.fsdp import FullStateDictConfig, StateDictType
-
-    print("params in peft state dict before collecting", sum(p.numel() for p in model.parameters()))
-    # Configure FSDP to collect full state dict
     full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
     with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
         peft_state_dict = get_peft_model_state_dict(
             model,
             adapter_name=adapter_name,
         )
-    print("total peft params", sum(p.numel() for p in model.parameters()))
-
     return peft_state_dict
+
+
+def _collect_fsdp_full_model(model, trainer_config):
+    """Collect full model state from FSDP model efficiently"""
+    full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+    model_cpu = None
+    full_state_dict = None
+
+    with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
+        full_state_dict = model.state_dict()
+        if full_state_dict is None:
+            return None
+
+    if trainer_config.local_rank == 0:
+        from accelerate import init_empty_weights
+
+        with init_empty_weights():
+            model_cpu, _ = create_model_instance(
+                trainer_config.config_leaf,
+                trainer_config.create_model_fn,
+                use_fsdp=True,
+                rank=trainer_config.local_rank,
+            )
+            model_cpu = model_cpu.to_empty(device="cpu")
+        prev_dtype = model_cpu.dtype
+        full_state_dict = {k: v.cpu().clone() for k, v in full_state_dict.items()}
+
+        model_cpu.load_state_dict(full_state_dict, strict=False, assign=True)
+        model_cpu = model_cpu.to(device="cpu", dtype=prev_dtype)
+
+    return model_cpu
 
 
 def save_checkpoint_to_shared_memory(
@@ -156,6 +141,8 @@ def save_checkpoint_to_shared_memory(
     shm_manager: SharedMemoryManager,
     use_fsdp: bool = False,
 ) -> None:
+    device = "cpu"
+
     checkpoint = {}
     rank = trainer_config.local_rank if use_fsdp else 0
 
@@ -163,12 +150,6 @@ def save_checkpoint_to_shared_memory(
         if use_fsdp:
             adapter_name = trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
             peft_state_dict = _collect_fsdp_peft_state_dict(trainer.model, adapter_name)
-            print(
-                "params in peft state dict after collecting on worker ",
-                trainer_config.worker_id,
-                ": ",
-                sum(p.numel() for p in peft_state_dict.values()),
-            )
             if rank == 0:
                 if peft_state_dict is not None:
                     checkpoint["state_dict"] = {k: v.cpu().clone() for k, v in peft_state_dict.items()}
@@ -191,18 +172,18 @@ def save_checkpoint_to_shared_memory(
             ):
                 optimizer_state = trainer.optimizer.state_dict()
             if optimizer_state is not None and trainer_config.local_rank == 0:
-                checkpoint["optimizer_state"] = move_tensors_to_cpu(optimizer_state)
+                checkpoint["optimizer_state"] = move_tensors_to_device(optimizer_state, device)
         else:
-            checkpoint["optimizer_state"] = move_tensors_to_cpu(trainer.optimizer.state_dict())
+            checkpoint["optimizer_state"] = move_tensors_to_device(trainer.optimizer.state_dict(), device)
 
     if trainer.lr_scheduler is not None:
-        checkpoint["scheduler_state"] = move_tensors_to_cpu(trainer.lr_scheduler.state_dict())
+        checkpoint["scheduler_state"] = move_tensors_to_device(trainer.lr_scheduler.state_dict(), device)
 
     if hasattr(trainer, "state"):
-        checkpoint["trainer_state"] = move_tensors_to_cpu(trainer.state.__dict__.copy())
+        checkpoint["trainer_state"] = move_tensors_to_device(trainer.state.__dict__.copy(), device)
 
     if hasattr(trainer, "rng_state"):
-        checkpoint["rng_state"] = move_tensors_to_cpu(trainer.rng_state)
+        checkpoint["rng_state"] = move_tensors_to_device(trainer.rng_state, device)
 
     if hasattr(trainer.args, "__dict__"):
         checkpoint["training_args"] = trainer.args.__dict__.copy()
@@ -211,7 +192,7 @@ def save_checkpoint_to_shared_memory(
         checkpoint["generation_config"] = trainer.model.generation_config.to_dict()
 
     if hasattr(trainer, "scaler"):
-        checkpoint["scaler"] = move_tensors_to_cpu(trainer.scaler.state_dict())
+        checkpoint["scaler"] = move_tensors_to_device(trainer.scaler.state_dict(), device)
 
     if hasattr(trainer.model, "config"):
         config = trainer.model.config
@@ -220,10 +201,8 @@ def save_checkpoint_to_shared_memory(
         if hasattr(config, "tokenizer_config"):
             checkpoint["tokenizer_config"] = config.tokenizer_config
 
-    # Only rank 0 saves to shared memory for FSDP
-    if use_fsdp and rank != 0:
-        return
-    shm_manager.save_model_object(trainer_config.run_id, SHMObjectType.CHECKPOINTS, checkpoint)
+    if rank == 0:
+        shm_manager.save_model_object(trainer_config.run_id, SHMObjectType.CHECKPOINTS, checkpoint)
 
 
 def load_checkpoint_from_shared_memory(
@@ -239,11 +218,12 @@ def load_checkpoint_from_shared_memory(
     base_model = None
     model_id = trainer_config.config_leaf.get("model_name")
     rank = trainer_config.local_rank if use_fsdp else 0
+    is_quantized = bool(trainer_config.config_leaf.get("model_kwargs", {}).get("quantization_config", {}))
     if trainer_config.warm_started_from is not None and not shm_manager.model_exists(run_id):
         shm_manager.create_warm_start_checkpoint(run_id, trainer_config.warm_started_from)
 
     if is_peft:
-        if not shm_manager.model_exists(model_id):
+        if not shm_manager.model_exists(model_id) or is_quantized:
             base_model, tokenizer = create_model_instance(
                 trainer_config.config_leaf,
                 trainer_config.create_model_fn,
@@ -254,7 +234,7 @@ def load_checkpoint_from_shared_memory(
             )
             if model_id is None:
                 model_id = base_model.config._name_or_path
-            if rank == 0:
+            if rank == 0 and not is_quantized:
                 save_model_to_shared_memory(
                     base_model,
                     tokenizer,
@@ -283,62 +263,44 @@ def load_checkpoint_from_shared_memory(
     model = base_model
     peft_config = LoraConfig(**trainer_config.config_leaf.get("peft_params", {}))
     if is_peft:
-        # model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
-        model = get_peft_model(model, peft_config)  # , autocast_adapter_dtype=False
-        peft_state_dict = get_peft_model_state_dict(
-            model, adapter_name=trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
-        )
-        print(
-            "params in peft state dict after getting peft model on worker ",
-            trainer_config.worker_id,
-            ": ",
-            sum(p.numel() for p in peft_state_dict.values()),
-        )
-
+        model = get_peft_model(model, peft_config)
     # Load weights from shared memory
-    # if trainer_config.completed_steps > 0 or trainer_config.warm_started_from is not None:
-    #     checkpoint = shm_manager.load_model_object(run_id, SHMObjectType.CHECKPOINTS)
+    if trainer_config.completed_steps > 0 or trainer_config.warm_started_from is not None:
+        checkpoint = shm_manager.load_model_object(run_id, SHMObjectType.CHECKPOINTS)
 
-    #     if "adapter_config" in checkpoint:
-    #         if trainer_config.config_leaf.get("trainer_type") == "DPO" and is_peft:
-    #             reference_state_dict = shm_manager.load_model_object(
-    #                 trainer_config.run_id, SHMObjectType.REF_STATE_DICT
-    #             )
-    #             reference_state_dict = move_tensors_to_device(reference_state_dict, device)
-    #             model.add_adapter(
-    #                 trainer_config.config_leaf.get("training_args", {}).get("ref_adapter_name"), peft_config
-    #             )
-    #             model.set_adapter(
-    #                 trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
-    #             )
-    #             set_peft_model_state_dict(
-    #                 model,
-    #                 reference_state_dict,
-    #                 adapter_name=trainer_config.config_leaf.get("training_args").get("ref_adapter_name"),
-    #             )
-    #             model.set_adapter(trainer_config.config_leaf.get("training_args").get("model_adapter_name", "default"))
+        if "adapter_config" in checkpoint and trainer_config.config_leaf.get("trainer_type") == "DPO" and is_peft:
+            reference_state_dict = shm_manager.load_model_object(trainer_config.run_id, SHMObjectType.REF_STATE_DICT)
+            reference_state_dict = move_tensors_to_device(reference_state_dict, device)
+            model.add_adapter(trainer_config.config_leaf.get("training_args", {}).get("ref_adapter_name"), peft_config)
+            model.set_adapter(trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default"))
+            set_peft_model_state_dict(
+                model,
+                reference_state_dict,
+                adapter_name=trainer_config.config_leaf.get("training_args").get("ref_adapter_name"),
+            )
+            model.set_adapter(trainer_config.config_leaf.get("training_args").get("model_adapter_name", "default"))
 
-    #     if checkpoint.get("state_dict"):
-    #         state_dict = {k: v.to(device) for k, v in checkpoint["state_dict"].items()}
-    #         if is_peft:
-    #             set_peft_model_state_dict(
-    #                 model,
-    #                 state_dict,
-    #                 adapter_name=trainer_config.config_leaf.get("training_args", {}).get(
-    #                     "model_adapter_name", "default"
-    #                 ),
-    #             )
-    #             if trainer_config.config_leaf.get("trainer_type") == "DPO" and is_peft:
-    #                 model.set_adapter(
-    #                     trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
-    #                 )
-    #         else:
-    #             model.load_state_dict(state_dict)
+        if checkpoint.get("state_dict"):
+            state_dict = {k: v.to(device) for k, v in checkpoint["state_dict"].items()}
+            if is_peft:
+                set_peft_model_state_dict(
+                    model,
+                    state_dict,
+                    adapter_name=trainer_config.config_leaf.get("training_args", {}).get(
+                        "model_adapter_name", "default"
+                    ),
+                )
+                if trainer_config.config_leaf.get("trainer_type") == "DPO" and is_peft:
+                    model.set_adapter(
+                        trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
+                    )
+            else:
+                model.load_state_dict(state_dict)
 
-    #     elif not is_peft:
-    #         model, tokenizer = load_model_from_shared_memory(
-    #             trainer_config, shm_manager, SHMObjectType.FULL_MODEL, trainer_config.run_id, device
-    #         )
+        elif not is_peft:
+            model, tokenizer = load_model_from_shared_memory(
+                trainer_config, shm_manager, SHMObjectType.FULL_MODEL, trainer_config.run_id, device
+            )
 
     return model, tokenizer
 
@@ -353,54 +315,10 @@ def load_model_from_shared_memory(
     """Load model from shared memory"""
     model_data = shm_manager.load_model_object(model_id, model_object_type)
     model = copy.deepcopy(model_data[model_object_type])
-    # model.hf_device_map = None
     tokenizer = model_data["tokenizer"]
     bnb_modules = move_tensors_to_device(model_data["bnb_modules"], device=device)
     model = get_model_to_device(model, bnb_modules, device=device)
-    print(f"checkkkkkkkk----> model.hf_device_map: {model.hf_device_map}")
     return model, tokenizer
-
-
-def _collect_fsdp_full_model(model, trainer_config):
-    """Collect full model state from FSDP model efficiently"""
-    from torch.distributed.fsdp import FullStateDictConfig, StateDictType
-
-    full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
-    model_cpu = None
-    with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
-        full_state_dict = model.state_dict()
-        if full_state_dict is None:
-            return None
-        print("params in full state dict", sum(p.numel() for p in full_state_dict.values()))
-        if trainer_config.local_rank == 0:
-            from accelerate import init_empty_weights
-
-            with init_empty_weights():
-                model_cpu, _ = create_model_instance(
-                    trainer_config.config_leaf,
-                    trainer_config.create_model_fn,
-                    use_fsdp=True,
-                    rank=trainer_config.local_rank,
-                )
-                model_cpu = model_cpu.to_empty(device="cpu")
-            full_state_dict = {
-                k: v.detach().cpu().clone() if isinstance(v, torch.Tensor) else v for k, v in full_state_dict.items()
-            }
-            print("params in full state dict after clone", sum(p.numel() for p in full_state_dict.values()))
-
-            total_params = sum(p.numel() for p in model_cpu.parameters())
-            trainable_params = sum(p.numel() for p in model_cpu.parameters() if p.requires_grad)
-            print(
-                f"Total parameters: {total_params}, Trainable parameters: {trainable_params} for worker {trainer_config.worker_id}"
-            )
-            print("checkkkk model cpu params", sum(p.numel() for p in model_cpu.parameters()))
-            model_cpu.load_state_dict(full_state_dict)
-            print("checkkkk model cpu params after load state dict", sum(p.numel() for p in model_cpu.parameters()))
-
-            # Clear device map to avoid device conflicts when loading on different workers
-            # if hasattr(model_cpu, 'hf_device_map'):
-            #     model_cpu.hf_device_map = None
-    return model_cpu
 
 
 def save_model_to_shared_memory(
@@ -423,11 +341,7 @@ def save_model_to_shared_memory(
         if model_cpu is None:
             return
     else:
-        model_cpu = model.cpu()
-
-    # Clear device map to avoid device conflicts when loading on different workers
-    # if hasattr(model_cpu, 'hf_device_map'):
-    #     model_cpu.hf_device_map = None
+        model_cpu = model.to(device="cpu")
 
     model_data = {model_type.value: model_cpu, "tokenizer": tokenizer}
     shm_manager.save_model_object(model_id, model_type, model_data, is_fsdp=use_fsdp)
@@ -466,7 +380,7 @@ def load_or_create_ref_model(
             ref_model_instance = copy.deepcopy(model_instance)
 
         # Only rank 0 saves reference model to shared memory for FSDP
-        if not use_fsdp or rank == 0:
+        if rank == 0:
             save_model_to_shared_memory(
                 ref_model_instance,
                 None,
@@ -558,17 +472,6 @@ def get_model_to_device(model, bnb_modules, device="cuda:0"):
                 module.weight.data = move_tensors_to_device(module.weight.data, device)
 
     model = model.to(device)
-    # print(f"checkkkkkkkk----> model.hf_device_map: {model.hf_device_map}")
-
-    # Update hf_device_map to reflect the actual device placement
-    # if hasattr(model, 'hf_device_map'):
-    #     # Create a new device map with all modules mapped to the target device
-    #     new_device_map = {}
-    #     for name, module in model.named_modules():
-    #         if name:  # Skip empty name (root module)
-    #             new_device_map[name] = device
-    #     model.hf_device_map = new_device_map
-
     return model
 
 
@@ -576,6 +479,7 @@ def restore_trainer_from_shared_memory(
     trainer: SFTTrainer | DPOTrainer | GRPOTrainer,
     trainer_config: TrainerConfig,
     shm_manager: SharedMemoryManager,
+    use_fsdp: bool = False,
 ) -> SFTTrainer | DPOTrainer | GRPOTrainer:
     """Restore complete training state to trainer"""
     try:
@@ -592,19 +496,11 @@ def restore_trainer_from_shared_memory(
             for key, value in device_trainer_state.items():
                 if hasattr(trainer.state, key):
                     setattr(trainer.state, key, value)
+        if training_state.get("optimizer_state") is not None:
+            trainer._pending_optimizer_state = training_state["optimizer_state"]
 
-        if training_state.get("optimizer_state") is not None and trainer.optimizer is not None:
-            optimizer_state = training_state["optimizer_state"]
-            device_optimizer_state = move_tensors_to_device(optimizer_state, device)
-            trainer.optimizer.load_state_dict(device_optimizer_state)
-
-        if training_state.get("scheduler_state") is not None and trainer.lr_scheduler is not None:
-            scheduler_state = training_state["scheduler_state"]
-            device_scheduler_state = move_tensors_to_device(scheduler_state, device)
-            trainer.lr_scheduler.load_state_dict(device_scheduler_state)
-
-            if hasattr(trainer.state, "global_step"):
-                trainer.lr_scheduler._step_count = trainer.state.global_step + 1
+        if training_state.get("scheduler_state") is not None:
+            trainer._pending_scheduler_state = training_state["scheduler_state"]
 
         if training_state.get("rng_state") is not None:
             rng_state = training_state["rng_state"]
@@ -624,6 +520,45 @@ def restore_trainer_from_shared_memory(
     return trainer
 
 
+def restore_fsdp_optimizer_state(
+    trainer: SFTTrainer | DPOTrainer | GRPOTrainer,
+    trainer_config: TrainerConfig,
+    shm_manager: SharedMemoryManager,
+) -> SFTTrainer | DPOTrainer | GRPOTrainer:
+    """Restore optimizer state for FSDP trainer after optimizer is created"""
+    device = next(trainer.model.parameters()).device
+    try:
+        if hasattr(trainer, "_pending_optimizer_state") and trainer._pending_optimizer_state is not None:
+            optimizer_state = trainer._pending_optimizer_state
+            device_optimizer_state = move_tensors_to_device(optimizer_state, device)
+            trainer.optimizer.load_state_dict(device_optimizer_state)
+            delattr(trainer, "_pending_optimizer_state")
+    except Exception as e:
+        print(f"Warning: Error restoring FSDP optimizer state: {e}")
+
+    return trainer
+
+
+def restore_fsdp_scheduler_state(
+    trainer: SFTTrainer | DPOTrainer | GRPOTrainer,
+    trainer_config: TrainerConfig,
+    shm_manager: SharedMemoryManager,
+) -> SFTTrainer | DPOTrainer | GRPOTrainer:
+    """Restore scheduler state for FSDP trainer after scheduler is created"""
+    device = next(trainer.model.parameters()).device
+    try:
+        if hasattr(trainer, "_pending_scheduler_state") and trainer._pending_scheduler_state is not None:
+            scheduler_state = trainer._pending_scheduler_state
+            device_scheduler_state = move_tensors_to_device(scheduler_state, device)
+            trainer.lr_scheduler.load_state_dict(device_scheduler_state)
+            if hasattr(trainer.state, "global_step"):
+                trainer.lr_scheduler._step_count = trainer.state.global_step + 1
+            delattr(trainer, "_pending_scheduler_state")
+    except Exception as e:
+        print(f"Warning: Error restoring FSDP scheduler state: {e}")
+    return trainer
+
+
 def save_checkpoint_to_disk(
     trainer: SFTTrainer | DPOTrainer | GRPOTrainer,
     trainer_config: TrainerConfig,
@@ -638,6 +573,7 @@ def save_checkpoint_to_disk(
         checkpoint_path = DataPath.final_checkpoint_path(base_run_path)
     else:
         checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"
+    device = "cpu"
     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
     os.makedirs(checkpoint_path, exist_ok=True)
 
@@ -650,12 +586,12 @@ def save_checkpoint_to_disk(
 
     if trainer.optimizer is not None:
         optimizer_path = checkpoint_path / "optimizer.pt"
-        optimizer_state = move_tensors_to_cpu(trainer.optimizer.state_dict())
+        optimizer_state = move_tensors_to_device(trainer.optimizer.state_dict(), device)
         torch.save(optimizer_state, optimizer_path)
 
     if trainer.lr_scheduler is not None:
         scheduler_path = checkpoint_path / "scheduler.pt"
-        scheduler_state = move_tensors_to_cpu(trainer.lr_scheduler.state_dict())
+        scheduler_state = move_tensors_to_device(trainer.lr_scheduler.state_dict(), device)
         torch.save(scheduler_state, scheduler_path)
 
     if hasattr(trainer, "rng_state"):

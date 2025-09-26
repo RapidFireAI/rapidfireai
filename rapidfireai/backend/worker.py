@@ -181,11 +181,6 @@ class Worker:
             trainer_instance, base_model_name = create_trainer_instance(
                 trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id, use_fsdp=use_fsdp
             )
-        trainer_instance.model.hf_device_map = {"": trainer_config.local_rank}
-        # trainer_instance.model = trainer_instance.model.to(f"cuda:{trainer_config.local_rank}")
-        self.logger.debug(
-            f"device checkkkkkkkk: {trainer_instance.model.hf_device_map.values()}, {trainer_instance.accelerator.device}"
-        )
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
         if stderr_buffer.getvalue():
@@ -236,9 +231,6 @@ class Worker:
         self.db.set_completed_steps(run_id, new_completed_steps)
 
         save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
-        # total_params = sum(p.numel() for p in trainer_instance.model.parameters())
-        # trainable_params = sum(p.numel() for p in trainer_instance.model.parameters() if p.requires_grad)
-        # self.logger.debug(f"Total parameters: {total_params}, Trainable parameters: {trainable_params} for worker {self.worker_id}")
 
         # save checkpoints
         if USE_SHARED_MEMORY:
@@ -290,12 +282,12 @@ class Worker:
 
         # clean up all references to shared memory objects
         if hasattr(trainer_instance, "model"):
-            # if hasattr(trainer_instance.model, "cpu"):
-            #     trainer_instance.model.cpu()
+            if hasattr(trainer_instance.model, "cpu"):
+                trainer_instance.model = trainer_instance.model.cpu()
             del trainer_instance.model
         if hasattr(trainer_instance, "ref_model"):
-            # if hasattr(trainer_instance.ref_model, "cpu"):
-            #     trainer_instance.ref_model.cpu()
+            if hasattr(trainer_instance.ref_model, "cpu"):
+                trainer_instance.ref_model = trainer_instance.ref_model.cpu()
             del trainer_instance.ref_model
         if hasattr(trainer_instance, "optimizer"):
             trainer_instance.optimizer.zero_grad(set_to_none=True)

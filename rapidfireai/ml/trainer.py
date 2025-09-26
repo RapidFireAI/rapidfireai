@@ -12,7 +12,6 @@ from rapidfireai.ml.checkpoint_utils import (
     load_checkpoint_from_disk,
     load_checkpoint_from_shared_memory,
     load_or_create_ref_model,
-    move_tensors_to_cpu,
     move_tensors_to_device,
 )
 from rapidfireai.utils.constants import SHMObjectType
@@ -23,7 +22,7 @@ from rapidfireai.utils.trainer_config import TrainerConfig
 set_verbosity_error()
 
 
-def create_rf_trainer(trainer_type: str, trainer_config=None, **kwargs):
+def create_rf_trainer(trainer_type: str, trainer_config=None, shm_manager=None, use_fsdp=False, **kwargs):
     """
     Factory function to create a custom trainer that uses total_steps from trainer_config.
     """
@@ -41,22 +40,36 @@ def create_rf_trainer(trainer_type: str, trainer_config=None, **kwargs):
     class RFTrainer(base_trainer_class):
         """Custom trainer that uses total_steps from trainer_config for scheduler setup."""
 
-        def __init__(self, trainer_config=None, **kwargs):
+        def __init__(self, trainer_config=None, shm_manager=None, use_fsdp=False, **kwargs):
             super().__init__(**kwargs)
             self.trainer_config = trainer_config
+            self.shm_manager = shm_manager
+            self.use_fsdp = use_fsdp
 
         def create_optimizer_and_scheduler(self, num_training_steps: int):
-            """
-            Setup the optimizer and the learning rate scheduler.
-            Uses trainer_config.total_steps instead of num_training_steps.
-            """
             if self.trainer_config is not None:
                 num_training_steps = self.trainer_config.total_steps
 
             self.create_optimizer()
-            self.create_scheduler(num_training_steps=num_training_steps, optimizer=self.optimizer)
+            if (
+                hasattr(self, "_pending_optimizer_state")
+                and self._pending_optimizer_state is not None
+                and self.shm_manager is not None
+            ):
+                from rapidfireai.ml.checkpoint_utils import restore_fsdp_optimizer_state
 
-    return RFTrainer(trainer_config=trainer_config, **kwargs)
+                restore_fsdp_optimizer_state(self, self.trainer_config, self.shm_manager)
+            self.create_scheduler(num_training_steps=num_training_steps, optimizer=self.optimizer)
+            if (
+                hasattr(self, "_pending_scheduler_state")
+                and self._pending_scheduler_state is not None
+                and self.shm_manager is not None
+            ):
+                from rapidfireai.ml.checkpoint_utils import restore_fsdp_scheduler_state
+
+                restore_fsdp_scheduler_state(self, self.trainer_config, self.shm_manager)
+
+    return RFTrainer(trainer_config=trainer_config, shm_manager=shm_manager, use_fsdp=use_fsdp, **kwargs)
 
 
 def create_trainer_instance(
@@ -112,11 +125,8 @@ def create_trainer_instance(
             use_fsdp=use_fsdp,
         )
 
-    # model_instance = model_instance.to(device)FIXME: cuda/cpu fix
-
-    # Prepare model for FSDP if needed
-    # if use_fsdp:
-    #     model_instance = prepare_model_for_fsdp(model_instance, is_peft)
+    if model_instance.device.type != "meta":  # model got loaded in meta device
+        model_instance = model_instance.to(device)
 
     trainer_kwargs, formatting_func, additional_trainer_kwargs = _prepare_trainer_kwargs(
         model_instance,
@@ -245,7 +255,7 @@ def _setup_reference_model(
                 if trainer_config.completed_steps == 0 and trainer_config.warm_started_from is None:
                     reference_state_dict = get_peft_model_state_dict(model_instance)
                     if not use_fsdp or trainer_config.local_rank == 0:
-                        reference_state_dict = move_tensors_to_cpu(reference_state_dict)
+                        reference_state_dict = move_tensors_to_device(reference_state_dict, "cpu")
                         shm_manager.save_model_object(
                             trainer_config.run_id, SHMObjectType.REF_STATE_DICT, reference_state_dict
                         )
@@ -293,7 +303,6 @@ def _prepare_trainer_kwargs(
     use_fsdp=False,
 ):
     """Prepare keyword arguments for trainer creation."""
-    # Ensure gradient compatibility for DPO training with FSDP
     if config_leaf.get("trainer_type") == "DPO":
         model_instance = ensure_gradient_compatibility(
             model_instance, hasattr(model_instance, "peft_config"), use_fsdp=use_fsdp
@@ -385,12 +394,13 @@ def _create_trainer_by_type(
     trainer_type, trainer_kwargs, trainer_config, use_shared_memory, shm_manager, device, use_fsdp=False
 ):
     """Create trainer instance based on type with proper state restoration."""
-    # Create trainer using the factory function
-    trainer = create_rf_trainer(trainer_type, trainer_config=trainer_config, **trainer_kwargs)
+    trainer = create_rf_trainer(
+        trainer_type, trainer_config=trainer_config, shm_manager=shm_manager, use_fsdp=use_fsdp, **trainer_kwargs
+    )
 
     if trainer_config.completed_steps > 0:
         if use_shared_memory:
-            trainer = restore_trainer_from_shared_memory(trainer, trainer_config, shm_manager)
+            trainer = restore_trainer_from_shared_memory(trainer, trainer_config, shm_manager, use_fsdp=use_fsdp)
         else:
             trainer = restore_trainer_from_disk(trainer, trainer_config, device)
 

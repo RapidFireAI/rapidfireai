@@ -143,8 +143,7 @@ class SharedMemoryManager:
         """Safely convert a tensor to shared memory format"""
         if tensor is None:
             return None
-        tensor = tensor.cpu()
-        tensor = tensor.detach().contiguous().clone()
+        tensor = tensor.cpu().clone()
         tensor.share_memory_()
 
         return tensor
@@ -152,8 +151,7 @@ class SharedMemoryManager:
     def _move_tensors_to_shared_memory(self, obj):
         """Recursively move all tensors in a nested structure to shared memory"""
         if isinstance(obj, torch.Tensor):
-            obj.share_memory_()
-            return obj
+            return self._safe_tensor_to_shared_memory(obj)
         elif isinstance(obj, dict):
             return {k: self._move_tensors_to_shared_memory(v) for k, v in obj.items()}
         elif isinstance(obj, (list, tuple)):
