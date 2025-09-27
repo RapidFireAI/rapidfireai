@@ -35,9 +35,9 @@ class Scheduler:
         self.n_chunks: int = num_chunks
         self.num_simulations: int = num_simulations
 
-        # create data structures
-        self.worker_running_current_run: dict[int, int] = dict.fromkeys(range(self.n_workers), -1)
-        self.run_visited_num_chunks: dict[int, int] = dict.fromkeys(self.run_ids, 0)
+        # Extract run information from runs_info
+        self.run_ids: list[int] = [run["run_id"] for run in runs_info]
+        self.n_runs: int = len(self.run_ids)
 
         # Store run parameters
         self.run_req_workers: dict[int, int] = {}
@@ -70,7 +70,17 @@ class Scheduler:
         # Reset progress for this run
         self.state.run_visited_num_chunks[run_id] = 0
 
-    def add_run(self, run_id: int, run_visited_num_chunks: int) -> None:
+        # Reset scheduling generation when resetting a run
+        self.state.run_scheduling_generation[run_id] = 0
+
+        # Free all workers assigned to this run
+        workers_to_free = list(self.state.run_assigned_workers[run_id])
+        for worker_id in workers_to_free:
+            if self.state.worker_running_current_run[worker_id] == run_id:
+                self.state.worker_running_current_run[worker_id] = -1
+        self.state.run_assigned_workers[run_id].clear()
+
+    def add_run(self, run_info: dict, run_visited_num_chunks: int = 0) -> None:
         """Add a new run to the scheduler."""
         run_id = run_info["run_id"]
 
@@ -80,7 +90,15 @@ class Scheduler:
             self.n_runs = len(self.run_ids)
             self.state.run_assigned_workers[run_id] = set()
 
-        self.run_visited_num_chunks[run_id] = run_visited_num_chunks
+        # Update run parameters
+        req_workers = run_info.get("req_workers", 1)
+        if req_workers > self.n_workers:
+            raise ValueError(
+                f"Run {run_id} requires {req_workers} workers but only {self.n_workers} workers are available"
+            )
+        self.run_req_workers[run_id] = req_workers
+        self.run_estimated_runtime[run_id] = run_info.get("estimated_runtime", 1.0)
+        self.run_start_chunk_id[run_id] = run_info.get("start_chunk_id", 0)
 
         # Set the progress
         self.state.run_visited_num_chunks[run_id] = run_visited_num_chunks
@@ -108,7 +126,13 @@ class Scheduler:
                 self.state.worker_running_current_run[worker_id] = -1
 
         # Remove from all data structures
-        self.run_visited_num_chunks.pop(run_id, None)
+        self.state.run_visited_num_chunks.pop(run_id, None)
+        self.state.run_assigned_workers.pop(run_id, None)
+        self.state.run_scheduling_generation.pop(run_id, None)
+
+        self.run_req_workers.pop(run_id, None)
+        self.run_estimated_runtime.pop(run_id, None)
+        self.run_start_chunk_id.pop(run_id, None)
 
         # Remove from run_ids
         if run_id in self.run_ids:
@@ -152,15 +176,10 @@ class Scheduler:
         """Get runs that can be scheduled, ensuring fair round-robin scheduling."""
         available_for_scheduling = []
 
-        # First, identify runs that are not currently running and not completed
+        # First, identify runs that are not currently running
         for run_id in self.run_ids:
-            # Skip completed runs
-            if sim_state.run_visited_num_chunks[run_id] >= self.n_chunks:
-                continue
-            # Skip currently running runs
-            if len(sim_state.run_assigned_workers[run_id]) > 0:
-                continue
-            available_for_scheduling.append(run_id)
+            if len(sim_state.run_assigned_workers[run_id]) == 0:
+                available_for_scheduling.append(run_id)
 
         if not available_for_scheduling:
             return []
@@ -281,13 +300,9 @@ class Scheduler:
         if not schedulable_runs:
             return {"run_id": -1, "worker_ids": None, "chunk_id": -1, "is_last_chunk": None}
 
-        # Get busy runs and available runs
-        busy_runs = {run_id for run_id in self.worker_running_current_run.values() if run_id != -1}
-        available_runs = [
-            run_id
-            for run_id in self.run_ids
-            if self.run_visited_num_chunks[run_id] < self.n_chunks and run_id not in busy_runs
-        ]
+        # Run Monte Carlo simulations from current state
+        best_makespan = float("inf")
+        best_first_action = None
 
         for sim in range(self.num_simulations):
             makespan, schedule_sequence = self._simulate_random_schedule(self.state, seed=sim)
@@ -302,18 +317,18 @@ class Scheduler:
                         best_first_action = action
                         break
 
-        run_id = min(available_runs, key=lambda run_id: (self.run_visited_num_chunks[run_id], run_id))
-        worker_id = available_workers[0]  # Pick first available worker
-        chunk_id = self.run_visited_num_chunks[run_id] % self.n_chunks  # Next chunk in sequence starting from 0
-        is_last_chunk = chunk_id == self.n_chunks - 1
+        if best_first_action is None:
+            # Fallback to random selection - this ensures we always make progress
+            run_id = random.choice(schedulable_runs)
+            req_workers = self.run_req_workers[run_id]
 
-        if req_workers <= len(available_workers):
-            chunk_id = self._get_next_chunk_id(self.state, run_id)
-            best_first_action = {
-                "run_id": run_id,
-                "worker_ids": tuple(available_workers[:req_workers]),
-                "chunk_id": chunk_id,
-            }
+            if req_workers <= len(available_workers):
+                chunk_id = self._get_next_chunk_id(self.state, run_id)
+                best_first_action = {
+                    "run_id": run_id,
+                    "worker_ids": tuple(available_workers[:req_workers]),
+                    "chunk_id": chunk_id,
+                }
 
         if best_first_action:
             # Apply the best action to actual state
