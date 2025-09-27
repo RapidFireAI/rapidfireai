@@ -192,7 +192,7 @@ class Scheduler:
         return fair_schedulable
 
     def _simulate_random_schedule(self, start_state: SchedulerState, seed: int = None) -> tuple[float, list[dict]]:
-        """Run a simulation from a given state."""
+        """Run a simulation from a given state. Treats all chunks as equal for simulation purposes."""
         if seed is not None:
             random.seed(seed)
 
