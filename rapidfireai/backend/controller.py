@@ -105,9 +105,14 @@ class Controller:
             total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks)
 
             # get clone modify info
-            warm_started = clone_modify_info.get("warm_started", False) if clone_modify_info else False
-            cloned_from = clone_modify_info.get("cloned_from", None) if clone_modify_info else None
-            chunk_offset = clone_modify_info.get("chunk_offset", 0) if clone_modify_info else 0
+            if clone_modify_info:
+                warm_started = clone_modify_info.get("warm_started", False)
+                cloned_from = clone_modify_info.get("cloned_from", None)
+                chunk_offset = clone_modify_info.get("chunk_offset", 0)
+            else:
+                warm_started = False
+                cloned_from = None
+                chunk_offset = 0
 
             # determine estimated runtime and required workers
             if warm_started:
@@ -279,6 +284,8 @@ class Controller:
                 if ic_op == ControllerTask.IC_CLONE_MODIFY:
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
+                        "warm_started": False,
+                        "chunk_offset": 0,
                     }
                     run_ids = self._create_model_entries(
                         config_leaf,
@@ -515,7 +522,6 @@ class Controller:
                     "run_id": run_id,
                     "req_workers": run_details["required_workers"],
                     "estimated_runtime": run_details["estimated_runtime"],
-                    "start_chunk_id": run_details.get("start_chunk_id", 0),
                 }
             )
 
@@ -621,8 +627,7 @@ class Controller:
                         )
 
                         # Remove from active runs
-                        if run_id in active_runs:
-                            active_runs.pop(run_id)
+                        active_runs.pop(run_id, None)
 
                 # Check for failed runs and update scheduler, local state, shm
                 for run_id in failed_runs:
@@ -631,8 +636,7 @@ class Controller:
                         scheduler.remove_run(run_id)
                         self._clear_run_from_shm(run_id)
 
-                        if run_id in active_runs:
-                            active_runs.pop(run_id)
+                        active_runs.pop(run_id, None)
 
                         err_msg = f"Run {run_id} has failed: {run_error}"
                         print(err_msg)
@@ -670,8 +674,7 @@ class Controller:
                     ):
                         # remove inactive runs from scheduler
                         scheduler.remove_run(run_id)
-                        if run_id in active_runs:
-                            active_runs.pop(run_id)
+                        active_runs.pop(run_id, None)
                         self.logger.debug(f"Removed run {run_id} from scheduler")
 
                 # Get best-first action schedule from scheduler
