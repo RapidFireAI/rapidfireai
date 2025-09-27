@@ -42,7 +42,6 @@ class Scheduler:
         # Store run parameters
         self.run_req_workers: dict[int, int] = {}
         self.run_estimated_runtime: dict[int, float] = {}
-        self.run_start_chunk_id: dict[int, int] = {}
 
         for run in runs_info:
             run_id = run["run_id"]
@@ -53,9 +52,8 @@ class Scheduler:
                 )
             self.run_req_workers[run_id] = req_workers
             self.run_estimated_runtime[run_id] = run.get("estimated_runtime", 1.0)
-            self.run_start_chunk_id[run_id] = run.get("start_chunk_id", 0)
 
-        # Initialize actual state - NO completion times needed for actual state!
+        # Initialize actual state
         self.state = SchedulerState()
         self.state.worker_running_current_run = dict.fromkeys(range(self.n_workers), -1)
         self.state.run_visited_num_chunks = dict.fromkeys(self.run_ids, 0)
@@ -98,7 +96,6 @@ class Scheduler:
             )
         self.run_req_workers[run_id] = req_workers
         self.run_estimated_runtime[run_id] = run_info.get("estimated_runtime", 1.0)
-        self.run_start_chunk_id[run_id] = run_info.get("start_chunk_id", 0)
 
         # Set the progress
         self.state.run_visited_num_chunks[run_id] = run_visited_num_chunks
@@ -132,7 +129,6 @@ class Scheduler:
 
         self.run_req_workers.pop(run_id, None)
         self.run_estimated_runtime.pop(run_id, None)
-        self.run_start_chunk_id.pop(run_id, None)
 
         # Remove from run_ids
         if run_id in self.run_ids:
@@ -195,10 +191,6 @@ class Scheduler:
 
         return fair_schedulable
 
-    def _get_next_chunk_id(self, sim_state: SchedulerState, run_id: int) -> int:
-        """Get the next chunk ID for a run in given state."""
-        return (sim_state.run_visited_num_chunks[run_id] + self.run_start_chunk_id[run_id]) % self.n_chunks
-
     def _simulate_random_schedule(self, start_state: SchedulerState, seed: int = None) -> tuple[float, list[dict]]:
         """Run a simulation from a given state."""
         if seed is not None:
@@ -246,7 +238,7 @@ class Scheduler:
                 available_workers = self._get_available_workers(sim_state)  # Refresh
 
                 if req_workers <= len(available_workers):
-                    chunk_id = self._get_next_chunk_id(sim_state, run_id)
+                    chunk_id = sim_state.run_visited_num_chunks[run_id]
                     assigned_workers = available_workers[:req_workers]
                     runtime = self.run_estimated_runtime[run_id]
 
@@ -323,7 +315,7 @@ class Scheduler:
             req_workers = self.run_req_workers[run_id]
 
             if req_workers <= len(available_workers):
-                chunk_id = self._get_next_chunk_id(self.state, run_id)
+                chunk_id = self.state.run_visited_num_chunks[run_id]
                 best_first_action = {
                     "run_id": run_id,
                     "worker_ids": tuple(available_workers[:req_workers]),
@@ -339,7 +331,7 @@ class Scheduler:
 
             if req_workers <= len(current_available):
                 worker_ids = tuple(current_available[:req_workers])
-                chunk_id = self._get_next_chunk_id(self.state, run_id)
+                chunk_id = self.state.run_visited_num_chunks[run_id]
 
                 # Update actual state
                 for worker_id in worker_ids:
@@ -369,7 +361,7 @@ class Scheduler:
         current_chunks = {}
         for run_id in self.run_ids:
             if len(self.state.run_assigned_workers[run_id]) > 0:
-                current_chunks[run_id] = self._get_next_chunk_id(self.state, run_id)
+                current_chunks[run_id] = self.state.run_visited_num_chunks[run_id]
             else:
                 current_chunks[run_id] = "None"
 
