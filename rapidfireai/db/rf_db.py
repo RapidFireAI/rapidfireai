@@ -281,7 +281,7 @@ class RfDb:
         error: str = "",
         source: RunSource | None = None,
         ended_by: RunEndedBy | None = None,
-        warm_started_from: int | None = None,
+        warm_started: bool = False,
         cloned_from: int | None = None,
         estimated_runtime: float = 0.0,
         required_workers: int = 0,
@@ -290,7 +290,7 @@ class RfDb:
         query = """
             INSERT INTO runs (status, mlflow_run_id, flattened_config, config_leaf,
             completed_steps, total_steps, num_chunks_visited_curr_epoch,
-            num_epochs_completed, chunk_offset, error, source, ended_by, warm_started_from, cloned_from,
+            num_epochs_completed, chunk_offset, error, source, ended_by, warm_started, cloned_from,
             estimated_runtime, required_workers)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
@@ -309,7 +309,7 @@ class RfDb:
                 error,
                 source.value if source else "",
                 ended_by.value if ended_by else "",
-                warm_started_from,
+                warm_started,
                 cloned_from,
                 estimated_runtime,
                 required_workers,
@@ -336,7 +336,7 @@ class RfDb:
         error: str | None = None,
         source: RunSource | None = None,
         ended_by: RunEndedBy | None = None,
-        warm_started_from: int | None = None,
+        warm_started: bool = False,
         cloned_from: int | None = None,
         estimated_runtime: float | None = None,
         required_workers: int | None = None,
@@ -356,7 +356,7 @@ class RfDb:
             "error": error,
             "source": source.value if source else None,
             "ended_by": ended_by.value if ended_by else None,
-            "warm_started_from": warm_started_from,
+            "warm_started": warm_started,
             "cloned_from": cloned_from,
             "estimated_runtime": estimated_runtime,
             "required_workers": required_workers,
@@ -387,7 +387,7 @@ class RfDb:
         query = """
             SELECT status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
-            warm_started_from, cloned_from, estimated_runtime, required_workers
+            warm_started, cloned_from, estimated_runtime, required_workers
             FROM runs
             WHERE run_id = ?
         """
@@ -408,7 +408,7 @@ class RfDb:
                 "error": run_details[9],
                 "source": RunSource(run_details[10]) if run_details[10] else None,
                 "ended_by": RunEndedBy(run_details[11]) if run_details[11] else None,
-                "warm_started_from": run_details[12],
+                "warm_started": run_details[12],
                 "cloned_from": run_details[13],
                 "estimated_runtime": run_details[14],
                 "required_workers": run_details[15],
@@ -426,7 +426,7 @@ class RfDb:
         query = f"""
             SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
-            warm_started_from, cloned_from, estimated_runtime, required_workers
+            warm_started, cloned_from, estimated_runtime, required_workers
             FROM runs
             WHERE status IN ({placeholders})
         """
@@ -449,7 +449,7 @@ class RfDb:
                     "error": run[10],
                     "source": RunSource(run[11]) if run[11] else None,
                     "ended_by": RunEndedBy(run[12]) if run[12] else None,
-                    "warm_started_from": run[13],
+                    "warm_started": run[13],
                     "cloned_from": run[14],
                     "estimated_runtime": run[15],
                     "required_workers": run[16],
@@ -461,7 +461,7 @@ class RfDb:
         query = """
             SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
-            warm_started_from, cloned_from, estimated_runtime, required_workers
+            warm_started, cloned_from, estimated_runtime, required_workers
             FROM runs
         """
         run_details = self.db.execute(query, fetch=True)
@@ -482,7 +482,7 @@ class RfDb:
                     "error": run[10],
                     "source": RunSource(run[11]) if run[11] else None,
                     "ended_by": RunEndedBy(run[12]) if run[12] else None,
-                    "warm_started_from": run[13],
+                    "warm_started": run[13],
                     "cloned_from": run[14],
                     "estimated_runtime": run[15],
                     "required_workers": run[16],

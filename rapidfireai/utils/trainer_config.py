@@ -23,6 +23,6 @@ class TrainerConfig:
     create_model_fn: Callable
     train_dataset: torch.utils.data.Dataset
     eval_dataset: torch.utils.data.Dataset | None
-    warm_started_from: int | None
+    warm_started: bool
     cloned_from: int | None
     num_epochs_completed: int

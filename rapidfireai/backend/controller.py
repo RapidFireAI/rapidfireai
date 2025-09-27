@@ -30,13 +30,13 @@ from rapidfireai.utils.constants import (
     WorkerTask,
 )
 from rapidfireai.utils.datapaths import DataPath
+from rapidfireai.utils.distributed_utils import find_free_port
 from rapidfireai.utils.exceptions import ControllerException, NoGPUsFoundException
 from rapidfireai.utils.logging import RFLogger
 from rapidfireai.utils.mlflow_manager import MLflowManager
 from rapidfireai.utils.serialize import encode_payload
 from rapidfireai.utils.shm_manager import SharedMemoryManager
 from rapidfireai.utils.worker_manager import WorkerManager
-from rapidfireai.utils.distributed_utils import find_free_port
 
 
 class Controller:
@@ -102,18 +102,17 @@ class Controller:
         for config_leaf in config_leafs:
             # get flattened config and total steps
             flattened_config = get_flattened_config_leaf(config_leaf)
-            # print("flattened_config: ",flattened_config)
             total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks)
 
             # get clone modify info
-            warm_started_from = clone_modify_info.get("warm_started_from") if clone_modify_info else None
-            cloned_from = clone_modify_info.get("cloned_from") if clone_modify_info else None
+            warm_started = clone_modify_info.get("warm_started", False) if clone_modify_info else False
+            cloned_from = clone_modify_info.get("cloned_from", None) if clone_modify_info else None
             chunk_offset = clone_modify_info.get("chunk_offset", 0) if clone_modify_info else 0
 
             # determine estimated runtime and required workers
-            if warm_started_from:
+            if warm_started:
                 # use parent run's estimated runtime and required workers
-                parent_run_details = self.db.get_run(warm_started_from)
+                parent_run_details = self.db.get_run(cloned_from)
                 estimated_runtime = parent_run_details["estimated_runtime"]
                 required_workers = parent_run_details["required_workers"]
             else:
@@ -131,7 +130,7 @@ class Controller:
                 source=source,
                 ended_by=None,
                 chunk_offset=chunk_offset,
-                warm_started_from=warm_started_from,
+                warm_started=warm_started,
                 cloned_from=cloned_from,
                 estimated_runtime=estimated_runtime,
                 required_workers=required_workers,
@@ -161,8 +160,8 @@ class Controller:
                 # populate MLFlow with model config info
                 for key, value in flattened_config.items():
                     self.mlflow_manager.log_param(mlflow_run_id, key, value)
-                if warm_started_from:
-                    self.mlflow_manager.log_param(mlflow_run_id, "warm-start", str(warm_started_from))
+                if warm_started:
+                    self.mlflow_manager.log_param(mlflow_run_id, "warm-start", str(warm_started))
                 if cloned_from:
                     self.mlflow_manager.log_param(mlflow_run_id, "parent-run", str(cloned_from))
                 self.logger.debug(f"Populated MLFlow with model config info for run {run_id}.")
@@ -307,7 +306,7 @@ class Controller:
                     clone_chunk_offset = chunker.get_clone_offset(parent_run_details["num_chunks_visited_curr_epoch"])
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
-                        "warm_started_from": parent_run_id,
+                        "warm_started": True,
                         "chunk_offset": clone_chunk_offset,
                     }
                     run_ids = self._create_model_entries(

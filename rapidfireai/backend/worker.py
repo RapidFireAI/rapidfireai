@@ -27,7 +27,7 @@ from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
 from rapidfireai.utils.mlflow_manager import MLflowManager
 from rapidfireai.utils.serialize import decode_db_payload
-from rapidfireai.utils.shm_manager import SharedMemoryManager, SHMObjectType
+from rapidfireai.utils.shm_manager import SharedMemoryManager
 from rapidfireai.utils.trainer_config import TrainerConfig
 
 
@@ -105,10 +105,7 @@ class Worker:
         run_details = self.db.get_run(run_id)
         config_leaf = run_details["config_leaf"]
         mlflow_run_id = run_details["mlflow_run_id"]
-        if config_leaf.get("training_args", {}).get("fsdp_config", {}):  # FIXME: just fsdp arg
-            use_fsdp = True
-        else:
-            use_fsdp = False
+        use_fsdp = "training_args" in config_leaf and "fsdp_config" in config_leaf["training_args"]
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
         # Initialize distributed training if FSDP is enabled for this run
         if use_fsdp:
@@ -162,7 +159,7 @@ class Worker:
             create_model_fn=create_model_fn,
             train_dataset=train_dataset_chunk,
             eval_dataset=self.eval_dataset,
-            warm_started_from=run_details["warm_started_from"],
+            warm_started=run_details["warm_started"],
             cloned_from=run_details["cloned_from"],
             num_epochs_completed=run_details["num_epochs_completed"],
         )

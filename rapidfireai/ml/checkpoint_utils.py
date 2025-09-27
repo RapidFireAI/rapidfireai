@@ -5,7 +5,7 @@ from collections.abc import Callable
 
 import torch
 import torch.nn as nn
-from peft import LoraConfig, PeftModel, get_peft_model, get_peft_model_state_dict
+from peft import LoraConfig, PeftModel, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict
 from torch.distributed.fsdp import FullOptimStateDictConfig, FullStateDictConfig, StateDictType
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from transformers import AutoTokenizer
@@ -150,9 +150,8 @@ def save_checkpoint_to_shared_memory(
         if use_fsdp:
             adapter_name = trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
             peft_state_dict = _collect_fsdp_peft_state_dict(trainer.model, adapter_name)
-            if rank == 0:
-                if peft_state_dict is not None:
-                    checkpoint["state_dict"] = {k: v.cpu().clone() for k, v in peft_state_dict.items()}
+            if rank == 0 and peft_state_dict is not None:
+                checkpoint["state_dict"] = {k: v.cpu().clone() for k, v in peft_state_dict.items()}
         else:
             peft_state_dict = get_peft_model_state_dict(
                 trainer.model,
@@ -219,8 +218,8 @@ def load_checkpoint_from_shared_memory(
     model_id = trainer_config.config_leaf.get("model_name")
     rank = trainer_config.local_rank if use_fsdp else 0
     is_quantized = bool(trainer_config.config_leaf.get("model_kwargs", {}).get("quantization_config", {}))
-    if trainer_config.warm_started_from is not None and not shm_manager.model_exists(run_id):
-        shm_manager.create_warm_start_checkpoint(run_id, trainer_config.warm_started_from)
+    if trainer_config.warm_started and not shm_manager.model_exists(run_id):
+        shm_manager.create_warm_start_checkpoint(run_id, trainer_config.cloned_from)
 
     if is_peft:
         if not shm_manager.model_exists(model_id) or is_quantized:
@@ -265,7 +264,7 @@ def load_checkpoint_from_shared_memory(
     if is_peft:
         model = get_peft_model(model, peft_config)
     # Load weights from shared memory
-    if trainer_config.completed_steps > 0 or trainer_config.warm_started_from is not None:
+    if trainer_config.completed_steps > 0 or trainer_config.warm_started:
         checkpoint = shm_manager.load_model_object(run_id, SHMObjectType.CHECKPOINTS)
 
         if "adapter_config" in checkpoint and trainer_config.config_leaf.get("trainer_type") == "DPO" and is_peft:
@@ -604,8 +603,8 @@ def load_checkpoint_from_disk(
 ) -> tuple[nn.Module, AutoTokenizer, dict]:
     """Load checkpoint from disk"""
     checkpoint_path = None
-    if trainer_config.warm_started_from is not None and trainer_config.completed_steps == 0:
-        base_run_path = DataPath.base_run_path(trainer_config.warm_started_from)
+    if trainer_config.warm_started and trainer_config.completed_steps == 0:
+        base_run_path = DataPath.base_run_path(trainer_config.cloned_from)
         checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"
     elif trainer_config.completed_steps > 0:
         base_run_path = DataPath.base_run_path(trainer_config.run_id)

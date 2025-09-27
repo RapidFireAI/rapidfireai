@@ -13,6 +13,8 @@ from rapidfireai.ml.checkpoint_utils import (
     load_checkpoint_from_shared_memory,
     load_or_create_ref_model,
     move_tensors_to_device,
+    restore_trainer_from_disk,
+    restore_trainer_from_shared_memory,
 )
 from rapidfireai.utils.constants import SHMObjectType
 from rapidfireai.utils.datapaths import DataPath
@@ -252,7 +254,7 @@ def _setup_reference_model(
         if model_adapter_name is not None and ref_adapter_name is not None:
             if use_shared_memory:
                 peft_config = LoraConfig(**config_leaf["peft_params"])
-                if trainer_config.completed_steps == 0 and trainer_config.warm_started_from is None:
+                if trainer_config.completed_steps == 0 and trainer_config.warm_started:
                     reference_state_dict = get_peft_model_state_dict(model_instance)
                     if not use_fsdp or trainer_config.local_rank == 0:
                         reference_state_dict = move_tensors_to_device(reference_state_dict, "cpu")
