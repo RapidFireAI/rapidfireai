@@ -172,10 +172,15 @@ class Scheduler:
         """Get runs that can be scheduled, ensuring fair round-robin scheduling."""
         available_for_scheduling = []
 
-        # First, identify runs that are not currently running
+        # Identify runs that are not currently running and not completed
         for run_id in self.run_ids:
-            if len(sim_state.run_assigned_workers[run_id]) == 0:
-                available_for_scheduling.append(run_id)
+            # Skip completed runs
+            if sim_state.run_visited_num_chunks[run_id] >= self.n_chunks:
+                continue
+            # Skip currently running runs
+            if len(sim_state.run_assigned_workers[run_id]) > 0:
+                continue
+            available_for_scheduling.append(run_id)
 
         if not available_for_scheduling:
             return []
