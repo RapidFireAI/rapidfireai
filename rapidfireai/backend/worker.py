@@ -18,11 +18,20 @@ import torch
 
 from rapidfireai.backend.chunks import DatasetChunks
 from rapidfireai.db.rf_db import RfDb
-from rapidfireai.ml.checkpoint_utils import save_checkpoint_to_disk, save_model_to_shared_memory
+from rapidfireai.ml.checkpoint_utils import (
+    save_checkpoint_to_disk,
+    save_checkpoint_to_shared_memory,
+    save_model_to_shared_memory,
+)
 from rapidfireai.ml.trainer import create_trainer_instance
 from rapidfireai.utils.constants import MLFLOW_URL, USE_SHARED_MEMORY, RunStatus, SHMObjectType, TaskStatus, WorkerTask
 from rapidfireai.utils.datapaths import DataPath
-from rapidfireai.utils.distributed_utils import barrier, cleanup_distributed, is_distributed_initialized
+from rapidfireai.utils.distributed_utils import (
+    barrier,
+    cleanup_distributed,
+    is_distributed_initialized,
+    setup_distributed_environment,
+)
 from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
 from rapidfireai.utils.mlflow_manager import MLflowManager
@@ -105,13 +114,14 @@ class Worker:
         run_details = self.db.get_run(run_id)
         config_leaf = run_details["config_leaf"]
         mlflow_run_id = run_details["mlflow_run_id"]
+
+        # check if FSDP is enabled
         use_fsdp = "training_args" in config_leaf and "fsdp_config" in config_leaf["training_args"]
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
         # Initialize distributed training if FSDP is enabled for this run
         if use_fsdp:
             try:
-                from rapidfireai.utils.distributed_utils import setup_distributed_environment
-
                 # Get distributed configuration from run details
                 master_addr = multi_worker_details["master_address"]
                 master_port = multi_worker_details["master_port"]
@@ -163,7 +173,6 @@ class Worker:
             cloned_from=run_details["cloned_from"],
             num_epochs_completed=run_details["num_epochs_completed"],
         )
-        completed_steps = self.db.get_completed_steps(run_id)
 
         # add reward funcs to config_leaf if cloned from a GRPO run
         if trainer_config.cloned_from is not None and trainer_config.config_leaf.get("trainer_type") == "GRPO":
@@ -184,6 +193,7 @@ class Worker:
             self.training_logger.error(stderr_buffer.getvalue())
 
         # if first time, save checkpoint to disk
+        completed_steps = run_details["completed_steps"]
         if completed_steps == 0 and not USE_SHARED_MEMORY:
             save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
 
@@ -206,16 +216,11 @@ class Worker:
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             trainer_instance.train()
         end_time = time.time()
-        self.logger.debug(f"accelerator device: {trainer_instance.accelerator.device} on worker {self.worker_id}")
+        self.logger.debug(f"Accelerator device: {trainer_instance.accelerator.device} on worker {self.worker_id}")
 
         # Synchronize all workers after training completes
         if use_fsdp and is_distributed_initialized():
             barrier()
-
-        # update estimated runtime in database for scheduler optimization
-        if trainer_config.local_rank == 0:
-            runtime = end_time - start_time
-            self.db.set_estimated_runtime(run_id, runtime)
 
         # write logs to user logger
         if stdout_buffer.getvalue():
@@ -227,7 +232,13 @@ class Worker:
         new_completed_steps = completed_steps + trainer_instance.state.global_step
         self.db.set_completed_steps(run_id, new_completed_steps)
 
-        save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
+        # update running average runtime in database for scheduler optimization
+        if trainer_config.local_rank == 0:
+            new_runtime_per_batch = (end_time - start_time) / train_dataset_chunker.get_chunk_size(chunk_id)
+            running_average_runtime = (
+                run_details["estimated_runtime"] * completed_steps + new_runtime_per_batch
+            ) / new_completed_steps
+            self.db.set_estimated_runtime(run_id, running_average_runtime)
 
         # save checkpoints
         if USE_SHARED_MEMORY:
@@ -255,6 +266,8 @@ class Worker:
             if use_fsdp and is_distributed_initialized():
                 barrier()
 
+            # save checkpoint to disk based on save strategy
+            save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
             if save_strategy == "chunk" or (save_strategy == "epoch" and chunk_id == self.num_chunks - 1):
                 save_checkpoint_to_disk(
                     trainer_instance,
@@ -379,4 +392,5 @@ class Worker:
 
     def is_alive(self):
         """Check if the worker process is alive"""
+        return self.process and self.process.is_alive()
         return self.process and self.process.is_alive()
