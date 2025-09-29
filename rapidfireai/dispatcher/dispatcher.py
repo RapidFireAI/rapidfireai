@@ -14,8 +14,8 @@ from rapidfireai.utils.exceptions import DispatcherException
 from rapidfireai.utils.logging import RFLogger
 
 RF_FRONTEND_PORT = os.getenv('RF_FRONTEND_PORT', '3000')
-RF_FRONTEND_HOST = os.getenv('RF_FRONTEND_HOST', '0.0.0.0')
-CORS_ALLOWED_ORIGINS = [f"http://localhost:{RF_FRONTEND_PORT}", "http://localhost"]
+RF_FRONTEND_HOST = "127.0.0.1" if os.getenv('RF_AFRONTEND_HOST', '0.0.0.0') == '0.0.0.0' else os.getenv('RF_FRONTEND_HOST', '127.0.0.1')
+CORS_ALLOWED_ORIGINS = [f"http://{RF_FRONTEND_HOST}:{RF_FRONTEND_PORT}", f"http://{RF_FRONTEND_HOST}"]
 
 
 class Dispatcher:
