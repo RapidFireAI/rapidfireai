@@ -1,7 +1,7 @@
 import copy
 import json
 import os
-from typing import Callable, Optional, Union
+from collections.abc import Callable
 
 import torch
 import torch.nn as nn
@@ -78,9 +78,9 @@ def _configure_tokenizer(tokenizer: AutoTokenizer) -> None:
 def create_model_instance(
     model_config: dict,
     create_model_fn: Callable,
-    checkpoint_path: Optional[str] = None,
+    checkpoint_path: str | None = None,
     is_peft: bool = False,
-    device: Optional[str] = None,
+    device: str | None = None,
 ) -> tuple[nn.Module, AutoTokenizer]:
     """Create a model instance from a model configuration"""
     if device is not None:
@@ -98,7 +98,7 @@ def create_model_instance(
 
 
 def save_checkpoint_to_shared_memory(
-    trainer: Union[SFTTrainer, DPOTrainer, GRPOTrainer], trainer_config: TrainerConfig, shm_manager: SharedMemoryManager
+    trainer: SFTTrainer | DPOTrainer | GRPOTrainer, trainer_config: TrainerConfig, shm_manager: SharedMemoryManager
 ) -> None:
     """Save checkpoint to shared memory"""
     checkpoint = {}
@@ -143,7 +143,10 @@ def save_checkpoint_to_shared_memory(
 
 
 def load_checkpoint_from_shared_memory(
-    trainer_config: TrainerConfig, shm_manager: SharedMemoryManager, ref: bool = False, is_peft: bool = False
+    trainer_config: TrainerConfig,
+    shm_manager: SharedMemoryManager,
+    ref: bool = False,
+    is_peft: bool = False,
 ) -> tuple[nn.Module, AutoTokenizer, dict]:
     """Load checkpoint from shared memory"""
     run_id = trainer_config.run_id
@@ -166,7 +169,12 @@ def load_checkpoint_from_shared_memory(
             if model_id is None:
                 model_id = base_model.config._name_or_path
             save_model_to_shared_memory(
-                base_model, tokenizer, trainer_config, shm_manager, SHMObjectType.BASE_MODEL, model_id
+                base_model,
+                tokenizer,
+                trainer_config,
+                shm_manager,
+                SHMObjectType.BASE_MODEL,
+                model_id,
             )
         else:
             base_model, tokenizer = load_model_from_shared_memory(
@@ -191,24 +199,17 @@ def load_checkpoint_from_shared_memory(
     if trainer_config.completed_steps > 0 or trainer_config.warm_started_from is not None:
         checkpoint = shm_manager.load_model_object(run_id, SHMObjectType.CHECKPOINTS)
 
-        if "adapter_config" in checkpoint:
-            if trainer_config.config_leaf.get("trainer_type") == "DPO" and is_peft:
-                reference_state_dict = shm_manager.load_model_object(
-                    trainer_config.run_id, SHMObjectType.REF_STATE_DICT
-                )
-                reference_state_dict = move_tensors_to_device(reference_state_dict, device)
-                model.add_adapter(
-                    trainer_config.config_leaf.get("training_args", {}).get("ref_adapter_name"), peft_config
-                )
-                model.set_adapter(
-                    trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
-                )
-                set_peft_model_state_dict(
-                    model,
-                    reference_state_dict,
-                    adapter_name=trainer_config.config_leaf.get("training_args").get("ref_adapter_name"),
-                )
-                model.set_adapter(trainer_config.config_leaf.get("training_args").get("model_adapter_name", "default"))
+        if "adapter_config" in checkpoint and trainer_config.config_leaf.get("trainer_type") == "DPO" and is_peft:
+            reference_state_dict = shm_manager.load_model_object(trainer_config.run_id, SHMObjectType.REF_STATE_DICT)
+            reference_state_dict = move_tensors_to_device(reference_state_dict, device)
+            model.add_adapter(trainer_config.config_leaf.get("training_args", {}).get("ref_adapter_name"), peft_config)
+            model.set_adapter(trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default"))
+            set_peft_model_state_dict(
+                model,
+                reference_state_dict,
+                adapter_name=trainer_config.config_leaf.get("training_args").get("ref_adapter_name"),
+            )
+            model.set_adapter(trainer_config.config_leaf.get("training_args").get("model_adapter_name", "default"))
 
         if checkpoint.get("state_dict"):
             state_dict = {k: v.to(device) for k, v in checkpoint["state_dict"].items()}
@@ -229,14 +230,20 @@ def load_checkpoint_from_shared_memory(
 
         elif not is_peft:
             model, tokenizer = load_model_from_shared_memory(
-                trainer_config, shm_manager, SHMObjectType.FULL_MODEL, trainer_config.run_id
+                trainer_config,
+                shm_manager,
+                SHMObjectType.FULL_MODEL,
+                trainer_config.run_id,
             )
 
     return model, tokenizer
 
 
 def load_model_from_shared_memory(
-    trainer_config: TrainerConfig, shm_manager: SharedMemoryManager, model_object_type: SHMObjectType, model_id: str
+    trainer_config: TrainerConfig,
+    shm_manager: SharedMemoryManager,
+    model_object_type: SHMObjectType,
+    model_id: str,
 ) -> tuple[nn.Module, AutoTokenizer]:
     """Load model from shared memory"""
     model_data = shm_manager.load_model_object(model_id, model_object_type)
@@ -248,18 +255,18 @@ def load_model_from_shared_memory(
 
 
 def save_model_to_shared_memory(
-    model: Union[nn.Module, str],
+    model: nn.Module | str,
     tokenizer: AutoTokenizer,
     trainer_config: TrainerConfig,
     shm_manager: SharedMemoryManager,
-    model_type: str,
+    model_type: SHMObjectType,
     model_id: str,
 ) -> None:
     """Save model to shared memory"""
     if model_type != SHMObjectType.FULL_MODEL and shm_manager.model_exists(model_id):
         return
     model_cpu = model.cpu()
-    model_data = {model_type: model_cpu, "tokenizer": tokenizer}
+    model_data = {model_type.value: model_cpu, "tokenizer": tokenizer}
     shm_manager.save_model_object(model_id, model_type, model_data)
 
 
@@ -269,7 +276,7 @@ def load_or_create_ref_model(
     device: str,
     use_shared_memory: bool,
     shm_manager: SharedMemoryManager,
-) -> Optional[nn.Module]:
+) -> nn.Module | None:
     """Load or create reference model for DPO training based on configuration"""
     config_leaf = trainer_config.config_leaf
     device = "cuda:0"
@@ -283,12 +290,19 @@ def load_or_create_ref_model(
     else:
         if ref_model_name is not None:
             ref_model_instance, _ = create_model_instance(
-                config_leaf.get("ref_model_config"), trainer_config.create_model_fn, device=device
+                config_leaf.get("ref_model_config"),
+                trainer_config.create_model_fn,
+                device=device,
             )
         elif trainer_config.completed_steps == 0:
             ref_model_instance = copy.deepcopy(model_instance)
         save_model_to_shared_memory(
-            ref_model_instance, None, trainer_config, shm_manager, SHMObjectType.REF_FULL_MODEL, ref_model_id
+            ref_model_instance,
+            None,
+            trainer_config,
+            shm_manager,
+            SHMObjectType.REF_FULL_MODEL,
+            ref_model_id,
         )
 
     return ref_model_instance
@@ -296,7 +310,7 @@ def load_or_create_ref_model(
 
 def get_model_to_device(model, bnb_modules, device="cuda:0"):
     """Move model from shared memory to specified device with proper BitsAndBytes restoration"""
-    for name, param in model.named_parameters():
+    for _, param in model.named_parameters():
         if param.data is not None:
             param.data = move_tensors_to_device(param.data, device)
 
@@ -318,7 +332,12 @@ def get_model_to_device(model, bnb_modules, device="cuda:0"):
         try:
             import bitsandbytes as bnb
 
-            bnb_layer_types = [bnb.nn.Linear4bit, bnb.nn.LinearFP4, bnb.nn.LinearNF4, bnb.nn.Params4bit]
+            bnb_layer_types = [
+                bnb.nn.Linear4bit,
+                bnb.nn.LinearFP4,
+                bnb.nn.LinearNF4,
+                bnb.nn.Params4bit,
+            ]
         except ImportError:
             continue
 
@@ -352,7 +371,12 @@ def get_model_to_device(model, bnb_modules, device="cuda:0"):
                         setattr(weight.quant_state.state2, attr, value)
 
             for attr, value in bnb_attrs.items():
-                if attr not in ["quant_state_data", "quant_state_class", "weight_class", "state2_data"]:
+                if attr not in [
+                    "quant_state_data",
+                    "quant_state_class",
+                    "weight_class",
+                    "state2_data",
+                ]:
                     if isinstance(value, torch.Tensor):
                         value = move_tensors_to_device(value, device)
                     setattr(weight, attr, value)
@@ -366,10 +390,10 @@ def get_model_to_device(model, bnb_modules, device="cuda:0"):
 
 
 def restore_trainer_from_shared_memory(
-    trainer: Union[SFTTrainer, DPOTrainer, GRPOTrainer],
+    trainer: SFTTrainer | DPOTrainer | GRPOTrainer,
     trainer_config: TrainerConfig,
     shm_manager: SharedMemoryManager,
-) -> Union[SFTTrainer, DPOTrainer, GRPOTrainer]:
+) -> SFTTrainer | DPOTrainer | GRPOTrainer:
     """Restore complete training state to trainer"""
     try:
         device = next(trainer.model.parameters()).device
@@ -418,7 +442,7 @@ def restore_trainer_from_shared_memory(
 
 
 def save_checkpoint_to_disk(
-    trainer: Union[SFTTrainer, DPOTrainer, GRPOTrainer],
+    trainer: SFTTrainer | DPOTrainer | GRPOTrainer,
     trainer_config: TrainerConfig,
     first: bool = False,
     last: bool = False,
@@ -470,22 +494,31 @@ def load_checkpoint_from_disk(
         checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"
 
     model_instance, tokenizer = create_model_instance(
-        trainer_config.config_leaf, trainer_config.create_model_fn, checkpoint_path, is_peft=is_peft, device=device
+        trainer_config.config_leaf,
+        trainer_config.create_model_fn,
+        checkpoint_path,
+        is_peft=is_peft,
+        device=device,
     )
     if is_peft and checkpoint_path is None:
-        model_instance = get_peft_model(model_instance, LoraConfig(**trainer_config.config_leaf.get("peft_params", {})))
+        model_instance = get_peft_model(
+            model_instance,
+            LoraConfig(**trainer_config.config_leaf.get("peft_params", {})),
+        )
 
     if ref:
         model_instance, tokenizer = create_model_instance(
-            trainer_config.config_leaf.get("ref_model_config", {}), trainer_config.create_model_fn, device=device
+            trainer_config.config_leaf.get("ref_model_config", {}),
+            trainer_config.create_model_fn,
+            device=device,
         )
 
     return model_instance, tokenizer
 
 
 def restore_trainer_from_disk(
-    trainer: Union[SFTTrainer, DPOTrainer, GRPOTrainer], trainer_config: TrainerConfig
-) -> Union[SFTTrainer, DPOTrainer, GRPOTrainer]:
+    trainer: SFTTrainer | DPOTrainer | GRPOTrainer, trainer_config: TrainerConfig
+) -> SFTTrainer | DPOTrainer | GRPOTrainer:
     """Restore trainer from disk with proper state accumulation"""
     base_run_path = DataPath.base_run_path(trainer_config.run_id)
     checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"

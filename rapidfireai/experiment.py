@@ -5,7 +5,8 @@ This module contains the Experiment class which manages the entire experiment li
 import multiprocessing as mp
 import os
 import traceback
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 from torch.utils.data import Dataset
@@ -17,6 +18,7 @@ from rapidfireai.utils.exceptions import ExperimentException
 from rapidfireai.utils.experiment_utils import ExperimentUtils
 from rapidfireai.utils.logging import RFLogger
 from rapidfireai.utils.mlflow_manager import MLflowManager
+from rapidfireai.version import __version__
 
 
 class Experiment:
@@ -61,6 +63,8 @@ class Experiment:
             self.logger = RFLogger().create_logger("experiment")
             for msg in log_messages:
                 self.logger.info(msg)
+            # Log the version of rapidfireai that is running
+            self.logger.info(f"Running RapidFire AI version {__version__}")
         except Exception as e:
             raise ExperimentException(f"Error creating logger: {e}, traceback: {traceback.format_exc()}") from e
 

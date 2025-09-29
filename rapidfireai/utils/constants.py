@@ -11,10 +11,12 @@ MLFLOW_URL = f"http://{RF_MLFLOW_HOST}:{RF_MLFLOW_PORT}"
 # Shared Memory Constants
 SHM_WARN_THRESHOLD = 80
 SHM_MIN_FREE_SPACE = 1.0
+USE_SHARED_MEMORY = True
 
 # Logging Constants
 LOG_FILENAME = "rapidfire.log"
 TRAINING_LOG_FILENAME = "training.log"
+
 
 class LogType(Enum):
     """Enum class for log types"""
@@ -35,7 +37,8 @@ class DBConfig:
     """Class to manage the database configuration for SQLite"""
 
     # Use user's home directory for database path
-    DB_PATH: str = os.path.join(os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~","db"))), "rapidfire.db")
+
+    DB_PATH: str = os.path.join(os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~", "db"))), "rapidfire.db")
 
     # Connection settings
     CONNECTION_TIMEOUT: float = 30.0

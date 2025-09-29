@@ -8,6 +8,15 @@ RapidFire AI is a new experiment execution framework that transforms your LLM cu
 
 ![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/usage.png)
 
+RapidFire AI’s adaptive execution engine enables interruptible, chunk-based scheduling so you can compare many configurations concurrently—even on a single GPU—with dynamic real-time control over runs.
+
+- **Hyperparallelized Execution**: Higher throughput, simultaneous, data chunk-at-a-time training to show side-by-side differences.
+- **Interactive control (IC Ops)**: Stop, Resume, Clone-Modify, and optionally warm start runs in real-time from the dashboard.
+- **Automatic Optimization**: Intelligent single and multi-GPU orchestration to optimze utilization with minimal overhead.
+
+![Chunk-based concurrent execution (1 GPU)](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/en/latest/_images/gantt-1gpu.png)
+
+For additional context, see the overview: [RapidFire AI Overview](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/en/latest/overview.html)
 
 ## Getting Started
 
@@ -21,8 +30,8 @@ RapidFire AI is a new experiment execution framework that transforms your LLM cu
 ### Installation/Starting
 
 ```bash
-virtualenv -p python3 oss_venv
-source oss_venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 
 # from pypi
 pip install rapidfireai
@@ -41,7 +50,7 @@ rapidfireai start
 ### Running tutorial notebooks
 
 ```bash
-source oss_venv/bin/activate
+source .venv/bin/activate
 
 # from replace <your_token> with your hugging face token
 # https://huggingface.co/docs/hub/en/security-tokens
@@ -54,11 +63,13 @@ hf auth login --token <your_token>
 ### Troubleshooting
 
 For a quick system diagnostics report (Python env, relevant packages, GPU/CUDA, and key environment variables), run:
+
 ```bash
 rapidfireai doctor
 ```
 
 If you encounter port conflicts, you can kill existing processes:
+
 ```bash
 lsof -t -i:5002 | xargs kill -9  # mlflow
 lsof -t -i:8080 | xargs kill -9  # dispatcher
@@ -67,7 +78,7 @@ lsof -t -i:3000 | xargs kill -9  # frontend server
 
 ## Documentation
 
-Browse or reference the full documentation, example use case tutorials, all API details, dashboard details, and more [here](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/).
+Browse or reference the full documentation, example use case tutorials, all API details, dashboard details, and more in the [RapidFire AI Documentation](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/).
 
 ## Key Features
 
@@ -78,6 +89,7 @@ Full MLflow support for experiment tracking and metrics visualization. A named R
 ### Interactive Control Operations (IC Ops)
 
 First-of-its-kind dynamic real-time control over runs in flight. Can be invoked through the dashboard:
+
 - Stop active runs; puts them in a dormant state
 - Resume stopped runs; makes them active again
 - Clone and modify existing runs, with or without warm starting from parent’s weights
@@ -93,7 +105,7 @@ Built-in procedures for searching over configuration knob combinations, includin
 
 ## Directory Structure
 
-```
+```text
 rapidfireai/
 ├── automl/          # Search and AutoML algorithms for knob tuning
 ├── backend/         # Core backend components (controller, scheduler, worker)
@@ -145,9 +157,9 @@ A fork of MLflow that enables full tracking and visualization of all experiments
 
 ## Developing with RapidFire AI
 
-### Prerequisites
+### Development prerequisites
 
-- Python 3.x
+- Python 3.12.x
 - Git
 - Ubuntu/Debian system (for apt package manager)
 
@@ -164,9 +176,9 @@ git clone https://github.com/RapidFireAI/rapidfireai.git
 cd ./rapidfireai
 
 # install basic dependencies
-sudo apt install -y python3-virtualenv
-virtualenv -p python3 oss_venv
-source oss_venv/bin/activate
+sudo apt install -y python3.12-venv
+python3 -m venv .venv
+source .venv/bin/activate
 pip3 install ipykernel
 pip3 install jupyter
 pip3 install "huggingface-hub[cli]"
@@ -198,8 +210,8 @@ chmod +x ./rapidfireai/start_dev.sh
 ./rapidfireai/start_dev.sh start
 
 # run the notebook from within your IDE
-# make sure the notebook is running in the oss_venv virtual environment
-# head to settings in Cursor/VSCode and search for venv and add the path - $HOME/rapidfireai/oss_venv
+# make sure the notebook is running in the .venv virtual environment
+# head to settings in Cursor/VSCode and search for venv and add the path - $HOME/rapidfireai/.venv
 # we cannot run a Jupyter notebook directly since there are restrictions on Jupyter being able to create child processes
 
 # VSCode can port-forward localhost:3000 where the rf-frontend server will be running

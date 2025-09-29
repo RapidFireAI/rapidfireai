@@ -5,7 +5,11 @@ from multiprocessing import Lock, Manager
 
 import torch
 
-from rapidfireai.utils.constants import SHM_MIN_FREE_SPACE, SHM_WARN_THRESHOLD, SHMObjectType
+from rapidfireai.utils.constants import (
+    SHM_MIN_FREE_SPACE,
+    SHM_WARN_THRESHOLD,
+    SHMObjectType,
+)
 from rapidfireai.utils.exceptions import InsufficientSharedMemoryException
 from rapidfireai.utils.logging import RFLogger
 
@@ -18,7 +22,12 @@ def _get_shm_usage():
     total_gib = stat.total / (1024**3)
     used_gib = stat.used / (1024**3)
     free_gib = stat.free / (1024**3)
-    return {"total": total_gib, "used": used_gib, "free": free_gib, "percent_used": (stat.used / stat.total) * 100}
+    return {
+        "total": total_gib,
+        "used": used_gib,
+        "free": free_gib,
+        "percent_used": (stat.used / stat.total) * 100,
+    }
 
 
 def _estimate_tensor_size_gib(obj):
@@ -134,7 +143,9 @@ class SharedMemoryManager:
         self.logger = RFLogger().create_logger(name)
 
     # shared memory operations
-    def _safe_tensor_to_shared_memory(self, tensor: torch.Tensor | None) -> torch.Tensor | None:
+    def _safe_tensor_to_shared_memory(
+        self, tensor: torch.Tensor | None
+    ) -> torch.Tensor | None:
         """Safely convert a tensor to shared memory format"""
         if tensor is None:
             return None
@@ -182,9 +193,16 @@ class SharedMemoryManager:
 
             import bitsandbytes as bnb
 
-            bnb_layer_types = [bnb.nn.Linear4bit, bnb.nn.LinearFP4, bnb.nn.LinearNF4, bnb.nn.Params4bit]
+            bnb_layer_types = [
+                bnb.nn.Linear4bit,
+                bnb.nn.LinearFP4,
+                bnb.nn.LinearNF4,
+                bnb.nn.Params4bit,
+            ]
 
-            is_bnb_layer = any(isinstance(module, layer_type) for layer_type in bnb_layer_types)
+            is_bnb_layer = any(
+                isinstance(module, layer_type) for layer_type in bnb_layer_types
+            )
 
             if is_bnb_layer and hasattr(module, "weight"):
                 bnb_attrs = {}
@@ -198,28 +216,44 @@ class SharedMemoryManager:
                     bnb_attrs["quant_state_data"] = {}
 
                     for attr_name in dir(quant_state):
-                        if not attr_name.startswith("_") and hasattr(quant_state, attr_name):
+                        if not attr_name.startswith("_") and hasattr(
+                            quant_state, attr_name
+                        ):
                             attr_val = getattr(quant_state, attr_name)
 
                             if isinstance(attr_val, torch.Tensor):
-                                bnb_attrs["quant_state_data"][attr_name] = self._safe_tensor_to_shared_memory(attr_val)
+                                bnb_attrs["quant_state_data"][attr_name] = (
+                                    self._safe_tensor_to_shared_memory(attr_val)
+                                )
                             elif not callable(attr_val):
                                 bnb_attrs["quant_state_data"][attr_name] = attr_val
 
-                    if hasattr(quant_state, "state2") and quant_state.state2 is not None:
+                    if (
+                        hasattr(quant_state, "state2")
+                        and quant_state.state2 is not None
+                    ):
                         state2 = quant_state.state2
                         bnb_attrs["state2_data"] = {}
                         for attr_name in dir(state2):
-                            if not attr_name.startswith("_") and hasattr(state2, attr_name):
+                            if not attr_name.startswith("_") and hasattr(
+                                state2, attr_name
+                            ):
                                 attr_val = getattr(state2, attr_name)
                                 if isinstance(attr_val, torch.Tensor):
-                                    bnb_attrs["state2_data"][attr_name] = self._safe_tensor_to_shared_memory(attr_val)
+                                    bnb_attrs["state2_data"][attr_name] = (
+                                        self._safe_tensor_to_shared_memory(attr_val)
+                                    )
                                 elif not callable(attr_val):
                                     bnb_attrs["state2_data"][attr_name] = attr_val
 
                     bnb_attrs["quant_state_class"] = type(quant_state).__name__
 
-                weight_attrs = ["compress_statistics", "quant_type", "blocksize", "bnb_quantized"]
+                weight_attrs = [
+                    "compress_statistics",
+                    "quant_type",
+                    "blocksize",
+                    "bnb_quantized",
+                ]
                 for attr in weight_attrs:
                     if hasattr(weight, attr):
                         attr_val = getattr(weight, attr)
@@ -233,22 +267,31 @@ class SharedMemoryManager:
         return model, bnb_modules
 
     # model object operations
-    def _save_full_model(self, model_id: str, model_data: dict, model_object_type: SHMObjectType):
+    def _save_full_model(
+        self, model_id: str, model_data: dict, model_object_type: SHMObjectType
+    ):
         """Save the full model in shared memory. model_id can be either run_id or name of a base model"""
         with self._process_lock if self._process_lock else self._thread_lock:
-            if model_id in self._registry:
-                self.logger.debug(f"Model {model_id} already exists in shared memory. Skipping save.")
+            if (
+                model_id in self._registry
+                and model_object_type != SHMObjectType.FULL_MODEL
+            ):
+                self.logger.debug(
+                    f"Model {model_id} already exists in shared memory. Skipping save."
+                )
                 return
 
             # verify sufficient shared memory space before saving model
-            _verify_sufficient_model_size(model_data[model_object_type], self.logger)
+            _verify_sufficient_model_size(
+                model_data[model_object_type.value], self.logger
+            )
 
             # create model entry in registry
             if model_id not in self._registry:
                 self._registry[model_id] = {model_object_type: {}}
 
             # move model to shared memory
-            model_cpu = model_data[model_object_type]
+            model_cpu = model_data[model_object_type.value]
             tokenizer = model_data["tokenizer"]
             model, bnb_modules = self._move_model_to_shared_memory(model_cpu)
             shared_model = {
@@ -286,7 +329,7 @@ class SharedMemoryManager:
             # create model entry in registry
             if model_id not in self._registry:
                 self._registry[model_id] = {SHMObjectType.CHECKPOINTS: {}}
-                
+
             model_entry = self._registry[model_id]
             if SHMObjectType.CHECKPOINTS not in model_entry:
                 model_entry[SHMObjectType.CHECKPOINTS] = {}
@@ -301,7 +344,9 @@ class SharedMemoryManager:
                     if key in current_dict:
                         current_value = current_dict[key]
 
-                        if isinstance(new_value, torch.Tensor) and isinstance(current_value, torch.Tensor):
+                        if isinstance(new_value, torch.Tensor) and isinstance(
+                            current_value, torch.Tensor
+                        ):
                             # In-place tensor update if shapes match
                             if (
                                 current_value.shape == new_value.shape
@@ -316,9 +361,13 @@ class SharedMemoryManager:
                                 new_shared.share_memory_()
                                 current_dict[key] = new_shared
                                 updates_made["new_keys"] += 1
-                                self.logger.debug(f"New tensor (shape/type change): {current_path}")
+                                self.logger.debug(
+                                    f"New tensor (shape/type change): {current_path}"
+                                )
 
-                        elif isinstance(new_value, dict) and isinstance(current_value, dict):
+                        elif isinstance(new_value, dict) and isinstance(
+                            current_value, dict
+                        ):
                             # Recursively update nested dicts
                             update_nested_dict(current_value, new_value, current_path)
 
@@ -335,7 +384,9 @@ class SharedMemoryManager:
                             updates_made["new_keys"] += 1
                         elif isinstance(new_value, dict):
                             # New nested dict
-                            current_dict[key] = self._move_tensors_to_shared_memory(new_value)
+                            current_dict[key] = self._move_tensors_to_shared_memory(
+                                new_value
+                            )
                             updates_made["new_keys"] += 1
                         else:
                             # New non-tensor value
@@ -349,7 +400,9 @@ class SharedMemoryManager:
             updated_entry[SHMObjectType.CHECKPOINTS] = current_checkpoints
             self._registry[model_id] = updated_entry
 
-            self.logger.debug(f"Checkpoint update:{updates_made['in_place']} in-place, {updates_made['new_keys']} new")
+            self.logger.debug(
+                f"Checkpoint update:{updates_made['in_place']} in-place, {updates_made['new_keys']} new"
+            )
 
     def get_shm_objects(self) -> tuple[dict, Lock]:
         """Get the shared registry and process lock"""
@@ -364,10 +417,16 @@ class SharedMemoryManager:
         model_obj = model_entry.get(model_object_type)
         return model_obj
 
-    def save_model_object(self, model_id: str, model_object_type: SHMObjectType, model_object: dict):
+    def save_model_object(
+        self, model_id: str, model_object_type: SHMObjectType, model_object: dict
+    ):
         """Save a model object to shared memory."""
         # save model object
-        if model_object_type in [SHMObjectType.BASE_MODEL, SHMObjectType.FULL_MODEL, SHMObjectType.REF_FULL_MODEL]:
+        if model_object_type in [
+            SHMObjectType.BASE_MODEL,
+            SHMObjectType.FULL_MODEL,
+            SHMObjectType.REF_FULL_MODEL,
+        ]:
             self._save_full_model(model_id, model_object, model_object_type)
         elif model_object_type == SHMObjectType.REF_STATE_DICT:
             self._save_ref_state_dict(model_id, model_object)
@@ -378,7 +437,9 @@ class SharedMemoryManager:
         """Delete model object from shared memory registry and clean up resources."""
         with self._process_lock if self._process_lock else self._thread_lock:
             if model_id not in self._registry:
-                self.logger.warning(f"Model '{model_id}' not found in shared memory during delete")
+                self.logger.warning(
+                    f"Model '{model_id}' not found in shared memory during delete"
+                )
                 return
 
             # remove checkpoints
@@ -388,7 +449,9 @@ class SharedMemoryManager:
                 and self._registry[model_id][SHMObjectType.CHECKPOINTS]
             ):
                 del self._registry[model_id][SHMObjectType.CHECKPOINTS]
-                self.logger.debug(f"Deleted checkpoints for model {model_id} from shared memory")
+                self.logger.debug(
+                    f"Deleted checkpoints for model {model_id} from shared memory"
+                )
 
             # remove full_model
             # TODO: add code to save to disk before deleting
@@ -397,7 +460,9 @@ class SharedMemoryManager:
                 and self._registry[model_id][SHMObjectType.FULL_MODEL]
             ):
                 del self._registry[model_id][SHMObjectType.FULL_MODEL]
-                self.logger.debug(f"Deleted full_model for model {model_id} from shared memory")
+                self.logger.debug(
+                    f"Deleted full_model for model {model_id} from shared memory"
+                )
 
             # remove ref_state_dict
             if (
@@ -405,7 +470,9 @@ class SharedMemoryManager:
                 and self._registry[model_id][SHMObjectType.REF_STATE_DICT]
             ):
                 del self._registry[model_id][SHMObjectType.REF_STATE_DICT]
-                self.logger.debug(f"Deleted ref_state_dict for model {model_id} from shared memory")
+                self.logger.debug(
+                    f"Deleted ref_state_dict for model {model_id} from shared memory"
+                )
 
             # remove ref_full_model
             if (
@@ -413,16 +480,22 @@ class SharedMemoryManager:
                 and self._registry[model_id][SHMObjectType.REF_FULL_MODEL]
             ):
                 del self._registry[model_id][SHMObjectType.REF_FULL_MODEL]
-                self.logger.debug(f"Deleted ref_full_model for model {model_id} from shared memory")
+                self.logger.debug(
+                    f"Deleted ref_full_model for model {model_id} from shared memory"
+                )
 
             # remove shared objects (entire registry entry is deleted for base_model, not just SHMObjectType.BASE_MODEL key)
             if base_model_name and base_model_name in self._registry:
                 del self._registry[base_model_name]
-                self.logger.debug(f"Deleted base_model for model {model_id} from shared memory")
+                self.logger.debug(
+                    f"Deleted base_model for model {model_id} from shared memory"
+                )
 
             # remove registry entry
             del self._registry[model_id]
-            self.logger.debug(f"Deleted model registry entry for {model_id} from shared memory")
+            self.logger.debug(
+                f"Deleted model registry entry for {model_id} from shared memory"
+            )
 
             # Force garbage collection
             gc.collect()
@@ -445,18 +518,26 @@ class SharedMemoryManager:
                     SHMObjectType.CHECKPOINTS: {},
                 }
 
+            # copy full_model, ref_state_dict, and checkpoints from warm_started_from to model_id
             model_entry = dict(self._registry[model_id])
-            model_entry[SHMObjectType.FULL_MODEL] = copy.deepcopy(
-                dict(self._registry[warm_started_from])[SHMObjectType.FULL_MODEL]
-            )
-            model_entry[SHMObjectType.REF_STATE_DICT] = copy.deepcopy(
-                dict(self._registry[warm_started_from])[SHMObjectType.REF_STATE_DICT]
-            )
-            model_entry[SHMObjectType.CHECKPOINTS] = copy.deepcopy(
-                dict(self._registry[warm_started_from])[SHMObjectType.CHECKPOINTS]
-            )
+            if SHMObjectType.FULL_MODEL in self._registry[warm_started_from]:
+                model_entry[SHMObjectType.FULL_MODEL] = copy.deepcopy(
+                    dict(self._registry[warm_started_from])[SHMObjectType.FULL_MODEL]
+                )
+            if SHMObjectType.REF_STATE_DICT in self._registry[warm_started_from]:
+                model_entry[SHMObjectType.REF_STATE_DICT] = copy.deepcopy(
+                    dict(self._registry[warm_started_from])[
+                        SHMObjectType.REF_STATE_DICT
+                    ]
+                )
+            if SHMObjectType.CHECKPOINTS in self._registry[warm_started_from]:
+                model_entry[SHMObjectType.CHECKPOINTS] = copy.deepcopy(
+                    dict(self._registry[warm_started_from])[SHMObjectType.CHECKPOINTS]
+                )
             self._registry[model_id] = model_entry
-            self.logger.debug(f"Copied warm start checkpoint from {warm_started_from} to {model_id}")
+            self.logger.debug(
+                f"Copied warm start checkpoint from run {warm_started_from} to run {model_id}"
+            )
 
     def list_models(self):
         """Get list of all model IDs currently in shared memory."""

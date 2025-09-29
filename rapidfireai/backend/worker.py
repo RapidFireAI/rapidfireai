@@ -4,6 +4,7 @@ import gc
 import os
 import time
 import traceback
+from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from logging import Logger
@@ -11,7 +12,7 @@ from multiprocessing import Process
 from multiprocessing.managers import DictProxy
 from multiprocessing.synchronize import Event as EventType
 from multiprocessing.synchronize import Lock
-from typing import Any, Callable
+from typing import Any
 
 import torch
 
@@ -23,7 +24,7 @@ from rapidfireai.ml.checkpoint_utils import (
     save_model_to_shared_memory,
 )
 from rapidfireai.ml.trainer import create_trainer_instance
-from rapidfireai.utils.constants import MLFLOW_URL, RunStatus, TaskStatus, WorkerTask
+from rapidfireai.utils.constants import MLFLOW_URL, USE_SHARED_MEMORY, RunStatus, SHMObjectType, TaskStatus, WorkerTask
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
@@ -36,7 +37,13 @@ from rapidfireai.utils.trainer_config import TrainerConfig
 class Worker:
     """Worker class that handles training and validation of runs"""
 
-    def __init__(self, worker_id: int, model_registry: DictProxy, process_lock: Lock, shutdown_event: EventType):
+    def __init__(
+        self,
+        worker_id: int,
+        model_registry: DictProxy,
+        process_lock: Lock,
+        shutdown_event: EventType,
+    ):
         """Initialize the worker"""
         self.process: Process
         self.worker_id: int = worker_id
@@ -48,7 +55,9 @@ class Worker:
 
         # Shared memory manager will be created using global objects
         self.shm_manager = SharedMemoryManager(
-            name=f"worker-{worker_id}-shm", registry=model_registry, multiprocess_lock=process_lock
+            name=f"worker-{worker_id}-shm",
+            registry=model_registry,
+            multiprocess_lock=process_lock,
         )
 
         # create logger
@@ -70,11 +79,12 @@ class Worker:
         DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_name))
 
         # load datasets
-        train_dataset, self.eval_dataset, self.num_chunks = self.load_datasets()
-        self.len_train_dataset = len(train_dataset)
-        self.train_dataset_chunks = DatasetChunks(train_dataset, self.num_chunks)
+        self.train_dataset, self.eval_dataset, self.num_chunks = self.load_datasets()
+        self.len_train_dataset = len(self.train_dataset)
 
-    def load_datasets(self) -> tuple[torch.utils.data.Dataset | None, torch.utils.data.Dataset | None, int]:
+    def load_datasets(
+        self,
+    ) -> tuple[torch.utils.data.Dataset | None, torch.utils.data.Dataset | None, int]:
         """Load the train and eval datasets"""
         try:
             with open(DataPath.dataset_path(), "rb") as f:
@@ -102,9 +112,16 @@ class Worker:
         # torch.manual_seed(run_details["seed"])
         # np.random.seed(run_details["seed"])
         # random.seed(run_details["seed"])
+        effective_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1) * config_leaf["training_args"].get("gradient_accumulation_steps", 1)
 
         # fetch train dataset chunk
-        train_dataset_chunk = self.train_dataset_chunks.get_chunk(chunk_id)
+        train_dataset_chunker = DatasetChunks(
+            self.len_train_dataset,
+            self.num_chunks,
+            batch_size=effective_batch_size,
+            offset=run_details["chunk_offset"],
+        )
+        train_dataset_chunk = train_dataset_chunker.get_chunk(self.train_dataset, chunk_id)
         # create worker config
         trainer_config = TrainerConfig(
             worker_id=self.worker_id,
@@ -117,27 +134,26 @@ class Worker:
             train_dataset=train_dataset_chunk,
             eval_dataset=self.eval_dataset,
             warm_started_from=run_details["warm_started_from"],
+            cloned_from=run_details["cloned_from"],
             num_epochs_completed=run_details["num_epochs_completed"],
         )
         completed_steps = self.db.get_completed_steps(run_id)
 
-        use_shared_memory = True
-        parent_run_details = None
-        if trainer_config.warm_started_from is not None:
-            parent_run_details = self.db.get_run(trainer_config.warm_started_from)
-            if trainer_config.config_leaf.get("trainer_type") == "GRPO":
-                config_leaf["reward_funcs"] = parent_run_details["config_leaf"].get("reward_funcs")
-                self.db.set_run_details(run_id, config_leaf=config_leaf)
+        # add reward funcs to config_leaf if cloned from a GRPO run
+        if trainer_config.cloned_from is not None and trainer_config.config_leaf.get("trainer_type") == "GRPO":
+            parent_run_details = self.db.get_run(trainer_config.cloned_from)
+            config_leaf["reward_funcs"] = parent_run_details["config_leaf"].get("reward_funcs")
+            self.db.set_run_details(run_id, config_leaf=config_leaf)
 
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             trainer_instance, base_model_name = create_trainer_instance(
-                trainer_config, self.shm_manager, use_shared_memory, self.mlflow_manager, chunk_id
+                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id
             )
 
         # if first time, save checkpoint to disk
-        if completed_steps == 0 and not use_shared_memory:
+        if completed_steps == 0 and not USE_SHARED_MEMORY:
             save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
 
         # write logs to user logger
@@ -147,10 +163,6 @@ class Worker:
             self.training_logger.error(stderr_buffer.getvalue())
 
         self.logger.debug(f"Beginning training for run {run_id} on chunk {chunk_id}")
-
-        # update base model name in db for run
-        trainer_config.config_leaf["model_name"] = trainer_instance.model.config._name_or_path
-        self.db.set_run_details(run_id, config_leaf=trainer_config.config_leaf)
 
         # Train the model
         stdout_buffer = StringIO()
@@ -168,10 +180,9 @@ class Worker:
         new_completed_steps = completed_steps + trainer_instance.state.global_step
         self.db.set_completed_steps(run_id, new_completed_steps)
 
-        save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
-
+        save_strategy = config_leaf.get("training_args", {}).get("save_strategy", "epoch")
         # Save checkpoints to shared memory
-        if use_shared_memory:
+        if USE_SHARED_MEMORY:
             save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager)
             if not trainer_config.config_leaf.get("peft_params"):
                 save_model_to_shared_memory(
@@ -179,12 +190,16 @@ class Worker:
                     trainer_instance.tokenizer,
                     trainer_config,
                     self.shm_manager,
-                    "full_model",
+                    SHMObjectType.FULL_MODEL,
                     trainer_config.run_id,
                 )
             self.logger.debug(f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}")
             if save_strategy == "chunk" or (save_strategy == "epoch" and chunk_id == self.num_chunks - 1):
-                save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps)
+                save_checkpoint_to_disk(
+                    trainer_instance,
+                    trainer_config,
+                    completed_steps=new_completed_steps,
+                )
                 self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
         else:  # save checkpoint to disk when not using shared memory
             save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps)
@@ -243,7 +258,11 @@ class Worker:
                         self.logger.opt(exception=True).error(
                             f"Error while running run_fit for run {run_id} and chunk {chunk_id}: {e}"
                         )
-                        self.db.set_run_details(run_id, status=RunStatus.FAILED, error=str(e) + traceback.format_exc())
+                        self.db.set_run_details(
+                            run_id,
+                            status=RunStatus.FAILED,
+                            error=str(e) + traceback.format_exc(),
+                        )
                         self.db.set_worker_task_status(self.worker_id, TaskStatus.FAILED)
                 else:
                     raise WorkerException(f"Invalid task type: {task_type}")
@@ -269,4 +288,5 @@ class Worker:
 
     def is_alive(self):
         """Check if the worker process is alive"""
+        return self.process and self.process.is_alive()
         return self.process and self.process.is_alive()

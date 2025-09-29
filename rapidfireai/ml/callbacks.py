@@ -3,7 +3,13 @@ from typing import Callable, Dict, List, Optional
 import torch
 from datasets import Dataset
 from tqdm import tqdm
-from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+from transformers import (
+    TrainerCallback,
+    TrainerControl,
+    TrainerState,
+    TrainingArguments,
+)
+from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
 
 class GenerationMetricsCallback(TrainerCallback):
@@ -34,7 +40,13 @@ class GenerationMetricsCallback(TrainerCallback):
         self.mlflow_run_id = mlflow_run_id
         self.completed_steps = completed_steps
 
-    def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_evaluate(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         model = kwargs.get("model")
         if model is None:
             return
@@ -53,7 +65,10 @@ class GenerationMetricsCallback(TrainerCallback):
         for key, value in metrics.items():
             if self.mlflow_manager:
                 self.mlflow_manager.log_metric(
-                    self.mlflow_run_id, key, value, step=self.completed_steps + state.global_step
+                    self.mlflow_run_id,
+                    key,
+                    value,
+                    step=self.completed_steps + state.global_step,
                 )
 
     def _prepare_data(self, eval_dataset: Dataset) -> tuple:
@@ -69,7 +84,9 @@ class GenerationMetricsCallback(TrainerCallback):
                 elif "prompt" in item and "completion" in item:
                     input_text = item["prompt"]
                     reference = item["completion"][-1]["content"]
-                    input_text = self.tokenizer.apply_chat_template(input_text, tokenize=False)
+                    input_text = self.tokenizer.apply_chat_template(
+                        input_text, tokenize=False
+                    )
                 else:
                     continue
 
@@ -106,12 +123,17 @@ class GenerationMetricsCallback(TrainerCallback):
         input_texts, batch_references = self._prepare_data(self.eval_dataset)
         input_ids = self._generate_batch(model, input_texts)
         with torch.no_grad():
-            for i in tqdm(range(0, len(indices), self.batch_size), desc="Generating for metrics"):
+            for i in tqdm(
+                range(0, len(indices), self.batch_size), desc="Generating for metrics"
+            ):
                 input_ids_batch = input_ids[i : i + self.batch_size]
                 with torch.inference_mode(), torch.cuda.amp.autocast():
-                    outputs_batch = model.generate(input_ids_batch, **self.generation_config)
+                    outputs_batch = model.generate(
+                        input_ids_batch, **self.generation_config
+                    )
                 generated_texts = self.tokenizer.batch_decode(
-                    outputs_batch[:, input_ids_batch.shape[1] :], skip_special_tokens=True
+                    outputs_batch[:, input_ids_batch.shape[1] :],
+                    skip_special_tokens=True,
                 )
                 predictions.extend(generated_texts)
                 references.extend(batch_references[i : i + self.batch_size])
@@ -154,23 +176,113 @@ class MLflowLoggingCallback(TrainerCallback):
         self.chunk_id = chunk_id
         self.num_epochs_completed = num_epochs_completed
 
-    def on_log(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, logs=None, **kwargs):
+    def on_log(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        logs=None,
+        **kwargs,
+    ):
         """Called when the trainer logs metrics"""
         if logs is not None:
             for key, value in logs.items():
                 if isinstance(value, (int, float)) and key not in self.excluded_keys:
                     try:
                         self.mlflow_manager.log_metric(
-                            self.mlflow_run_id, key, value, step=self.completed_steps + state.global_step
+                            self.mlflow_run_id,
+                            key,
+                            value,
+                            step=self.completed_steps + state.global_step,
                         )
                     except Exception as e:
                         print(f"Warning: Failed to log metric {key} to MLflow: {e}")
-            self.mlflow_manager.log_metric(
-                self.mlflow_run_id, "chunk number", self.chunk_id, step=self.completed_steps + state.global_step
-            )
-            self.mlflow_manager.log_metric(
-                self.mlflow_run_id,
-                "num_epochs_completed",
-                self.num_epochs_completed,
-                step=self.completed_steps + state.global_step,
-            )
+            if "eval_loss" not in logs and "train_runtime" not in logs:
+                self.mlflow_manager.log_metric(
+                    self.mlflow_run_id,
+                    "chunk number",
+                    self.chunk_id,
+                    step=self.completed_steps + state.global_step,
+                )
+                self.mlflow_manager.log_metric(
+                    self.mlflow_run_id,
+                    "num_epochs_completed",
+                    self.num_epochs_completed,
+                    step=self.completed_steps + state.global_step,
+                )
+
+
+class LogLevelCallback(TrainerCallback):
+    """
+    A [`TrainerCallback`] that handles the default flow of the training loop for logs, evaluation and checkpoints.
+    """
+
+    def __init__(self, global_step_args: Dict):
+        self.eval_first_step = global_step_args.get("eval_first_step", 0)
+        self.actual_steps = global_step_args.get("actual_steps", 0)
+        self.log_first_step = global_step_args.get("log_first_step", 0)
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        # Log
+        control.should_log = False
+        control.should_evaluate = False
+        if state.global_step == 1 and args.logging_first_step:
+            control.should_log = True
+        if args.logging_strategy == IntervalStrategy.STEPS and (
+            self.log_first_step <= state.global_step
+            and (state.global_step - self.log_first_step) % state.logging_steps == 0
+        ):
+            control.should_log = True
+
+        # Evaluate
+        if args.eval_strategy == IntervalStrategy.STEPS and (
+            self.eval_first_step <= state.global_step
+            and (state.global_step - self.eval_first_step) % state.eval_steps == 0
+        ):
+            control.should_evaluate = True
+        # Save
+        if (
+            args.save_strategy == SaveStrategy.STEPS
+            and state.save_steps > 0
+            and state.global_step % state.save_steps == 0
+        ):
+            control.should_save = True
+
+        # End training
+        if state.global_step >= state.max_steps:
+            control.should_training_stop = True
+            # Save the model at the end if we have a save strategy
+            if args.save_strategy == SaveStrategy.STEPS:
+                control.should_save = True
+
+        return control
+
+    def on_epoch_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        # Log
+        if args.logging_strategy == IntervalStrategy.EPOCH:
+            control.should_log = True
+
+        # Evaluate
+        if (
+            args.eval_strategy == IntervalStrategy.EPOCH
+            and args.eval_delay <= state.epoch
+        ):
+            control.should_evaluate = True
+
+        # Save
+        if args.save_strategy == SaveStrategy.EPOCH:
+            control.should_save = True
+
+        return control
