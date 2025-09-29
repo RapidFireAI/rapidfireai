@@ -3,6 +3,9 @@ import os
 from pathlib import Path
 from proxy_middleware import setup_proxy
 
+RF_FRONTEND_PORT = os.getenv('RF_FRONTEND_PORT', '3000')
+RF_FRONTEND_HOST = os.getenv('RF_FRONTEND_HOST', '0.0.0.0')
+
 # Get the directory where this server.py file is located
 current_dir = Path(__file__).parent
 build_dir = current_dir / 'build'
@@ -30,4 +33,4 @@ def serve(path):
         return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
-    app.run(port=3000)
+    app.run(host=RF_FRONTEND_HOST, port=int(RF_FRONTEND_PORT))
