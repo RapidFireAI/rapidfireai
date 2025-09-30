@@ -8,12 +8,14 @@ set -e  # Exit on any error
 
 # Configuration
 RF_MLFLOW_PORT=${RF_MLFLOW_PORT:=5002}
-RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=127.0.0.1}
+# Use 0.0.0.0 by default to allow external tunneling (ngrok, cloudflare, etc.)
+# Set to 127.0.0.1 explicitly if you want localhost-only access
+RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=0.0.0.0}
 RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=3000}
 RF_FRONTEND_HOST=${RF_FRONTEND_HOST:=0.0.0.0}
 # API server configuration - these should match DispatcherConfig in constants.py
 RF_API_PORT=${RF_API_PORT:=8080}
-RF_API_HOST=${RF_API_HOST:=127.0.0.1}
+RF_API_HOST=${RF_API_HOST:=0.0.0.0}
 
 RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
 

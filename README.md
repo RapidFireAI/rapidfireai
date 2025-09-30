@@ -29,6 +29,8 @@ For additional context, see the overview: [RapidFire AI Overview](https://rapidf
 
 ### Installation/Starting
 
+**Local Machine:**
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -46,6 +48,22 @@ rapidfireai start
 
 # open up example notebook and start experiment
 ```
+
+**Google Colab:**
+
+```python
+# Install RapidFire AI
+!pip install rapidfireai
+!rapidfireai init
+
+# Start with native Colab port forwarding (recommended)
+!rapidfireai start --colab
+
+# Or use Cloudflare Tunnel for public URLs
+!rapidfireai start --colab --tunnel cloudflare
+```
+
+See [COLAB_SETUP.md](tutorial_notebooks/COLAB_SETUP.md) for detailed Colab instructions, or try our [Colab Quickstart Notebook](https://colab.research.google.com/github/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/COLAB_QUICKSTART.ipynb).
 
 ### Running tutorial notebooks
 

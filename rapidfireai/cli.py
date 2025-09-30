@@ -378,13 +378,34 @@ def run_init():
 
     return 0
 
+
+def run_start_colab():
+    """Run the start_colab.py script for Google Colab environments."""
+    try:
+        # Get the path to start_colab.py
+        package_dir = Path(__file__).parent
+        script_path = package_dir / "start_colab.py"
+
+        if not script_path.exists():
+            print(f"Error: start_colab.py not found at {script_path}", file=sys.stderr)
+            return 1
+
+        # Run the Python script directly
+        result = subprocess.run([sys.executable, str(script_path)], check=False)
+        return result.returncode
+
+    except Exception as e:
+        print(f"Error running start_colab.py: {e}", file=sys.stderr)
+        return 1
+
+
 def main():
     """Main entry point for the rapidfireai command."""
     parser = argparse.ArgumentParser(
         description="RapidFire AI - Start/stop/manage services",
         prog="rapidfireai"
     )
-    
+
     parser.add_argument(
         "command",
         nargs="?",
@@ -392,15 +413,28 @@ def main():
         choices=["start", "stop", "status", "restart", "setup", "doctor", "init"],
         help="Command to execute (default: start)"
     )
-    
+
     parser.add_argument(
         "--version",
         action="version",
         version=f"RapidFire AI {__version__}"
     )
-    
+
+    parser.add_argument(
+        "--colab",
+        action="store_true",
+        help="Run in Google Colab mode with native port forwarding"
+    )
+
+    parser.add_argument(
+        "--tunnel",
+        choices=["native", "cloudflare", "ngrok"],
+        default="native",
+        help="Tunneling method for Colab (default: native)"
+    )
+
     args = parser.parse_args()
-    
+
     # Handle doctor command separately
     if args.command == "doctor":
         return run_doctor()
@@ -408,7 +442,17 @@ def main():
     # Handle init command separately
     if args.command == "init":
         return run_init()
-    
+
+    # Handle Colab mode
+    if args.colab or os.getenv('RF_COLAB_MODE'):
+        if args.command == "start":
+            # Set tunnel method environment variable
+            os.environ['RF_TUNNEL_METHOD'] = args.tunnel
+            return run_start_colab()
+        else:
+            print("⚠️  --colab flag only supported with 'start' command", file=sys.stderr)
+            return 1
+
     # Run the script with the specified command
     return run_script([args.command])
 
