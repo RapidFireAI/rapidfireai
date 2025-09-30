@@ -10,7 +10,7 @@ authors = [
 ]
 description = "RapidFire AI: Rapid Experimentation Engine for Customizing LLMs"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 keywords = ["ai", "rapidfire", "rapidfireai", "llm", "deep-learning", "artificial-intelligence", "machine-learning", "mlflow", "experiment-tracking"]
 classifiers = [
@@ -20,33 +20,34 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
-    "pandas>=2.3.1",
-    "torch>=2.8.0",
-    "transformers>=4.55.2",
-    "peft>=0.17.0",
-    "trl==0.21.0",
-    "bitsandbytes>=0.47.0",
-    "nltk>=3.9.1",
-    "evaluate>=0.4.5",
-    "rouge-score>=0.1.2",
-    "sentencepiece>=0.2.1",
-    "dill>=0.3.8",
-    "mlflow>=3.2.0",
-    "pytest>=8.4.1",
-    "flask>=3.1.1",
-    "flask-cors>=6.0.1",
-    "requests>=2.32.5",
-    "loguru>=0.7.3",
-    "ipython>=8.37.0",
-    "jupyter>=1.1.1",
-    "ipywidgets>=8.1.7", 
-    "uv>=0.8.14",
+    "pandas>=2.0,<2.4",
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "peft>=0.7.0",
+    "trl>=0.7.0,<0.22.0",
+    "bitsandbytes>=0.39.0",
+    "nltk>=3.8",
+    "evaluate>=0.4.0",
+    "rouge-score>=0.1.0",
+    "sentencepiece>=0.1.99",
+    "dill>=0.3.6",
+    "mlflow>=2.8.0",
+    "pytest>=7.0",
+    "flask>=2.3.0",
+    "flask-cors>=4.0.0",
+    "requests>=2.28.0",
+    "loguru>=0.7.0",
+    "ipython>=7.34.0",
+    "jupyter>=1.0.0",
+    "ipywidgets>=7.7.0",
 ]
 
 [project.optional-dependencies]
@@ -79,6 +80,7 @@ include-package-data = true
 [tool.setuptools.package-data]
 rapidfireai = [
     "start.sh",
+    "start_colab.py",
     "dispatcher/*.py",
     "frontend/build/**/*",
     "frontend/server.py",
