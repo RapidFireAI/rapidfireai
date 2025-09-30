@@ -14,9 +14,9 @@ RapidFire AI’s adaptive execution engine enables interruptible, chunk-based sc
 - **Interactive control (IC Ops)**: Stop, Resume, Clone-Modify, and optionally warm start runs in real-time from the dashboard.
 - **Automatic Optimization**: Intelligent single and multi-GPU orchestration to optimze utilization with minimal overhead.
 
-![Chunk-based concurrent execution (1 GPU)](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/en/latest/_images/gantt-1gpu.png)
+![Chunk-based concurrent execution (1 GPU)](https://oss-docs.rapidfire.ai/en/latest/_images/gantt-1gpu.png)
 
-For additional context, see the overview: [RapidFire AI Overview](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/en/latest/overview.html)
+For additional context, see the overview: [RapidFire AI Overview](https://oss-docs.rapidfire.ai/en/latest/overview.html)
 
 ## Getting Started
 
@@ -78,7 +78,7 @@ lsof -t -i:3000 | xargs kill -9  # frontend server
 
 ## Documentation
 
-Browse or reference the full documentation, example use case tutorials, all API details, dashboard details, and more in the [RapidFire AI Documentation](https://rapidfire-ai-oss-docs.readthedocs-hosted.com/).
+Browse or reference the full documentation, example use case tutorials, all API details, dashboard details, and more in the [RapidFire AI Documentation](https://oss-docs.rapidfire.ai).
 
 ## Key Features
 
