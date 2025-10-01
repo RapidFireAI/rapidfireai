@@ -19,13 +19,16 @@ logger = logging.getLogger(__name__)
 
 class UserProxyManager:
     """Manages user-specific proxy configurations."""
-    
+
     def __init__(self):
         self.user_proxies = {}
+
+        # Use environment variables if available (for Colab/tunneling scenarios)
+        # Otherwise default to localhost
         self.default_proxy = {
-            'main_proxy_target': 'http://127.0.0.1:5002/',
-            'static_proxy_target': 'http://127.0.0.1:5002/',
-            'dispatcher_proxy_target': 'http://127.0.0.1:8080/',
+            'main_proxy_target': os.getenv('RF_MLFLOW_URL', 'http://127.0.0.1:5002/'),
+            'static_proxy_target': os.getenv('RF_MLFLOW_URL', 'http://127.0.0.1:5002/'),
+            'dispatcher_proxy_target': os.getenv('RF_DISPATCHER_URL', 'http://127.0.0.1:8080/'),
         }
     
     def get_user_proxy(self, user_id: str) -> Dict[str, str]:
