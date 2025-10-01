@@ -303,7 +303,7 @@ def cleanup_existing_processes():
 
     processes_to_kill = [
         ('mlflow server', 'MLflow'),
-        ('gunicorn.*dispatcher', 'Dispatcher'),
+        ('gunicorn', 'Dispatcher'),  # Broader match for gunicorn
         ('server.py', 'Frontend'),
         ('cloudflared', 'Cloudflare Tunnel')
     ]
@@ -311,6 +311,7 @@ def cleanup_existing_processes():
     killed_any = False
     for pattern, name in processes_to_kill:
         try:
+            # First try SIGTERM (graceful)
             result = subprocess.run(
                 ['pkill', '-f', pattern],
                 capture_output=True,
@@ -324,7 +325,19 @@ def cleanup_existing_processes():
 
     if killed_any:
         # Give processes time to shut down
-        time.sleep(2)
+        time.sleep(3)
+
+        # Kill any remaining processes more forcefully
+        for pattern, name in processes_to_kill:
+            try:
+                subprocess.run(
+                    ['pkill', '-9', '-f', pattern],
+                    capture_output=True,
+                    timeout=2
+                )
+            except Exception:
+                pass
+
         print("✅ Cleanup complete\n")
     else:
         print("✅ No existing processes found\n")
