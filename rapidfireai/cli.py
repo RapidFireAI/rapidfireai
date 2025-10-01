@@ -428,9 +428,9 @@ def main():
 
     parser.add_argument(
         "--tunnel",
-        choices=["native", "cloudflare", "ngrok"],
-        default="native",
-        help="Tunneling method for Colab (default: native)"
+        choices=["cloudflare", "ngrok"],
+        default="cloudflare",
+        help="Tunneling method for Colab (default: cloudflare). Note: 'native' only works from notebook cells, not CLI."
     )
 
     args = parser.parse_args()
@@ -447,6 +447,7 @@ def main():
     if args.colab or os.getenv('RF_COLAB_MODE'):
         if args.command == "start":
             # Set tunnel method environment variable
+            # Note: Native method won't work from CLI, only from notebook cells
             os.environ['RF_TUNNEL_METHOD'] = args.tunnel
             return run_start_colab()
         else:

@@ -56,6 +56,9 @@ def expose_port_native(port: int, description: str = "") -> Optional[str]:
     This method uses Colab's built-in `serve_kernel_port_as_window` function
     to create an authenticated URL that proxies to the local port.
 
+    IMPORTANT: This must be called from within a Colab notebook cell, not from
+    a subprocess or script. The Colab output APIs require the notebook kernel context.
+
     Args:
         port: The local port number to expose
         description: Optional description for the service
@@ -68,6 +71,14 @@ def expose_port_native(port: int, description: str = "") -> Optional[str]:
         return None
 
     try:
+        # Check if we're in IPython/notebook context
+        try:
+            get_ipython()
+        except NameError:
+            print(f"❌ Error: Native port forwarding must be called from a notebook cell, not a script.")
+            print(f"   Please use cloudflare or ngrok tunnel instead, or call from notebook.")
+            return None
+
         from google.colab import output
 
         print(f"🚀 Exposing {description or f'port {port}'} via Colab native forwarding...")
@@ -85,6 +96,8 @@ def expose_port_native(port: int, description: str = "") -> Optional[str]:
 
     except Exception as e:
         print(f"❌ Error exposing port {port}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -280,6 +293,9 @@ def expose_rapidfire_services(
     """
     Expose all RapidFire services using the specified method.
 
+    IMPORTANT: If using method='native', this must be called from within a Colab
+    notebook cell, not from a script or CLI command.
+
     Args:
         method: 'native' (Colab built-in), 'cloudflare', or 'ngrok'
         mlflow_port: Port for MLflow server
@@ -295,6 +311,14 @@ def expose_rapidfire_services(
     if method == 'native':
         if not is_colab():
             print("❌ Native method only works in Google Colab")
+            return urls
+
+        # Check if we're in notebook context
+        try:
+            get_ipython()
+        except NameError:
+            print("❌ Native method requires running from a Colab notebook cell")
+            print("   Use 'cloudflare' or 'ngrok' method instead when running from CLI")
             return urls
 
         print("🚀 Exposing RapidFire services using Colab native forwarding...\n")
