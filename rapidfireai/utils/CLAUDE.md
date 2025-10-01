@@ -6,6 +6,67 @@ This file provides guidance for working with the utility modules in RapidFire AI
 
 The utils module contains shared utilities used across RapidFire components, including logging, MLflow integration, shared memory management, serialization, exception handling, and constants.
 
+## Google Colab Support
+
+### Colab Helper (colab_helper.py)
+
+**Purpose**: Utilities for running RapidFire in Google Colab and restricted notebook environments
+
+**Key Functions**:
+- `is_colab()`: Detect if running in Google Colab
+- `get_notebook_environment()`: Returns 'colab', 'kaggle', 'jupyter', or 'unknown'
+- `setup_cloudflare_tunnel(port, description)`: Create free Cloudflare tunnel for port forwarding
+- `setup_ngrok_tunnel(port, auth_token, description)`: Create ngrok tunnel (requires auth token)
+- `expose_rapidfire_services(method, ...)`: Expose all services using specified tunneling method
+
+**Tunneling Methods**:
+1. **'native'**: Colab's built-in port forwarding (only works when called from notebook cell)
+2. **'cloudflare'**: Free Cloudflare tunnels via cloudflared binary (no registration required)
+3. **'ngrok'**: ngrok tunnels (requires free account and auth token)
+
+**Important Architectural Note - Tunnel Routing Loop**:
+
+When using tunnels in Colab, **inter-service communication must use localhost**, not tunnel URLs. Tunnel URLs are only for external browser access.
+
+❌ **Wrong Architecture (creates routing loop)**:
+```
+Browser → Frontend Tunnel → Frontend:3000 → MLflow Tunnel → MLflow:5002
+                                                   ↑
+                                                   Fails with 502: Colab → Cloudflare → Colab loop
+```
+
+✅ **Correct Architecture**:
+```
+Browser → Frontend Tunnel → Frontend:3000 → localhost:5002 (direct)
+Browser → MLflow Tunnel → MLflow:5002 (direct access if needed)
+```
+
+**Why this matters**:
+- Cloudflare/ngrok tunnels expose local services to the internet
+- They route: External Request → Tunnel Provider → Local Machine
+- From within the same machine, tunnel URLs create a loop that fails
+- Always use `http://127.0.0.1:<port>` for services on the same host
+
+**Example in start_colab.py**:
+```python
+# Create tunnels for external access
+mlflow_url = setup_cloudflare_tunnel(RF_MLFLOW_PORT, "MLflow Tracking UI")
+
+# DON'T set RF_MLFLOW_URL env var - let frontend use localhost
+# os.environ['RF_MLFLOW_URL'] = mlflow_url  # ❌ Creates routing loop
+
+# Frontend subprocess will use default: http://127.0.0.1:5002/ ✅
+```
+
+**Colab Process Restrictions**:
+
+Google Colab restricts certain OS-level process operations:
+1. `os.setpgrp()` - Cannot create process groups (wrapped in try-except with fallback)
+2. `os.getpgid()` - Cannot query process group IDs (uses psutil fallback)
+3. `os.killpg()` - Only used when process_group_id exists (safe)
+
+See `worker_manager.py` for implementation of these workarounds.
+
 ## Files
 
 ### constants.py
