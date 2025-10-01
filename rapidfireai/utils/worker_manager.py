@@ -101,11 +101,14 @@ class WorkerManager:
         """
         self.logger.debug(f"Creating {self.num_workers} worker processes...")
 
-        # Create new process group
-        os.setpgrp()
-        self.process_group_id = os.getpgrp()
-
-        self.logger.debug(f"Starting worker processes in process group {self.process_group_id}")
+        # Create new process group (may not be permitted in restricted environments like Colab)
+        try:
+            os.setpgrp()
+            self.process_group_id = os.getpgrp()
+            self.logger.debug(f"Starting worker processes in process group {self.process_group_id}")
+        except PermissionError:
+            self.logger.debug("Cannot create process group (restricted environment) - will use individual process termination")
+            self.process_group_id = None
 
         worker_ids = []
 
