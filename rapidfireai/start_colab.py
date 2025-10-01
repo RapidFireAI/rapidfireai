@@ -297,11 +297,47 @@ def install_dependencies():
         print("✅ All dependencies available")
 
 
+def cleanup_existing_processes():
+    """Kill any existing RapidFire processes."""
+    print("🧹 Cleaning up any existing RapidFire processes...")
+
+    processes_to_kill = [
+        ('mlflow server', 'MLflow'),
+        ('gunicorn.*dispatcher', 'Dispatcher'),
+        ('server.py', 'Frontend'),
+        ('cloudflared', 'Cloudflare Tunnel')
+    ]
+
+    killed_any = False
+    for pattern, name in processes_to_kill:
+        try:
+            result = subprocess.run(
+                ['pkill', '-f', pattern],
+                capture_output=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                print(f"   Stopped existing {name} process")
+                killed_any = True
+        except Exception:
+            pass
+
+    if killed_any:
+        # Give processes time to shut down
+        time.sleep(2)
+        print("✅ Cleanup complete\n")
+    else:
+        print("✅ No existing processes found\n")
+
+
 def main():
     """Main entry point."""
     print("=" * 60)
     print("  RapidFire AI - Google Colab Startup")
     print("=" * 60 + "\n")
+
+    # Cleanup any existing processes first
+    cleanup_existing_processes()
 
     # Check environment
     check_environment()
