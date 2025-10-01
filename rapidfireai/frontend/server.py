@@ -37,4 +37,12 @@ if __name__ == '__main__':
     # Get host and port from environment
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', 3000))
+
+    # Log proxy configuration for debugging
+    mlflow_url = os.getenv('RF_MLFLOW_URL', 'not set')
+    dispatcher_url = os.getenv('RF_DISPATCHER_URL', 'not set')
+    print(f"🔧 Frontend starting with proxy config:")
+    print(f"   RF_MLFLOW_URL: {mlflow_url}")
+    print(f"   RF_DISPATCHER_URL: {dispatcher_url}")
+
     app.run(host=host, port=port)

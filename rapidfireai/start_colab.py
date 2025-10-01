@@ -167,14 +167,20 @@ class ServiceManager:
                 print(f"❌ Frontend server.py not found: {server_py}")
                 return False
 
-            # Start Flask server
+            # Start Flask server with explicit environment variables
             proc = subprocess.Popen(
                 [sys.executable, 'server.py'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 cwd=frontend_dir,
-                env={**os.environ, 'PORT': str(RF_FRONTEND_PORT), 'HOST': RF_FRONTEND_HOST}
+                env={
+                    **os.environ,
+                    'PORT': str(RF_FRONTEND_PORT),
+                    'HOST': RF_FRONTEND_HOST,
+                    'RF_MLFLOW_URL': os.getenv('RF_MLFLOW_URL', f'http://127.0.0.1:{RF_MLFLOW_PORT}/'),
+                    'RF_DISPATCHER_URL': os.getenv('RF_DISPATCHER_URL', f'http://127.0.0.1:{RF_API_PORT}/'),
+                }
             )
 
             self.processes.append(proc)
@@ -433,28 +439,33 @@ def main():
             print(f"   RF_MLFLOW_URL={os.environ.get('RF_MLFLOW_URL')}")
             print(f"   RF_DISPATCHER_URL={os.environ.get('RF_DISPATCHER_URL')}")
 
-            # Test tunnel connectivity
+            # Test tunnel connectivity with retry logic
             print("\n🧪 Testing tunnel connectivity...")
             import requests
-            try:
-                # Test MLflow tunnel
-                response = requests.get(mlflow_url.rstrip('/') + '/health', timeout=5)
-                if response.status_code == 200:
-                    print(f"   ✅ MLflow tunnel is responding")
-                else:
-                    print(f"   ⚠️  MLflow tunnel returned status {response.status_code}")
-            except Exception as e:
-                print(f"   ❌ MLflow tunnel connectivity failed: {e}")
 
-            try:
-                # Test Dispatcher tunnel
-                response = requests.get(dispatcher_url.rstrip('/') + '/healthcheck', timeout=5)
-                if response.status_code == 200:
-                    print(f"   ✅ Dispatcher tunnel is responding")
-                else:
-                    print(f"   ⚠️  Dispatcher tunnel returned status {response.status_code}")
-            except Exception as e:
-                print(f"   ❌ Dispatcher tunnel connectivity failed: {e}")
+            def test_tunnel_connectivity(url: str, path: str, description: str, max_retries: int = 5) -> bool:
+                """Test tunnel connectivity with DNS retry logic."""
+                for attempt in range(max_retries):
+                    try:
+                        response = requests.get(url.rstrip('/') + path, timeout=10)
+                        if response.status_code < 500:
+                            print(f"   ✅ {description} is responding (status {response.status_code})")
+                            return True
+                        else:
+                            print(f"   ⚠️  {description} returned status {response.status_code}")
+                            return False
+                    except requests.exceptions.RequestException as e:
+                        if attempt < max_retries - 1:
+                            wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4, 8, 16 seconds
+                            print(f"   ⏳ {description} not ready yet (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s...")
+                            time.sleep(wait_time)
+                        else:
+                            print(f"   ❌ {description} connectivity failed after {max_retries} attempts: {e}")
+                            return False
+                return False
+
+            test_tunnel_connectivity(mlflow_url, '/health', 'MLflow tunnel')
+            test_tunnel_connectivity(dispatcher_url, '/healthcheck', 'Dispatcher tunnel')
             print()
 
     # NOW start frontend (it will inherit the tunnel URL env vars)

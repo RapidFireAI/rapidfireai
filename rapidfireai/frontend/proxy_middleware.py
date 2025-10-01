@@ -144,6 +144,17 @@ class ProxyMiddleware:
             logger.info(f'RF_DISPATCHER_URL env var: {os.getenv("RF_DISPATCHER_URL", "not set")}')
 
             return jsonify(proxy_config)
+
+        @self.app.route('/debug/proxy-env')
+        def debug_proxy_env():
+            """Debug endpoint to show environment variables and proxy configuration."""
+            user_id = request.headers.get('x-user-id', 'default')
+            return jsonify({
+                'RF_MLFLOW_URL': os.getenv('RF_MLFLOW_URL', 'not set'),
+                'RF_DISPATCHER_URL': os.getenv('RF_DISPATCHER_URL', 'not set'),
+                'default_proxy': self.proxy_manager.get_default_proxy(),
+                'user_proxy_default': self.proxy_manager.get_user_proxy(user_id)
+            })
     
     def should_proxy(self, path: str) -> bool:
         """Determine if a request should be proxied."""
