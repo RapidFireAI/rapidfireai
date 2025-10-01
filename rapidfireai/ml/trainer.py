@@ -1,10 +1,34 @@
 import math
 import os
+import warnings
 
 import torch
 from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict
 from transformers.utils.logging import set_verbosity_error
 from trl import DPOConfig, DPOTrainer, GRPOConfig, GRPOTrainer, SFTConfig, SFTTrainer
+
+# Suppress PyTorch warnings and set up clean environment
+warnings.filterwarnings("ignore", message=".*FSDP.state_dict_type.*", category=FutureWarning)
+warnings.filterwarnings("ignore", message=".*FSDP.set_state_dict_type.*", category=FutureWarning)
+warnings.filterwarnings("ignore", message=".*torch.distributed.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*torch.nn.utils.*", category=UserWarning)
+
+# Set environment variables for clean output
+os.environ["TORCH_WARN"] = "0"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+os.environ["DATASETS_VERBOSITY"] = "error"
+
+# Suppress logging from third-party libraries
+import logging
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("datasets").setLevel(logging.ERROR)
+logging.getLogger("tokenizers").setLevel(logging.ERROR)
+logging.getLogger("accelerate").setLevel(logging.ERROR)
+logging.getLogger("peft").setLevel(logging.ERROR)
+logging.getLogger("mlflow").setLevel(logging.ERROR)
+logging.getLogger("torch").setLevel(logging.ERROR)
+logging.getLogger("torch.distributed").setLevel(logging.ERROR)
 
 from rapidfireai.ml.callbacks import GenerationMetricsCallback, LogLevelCallback, MLflowLoggingCallback
 from rapidfireai.ml.checkpoint_utils import (
@@ -231,6 +255,8 @@ def _configure_training_args(training_args: dict, trainer_config: TrainerConfig,
         steps_per_epoch = (num_generations * trainer_config.train_dataset.num_rows) // (
             gradient_accumulation_steps * per_device_train_batch_size
         )
+    if use_fsdp:
+        steps_per_epoch = steps_per_epoch//trainer_config.world_size
     left_over_steps = trainer_config.total_steps - completed_steps
     if left_over_steps > steps_per_epoch:
         training_args["num_train_epochs"] = 1
@@ -265,6 +291,8 @@ def _configure_training_args(training_args: dict, trainer_config: TrainerConfig,
     training_args["no_cuda"] = False
     training_args["local_rank"] = -1
     training_args["disable_tqdm"] = True
+    training_args["log_level"] = "error"
+    training_args["log_level_replica"] = "error"
 
     if "save_steps" in training_args:
         training_args.pop("save_steps")
@@ -272,7 +300,7 @@ def _configure_training_args(training_args: dict, trainer_config: TrainerConfig,
     # Configure distributed training arguments for FSDP
     if use_fsdp:
         training_args["local_rank"] = trainer_config.local_rank
-        training_args["dataloader_num_workers"] = trainer_config.world_size  # Avoid multiprocessing issues with FSDP
+        # training_args["dataloader_num_workers"] = trainer_config.world_size  # Avoid multiprocessing issues with FSDP
         training_args["dataloader_pin_memory"] = False
         training_args["remove_unused_columns"] = False  # FSDP requires this
 

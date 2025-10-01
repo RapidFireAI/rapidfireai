@@ -118,6 +118,7 @@ class Worker:
         # check if FSDP is enabled
         use_fsdp = "training_args" in config_leaf and "fsdp_config" in config_leaf["training_args"]
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 
         # Initialize distributed training if FSDP is enabled for this run
         if use_fsdp:
@@ -144,7 +145,7 @@ class Worker:
         # get effective batch size
         per_device_train_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1)
         gradient_accumulation_steps = config_leaf["training_args"].get("gradient_accumulation_steps", 1)
-        effective_batch_size = per_device_train_batch_size * gradient_accumulation_steps
+        effective_batch_size = per_device_train_batch_size * gradient_accumulation_steps * multi_worker_details.get("world_size", 1)
 
         # fetch train dataset chunk
         train_dataset_chunker = DatasetChunks(

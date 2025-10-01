@@ -102,7 +102,6 @@ class Controller:
         for config_leaf in config_leafs:
             # get flattened config and total steps
             flattened_config = get_flattened_config_leaf(config_leaf)
-            total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks)
 
             # get clone modify info
             if clone_modify_info:
@@ -125,6 +124,7 @@ class Controller:
                 estimated_runtime = random.uniform(1.0, 10.0)
                 required_workers = config_leaf.get("num_gpus", self.default_req_workers)
 
+            total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks, required_workers)
             # create run
             run_id = self.db.create_run(
                 config_leaf=config_leaf,
@@ -303,7 +303,7 @@ class Controller:
                     gradient_accumulation_steps = parent_run_details["config_leaf"]["training_args"].get(
                         "gradient_accumulation_steps", 1
                     )
-                    effective_batch_size = per_device_train_batch_size * gradient_accumulation_steps
+                    effective_batch_size = per_device_train_batch_size * gradient_accumulation_steps * parent_run_details["required_workers"]
                     chunker = DatasetChunks(
                         len_train_dataset,
                         num_chunks,
@@ -429,30 +429,41 @@ class Controller:
 
         return run_states, clone_modify_tasks
 
-    def _get_total_step(self, config_leaf: dict[str, Any], len_train_dataset: int, num_chunks: int) -> int:
+    def _get_total_step(
+        self, config_leaf: dict[str, Any], len_train_dataset: int, num_chunks: int, required_workers: int
+    ) -> int:
         """Get the total number of steps for a run."""
         num_train_epochs = config_leaf["training_args"].get("num_train_epochs", 1)
 
         total_steps = 0
+        use_fsdp = "training_args" in config_leaf and "fsdp_config" in config_leaf["training_args"]
         # max_steps overrides num_train_epochs
         if config_leaf["training_args"].get("max_steps", None):
             # ceil to nearest chunk multiple
             total_steps = config_leaf["training_args"]["max_steps"]
         elif num_train_epochs:
-            per_device_train_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1)
-            gradient_accumulation_steps = config_leaf["training_args"].get("gradient_accumulation_steps", 1)
+            per_device_train_batch_size = config_leaf["training_args"].get(
+                "per_device_train_batch_size", 1
+            )
+            gradient_accumulation_steps = config_leaf["training_args"].get(
+                "gradient_accumulation_steps", 1
+            )
             len_dataloader = math.ceil(len_train_dataset / per_device_train_batch_size)
             num_update_steps_per_epoch = max(
-                len_dataloader // gradient_accumulation_steps + int(len_dataloader % gradient_accumulation_steps > 0),
+                len_dataloader // gradient_accumulation_steps
+                + int(len_dataloader % gradient_accumulation_steps > 0),
                 1,
             )
             total_steps = math.ceil(num_train_epochs * num_update_steps_per_epoch)
 
             if config_leaf.get("trainer_type", "SFT") == "GRPO":
                 num_generations = config_leaf["training_args"].get("num_generations", 8)
-                total_steps = (num_generations * len_train_dataset * num_train_epochs) // (
-                    gradient_accumulation_steps * per_device_train_batch_size
-                )
+                total_steps = (
+                    num_generations * len_train_dataset * num_train_epochs
+                ) // (gradient_accumulation_steps * per_device_train_batch_size)
+
+            if use_fsdp and required_workers > 1:
+                total_steps = total_steps//required_workers
         return total_steps
 
     def run_fit(
