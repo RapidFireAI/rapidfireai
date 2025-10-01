@@ -234,5 +234,5 @@ node_modules/
 package-lock.json
 rapidfireai/rapidfire_pids.txt
 
-# frontend build
-rapidfireai/frontend/build/
+# frontend build (commented out - need to include build/ in package)
+# rapidfireai/frontend/build/
