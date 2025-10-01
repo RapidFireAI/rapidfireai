@@ -84,7 +84,15 @@ class WorkerManager:
         while not self.shutdown_event.is_set():
             try:
                 # Check if parent process is still alive
-                os.getpgid(self.parent_pid)
+                try:
+                    os.getpgid(self.parent_pid)
+                except PermissionError:
+                    # Fallback for restricted environments (e.g., Colab)
+                    # Use psutil to check if parent process exists
+                    import psutil
+                    if not psutil.pid_exists(self.parent_pid):
+                        raise ProcessLookupError("Parent process no longer exists")
+
                 time.sleep(self.parent_check_interval)
             except ProcessLookupError:
                 self.logger.debug(f"Parent process {self.parent_pid} died, shutting down workers...")
