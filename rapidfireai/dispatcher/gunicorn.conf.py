@@ -5,7 +5,7 @@ from rapidfireai.utils.constants import DispatcherConfig
 
 # Other Gunicorn settings...
 bind = f"{DispatcherConfig.HOST}:{DispatcherConfig.PORT}"
-workers = 2
+workers = 1  # Single worker for Colab/single-user environments to save memory
 
 wsgi_app = "rapidfireai.dispatcher.dispatcher:serve_forever()"
 
