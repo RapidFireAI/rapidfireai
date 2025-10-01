@@ -151,7 +151,7 @@ class ServiceManager:
                     'gunicorn',
                     '-c', os.path.join(dispatcher_dir, 'gunicorn.conf.py'),
                     '--bind', f'{RF_API_HOST}:{RF_API_PORT}',
-                    'rapidfireai.dispatcher.dispatcher:Dispatcher().app'
+                    'rapidfireai.dispatcher.dispatcher:serve_forever()'
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
