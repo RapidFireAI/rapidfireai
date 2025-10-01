@@ -336,10 +336,10 @@ def cleanup_existing_processes():
         except Exception:
             pass
 
-    # Also check for Python processes running our specific files (more targeted)
+    # Also check for specific Python files (but not the currently running script!)
     python_files = [
-        ('rapidfireai/frontend/server.py', 'Frontend'),
-        ('rapidfireai/start_colab.py', 'Colab starter')
+        ('rapidfireai/frontend/server.py', 'Frontend')
+        # Note: Don't kill start_colab.py as it might be the current process
     ]
 
     for file_pattern, name in python_files:
