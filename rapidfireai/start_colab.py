@@ -390,37 +390,6 @@ def main():
     if not urls or not any(urls.values()):
         print("\n⚠️  Failed to expose services via tunneling")
         print("Services are running locally but not accessible externally")
-    else:
-        # Restart frontend with tunnel URLs set as environment variables
-        # This makes the frontend proxy use tunnel URLs instead of localhost,
-        # significantly improving performance when accessing through tunnels
-        print("\n🔄 Restarting frontend with optimized proxy settings...")
-
-        # Find and stop the frontend process
-        for i, proc in enumerate(manager.processes):
-            # Check if this is the frontend process (last one started)
-            if i == 2:  # Frontend is the 3rd service (index 2)
-                try:
-                    proc.terminate()
-                    proc.wait(timeout=5)
-                    print("   Stopped frontend server")
-                except Exception as e:
-                    print(f"   Warning: Could not stop frontend cleanly: {e}")
-
-                # Set environment variables for tunnel URLs
-                if urls.get('mlflow'):
-                    os.environ['RF_MLFLOW_URL'] = urls['mlflow'].rstrip('/') + '/'
-                if urls.get('dispatcher'):
-                    os.environ['RF_DISPATCHER_URL'] = urls['dispatcher'].rstrip('/') + '/'
-
-                # Restart frontend
-                if manager.start_frontend():
-                    print("✅ Frontend restarted with tunnel URL proxies")
-                    print(f"   MLflow proxy: {os.environ.get('RF_MLFLOW_URL', 'localhost')}")
-                    print(f"   Dispatcher proxy: {os.environ.get('RF_DISPATCHER_URL', 'localhost')}")
-                else:
-                    print("⚠️  Frontend restart failed, using original instance")
-                break
 
     # Monitor processes
     manager.monitor_processes()

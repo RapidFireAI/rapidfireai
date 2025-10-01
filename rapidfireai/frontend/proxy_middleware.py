@@ -23,18 +23,21 @@ class UserProxyManager:
     def __init__(self):
         self.user_proxies = {}
 
-        # Use environment variables if available (for Colab/tunneling scenarios)
-        # Otherwise default to localhost
-        self.default_proxy = {
+    def get_default_proxy(self) -> Dict[str, str]:
+        """Get default proxy configuration, checking environment variables each time."""
+        # Check environment variables dynamically for Colab/tunneling scenarios
+        # This allows proxy targets to be updated without restarting the server
+        return {
             'main_proxy_target': os.getenv('RF_MLFLOW_URL', 'http://127.0.0.1:5002/'),
             'static_proxy_target': os.getenv('RF_MLFLOW_URL', 'http://127.0.0.1:5002/'),
             'dispatcher_proxy_target': os.getenv('RF_DISPATCHER_URL', 'http://127.0.0.1:8080/'),
         }
-    
+
     def get_user_proxy(self, user_id: str) -> Dict[str, str]:
         """Get or create user-specific proxy configuration."""
         if user_id not in self.user_proxies:
-            self.user_proxies[user_id] = self.default_proxy.copy()
+            # Use current default (which checks env vars)
+            self.user_proxies[user_id] = self.get_default_proxy().copy()
         return self.user_proxies[user_id]
     
     def update_proxy_target(self, user_id: str, target_type: str, new_target: str) -> Dict[str, any]:
