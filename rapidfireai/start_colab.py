@@ -428,16 +428,17 @@ def main():
             mlflow_url = setup_ngrok_tunnel(RF_MLFLOW_PORT, RF_NGROK_TOKEN, "MLflow Tracking UI")
             dispatcher_url = setup_ngrok_tunnel(RF_API_PORT, RF_NGROK_TOKEN, "Dispatcher API")
 
-        # Set environment variables for frontend proxy to use
-        if mlflow_url:
-            os.environ['RF_MLFLOW_URL'] = mlflow_url.rstrip('/') + '/'
-        if dispatcher_url:
-            os.environ['RF_DISPATCHER_URL'] = dispatcher_url.rstrip('/') + '/'
+        # NOTE: We do NOT set RF_MLFLOW_URL and RF_DISPATCHER_URL env vars here.
+        # The frontend should use localhost URLs for inter-service communication,
+        # not tunnel URLs. Tunnel URLs are only for external browser access.
+        # This avoids a routing loop: Colab → Cloudflare → back to Colab.
 
         if mlflow_url and dispatcher_url:
-            print("\n🔗 Frontend proxy will use:")
-            print(f"   RF_MLFLOW_URL={os.environ.get('RF_MLFLOW_URL')}")
-            print(f"   RF_DISPATCHER_URL={os.environ.get('RF_DISPATCHER_URL')}")
+            print("\n🔗 Tunnel URLs created (for external browser access):")
+            print(f"   MLflow: {mlflow_url}")
+            print(f"   Dispatcher: {dispatcher_url}")
+            print(f"\n💡 Frontend will use localhost URLs for backend services")
+            print(f"   (avoids tunnel routing loop)")
 
             # Test tunnel connectivity with retry logic
             print("\n🧪 Testing tunnel connectivity...")
