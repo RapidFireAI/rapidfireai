@@ -169,6 +169,16 @@ class ServiceManager:
             else:
                 elapsed = time.time() - start_time
                 print(f"❌ Dispatcher API failed to start [took {elapsed:.1f}s]")
+
+                # Try to get error output from the process
+                try:
+                    output, _ = proc.communicate(timeout=1)
+                    if output:
+                        print(f"\n📋 Dispatcher error output:")
+                        print(output[-3000:] if len(output) > 3000 else output)  # Last 3000 chars
+                except Exception:
+                    pass
+
                 return False
 
         except Exception as e:
@@ -504,7 +514,7 @@ def main():
                 return False
 
             test_tunnel_connectivity(mlflow_url, '/health', 'MLflow tunnel')
-            test_tunnel_connectivity(dispatcher_url, '/healthcheck', 'Dispatcher tunnel')
+            test_tunnel_connectivity(dispatcher_url, '/dispatcher/health-check', 'Dispatcher tunnel')
             print()
 
     # NOW start frontend (it will inherit the tunnel URL env vars)
