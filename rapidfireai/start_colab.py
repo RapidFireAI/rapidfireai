@@ -35,11 +35,27 @@ RF_MLFLOW_PORT = int(os.getenv('RF_MLFLOW_PORT', 5002))
 RF_MLFLOW_HOST = os.getenv('RF_MLFLOW_HOST', '0.0.0.0')  # Bind to all interfaces for tunneling
 RF_FRONTEND_PORT = int(os.getenv('RF_FRONTEND_PORT', 3000))
 RF_FRONTEND_HOST = os.getenv('RF_FRONTEND_HOST', '0.0.0.0')
-RF_API_PORT = int(os.getenv('RF_API_PORT', 8080))
+RF_API_PORT = int(os.getenv('RF_API_PORT', 8081))  # 8081 instead of 8080 to avoid Colab infrastructure conflicts
 RF_API_HOST = os.getenv('RF_API_HOST', '0.0.0.0')
 RF_DB_PATH = os.getenv('RF_DB_PATH', os.path.expanduser('~/db'))
 RF_TUNNEL_METHOD = os.getenv('RF_TUNNEL_METHOD', 'native')  # 'native', 'cloudflare', or 'ngrok'
 RF_NGROK_TOKEN = os.getenv('RF_NGROK_TOKEN')
+
+
+def check_port_available(port: int) -> bool:
+    """Check if a port is available for binding."""
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(1)
+    try:
+        # Try to bind to the port
+        sock.bind(('0.0.0.0', port))
+        sock.close()
+        return True
+    except OSError:
+        # Port is already in use
+        sock.close()
+        return False
 
 
 class ServiceManager:
@@ -64,6 +80,13 @@ class ServiceManager:
         """Start MLflow server."""
         start_time = time.time()
         print(f"🚀 Starting MLflow server on {RF_MLFLOW_HOST}:{RF_MLFLOW_PORT}...")
+
+        # Check if port is available
+        if not check_port_available(RF_MLFLOW_PORT):
+            elapsed = time.time() - start_time
+            print(f"❌ Port {RF_MLFLOW_PORT} is already in use [took {elapsed:.1f}s]")
+            print(f"   Set RF_MLFLOW_PORT environment variable to use a different port")
+            return False
 
         # Create database directory
         os.makedirs(RF_DB_PATH, exist_ok=True)
@@ -102,6 +125,14 @@ class ServiceManager:
         """Start Dispatcher API server with Gunicorn."""
         start_time = time.time()
         print(f"🚀 Starting Dispatcher API on {RF_API_HOST}:{RF_API_PORT}...")
+
+        # Check if port is available
+        if not check_port_available(RF_API_PORT):
+            elapsed = time.time() - start_time
+            print(f"❌ Port {RF_API_PORT} is already in use [took {elapsed:.1f}s]")
+            print(f"   Port 8080 is often used by Colab infrastructure")
+            print(f"   Set RF_API_PORT environment variable to use a different port")
+            return False
 
         try:
             # Get the dispatcher directory
@@ -149,6 +180,13 @@ class ServiceManager:
         """Start Frontend Flask server."""
         start_time = time.time()
         print(f"🚀 Starting Frontend server on {RF_FRONTEND_HOST}:{RF_FRONTEND_PORT}...")
+
+        # Check if port is available
+        if not check_port_available(RF_FRONTEND_PORT):
+            elapsed = time.time() - start_time
+            print(f"❌ Port {RF_FRONTEND_PORT} is already in use [took {elapsed:.1f}s]")
+            print(f"   Set RF_FRONTEND_PORT environment variable to use a different port")
+            return False
 
         try:
             # Get the frontend directory
