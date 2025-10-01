@@ -313,39 +313,12 @@ def cleanup_existing_processes():
     """Kill any existing RapidFire processes."""
     print("🧹 Cleaning up any existing RapidFire processes...")
 
-    # First, kill processes by port (most reliable)
-    ports_to_clear = [
-        (5002, 'MLflow'),
-        (8080, 'Dispatcher'),
-        (3000, 'Frontend')
-    ]
-
     killed_any = False
-    for port, name in ports_to_clear:
-        try:
-            # Find PIDs using the port
-            result = subprocess.run(
-                ['lsof', '-ti', f':{port}'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.stdout.strip():
-                pids = result.stdout.strip().split('\n')
-                for pid in pids:
-                    try:
-                        subprocess.run(['kill', '-9', pid], timeout=2)
-                        print(f"   Killed {name} process (PID: {pid}) on port {port}")
-                        killed_any = True
-                    except Exception:
-                        pass
-        except Exception:
-            pass
 
-    # Then kill by process pattern (backup)
+    # Kill by process pattern (safer - only kills RapidFire processes)
     processes_to_kill = [
         ('mlflow server', 'MLflow'),
-        ('gunicorn', 'Dispatcher'),
+        ('gunicorn.*rapidfireai', 'Dispatcher'),  # Only kill gunicorn running rapidfireai
         ('server.py', 'Frontend'),
         ('cloudflared', 'Cloudflare Tunnel')
     ]
@@ -354,6 +327,25 @@ def cleanup_existing_processes():
         try:
             result = subprocess.run(
                 ['pkill', '-9', '-f', pattern],
+                capture_output=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                print(f"   Stopped existing {name} process")
+                killed_any = True
+        except Exception:
+            pass
+
+    # Also check for Python processes running our specific files (more targeted)
+    python_files = [
+        ('rapidfireai/frontend/server.py', 'Frontend'),
+        ('rapidfireai/start_colab.py', 'Colab starter')
+    ]
+
+    for file_pattern, name in python_files:
+        try:
+            result = subprocess.run(
+                ['pkill', '-9', '-f', file_pattern],
                 capture_output=True,
                 timeout=5
             )
