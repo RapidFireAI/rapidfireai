@@ -150,6 +150,9 @@ def setup_cloudflare_tunnel(port: int, description: str = "") -> Optional[str]:
     Returns:
         str: The public URL if successful, None otherwise
     """
+    import time
+    start_time = time.time()
+
     print(f"🌐 Setting up Cloudflare Tunnel for {description or f'port {port}'}...")
 
     # Check if cloudflared is installed
@@ -180,19 +183,24 @@ def setup_cloudflare_tunnel(port: int, description: str = "") -> Optional[str]:
                     match = re.search(r'https://[a-z0-9-]+\.trycloudflare\.com', line)
                     if match:
                         url_container['url'] = match.group(0)
-                        print(f"✅ {description or 'Service'} is accessible at: {url_container['url']}")
 
         thread = threading.Thread(target=run_tunnel, daemon=True)
         thread.start()
 
         # Wait a moment for URL to be generated
-        import time
         time.sleep(5)
+
+        elapsed = time.time() - start_time
+        if url_container['url']:
+            print(f"✅ {description or 'Service'} is accessible at: {url_container['url']} [took {elapsed:.1f}s]")
+        else:
+            print(f"⚠️  Tunnel created but URL not detected yet [took {elapsed:.1f}s]")
 
         return url_container['url']
 
     except Exception as e:
-        print(f"❌ Error setting up Cloudflare Tunnel: {e}")
+        elapsed = time.time() - start_time
+        print(f"❌ Error setting up Cloudflare Tunnel: {e} [took {elapsed:.1f}s]")
         return None
 
 

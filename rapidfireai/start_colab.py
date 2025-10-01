@@ -62,6 +62,7 @@ class ServiceManager:
 
     def start_mlflow(self) -> bool:
         """Start MLflow server."""
+        start_time = time.time()
         print(f"🚀 Starting MLflow server on {RF_MLFLOW_HOST}:{RF_MLFLOW_PORT}...")
 
         # Create database directory
@@ -84,18 +85,22 @@ class ServiceManager:
 
             # Wait for service to be ready
             if self._wait_for_port(RF_MLFLOW_PORT, 'MLflow', timeout=30):
-                print(f"✅ MLflow server started (PID: {proc.pid})")
+                elapsed = time.time() - start_time
+                print(f"✅ MLflow server started (PID: {proc.pid}) [took {elapsed:.1f}s]")
                 return True
             else:
-                print(f"❌ MLflow server failed to start")
+                elapsed = time.time() - start_time
+                print(f"❌ MLflow server failed to start [took {elapsed:.1f}s]")
                 return False
 
         except Exception as e:
-            print(f"❌ Error starting MLflow: {e}")
+            elapsed = time.time() - start_time
+            print(f"❌ Error starting MLflow: {e} [took {elapsed:.1f}s]")
             return False
 
     def start_dispatcher(self) -> bool:
         """Start Dispatcher API server with Gunicorn."""
+        start_time = time.time()
         print(f"🚀 Starting Dispatcher API on {RF_API_HOST}:{RF_API_PORT}...")
 
         try:
@@ -127,18 +132,22 @@ class ServiceManager:
 
             # Wait for service to be ready
             if self._wait_for_port(RF_API_PORT, 'Dispatcher', timeout=60):
-                print(f"✅ Dispatcher API started (PID: {proc.pid})")
+                elapsed = time.time() - start_time
+                print(f"✅ Dispatcher API started (PID: {proc.pid}) [took {elapsed:.1f}s]")
                 return True
             else:
-                print(f"❌ Dispatcher API failed to start")
+                elapsed = time.time() - start_time
+                print(f"❌ Dispatcher API failed to start [took {elapsed:.1f}s]")
                 return False
 
         except Exception as e:
-            print(f"❌ Error starting Dispatcher: {e}")
+            elapsed = time.time() - start_time
+            print(f"❌ Error starting Dispatcher: {e} [took {elapsed:.1f}s]")
             return False
 
     def start_frontend(self) -> bool:
         """Start Frontend Flask server."""
+        start_time = time.time()
         print(f"🚀 Starting Frontend server on {RF_FRONTEND_HOST}:{RF_FRONTEND_PORT}...")
 
         try:
@@ -172,14 +181,17 @@ class ServiceManager:
 
             # Wait for service to be ready
             if self._wait_for_port(RF_FRONTEND_PORT, 'Frontend', timeout=30):
-                print(f"✅ Frontend server started (PID: {proc.pid})")
+                elapsed = time.time() - start_time
+                print(f"✅ Frontend server started (PID: {proc.pid}) [took {elapsed:.1f}s]")
                 return True
             else:
-                print(f"❌ Frontend server failed to start")
+                elapsed = time.time() - start_time
+                print(f"❌ Frontend server failed to start [took {elapsed:.1f}s]")
                 return False
 
         except Exception as e:
-            print(f"❌ Error starting Frontend: {e}")
+            elapsed = time.time() - start_time
+            print(f"❌ Error starting Frontend: {e} [took {elapsed:.1f}s]")
             return False
 
     def _wait_for_port(self, port: int, service_name: str, timeout: int = 30) -> bool:
@@ -301,19 +313,47 @@ def cleanup_existing_processes():
     """Kill any existing RapidFire processes."""
     print("🧹 Cleaning up any existing RapidFire processes...")
 
+    # First, kill processes by port (most reliable)
+    ports_to_clear = [
+        (5002, 'MLflow'),
+        (8080, 'Dispatcher'),
+        (3000, 'Frontend')
+    ]
+
+    killed_any = False
+    for port, name in ports_to_clear:
+        try:
+            # Find PIDs using the port
+            result = subprocess.run(
+                ['lsof', '-ti', f':{port}'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.stdout.strip():
+                pids = result.stdout.strip().split('\n')
+                for pid in pids:
+                    try:
+                        subprocess.run(['kill', '-9', pid], timeout=2)
+                        print(f"   Killed {name} process (PID: {pid}) on port {port}")
+                        killed_any = True
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # Then kill by process pattern (backup)
     processes_to_kill = [
         ('mlflow server', 'MLflow'),
-        ('gunicorn', 'Dispatcher'),  # Broader match for gunicorn
+        ('gunicorn', 'Dispatcher'),
         ('server.py', 'Frontend'),
         ('cloudflared', 'Cloudflare Tunnel')
     ]
 
-    killed_any = False
     for pattern, name in processes_to_kill:
         try:
-            # First try SIGTERM (graceful)
             result = subprocess.run(
-                ['pkill', '-f', pattern],
+                ['pkill', '-9', '-f', pattern],
                 capture_output=True,
                 timeout=5
             )
@@ -324,20 +364,8 @@ def cleanup_existing_processes():
             pass
 
     if killed_any:
-        # Give processes time to shut down
-        time.sleep(3)
-
-        # Kill any remaining processes more forcefully
-        for pattern, name in processes_to_kill:
-            try:
-                subprocess.run(
-                    ['pkill', '-9', '-f', pattern],
-                    capture_output=True,
-                    timeout=2
-                )
-            except Exception:
-                pass
-
+        # Give processes time to fully terminate
+        time.sleep(2)
         print("✅ Cleanup complete\n")
     else:
         print("✅ No existing processes found\n")
@@ -361,48 +389,98 @@ def main():
     # Create service manager
     manager = ServiceManager()
 
-    # Start services
+    # Start backend services only (MLflow and Dispatcher)
     print("\n" + "=" * 60)
-    print("  Starting Services")
+    print("  Starting Backend Services")
     print("=" * 60 + "\n")
 
     services_started = 0
 
     if manager.start_mlflow():
         services_started += 1
+    else:
+        print("❌ Failed to start MLflow - aborting")
+        return 1
 
     if manager.start_dispatcher():
         services_started += 1
-
-    if manager.start_frontend():
-        services_started += 1
-
-    if services_started < 3:
-        print(f"\n⚠️  Only {services_started}/3 services started successfully")
-        print("Check the logs above for errors")
+    else:
+        print("❌ Failed to start Dispatcher - aborting")
         manager.cleanup()
         return 1
 
-    print("\n" + "=" * 60)
-    print("  ✅ All Services Started!")
-    print("=" * 60 + "\n")
+    print(f"\n✅ Backend services started ({services_started}/2)\n")
 
-    # Expose ports using selected method
+    # Create tunnels for backend services FIRST (if using tunneling)
+    mlflow_url = None
+    dispatcher_url = None
+    frontend_url = None
+
+    if RF_TUNNEL_METHOD in ['cloudflare', 'ngrok']:
+        print("=" * 60)
+        print(f"  Creating Backend Tunnels ({RF_TUNNEL_METHOD})")
+        print("=" * 60 + "\n")
+
+        if RF_TUNNEL_METHOD == 'cloudflare':
+            from rapidfireai.utils.colab_helper import setup_cloudflare_tunnel
+            mlflow_url = setup_cloudflare_tunnel(RF_MLFLOW_PORT, "MLflow Tracking UI")
+            dispatcher_url = setup_cloudflare_tunnel(RF_API_PORT, "Dispatcher API")
+        elif RF_TUNNEL_METHOD == 'ngrok':
+            from rapidfireai.utils.colab_helper import setup_ngrok_tunnel
+            mlflow_url = setup_ngrok_tunnel(RF_MLFLOW_PORT, RF_NGROK_TOKEN, "MLflow Tracking UI")
+            dispatcher_url = setup_ngrok_tunnel(RF_API_PORT, RF_NGROK_TOKEN, "Dispatcher API")
+
+        # Set environment variables for frontend proxy to use
+        if mlflow_url:
+            os.environ['RF_MLFLOW_URL'] = mlflow_url.rstrip('/') + '/'
+        if dispatcher_url:
+            os.environ['RF_DISPATCHER_URL'] = dispatcher_url.rstrip('/') + '/'
+
+        if mlflow_url and dispatcher_url:
+            print("\n🔗 Frontend proxy will use:")
+            print(f"   RF_MLFLOW_URL={os.environ.get('RF_MLFLOW_URL')}")
+            print(f"   RF_DISPATCHER_URL={os.environ.get('RF_DISPATCHER_URL')}\n")
+
+    # NOW start frontend (it will inherit the tunnel URL env vars)
     print("=" * 60)
-    print(f"  Exposing Services (method: {RF_TUNNEL_METHOD})")
+    print("  Starting Frontend Service")
     print("=" * 60 + "\n")
 
-    urls = expose_rapidfire_services(
-        method=RF_TUNNEL_METHOD,
-        mlflow_port=RF_MLFLOW_PORT,
-        dispatcher_port=RF_API_PORT,
-        frontend_port=RF_FRONTEND_PORT,
-        ngrok_token=RF_NGROK_TOKEN
-    )
+    if manager.start_frontend():
+        services_started += 1
+    else:
+        print("❌ Failed to start Frontend - aborting")
+        manager.cleanup()
+        return 1
 
-    if not urls or not any(urls.values()):
-        print("\n⚠️  Failed to expose services via tunneling")
-        print("Services are running locally but not accessible externally")
+    # Create tunnel for frontend LAST
+    if RF_TUNNEL_METHOD in ['cloudflare', 'ngrok']:
+        print("\n" + "=" * 60)
+        print("  Creating Frontend Tunnel")
+        print("=" * 60 + "\n")
+
+        if RF_TUNNEL_METHOD == 'cloudflare':
+            from rapidfireai.utils.colab_helper import setup_cloudflare_tunnel
+            frontend_url = setup_cloudflare_tunnel(RF_FRONTEND_PORT, "RapidFire Dashboard")
+        elif RF_TUNNEL_METHOD == 'ngrok':
+            from rapidfireai.utils.colab_helper import setup_ngrok_tunnel
+            frontend_url = setup_ngrok_tunnel(RF_FRONTEND_PORT, RF_NGROK_TOKEN, "RapidFire Dashboard")
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("  📋 RapidFire Services Summary")
+    print("=" * 60)
+
+    if RF_TUNNEL_METHOD in ['cloudflare', 'ngrok']:
+        print(f"  FRONTEND: {frontend_url or '❌ Failed'}")
+        print(f"  MLFLOW: {mlflow_url or '❌ Failed'}")
+        print(f"  DISPATCHER: {dispatcher_url or '❌ Failed'}")
+    else:
+        print(f"  FRONTEND: http://localhost:{RF_FRONTEND_PORT}")
+        print(f"  MLFLOW: http://localhost:{RF_MLFLOW_PORT}")
+        print(f"  DISPATCHER: http://localhost:{RF_API_PORT}")
+
+    print("=" * 60 + "\n")
 
     # Monitor processes
     manager.monitor_processes()
