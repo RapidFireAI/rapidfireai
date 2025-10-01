@@ -431,7 +431,31 @@ def main():
         if mlflow_url and dispatcher_url:
             print("\n🔗 Frontend proxy will use:")
             print(f"   RF_MLFLOW_URL={os.environ.get('RF_MLFLOW_URL')}")
-            print(f"   RF_DISPATCHER_URL={os.environ.get('RF_DISPATCHER_URL')}\n")
+            print(f"   RF_DISPATCHER_URL={os.environ.get('RF_DISPATCHER_URL')}")
+
+            # Test tunnel connectivity
+            print("\n🧪 Testing tunnel connectivity...")
+            import requests
+            try:
+                # Test MLflow tunnel
+                response = requests.get(mlflow_url.rstrip('/') + '/health', timeout=5)
+                if response.status_code == 200:
+                    print(f"   ✅ MLflow tunnel is responding")
+                else:
+                    print(f"   ⚠️  MLflow tunnel returned status {response.status_code}")
+            except Exception as e:
+                print(f"   ❌ MLflow tunnel connectivity failed: {e}")
+
+            try:
+                # Test Dispatcher tunnel
+                response = requests.get(dispatcher_url.rstrip('/') + '/healthcheck', timeout=5)
+                if response.status_code == 200:
+                    print(f"   ✅ Dispatcher tunnel is responding")
+                else:
+                    print(f"   ⚠️  Dispatcher tunnel returned status {response.status_code}")
+            except Exception as e:
+                print(f"   ❌ Dispatcher tunnel connectivity failed: {e}")
+            print()
 
     # NOW start frontend (it will inherit the tunnel URL env vars)
     print("=" * 60)

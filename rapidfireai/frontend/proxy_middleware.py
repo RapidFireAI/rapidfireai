@@ -136,7 +136,14 @@ class ProxyMiddleware:
         def get_proxy_targets():
             """Get current proxy targets for the user."""
             user_id = request.headers.get('x-user-id', 'default')
-            return jsonify(self.proxy_manager.get_user_proxy(user_id))
+            proxy_config = self.proxy_manager.get_user_proxy(user_id)
+
+            # Also log environment variables for debugging
+            logger.info(f'Current proxy config for user {user_id}: {proxy_config}')
+            logger.info(f'RF_MLFLOW_URL env var: {os.getenv("RF_MLFLOW_URL", "not set")}')
+            logger.info(f'RF_DISPATCHER_URL env var: {os.getenv("RF_DISPATCHER_URL", "not set")}')
+
+            return jsonify(proxy_config)
     
     def should_proxy(self, path: str) -> bool:
         """Determine if a request should be proxied."""
@@ -166,21 +173,25 @@ class ProxyMiddleware:
         """Proxy a request to the appropriate backend service."""
         target = self.get_proxy_target(path, user_id)
         if not target:
+            logger.error(f'No proxy target found for path: {path}')
             return Response('Proxy target not found', status=404)
-        
+
         try:
             # Prepare the request
             target_url = urljoin(target.rstrip('/') + '/', path.lstrip('/'))
-            
+
             # Get request data
             method = request.method
             headers = dict(request.headers)
             headers.pop('Host', None)  # Remove Host header to avoid conflicts
-            
+
             # Handle query parameters
             if request.query_string:
                 target_url += '?' + request.query_string.decode('utf-8')
-            
+
+            # Log the proxy request details
+            logger.info(f'Proxying {method} {path} -> {target_url}')
+
             # Prepare request data
             data = None
             if method in ['POST', 'PUT', 'PATCH']:
@@ -189,7 +200,7 @@ class ProxyMiddleware:
                     headers['Content-Type'] = 'application/json'
                 else:
                     data = request.get_data()
-            
+
             # Make the proxy request
             response = requests.request(
                 method=method,
@@ -199,21 +210,25 @@ class ProxyMiddleware:
                 stream=True,
                 timeout=30
             )
-            
+
+            logger.info(f'Proxy response: {response.status_code}')
+
             # Create response
             proxy_response = Response(
                 response.iter_content(chunk_size=8192),
                 status=response.status_code,
                 headers=dict(response.headers)
             )
-            
+
             return proxy_response
-            
+
         except requests.exceptions.RequestException as e:
-            logger.error(f'Proxy Error: {e}')
-            return Response('Proxy Error', status=500)
+            logger.error(f'Proxy Error for {path} -> {target}: {e}')
+            return Response(f'Proxy Error: {str(e)}', status=502)
         except Exception as e:
-            logger.error(f'Unexpected error in proxy: {e}')
+            logger.error(f'Unexpected error in proxy for {path}: {e}')
+            import traceback
+            logger.error(traceback.format_exc())
             return Response('Internal Server Error', status=500)
 
 

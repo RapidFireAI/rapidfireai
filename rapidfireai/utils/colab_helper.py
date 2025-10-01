@@ -187,14 +187,23 @@ def setup_cloudflare_tunnel(port: int, description: str = "") -> Optional[str]:
         thread = threading.Thread(target=run_tunnel, daemon=True)
         thread.start()
 
-        # Wait a moment for URL to be generated
-        time.sleep(5)
+        # Wait for URL to be generated (with retries)
+        max_wait = 10  # Wait up to 10 seconds
+        check_interval = 0.5
+        waited = 0
+
+        while waited < max_wait and not url_container['url']:
+            time.sleep(check_interval)
+            waited += check_interval
 
         elapsed = time.time() - start_time
         if url_container['url']:
             print(f"✅ {description or 'Service'} is accessible at: {url_container['url']} [took {elapsed:.1f}s]")
+            # Wait a bit more for tunnel to be fully ready
+            time.sleep(2)
         else:
-            print(f"⚠️  Tunnel created but URL not detected yet [took {elapsed:.1f}s]")
+            print(f"⚠️  Tunnel created but URL not detected after {elapsed:.1f}s")
+            print(f"   Port {port} may not be accessible yet. Check if service is running.")
 
         return url_container['url']
 
