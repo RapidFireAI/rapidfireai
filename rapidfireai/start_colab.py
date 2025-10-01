@@ -209,14 +209,28 @@ class ServiceManager:
         """Monitor running processes and restart if needed."""
         print("\n👀 Monitoring services... Press Ctrl+C to stop\n")
 
+        # Keep track of which processes we've reported as crashed
+        reported_crashes = set()
+
         try:
             while True:
                 time.sleep(5)
 
                 # Check if any process has died
-                for proc in self.processes:
-                    if proc.poll() is not None:
-                        print(f"⚠️  Process {proc.pid} has stopped unexpectedly")
+                for i, proc in enumerate(self.processes):
+                    if proc.poll() is not None and proc.pid not in reported_crashes:
+                        print(f"\n⚠️  Process {proc.pid} has stopped unexpectedly")
+
+                        # Try to get output from the crashed process
+                        try:
+                            output, _ = proc.communicate(timeout=1)
+                            if output:
+                                print(f"📋 Last output from process {proc.pid}:")
+                                print(output[-2000:] if len(output) > 2000 else output)  # Last 2000 chars
+                        except Exception as e:
+                            print(f"   Could not retrieve process output: {e}")
+
+                        reported_crashes.add(proc.pid)
 
         except KeyboardInterrupt:
             print("\n🛑 Received stop signal")

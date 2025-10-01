@@ -1,7 +1,11 @@
 from flask import Flask, send_from_directory
 import os
 from pathlib import Path
-from proxy_middleware import setup_proxy
+
+try:
+    from .proxy_middleware import setup_proxy
+except ImportError:
+    from proxy_middleware import setup_proxy
 
 # Get the directory where this server.py file is located
 current_dir = Path(__file__).parent
@@ -30,4 +34,7 @@ def serve(path):
         return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
-    app.run(port=3000)
+    # Get host and port from environment
+    host = os.getenv('HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', 3000))
+    app.run(host=host, port=port)
