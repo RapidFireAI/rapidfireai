@@ -664,7 +664,6 @@ class Controller:
                             "run_id": run_id,
                             "req_workers": run_details["required_workers"],
                             "estimated_runtime": run_details["estimated_runtime"],
-                            "start_chunk_id": run_details["start_chunk_id"],
                         }
                         chunks_visited = all_run_details[run_id]["num_chunks_visited_curr_epoch"]
                         scheduler.add_run(run_info, chunks_visited)

@@ -234,6 +234,7 @@ class SharedMemoryManager:
                     "quant_type",
                     "blocksize",
                     "bnb_quantized",
+                    "quant_storage"
                 ]
                 for attr in weight_attrs:
                     if hasattr(weight, attr):

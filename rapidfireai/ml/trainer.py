@@ -26,7 +26,7 @@ set_verbosity_error()
 
 def create_rf_trainer(trainer_type: str, trainer_config=None, shm_manager=None, use_fsdp=False, **kwargs):
     """
-    Factory function to create a custom trainer that uses total_steps from trainer_config.
+    Factory function to create a custom trainer that uses total_steps from trainer_config and integrates with state restoration.
     """
     base_trainer_map = {
         "SFT": SFTTrainer,
@@ -47,29 +47,79 @@ def create_rf_trainer(trainer_type: str, trainer_config=None, shm_manager=None, 
             self.trainer_config = trainer_config
             self.shm_manager = shm_manager
             self.use_fsdp = use_fsdp
+            self._pending_optimizer_state = None
+            self._pending_scheduler_state = None
+            if shm_manager.model_exists(trainer_config.run_id):
+                training_state = shm_manager.load_model_object(trainer_config.run_id, SHMObjectType.CHECKPOINTS)
+                self._pending_optimizer_state = training_state["optimizer_state"]
+                self._pending_scheduler_state = training_state["scheduler_state"]
+
+        def restore_optimizer_state(self):
+            """Restore optimizer state for Single GPU trainer"""
+            device = next(self.model.parameters()).device
+            try:
+                if hasattr(self, "_pending_optimizer_state") and self._pending_optimizer_state is not None:
+                    optimizer_state = self._pending_optimizer_state
+                    device_optimizer_state = move_tensors_to_device(optimizer_state, device)
+                    self.optimizer.load_state_dict(device_optimizer_state)
+                    delattr(self, "_pending_optimizer_state")
+            except Exception as e:
+                print(f"Warning: Error restoring FSDP scheduler state: {e}")
+
+        def restore_fsdp_optimizer_state(self, rank=0):
+            from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel as FSDP
+            from torch.distributed.fsdp.fully_sharded_data_parallel import StateDictType
+
+            fsdp_plugin = self.accelerator.state.fsdp_plugin
+            model = self.model
+            from rapidfireai.utils.distributed_utils import barrier
+            barrier()
+
+            ctx = (
+                FSDP.state_dict_type(
+                    model, fsdp_plugin.state_dict_type, fsdp_plugin.state_dict_config, fsdp_plugin.optim_state_dict_config
+                )
+            )
+            with ctx:
+                if fsdp_plugin.state_dict_type == StateDictType.FULL_STATE_DICT:
+                    optim_state = self._pending_optimizer_state
+                    
+                    flattened_osd = FSDP.optim_state_dict_to_load(model=model, optim=self.optimizer, optim_state_dict=optim_state)
+                    self.optimizer.load_state_dict(flattened_osd)
+                
+                delattr(self, "_pending_optimizer_state")
+
+        def restore_scheduler_state(
+            self
+        ):
+            """Restore scheduler state for FSDP trainer after scheduler is created"""
+            device = next(self.model.parameters()).device
+            try:
+                if hasattr(self, "_pending_scheduler_state") and self._pending_scheduler_state is not None:
+                    scheduler_state = self._pending_scheduler_state
+                    device_scheduler_state = move_tensors_to_device(scheduler_state, device)
+                    self.lr_scheduler.load_state_dict(device_scheduler_state)
+                    print("Scheduler state restored: ", device_scheduler_state)
+                    delattr(self, "_pending_scheduler_state")
+            except Exception as e:
+                print(f"Warning: Error restoring FSDP scheduler state: {e}")
 
         def create_optimizer_and_scheduler(self, num_training_steps: int):
             if self.trainer_config is not None:
                 num_training_steps = self.trainer_config.total_steps
 
             self.create_optimizer()
-            if (
-                hasattr(self, "_pending_optimizer_state")
-                and self._pending_optimizer_state is not None
-                and self.shm_manager is not None
-            ):
-                from rapidfireai.ml.checkpoint_utils import restore_fsdp_optimizer_state
-
-                restore_fsdp_optimizer_state(self, self.trainer_config, self.shm_manager)
             self.create_scheduler(num_training_steps=num_training_steps, optimizer=self.optimizer)
-            if (
-                hasattr(self, "_pending_scheduler_state")
-                and self._pending_scheduler_state is not None
-                and self.shm_manager is not None
-            ):
-                from rapidfireai.ml.checkpoint_utils import restore_fsdp_scheduler_state
 
-                restore_fsdp_scheduler_state(self, self.trainer_config, self.shm_manager)
+
+        def _load_optimizer_and_scheduler(self, resume_from_checkpoint: str | None):
+            super()._load_optimizer_and_scheduler(resume_from_checkpoint)
+            if self.trainer_config.completed_steps > 0:
+                if self.use_fsdp:
+                    self.restore_fsdp_optimizer_state(rank=self.trainer_config.local_rank) 
+                else:   
+                    self.restore_optimizer_state()
+                self.restore_scheduler_state()
 
     return RFTrainer(trainer_config=trainer_config, shm_manager=shm_manager, use_fsdp=use_fsdp, **kwargs)
 
@@ -99,7 +149,7 @@ def create_trainer_instance(
     compute_metrics = additional_trainer_kwargs.get("compute_metrics", None)
 
     # Configure training arguments
-    training_args = _configure_training_args(training_args, trainer_config, use_fsdp=use_fsdp)
+    training_args, global_step_args = _configure_training_args(training_args, trainer_config, use_fsdp=use_fsdp)
     trainer_config_obj = _create_trainer_config_object(trainer_type, training_args)
     # check if peft params is empty dict
     is_peft = bool(config_leaf.get("peft_params"))
@@ -254,7 +304,7 @@ def _setup_reference_model(
         if model_adapter_name is not None and ref_adapter_name is not None:
             if use_shared_memory:
                 peft_config = LoraConfig(**config_leaf["peft_params"])
-                if trainer_config.completed_steps == 0 and trainer_config.warm_started:
+                if trainer_config.completed_steps == 0 and not trainer_config.warm_started:
                     reference_state_dict = get_peft_model_state_dict(model_instance)
                     if not use_fsdp or trainer_config.local_rank == 0:
                         reference_state_dict = move_tensors_to_device(reference_state_dict, "cpu")

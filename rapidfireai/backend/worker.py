@@ -180,6 +180,9 @@ class Worker:
             config_leaf["reward_funcs"] = parent_run_details["config_leaf"].get("reward_funcs")
             self.db.set_run_details(run_id, config_leaf=config_leaf)
 
+        if use_fsdp and is_distributed_initialized():
+            barrier()
+            
         # create trainer instance and write logs to user logger
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
@@ -210,14 +213,9 @@ class Worker:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
         start_time = time.time()
-        # for param in trainer_instance.model.parameters():
-        #     if (param.dtype == torch.float32):
-        #         param.data = param.data.to(torch.bfloat16)
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             trainer_instance.train()
         end_time = time.time()
-        self.logger.debug(f"Accelerator device: {trainer_instance.accelerator.device} on worker {self.worker_id}")
-
         # Synchronize all workers after training completes
         if use_fsdp and is_distributed_initialized():
             barrier()
@@ -292,12 +290,12 @@ class Worker:
 
         # clean up all references to shared memory objects
         if hasattr(trainer_instance, "model"):
-            if hasattr(trainer_instance.model, "cpu"):
-                trainer_instance.model = trainer_instance.model.cpu()
+            # if hasattr(trainer_instance.model, "cpu"):
+            #     trainer_instance.model = trainer_instance.model.cpu()
             del trainer_instance.model
         if hasattr(trainer_instance, "ref_model"):
-            if hasattr(trainer_instance.ref_model, "cpu"):
-                trainer_instance.ref_model = trainer_instance.ref_model.cpu()
+            # if hasattr(trainer_instance.ref_model, "cpu"):
+            #     trainer_instance.ref_model = trainer_instance.ref_model.cpu()
             del trainer_instance.ref_model
         if hasattr(trainer_instance, "optimizer"):
             trainer_instance.optimizer.zero_grad(set_to_none=True)

@@ -21,7 +21,6 @@ def move_tensors_to_device(obj, device: torch.device):
     """Recursively move all tensors in a nested structure to device"""
     if isinstance(obj, torch.Tensor):
         if device == "cpu":
-            # Only clone if the tensor is not already on CPU to avoid unnecessary copying
             return obj.cpu().clone()
         else:
             return obj.to(device, non_blocking=True)
@@ -127,11 +126,9 @@ def _collect_fsdp_full_model(model, trainer_config):
             )
             model_cpu = model_cpu.to_empty(device="cpu")
         prev_dtype = model_cpu.dtype
-        full_state_dict = {k: v.cpu().clone() for k, v in full_state_dict.items()}
-
+        full_state_dict = {k: v.cpu().clone().to(dtype=prev_dtype) for k, v in full_state_dict.items()}
         model_cpu.load_state_dict(full_state_dict, strict=False, assign=True)
         model_cpu = model_cpu.to(device="cpu", dtype=prev_dtype)
-
     return model_cpu
 
 
@@ -169,7 +166,7 @@ def save_checkpoint_to_shared_memory(
                 FullStateDictConfig(offload_to_cpu=True, rank0_only=True),
                 full_optim_state_dict_config,
             ):
-                optimizer_state = trainer.optimizer.state_dict()
+                optimizer_state = FSDP.optim_state_dict(trainer.model, trainer.optimizer)
             if optimizer_state is not None and trainer_config.local_rank == 0:
                 checkpoint["optimizer_state"] = move_tensors_to_device(optimizer_state, device)
         else:
@@ -262,7 +259,10 @@ def load_checkpoint_from_shared_memory(
     model = base_model
     peft_config = LoraConfig(**trainer_config.config_leaf.get("peft_params", {}))
     if is_peft:
-        model = get_peft_model(model, peft_config)
+        if trainer_config.config_leaf.get("trainer_type") == "GRPO":##fix for GRPO generation
+            model = get_peft_model(model, peft_config, autocast_adapter_dtype=False)
+        else:   
+            model = get_peft_model(model, peft_config)
     # Load weights from shared memory
     if trainer_config.completed_steps > 0 or trainer_config.warm_started:
         checkpoint = shm_manager.load_model_object(run_id, SHMObjectType.CHECKPOINTS)
@@ -519,23 +519,6 @@ def restore_trainer_from_shared_memory(
     return trainer
 
 
-def restore_fsdp_optimizer_state(
-    trainer: SFTTrainer | DPOTrainer | GRPOTrainer,
-    trainer_config: TrainerConfig,
-    shm_manager: SharedMemoryManager,
-) -> SFTTrainer | DPOTrainer | GRPOTrainer:
-    """Restore optimizer state for FSDP trainer after optimizer is created"""
-    device = next(trainer.model.parameters()).device
-    try:
-        if hasattr(trainer, "_pending_optimizer_state") and trainer._pending_optimizer_state is not None:
-            optimizer_state = trainer._pending_optimizer_state
-            device_optimizer_state = move_tensors_to_device(optimizer_state, device)
-            trainer.optimizer.load_state_dict(device_optimizer_state)
-            delattr(trainer, "_pending_optimizer_state")
-    except Exception as e:
-        print(f"Warning: Error restoring FSDP optimizer state: {e}")
-
-    return trainer
 
 
 def restore_fsdp_scheduler_state(
