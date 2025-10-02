@@ -174,7 +174,6 @@ class Worker:
             cloned_from=run_details["cloned_from"],
             num_epochs_completed=run_details["num_epochs_completed"],
         )
-
         # add reward funcs to config_leaf if cloned from a GRPO run
         if trainer_config.cloned_from is not None and trainer_config.config_leaf.get("trainer_type") == "GRPO":
             parent_run_details = self.db.get_run(trainer_config.cloned_from)
@@ -284,28 +283,37 @@ class Worker:
             save_checkpoint_to_disk(trainer_instance, trainer_config, last=True)
             self.logger.debug(f"Saved final checkpoint for run {run_id} on chunk {chunk_id}")
 
-        if use_fsdp and is_distributed_initialized():
-            barrier()
-        if hasattr(trainer_instance.model, "_fix_weakref"):
-            trainer_instance.model._fix_weakref()
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):           
 
-        # clean up all references to shared memory objects
-        if hasattr(trainer_instance, "model"):
-            # if hasattr(trainer_instance.model, "cpu"):
-            #     trainer_instance.model = trainer_instance.model.cpu()
-            del trainer_instance.model
-        if hasattr(trainer_instance, "ref_model"):
-            # if hasattr(trainer_instance.ref_model, "cpu"):
-            #     trainer_instance.ref_model = trainer_instance.ref_model.cpu()
-            del trainer_instance.ref_model
-        if hasattr(trainer_instance, "optimizer"):
-            trainer_instance.optimizer.zero_grad(set_to_none=True)
-            if hasattr(trainer_instance.optimizer, "state"):
-                trainer_instance.optimizer.state.clear()
-            del trainer_instance.optimizer
-        if hasattr(trainer_instance, "lr_scheduler"):
-            del trainer_instance.lr_scheduler
-        del trainer_instance
+            if use_fsdp and is_distributed_initialized():
+                barrier()
+            if hasattr(trainer_instance.model, "_fix_weakref"):
+                trainer_instance.model._fix_weakref()
+
+            # clean up all references to shared memory objects
+            if hasattr(trainer_instance, "model"):
+                # if hasattr(trainer_instance.model, "cpu"):
+                #     trainer_instance.model = trainer_instance.model.cpu()
+                del trainer_instance.model
+            if hasattr(trainer_instance, "ref_model"):
+                # if hasattr(trainer_instance.ref_model, "cpu"):
+                #     trainer_instance.ref_model = trainer_instance.ref_model.cpu()
+                del trainer_instance.ref_model
+            if hasattr(trainer_instance, "optimizer"):
+                trainer_instance.optimizer.zero_grad(set_to_none=True)
+                if hasattr(trainer_instance.optimizer, "state"):
+                    trainer_instance.optimizer.state.clear()
+                del trainer_instance.optimizer
+            if hasattr(trainer_instance, "lr_scheduler"):
+                del trainer_instance.lr_scheduler
+            del trainer_instance
+        
+        if stdout_buffer.getvalue():
+            self.training_logger.info(stdout_buffer.getvalue())
+        if stderr_buffer.getvalue():
+            self.training_logger.error(stderr_buffer.getvalue())
 
         # run garbage collection
         gc.collect()

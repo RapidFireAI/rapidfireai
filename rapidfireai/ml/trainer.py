@@ -73,7 +73,7 @@ def create_rf_trainer(trainer_type: str, trainer_config=None, shm_manager=None, 
             self.use_fsdp = use_fsdp
             self._pending_optimizer_state = None
             self._pending_scheduler_state = None
-            if shm_manager.model_exists(trainer_config.run_id):
+            if trainer_config.completed_steps > 0 or trainer_config.warm_started:
                 training_state = shm_manager.load_model_object(trainer_config.run_id, SHMObjectType.CHECKPOINTS)
                 self._pending_optimizer_state = training_state["optimizer_state"]
                 self._pending_scheduler_state = training_state["scheduler_state"]
@@ -138,7 +138,7 @@ def create_rf_trainer(trainer_type: str, trainer_config=None, shm_manager=None, 
 
         def _load_optimizer_and_scheduler(self, resume_from_checkpoint: str | None):
             super()._load_optimizer_and_scheduler(resume_from_checkpoint)
-            if self.trainer_config.completed_steps > 0:
+            if self.trainer_config.completed_steps > 0 or self.trainer_config.warm_started:
                 if self.use_fsdp:
                     self.restore_fsdp_optimizer_state(rank=self.trainer_config.local_rank) 
                 else:   
@@ -478,7 +478,7 @@ def _create_trainer_by_type(
         trainer_type, trainer_config=trainer_config, shm_manager=shm_manager, use_fsdp=use_fsdp, **trainer_kwargs
     )
 
-    if trainer_config.completed_steps > 0:
+    if trainer_config.completed_steps > 0 or trainer_config.warm_started:
         if use_shared_memory:
             trainer = restore_trainer_from_shared_memory(trainer, trainer_config, shm_manager, use_fsdp=use_fsdp)
         else:
