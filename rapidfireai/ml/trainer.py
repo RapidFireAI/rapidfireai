@@ -7,28 +7,12 @@ from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dic
 from transformers.utils.logging import set_verbosity_error
 from trl import DPOConfig, DPOTrainer, GRPOConfig, GRPOTrainer, SFTConfig, SFTTrainer
 
-# Suppress PyTorch warnings and set up clean environment
-warnings.filterwarnings("ignore", message=".*FSDP.state_dict_type.*", category=FutureWarning)
-warnings.filterwarnings("ignore", message=".*FSDP.set_state_dict_type.*", category=FutureWarning)
-warnings.filterwarnings("ignore", message=".*torch.distributed.*", category=UserWarning)
-warnings.filterwarnings("ignore", message=".*torch.nn.utils.*", category=UserWarning)
+# # Suppress PyTorch warnings and set up clean environment
+# warnings.filterwarnings("ignore", message=".*FSDP.state_dict_type.*", category=FutureWarning)
+# warnings.filterwarnings("ignore", message=".*FSDP.set_state_dict_type.*", category=FutureWarning)
+# warnings.filterwarnings("ignore", message=".*torch.distributed.*", category=UserWarning)
+# warnings.filterwarnings("ignore", message=".*torch.nn.utils.*", category=UserWarning)
 
-# Set environment variables for clean output
-os.environ["TORCH_WARN"] = "0"
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["TRANSFORMERS_VERBOSITY"] = "error"
-os.environ["DATASETS_VERBOSITY"] = "error"
-
-# Suppress logging from third-party libraries
-import logging
-logging.getLogger("transformers").setLevel(logging.ERROR)
-logging.getLogger("datasets").setLevel(logging.ERROR)
-logging.getLogger("tokenizers").setLevel(logging.ERROR)
-logging.getLogger("accelerate").setLevel(logging.ERROR)
-logging.getLogger("peft").setLevel(logging.ERROR)
-logging.getLogger("mlflow").setLevel(logging.ERROR)
-logging.getLogger("torch").setLevel(logging.ERROR)
-logging.getLogger("torch.distributed").setLevel(logging.ERROR)
 
 from rapidfireai.ml.callbacks import GenerationMetricsCallback, LogLevelCallback, MLflowLoggingCallback
 from rapidfireai.ml.checkpoint_utils import (
@@ -123,7 +107,6 @@ def create_rf_trainer(trainer_type: str, trainer_config=None, shm_manager=None, 
                     scheduler_state = self._pending_scheduler_state
                     device_scheduler_state = move_tensors_to_device(scheduler_state, device)
                     self.lr_scheduler.load_state_dict(device_scheduler_state)
-                    print("Scheduler state restored: ", device_scheduler_state)
                     delattr(self, "_pending_scheduler_state")
             except Exception as e:
                 print(f"Warning: Error restoring FSDP scheduler state: {e}")
@@ -144,6 +127,116 @@ def create_rf_trainer(trainer_type: str, trainer_config=None, shm_manager=None, 
                 else:   
                     self.restore_optimizer_state()
                 self.restore_scheduler_state()
+
+        def _move_model_to_vllm(self):
+            # For DeepSpeed ZeRO-3 and FSDP, we need to gather all parameters before operations
+            from accelerate.utils import is_peft_model
+            from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+            from contextlib import nullcontext
+            deepspeed_plugin = self.accelerator.state.deepspeed_plugin
+            zero_stage_3 = deepspeed_plugin is not None and deepspeed_plugin.zero_stage == 3
+            gather_if_zero3 = nullcontext() # type: ignore
+            if is_peft_model(self.model):
+                # Handle FSDP + PEFT separately
+                if self.is_fsdp_enabled:
+                    # For FSDP + PEFT, we need to use FSDP's summon_full_params to gather the model
+                    with FSDP.summon_full_params(self.model, writeback=False):
+                        # Now the model is fully gathered, we can merge adapters
+                        self.model.merge_adapter()
+                        
+                        # Sync weights to vLLM while parameters are gathered
+                        fsdp_plugin = getattr(self.accelerator.state, "fsdp_plugin", None)
+                        fsdp_version = getattr(fsdp_plugin, "fsdp_version", 1) if fsdp_plugin else 1
+                        
+                        # For PEFT models, we need to extract the merged weights directly
+                        for name, param in self.model.named_parameters():
+                            # Clean up the parameter name for vLLM
+                            name = name.removeprefix("base_model.model.").replace(".base_layer", "")
+                            if self.model.prefix in name:
+                                continue
+                            if "original_module" in name:
+                                continue
+                            name = self._fix_param_name_to_vllm(name, extra_prefixes=["modules_to_save.default.", "_fsdp_wrapped_module."])
+                            
+                            if self.vllm_mode == "server" and self.accelerator.is_main_process:
+                                self.vllm_client.update_named_param(name, param.data)
+                            elif self.vllm_mode == "colocate":
+                                llm_model = self.llm.llm_engine.model_executor.driver_worker.model_runner.model
+                                llm_model.load_weights([(name, param.data)])
+                        
+                        # Unmerge adapters while parameters are still gathered
+                        self.model.unmerge_adapter()
+                        # Parameters will automatically be repartitioned when exiting the context
+                
+                # Handle DeepSpeed ZeRO-3 + PEFT
+                elif zero_stage_3:
+                    with gather_if_zero3(list(self.model.parameters())):
+                        self.model.merge_adapter()
+                        
+                        # DeepSpeed ZeRO-3 with PEFT
+                        for name, param in self.model.named_parameters():
+                            # When using PEFT, we need to recover the original parameter name and discard some parameters
+                            name = name.removeprefix("base_model.model.").replace(".base_layer", "")
+                            if self.model.prefix in name:
+                                continue
+                            # When module to save, remove its prefix and discard the original module
+                            if "original_module" in name:
+                                continue
+                            name = self._fix_param_name_to_vllm(name, extra_prefixes=["modules_to_save.default."])
+
+                            if self.vllm_mode == "server" and self.accelerator.is_main_process:
+                                self.vllm_client.update_named_param(name, param.data)
+                            elif self.vllm_mode == "colocate":
+                                llm_model = self.llm.llm_engine.model_executor.driver_worker.model_runner.model
+                                llm_model.load_weights([(name, param.data)])
+                                
+                        # Unmerge adapters while parameters are still gathered
+                        self.model.unmerge_adapter()
+                
+                # Handle regular PEFT without distributed training
+                else:
+                    self.model.merge_adapter()
+                    
+                    for name, param in self.model.named_parameters():
+                        name = name.removeprefix("base_model.model.").replace(".base_layer", "")
+                        if self.model.prefix in name:
+                            continue
+                        if "original_module" in name:
+                            continue
+                        name = self._fix_param_name_to_vllm(name, extra_prefixes=["modules_to_save.default."])
+                        
+                        if self.vllm_mode == "server" and self.accelerator.is_main_process:
+                            self.vllm_client.update_named_param(name, param.data)
+                        elif self.vllm_mode == "colocate":
+                            llm_model = self.llm.llm_engine.model_executor.driver_worker.model_runner.model
+                            llm_model.load_weights([(name, param.data)])
+                    
+                    self.model.unmerge_adapter()
+            
+            else:
+                # For non-PEFT models, simply gather (if needed) and update each parameter individually.
+                if self.is_fsdp_enabled:
+                    fsdp_plugin = getattr(self.accelerator.state, "fsdp_plugin", None)
+                    fsdp_version = getattr(fsdp_plugin, "fsdp_version", 1) if fsdp_plugin else 1
+                    if fsdp_version == 1:
+                        self._sync_fsdp1_params_to_vllm(self.model)  # use memory-efficient post-order traversal for FSDP
+                    elif fsdp_version == 2:
+                        self._sync_fsdp2_params_to_vllm(self.model)
+                else:
+                    for name, param in self.model.named_parameters():
+                        name = self._fix_param_name_to_vllm(name)
+                        with gather_if_zero3([param]):
+                            if self.vllm_mode == "server" and self.accelerator.is_main_process:
+                                self.vllm_client.update_named_param(name, param.data)
+                            elif self.vllm_mode == "colocate":
+                                llm_model = self.llm.llm_engine.model_executor.driver_worker.model_runner.model
+                                llm_model.load_weights([(name, param.data)])
+
+            # Reset cache on vLLM
+            if self.vllm_mode == "server" and self.accelerator.is_main_process:
+                self.vllm_client.reset_prefix_cache()
+            elif self.vllm_mode == "colocate":
+                self.llm.reset_prefix_cache()
 
     return RFTrainer(trainer_config=trainer_config, shm_manager=shm_manager, use_fsdp=use_fsdp, **kwargs)
 

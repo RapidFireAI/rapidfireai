@@ -31,6 +31,7 @@ from rapidfireai.utils.distributed_utils import (
     cleanup_distributed,
     is_distributed_initialized,
     setup_distributed_environment,
+    find_free_port,
 )
 from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
@@ -136,11 +137,10 @@ class Worker:
             except Exception as e:
                 self.logger.error(f"Failed to initialize distributed training for run {run_id}: {e}")
                 raise
-
-        # set seed
-        # torch.manual_seed(run_details["seed"])
-        # np.random.seed(run_details["seed"])
-        # random.seed(run_details["seed"])
+        else:
+            if config_leaf.get("trainer_type", "SFT") == "GRPO":
+                master_port = find_free_port()
+                os.environ["MASTER_PORT"] = str(master_port)
 
         # get effective batch size
         per_device_train_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1)
@@ -190,116 +190,95 @@ class Worker:
             trainer_instance, base_model_name = create_trainer_instance(
                 trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id, use_fsdp=use_fsdp
             )
-        if stdout_buffer.getvalue():
-            self.training_logger.info(stdout_buffer.getvalue())
-        if stderr_buffer.getvalue():
-            self.training_logger.error(stderr_buffer.getvalue())
 
-        # if first time, save checkpoint to disk
-        completed_steps = run_details["completed_steps"]
-        if completed_steps == 0 and not USE_SHARED_MEMORY:
-            save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
+            # if first time, save checkpoint to disk
+            completed_steps = run_details["completed_steps"]
+            if completed_steps == 0 and not USE_SHARED_MEMORY:
+                save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
 
-        # update base model name in db for run
-        trainer_config.config_leaf["model_name"] = trainer_instance.model.config._name_or_path
-        self.db.set_run_details(run_id, config_leaf=trainer_config.config_leaf)
+            # update base model name in db for run
+            trainer_config.config_leaf["model_name"] = trainer_instance.model.config._name_or_path
+            self.db.set_run_details(run_id, config_leaf=trainer_config.config_leaf)
 
-        # train the model and time it
-        self.logger.debug(f"Beginning training for run {run_id} on chunk {chunk_id}")
+            # train the model and time it
+            self.logger.debug(f"Beginning training for run {run_id} on chunk {chunk_id}")
 
-        # Synchronize all workers before training starts
-        if use_fsdp and is_distributed_initialized():
-            barrier()
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        start_time = time.time()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+                # Synchronize all workers before training starts
+            if use_fsdp and is_distributed_initialized():
+                barrier()
+            
+            start_time = time.time()
             trainer_instance.train()
-        end_time = time.time()
-        # Synchronize all workers after training completes
-        if use_fsdp and is_distributed_initialized():
-            barrier()
-
-        # write logs to user logger
-        if stdout_buffer.getvalue():
-            self.training_logger.info(stdout_buffer.getvalue())
-        if stderr_buffer.getvalue():
-            self.training_logger.error(stderr_buffer.getvalue())
-
-        # update completed steps
-        new_completed_steps = completed_steps + trainer_instance.state.global_step
-        self.db.set_completed_steps(run_id, new_completed_steps)
-
-        # update running average runtime in database for scheduler optimization
-        if trainer_config.local_rank == 0:
-            new_runtime_per_batch = (end_time - start_time) / train_dataset_chunker.get_chunk_size(chunk_id)
-            running_average_runtime = (
-                run_details["estimated_runtime"] * completed_steps + new_runtime_per_batch
-            ) / new_completed_steps
-            self.db.set_estimated_runtime(run_id, running_average_runtime)
-
-        # save checkpoints
-        if USE_SHARED_MEMORY:
-            if use_fsdp and is_distributed_initialized():
-                barrier()
-                self.logger.debug(f"Worker {self.worker_id} passed barrier after training")
-
-            # save checkpoints to shared memory
-            save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager, use_fsdp=use_fsdp)
-            if not config_leaf.get("peft_params"):
-                save_model_to_shared_memory(
-                    trainer_instance.model,
-                    trainer_instance.tokenizer,
-                    trainer_config,
-                    self.shm_manager,
-                    SHMObjectType.FULL_MODEL,
-                    trainer_config.run_id,
-                    use_fsdp=use_fsdp,
-                )
-            self.logger.debug(
-                f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}",
-                f"and worker {self.worker_id}",
-            )
-
+            end_time = time.time()
+            # Synchronize all workers after training completes
             if use_fsdp and is_distributed_initialized():
                 barrier()
 
-            # save checkpoint to disk based on save strategy
-            save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
-            if save_strategy == "chunk" or (save_strategy == "epoch" and chunk_id == self.num_chunks - 1):
-                save_checkpoint_to_disk(
-                    trainer_instance,
-                    trainer_config,
-                    completed_steps=new_completed_steps,
+            # update completed steps
+            new_completed_steps = completed_steps + trainer_instance.state.global_step
+            self.db.set_completed_steps(run_id, new_completed_steps)
+
+            # update running average runtime in database for scheduler optimization
+            if trainer_config.local_rank == 0:
+                new_runtime_per_batch = (end_time - start_time) / train_dataset_chunker.get_chunk_size(chunk_id)
+                running_average_runtime = (
+                    run_details["estimated_runtime"] * completed_steps + new_runtime_per_batch
+                ) / new_completed_steps
+                self.db.set_estimated_runtime(run_id, running_average_runtime)
+
+            # save checkpoints
+            if USE_SHARED_MEMORY:
+                if use_fsdp and is_distributed_initialized():
+                    barrier()
+                    self.logger.debug(f"Worker {self.worker_id} passed barrier after training")
+
+                # save checkpoints to shared memory
+                save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager, use_fsdp=use_fsdp)
+                if not config_leaf.get("peft_params"):
+                    save_model_to_shared_memory(
+                        trainer_instance.model,
+                        trainer_instance.tokenizer,
+                        trainer_config,
+                        self.shm_manager,
+                        SHMObjectType.FULL_MODEL,
+                        trainer_config.run_id,
+                        use_fsdp=use_fsdp,
                 )
+                self.logger.debug(
+                    f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}",
+                    f"and worker {self.worker_id}",
+                )
+
+                if use_fsdp and is_distributed_initialized():
+                    barrier()
+
+                # save checkpoint to disk based on save strategy
+                save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
+                if save_strategy == "chunk" or (save_strategy == "epoch" and chunk_id == self.num_chunks - 1):
+                    save_checkpoint_to_disk(
+                        trainer_instance,
+                        trainer_config,
+                        completed_steps=new_completed_steps,
+                    )
+                    self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
+            else:
+                # save checkpoint to disk when not using shared memory
+                save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps)
                 self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
-        else:
-            # save checkpoint to disk when not using shared memory
-            save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps)
-            self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
 
-        # save final checkpoint
-        if chunk_id == self.num_chunks - 1 and new_completed_steps >= trainer_config.total_steps:
-            save_checkpoint_to_disk(trainer_instance, trainer_config, last=True)
-            self.logger.debug(f"Saved final checkpoint for run {run_id} on chunk {chunk_id}")
-
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):           
+            # save final checkpoint
+            if chunk_id == self.num_chunks - 1 and new_completed_steps >= trainer_config.total_steps:
+                save_checkpoint_to_disk(trainer_instance, trainer_config, last=True)
+                self.logger.debug(f"Saved final checkpoint for run {run_id} on chunk {chunk_id}")
 
             if use_fsdp and is_distributed_initialized():
                 barrier()
-            if hasattr(trainer_instance.model, "_fix_weakref"):
-                trainer_instance.model._fix_weakref()
 
-            # clean up all references to shared memory objects
             if hasattr(trainer_instance, "model"):
-                # if hasattr(trainer_instance.model, "cpu"):
-                #     trainer_instance.model = trainer_instance.model.cpu()
                 del trainer_instance.model
+            if use_fsdp:
+                del trainer_instance.model_wrapped
             if hasattr(trainer_instance, "ref_model"):
-                # if hasattr(trainer_instance.ref_model, "cpu"):
-                #     trainer_instance.ref_model = trainer_instance.ref_model.cpu()
                 del trainer_instance.ref_model
             if hasattr(trainer_instance, "optimizer"):
                 trainer_instance.optimizer.zero_grad(set_to_none=True)
@@ -309,22 +288,19 @@ class Worker:
             if hasattr(trainer_instance, "lr_scheduler"):
                 del trainer_instance.lr_scheduler
             del trainer_instance
-        
+
+            # run garbage collection
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            if use_fsdp and is_distributed_initialized():
+                barrier()
+            self.logger.debug(f"Completed training for run {run_id} on chunk {chunk_id}")
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
         if stderr_buffer.getvalue():
             self.training_logger.error(stderr_buffer.getvalue())
-
-        # run garbage collection
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            if use_fsdp:
-                torch.cuda.synchronize()
-
-        if use_fsdp and is_distributed_initialized():
-            barrier()
-        self.logger.debug(f"Completed training for run {run_id} on chunk {chunk_id}")
 
     def serve_forever(self) -> None:
         """The main loop for the worker"""

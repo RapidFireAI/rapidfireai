@@ -85,6 +85,7 @@ class RFRandomSearch(AutoMLAlgorithm):
                     "ref_model_type",
                     "ref_model_kwargs",
                     "reward_funcs",
+                    "num_gpus",
                 }
                 additional_kwargs = {
                     k: v for k, v in config.__dict__.items() if k not in excluded_attrs and v is not None
@@ -104,6 +105,8 @@ class RFRandomSearch(AutoMLAlgorithm):
                     "model_kwargs": model_kwargs,
                     "additional_kwargs": additional_kwargs_sampled,
                 }
+                if config.num_gpus is not None:
+                    leaf["num_gpus"] = config.num_gpus
 
                 if self.trainer_type == "DPO":
                     leaf["ref_model_config"] = {

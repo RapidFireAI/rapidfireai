@@ -77,6 +77,7 @@ class RFGridSearch(AutoMLAlgorithm):
                         "ref_model_type",
                         "ref_model_kwargs",
                         "reward_funcs",
+                        "num_gpus",
                     }
                     # excluded_attrs = set(config.__dict__.keys()) - set(config.__annotations__.keys())
                     additional_kwargs = {
@@ -102,6 +103,8 @@ class RFGridSearch(AutoMLAlgorithm):
                                         "model_kwargs": model_kwargs,
                                         "additional_kwargs": additional_kwargs,
                                     }
+                                    if config.num_gpus is not None:
+                                        leaf["num_gpus"] = config.num_gpus
 
                                     if self.trainer_type == "DPO":
                                         leaf["ref_model_config"] = {
