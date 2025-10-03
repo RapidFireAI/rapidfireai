@@ -303,7 +303,11 @@ class Controller:
                     gradient_accumulation_steps = parent_run_details["config_leaf"]["training_args"].get(
                         "gradient_accumulation_steps", 1
                     )
-                    effective_batch_size = per_device_train_batch_size * gradient_accumulation_steps * parent_run_details["required_workers"]
+                    effective_batch_size = (
+                        per_device_train_batch_size
+                        * gradient_accumulation_steps
+                        * parent_run_details["required_workers"]
+                    )
                     chunker = DatasetChunks(
                         len_train_dataset,
                         num_chunks,
@@ -442,28 +446,23 @@ class Controller:
             # ceil to nearest chunk multiple
             total_steps = config_leaf["training_args"]["max_steps"]
         elif num_train_epochs:
-            per_device_train_batch_size = config_leaf["training_args"].get(
-                "per_device_train_batch_size", 1
-            )
-            gradient_accumulation_steps = config_leaf["training_args"].get(
-                "gradient_accumulation_steps", 1
-            )
+            per_device_train_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1)
+            gradient_accumulation_steps = config_leaf["training_args"].get("gradient_accumulation_steps", 1)
             len_dataloader = math.ceil(len_train_dataset / per_device_train_batch_size)
             num_update_steps_per_epoch = max(
-                len_dataloader // gradient_accumulation_steps
-                + int(len_dataloader % gradient_accumulation_steps > 0),
+                len_dataloader // gradient_accumulation_steps + int(len_dataloader % gradient_accumulation_steps > 0),
                 1,
             )
             total_steps = math.ceil(num_train_epochs * num_update_steps_per_epoch)
 
             if config_leaf.get("trainer_type", "SFT") == "GRPO":
                 num_generations = config_leaf["training_args"].get("num_generations", 8)
-                total_steps = (
-                    num_generations * len_train_dataset * num_train_epochs
-                ) // (gradient_accumulation_steps * per_device_train_batch_size)
+                total_steps = (num_generations * len_train_dataset * num_train_epochs) // (
+                    gradient_accumulation_steps * per_device_train_batch_size
+                )
 
             if use_fsdp and required_workers > 1:
-                total_steps = total_steps//required_workers
+                total_steps = total_steps // required_workers
         return total_steps
 
     def run_fit(
@@ -593,6 +592,9 @@ class Controller:
                     # Update scheduler state
                     scheduler.set_completed_task(run_id)
 
+                    # Remove from active runs
+                    active_runs.pop(run_id, None)
+
                     # Update database state and local state using scheduler's state as source of truth
                     new_num_chunks_visited = scheduler.state.run_visited_num_chunks[run_id]
                     if new_num_chunks_visited == num_chunks:
@@ -636,9 +638,6 @@ class Controller:
                         self.logger.info(
                             f"Run {run_id} has completed epoch ({new_num_chunks_visited}/{num_chunks} chunks)"
                         )
-
-                        # Remove from active runs
-                        active_runs.pop(run_id, None)
 
                 # Check for failed runs and update scheduler, local state, shm
                 for run_id in failed_runs:
