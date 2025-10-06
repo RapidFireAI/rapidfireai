@@ -34,7 +34,7 @@ def create_trainer_instance(
     trainer_config: TrainerConfig,
     shm_manager: SharedMemoryManager,
     use_shared_memory: bool = False,
-    mlflow_manager=None,
+    metric_logger=None,
     chunk_id: int = 0,
 ) -> tuple[SFTTrainer | DPOTrainer | GRPOTrainer | None, str]:
     """
@@ -98,7 +98,7 @@ def create_trainer_instance(
 
     callbacks, additional_trainer_kwargs = (
         _setup_callbacks(  # FIXME: avoid returning additional_trainer_kwargs
-            mlflow_manager,
+            metric_logger,
             trainer_config,
             chunk_id,
             compute_metrics,
@@ -314,7 +314,7 @@ def _prepare_trainer_kwargs(
 
 
 def _setup_callbacks(
-    mlflow_manager,
+    metric_logger,
     trainer_config,
     chunk_id,
     compute_metrics,
@@ -327,9 +327,9 @@ def _setup_callbacks(
     """Setup callbacks for the trainer."""
     callbacks = []
 
-    if mlflow_manager is not None and trainer_config.mlflow_run_id is not None:
+    if metric_logger is not None and trainer_config.mlflow_run_id is not None:
         mlflow_callback = MLflowLoggingCallback(
-            mlflow_manager=mlflow_manager,
+            metric_logger=metric_logger,
             mlflow_run_id=trainer_config.mlflow_run_id,
             completed_steps=trainer_config.completed_steps,
             chunk_id=chunk_id,
@@ -353,7 +353,7 @@ def _setup_callbacks(
             generation_config=additional_trainer_kwargs.get("generation_config"),
             compute_metrics=compute_metrics_function,
             batch_size=training_args.get("per_device_eval_batch_size"),
-            mlflow_manager=mlflow_manager,
+            metric_logger=metric_logger,
             mlflow_run_id=trainer_config.mlflow_run_id,
             completed_steps=trainer_config.completed_steps,
         )

@@ -45,8 +45,9 @@ dependencies = [
     "loguru>=0.7.3",
     "ipython>=8.37.0",
     "jupyter>=1.1.1",
-    "ipywidgets>=8.1.7", 
+    "ipywidgets>=8.1.7",
     "uv>=0.8.14",
+    "tensorboard>=2.11.0",
 ]
 
 [project.optional-dependencies]

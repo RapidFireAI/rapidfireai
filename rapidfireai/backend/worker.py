@@ -24,11 +24,11 @@ from rapidfireai.ml.checkpoint_utils import (
     save_model_to_shared_memory,
 )
 from rapidfireai.ml.trainer import create_trainer_instance
-from rapidfireai.utils.constants import MLFLOW_URL, USE_SHARED_MEMORY, RunStatus, SHMObjectType, TaskStatus, WorkerTask
+from rapidfireai.utils.constants import MLFLOW_URL, USE_SHARED_MEMORY, TRACKING_BACKEND, TENSORBOARD_LOG_DIR, RunStatus, SHMObjectType, TaskStatus, WorkerTask
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
-from rapidfireai.utils.mlflow_manager import MLflowManager
+from rapidfireai.utils.metric_logger import create_metric_logger
 from rapidfireai.utils.serialize import decode_db_payload
 from rapidfireai.utils.shm_manager import SharedMemoryManager
 from rapidfireai.utils.trainer_config import TrainerConfig
@@ -71,12 +71,19 @@ class Worker:
         # get experiment name
         self.experiment_name: str = self.db.get_running_experiment()["experiment_name"]
 
-        # create mlflow manager
-        self.mlflow_manager: MLflowManager = MLflowManager(MLFLOW_URL)
-        self.mlflow_manager.get_experiment(self.experiment_name)
-
         # initialize data paths
         DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_name))
+
+        # create metric logger
+        tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.base_run_path("") / "tensorboard_logs")
+        self.metric_logger = create_metric_logger(
+            backend=TRACKING_BACKEND,
+            mlflow_tracking_uri=MLFLOW_URL,
+            tensorboard_log_dir=tensorboard_log_dir,
+        )
+        # Get experiment if using MLflow
+        if hasattr(self.metric_logger, 'get_experiment'):
+            self.metric_logger.get_experiment(self.experiment_name)
 
         # load datasets
         self.train_dataset, self.eval_dataset, self.num_chunks = self.load_datasets()
@@ -149,7 +156,7 @@ class Worker:
         stderr_buffer = StringIO()
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             trainer_instance, base_model_name = create_trainer_instance(
-                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id
+                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.metric_logger, chunk_id
             )
 
         # if first time, save checkpoint to disk

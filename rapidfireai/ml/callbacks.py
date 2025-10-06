@@ -20,7 +20,7 @@ class GenerationMetricsCallback(TrainerCallback):
         generation_config: Optional[Dict] = None,
         compute_metrics: Callable = None,
         batch_size: int = 8,
-        mlflow_manager=None,
+        metric_logger=None,
         mlflow_run_id: str = None,
         completed_steps: int = 0,
     ):
@@ -36,7 +36,7 @@ class GenerationMetricsCallback(TrainerCallback):
             "pad_token_id": tokenizer.pad_token_id,
             "eos_token_id": tokenizer.eos_token_id,
         }
-        self.mlflow_manager = mlflow_manager
+        self.metric_logger = metric_logger
         self.mlflow_run_id = mlflow_run_id
         self.completed_steps = completed_steps
 
@@ -63,8 +63,8 @@ class GenerationMetricsCallback(TrainerCallback):
             state.log_history.append(metrics)
 
         for key, value in metrics.items():
-            if self.mlflow_manager:
-                self.mlflow_manager.log_metric(
+            if self.metric_logger:
+                self.metric_logger.log_metric(
                     self.mlflow_run_id,
                     key,
                     value,
@@ -155,18 +155,18 @@ class GenerationMetricsCallback(TrainerCallback):
 
 
 class MLflowLoggingCallback(TrainerCallback):
-    """Callback for logging metrics to MLflow during training"""
+    """Callback for logging metrics to tracking backend during training"""
 
     def __init__(
         self,
-        mlflow_manager,
+        metric_logger,
         mlflow_run_id: str,
         excluded_keys: list = None,
         completed_steps: int = 0,
         chunk_id: int = 0,
         num_epochs_completed: int = 0,
     ):
-        self.mlflow_manager = mlflow_manager
+        self.metric_logger = metric_logger
         self.mlflow_run_id = mlflow_run_id
         self.completed_steps = completed_steps
         self.excluded_keys = excluded_keys or [
@@ -189,22 +189,22 @@ class MLflowLoggingCallback(TrainerCallback):
             for key, value in logs.items():
                 if isinstance(value, (int, float)) and key not in self.excluded_keys:
                     try:
-                        self.mlflow_manager.log_metric(
+                        self.metric_logger.log_metric(
                             self.mlflow_run_id,
                             key,
                             value,
                             step=self.completed_steps + state.global_step,
                         )
                     except Exception as e:
-                        print(f"Warning: Failed to log metric {key} to MLflow: {e}")
+                        print(f"Warning: Failed to log metric {key} to tracking backend: {e}")
             if "eval_loss" not in logs and "train_runtime" not in logs:
-                self.mlflow_manager.log_metric(
+                self.metric_logger.log_metric(
                     self.mlflow_run_id,
                     "chunk number",
                     self.chunk_id,
                     step=self.completed_steps + state.global_step,
                 )
-                self.mlflow_manager.log_metric(
+                self.metric_logger.log_metric(
                     self.mlflow_run_id,
                     "num_epochs_completed",
                     self.num_epochs_completed,

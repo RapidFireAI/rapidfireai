@@ -398,8 +398,27 @@ def main():
         action="version",
         version=f"RapidFire AI {__version__}"
     )
-    
+
+    parser.add_argument(
+        "--tracking-backend",
+        choices=["mlflow", "tensorboard", "both"],
+        default=os.getenv("RF_TRACKING_BACKEND", "mlflow"),
+        help="Tracking backend to use for metrics (default: mlflow)"
+    )
+
+    parser.add_argument(
+        "--tensorboard-log-dir",
+        default=os.getenv("RF_TENSORBOARD_LOG_DIR", None),
+        help="Directory for TensorBoard logs (default: {experiment_path}/tensorboard_logs)"
+    )
+
     args = parser.parse_args()
+
+    # Set environment variables from CLI args
+    if args.tracking_backend:
+        os.environ["RF_TRACKING_BACKEND"] = args.tracking_backend
+    if args.tensorboard_log_dir:
+        os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
     
     # Handle doctor command separately
     if args.command == "doctor":

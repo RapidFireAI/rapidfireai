@@ -20,6 +20,8 @@ from rapidfireai.db.rf_db import RfDb
 from rapidfireai.utils.automl_utils import get_flattened_config_leaf, get_runs
 from rapidfireai.utils.constants import (
     MLFLOW_URL,
+    TRACKING_BACKEND,
+    TENSORBOARD_LOG_DIR,
     ControllerTask,
     ExperimentTask,
     RunEndedBy,
@@ -31,7 +33,7 @@ from rapidfireai.utils.constants import (
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import ControllerException, NoGPUsFoundException
 from rapidfireai.utils.logging import RFLogger
-from rapidfireai.utils.mlflow_manager import MLflowManager
+from rapidfireai.utils.metric_logger import create_metric_logger
 from rapidfireai.utils.serialize import encode_payload
 from rapidfireai.utils.shm_manager import SharedMemoryManager
 from rapidfireai.utils.worker_manager import WorkerManager
@@ -79,9 +81,20 @@ class Controller:
             self.num_workers, registry, process_lock
         )
 
-        # create mlflow manager
-        self.mlflow_manager: MLflowManager = MLflowManager(MLFLOW_URL)
-        self.mlflow_manager.get_experiment(self.experiment_name)
+        # create metric logger
+        # Initialize DataPath temporarily to get experiment path for tensorboard logs
+        experiment_path = self.db.get_experiments_path(self.experiment_name)
+        DataPath.initialize(self.experiment_name, experiment_path)
+        tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.base_run_path("") / "tensorboard_logs")
+
+        self.metric_logger = create_metric_logger(
+            backend=TRACKING_BACKEND,
+            mlflow_tracking_uri=MLFLOW_URL,
+            tensorboard_log_dir=tensorboard_log_dir,
+        )
+        # Get experiment if using MLflow
+        if hasattr(self.metric_logger, 'get_experiment'):
+            self.metric_logger.get_experiment(self.experiment_name)
 
         self.logger.debug("Controller initialized")
 
@@ -148,20 +161,20 @@ class Controller:
                     f"Failed to create required Run DataPath directories: {e}"
                 ) from e
 
-            # create new MlFlow run
+            # create new tracking run
             try:
-                # create new MlFlow run and get the mlflow_run_id
-                mlflow_run_id = self.mlflow_manager.create_run(str(run_id))
+                # create new tracking run and get the mlflow_run_id
+                mlflow_run_id = self.metric_logger.create_run(str(run_id))
 
-                # populate MLFlow with model config info
+                # populate tracking backend with model config info
                 for key, value in flattened_config.items():
-                    self.mlflow_manager.log_param(mlflow_run_id, key, value)
+                    self.metric_logger.log_param(mlflow_run_id, key, value)
                 if warm_started_from:
-                    self.mlflow_manager.log_param(
+                    self.metric_logger.log_param(
                         mlflow_run_id, "warm-start", str(warm_started_from)
                     )
                 if cloned_from:
-                    self.mlflow_manager.log_param(
+                    self.metric_logger.log_param(
                         mlflow_run_id, "parent-run", str(cloned_from)
                     )
                 self.logger.debug(
@@ -175,7 +188,7 @@ class Controller:
             except mlflow.exceptions.MlflowException as e:
                 msg = f"Error creating new MLFlow run for run {run_id} - {e}."
                 print(msg)
-                self.mlflow_manager.end_run(mlflow_run_id)
+                self.metric_logger.end_run(mlflow_run_id)
                 self.logger.error(msg, exc_info=True)
 
         total_runs = len(runs)
@@ -249,7 +262,7 @@ class Controller:
 
                 # delete run from MLFlow
                 mlflow_run_id = self.db.get_run(run_id)["mlflow_run_id"]
-                self.mlflow_manager.delete_run(mlflow_run_id)
+                self.metric_logger.delete_run(mlflow_run_id)
                 # mark run as deleted
                 self.db.set_run_details(
                     run_id=run_id,

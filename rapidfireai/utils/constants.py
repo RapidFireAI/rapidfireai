@@ -1,6 +1,11 @@
 from enum import Enum
+import os
 
 MLFLOW_URL = "http://127.0.0.1:5002"
+
+# Tracking Backend Configuration
+TRACKING_BACKEND = os.getenv("RF_TRACKING_BACKEND", "mlflow")  # Options: 'mlflow', 'tensorboard', 'both'
+TENSORBOARD_LOG_DIR = os.getenv("RF_TENSORBOARD_LOG_DIR", None)  # Default set by experiment path
 
 # Shared Memory Constants
 SHM_WARN_THRESHOLD = 80
