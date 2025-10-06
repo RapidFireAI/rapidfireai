@@ -17,6 +17,10 @@ RF_API_HOST=${RF_API_HOST:=127.0.0.1}
 
 RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
 
+# Colab mode configuration
+RF_COLAB_MODE=${RF_COLAB_MODE:=false}
+RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=mlflow}
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -293,6 +297,18 @@ start_mlflow() {
     fi
 }
 
+# Function to conditionally start MLflow based on mode
+start_mlflow_if_needed() {
+    # In Colab mode with pure TensorBoard, skip MLflow
+    if [[ "$RF_COLAB_MODE" == "true" ]] && [[ "$RF_TRACKING_BACKEND" == "tensorboard" ]]; then
+        print_status "⊗ Skipping MLflow (using TensorBoard-only tracking in Colab mode)"
+        return 0
+    fi
+
+    # Otherwise start MLflow
+    return start_mlflow
+}
+
 # Function to start API server
 start_api_server() {
     print_status "Starting API server with Gunicorn..."
@@ -481,6 +497,18 @@ start_frontend() {
     return 0
 }
 
+# Function to conditionally start frontend based on mode
+start_frontend_if_needed() {
+    # In Colab mode, always skip frontend
+    if [[ "$RF_COLAB_MODE" == "true" ]]; then
+        print_status "⊗ Skipping frontend (using TensorBoard in Colab mode)"
+        return 0
+    fi
+
+    # Otherwise start frontend
+    return start_frontend
+}
+
 # Function to display running services
 show_status() {
     print_status "RapidFire AI Services Status:"
@@ -499,9 +527,22 @@ show_status() {
     fi
 
     echo ""
-    print_success "🚀 RapidFire Frontend is ready!"
-    print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
-    print_status "   (Click the link above or copy/paste the URL into your browser)"
+
+    # Display appropriate message based on mode
+    if [[ "$RF_COLAB_MODE" == "true" ]]; then
+        print_success "🚀 RapidFire running in Colab mode!"
+        print_status "📊 Use TensorBoard for metrics visualization:"
+        print_status "   In a Colab notebook cell, run:"
+        print_status "   %tensorboard --logdir ~/experiments/{experiment_name}/tensorboard_logs"
+        if [[ "$RF_TRACKING_BACKEND" == "mlflow" ]] || [[ "$RF_TRACKING_BACKEND" == "both" ]]; then
+            print_status ""
+            print_status "📈 MLflow UI available at: http://$RF_MLFLOW_HOST:$RF_MLFLOW_PORT"
+        fi
+    else
+        print_success "🚀 RapidFire Frontend is ready!"
+        print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
+        print_status "   (Click the link above or copy/paste the URL into your browser)"
+    fi
 
     # Show log file status
     echo ""
@@ -519,24 +560,37 @@ show_status() {
 # Function to start services based on mode
 start_services() {
     local services_started=0
-    local total_services=3
+    local total_services=1  # API server always runs
 
-    # Start MLflow server
-    if start_mlflow; then
+    # Calculate total services based on mode
+    # MLflow runs unless tensorboard-only in Colab
+    if [[ "$RF_COLAB_MODE" != "true" ]] || [[ "$RF_TRACKING_BACKEND" != "tensorboard" ]]; then
+        ((total_services++))
+    fi
+
+    # Frontend runs unless Colab mode
+    if [[ "$RF_COLAB_MODE" != "true" ]]; then
+        ((total_services++))
+    fi
+
+    print_status "Starting $total_services service(s)..."
+
+    # Start MLflow server (conditionally)
+    if start_mlflow_if_needed; then
         ((services_started++))
     else
         print_error "Failed to start MLflow server"
     fi
 
-    # Start API server
+    # Start API server (always)
     if start_api_server; then
         ((services_started++))
     else
         print_error "Failed to start API server"
     fi
 
-    # Start frontend server
-    if start_frontend; then
+    # Start frontend server (conditionally)
+    if start_frontend_if_needed; then
         ((services_started++))
     else
         print_error "Failed to start frontend server"

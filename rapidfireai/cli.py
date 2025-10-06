@@ -412,6 +412,12 @@ def main():
         help="Directory for TensorBoard logs (default: {experiment_path}/tensorboard_logs)"
     )
 
+    parser.add_argument(
+        "--colab",
+        action="store_true",
+        help="Run in Colab mode (skips frontend, conditionally starts MLflow based on tracking backend)"
+    )
+
     args = parser.parse_args()
 
     # Set environment variables from CLI args
@@ -419,6 +425,8 @@ def main():
         os.environ["RF_TRACKING_BACKEND"] = args.tracking_backend
     if args.tensorboard_log_dir:
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
+    if args.colab:
+        os.environ["RF_COLAB_MODE"] = "true"
     
     # Handle doctor command separately
     if args.command == "doctor":
