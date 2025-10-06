@@ -25,7 +25,7 @@ class UserProxyManager:
         self.default_proxy = {
             'main_proxy_target': 'http://127.0.0.1:5002/',
             'static_proxy_target': 'http://127.0.0.1:5002/',
-            'dispatcher_proxy_target': 'http://127.0.0.1:8080/',
+            'dispatcher_proxy_target': 'http://127.0.0.1:8081/',
         }
     
     def get_user_proxy(self, user_id: str) -> Dict[str, str]:

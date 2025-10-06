@@ -38,14 +38,14 @@ COPY start-docker.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
 # Expose ports
-EXPOSE 5002 8080 3000
+EXPOSE 5002 8081 3000
 
 # Set environment variables
 ENV RF_MLFLOW_PORT=5002
 ENV RF_MLFLOW_HOST=0.0.0.0
 ENV RF_FRONTEND_PORT=3000
 ENV RF_FRONTEND_HOST=0.0.0.0
-ENV RF_API_PORT=8080
+ENV RF_API_PORT=8081
 ENV RF_API_HOST=0.0.0.0
 
 # Use the start script as entrypoint

@@ -39,7 +39,7 @@ module.exports = function (app) {
   );
   app.use(
     createProxyMiddleware('/dispatcher', {
-      target: 'http://localhost:8080/',
+      target: 'http://localhost:8081/',
       changeOrigin: true,
     }),
   );

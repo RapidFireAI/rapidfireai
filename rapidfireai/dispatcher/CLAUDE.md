@@ -95,7 +95,7 @@ except Exception as e:
 
 **Key Settings**:
 - `workers`: Number of worker processes (default: 4)
-- `bind`: Host and port (default: 0.0.0.0:8080)
+- `bind`: Host and port (default: 0.0.0.0:8081)
 - `timeout`: Request timeout (default: 120s)
 - `loglevel`: Log verbosity (default: info)
 
@@ -201,11 +201,11 @@ gunicorn -c rapidfireai/dispatcher/gunicorn.conf.py rapidfireai.dispatcher.dispa
 Frontend makes HTTP requests to dispatcher:
 ```typescript
 // Example: Get all runs
-const response = await fetch('http://localhost:8080/dispatcher/get-all-runs');
+const response = await fetch('http://localhost:8081/dispatcher/get-all-runs');
 const runs = await response.json();
 
 // Example: Stop run
-await fetch('http://localhost:8080/dispatcher/stop-run', {
+await fetch('http://localhost:8081/dispatcher/stop-run', {
   method: 'POST',
   headers: {'Content-Type': 'application/json'},
   body: JSON.stringify({run_id: 5})
@@ -239,7 +239,7 @@ Asynchronous communication via database (no direct RPC).
 ./rapidfireai/start_dev.sh start
 
 # Or manually
-python -m flask --app rapidfireai.dispatcher.dispatcher:app run --port 8080
+python -m flask --app rapidfireai.dispatcher.dispatcher:app run --port 8081
 ```
 
 **Production** (via start.sh):
@@ -250,13 +250,13 @@ gunicorn -c rapidfireai/dispatcher/gunicorn.conf.py rapidfireai.dispatcher.dispa
 **Testing**:
 ```bash
 # Health check
-curl http://localhost:8080/dispatcher/health-check
+curl http://localhost:8081/dispatcher/health-check
 
 # Get all runs
-curl http://localhost:8080/dispatcher/get-all-runs
+curl http://localhost:8081/dispatcher/get-all-runs
 
 # Stop run
-curl -X POST http://localhost:8080/dispatcher/stop-run \
+curl -X POST http://localhost:8081/dispatcher/stop-run \
   -H "Content-Type: application/json" \
   -d '{"run_id": 1}'
 ```
@@ -289,7 +289,7 @@ def my_endpoint(self) -> tuple[Response, int]:
 
 3. **Update frontend to call endpoint**:
 ```typescript
-await fetch('http://localhost:8080/dispatcher/my-endpoint', {
+await fetch('http://localhost:8081/dispatcher/my-endpoint', {
   method: 'POST',
   body: JSON.stringify(data)
 });
@@ -308,7 +308,7 @@ tail -f {experiment_path}/logs/dispatcher.log
 
 **Test endpoint directly**:
 ```bash
-curl -X POST http://localhost:8080/dispatcher/stop-run \
+curl -X POST http://localhost:8081/dispatcher/stop-run \
   -H "Content-Type: application/json" \
   -d '{"run_id": 1}' \
   -v

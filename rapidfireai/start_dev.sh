@@ -12,7 +12,7 @@ RF_MLFLOW_HOST=127.0.0.1
 RF_FRONTEND_PORT=3000
 RF_FRONTEND_HOST=0.0.0.0
 # API server configuration - these should match DispatcherConfig in constants.py
-RF_API_PORT=8080
+RF_API_PORT=8081
 RF_API_HOST=127.0.0.1
 
 RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"

@@ -12,7 +12,7 @@ RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=127.0.0.1}
 RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=3000}
 RF_FRONTEND_HOST=${RF_FRONTEND_HOST:=0.0.0.0}
 # API server configuration - these should match DispatcherConfig in constants.py
-RF_API_PORT=${RF_API_PORT:=8080}
+RF_API_PORT=${RF_API_PORT:=8081}
 RF_API_HOST=${RF_API_HOST:=127.0.0.1}
 
 RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
@@ -306,7 +306,8 @@ start_mlflow_if_needed() {
     fi
 
     # Otherwise start MLflow
-    return start_mlflow
+    start_mlflow
+    return $?
 }
 
 # Function to start API server
@@ -506,7 +507,8 @@ start_frontend_if_needed() {
     fi
 
     # Otherwise start frontend
-    return start_frontend
+    start_frontend
+    return $?
 }
 
 # Function to display running services

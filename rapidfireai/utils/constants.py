@@ -29,7 +29,7 @@ class DispatcherConfig:
     """Class to manage the dispatcher configuration"""
 
     HOST: str = "127.0.0.1"
-    PORT: int = 8080
+    PORT: int = 8081
 
 
 # Database Constants
