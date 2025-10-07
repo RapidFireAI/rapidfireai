@@ -1,6 +1,17 @@
 # RapidFire AI
 
-Rapid experimentation for easier, faster, and more impactful fine-tuning and post-training for LLMs and other DL models.
+<div align="center">
+
+<a href="https://rapidfire.ai"><img src="images/RapidFire%20-%20Blue%20bug%20-white%20text.svg" alt="RapidFire AI" height="110"></a>
+
+<a href="https://discord.gg/6vSTtncKNN"><img src="images/discord-button.svg" alt="Join our Discord" width="200"></a>
+<a href="https://oss-docs.rapidfire.ai"><img src="images/documentation-button.svg" alt="Documentation" width="200"></a>
+
+</div>
+
+[![PyPI version](https://img.shields.io/pypi/v/rapidfireai)](https://pypi.org/project/rapidfireai/)
+
+Rapid experimentation for easier, faster, and more impactful fine-tuning and post-training for LLMs and other DL models — delivering 16–24× higher throughput without extra GPUs.
 
 ## Overview
 
@@ -221,3 +232,11 @@ lsof -t -i:8080 | xargs kill -9 # dispatcher
 lsof -t -i:5002 | xargs kill -9 # mlflow
 lsof -t -i:3000 | xargs kill -9 # frontend
 ```
+
+## Community & Governance
+
+- Docs: [oss-docs.rapidfire.ai](https://oss-docs.rapidfire.ai)
+- Discord: [Join our Discord](https://discord.gg/6vSTtncKNN)
+- Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- License: [`LICENSE`](LICENSE)
+- Issues: use GitHub Issues for bug reports and feature requests
