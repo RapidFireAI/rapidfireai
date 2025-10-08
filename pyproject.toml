@@ -27,6 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "pandas>=2.3.1",
+    "psutil>=5.9.0",
     "torch>=2.8.0",
     "transformers>=4.55.2",
     "peft>=0.17.0",
