@@ -72,41 +72,69 @@ class GenerationMetricsCallback(TrainerCallback):
                 )
 
     def _prepare_data(self, eval_dataset: Dataset) -> tuple:
-        """Prepare batch data for generation"""
+        """Prepare batch data for generation with defensive validation"""
         input_texts = []
         references = []
 
         for item in eval_dataset:
-            if isinstance(item, dict):
-                if "input" in item and "output" in item:
-                    input_text = item["input"]
-                    reference = item["output"]
-                elif "prompt" in item and "completion" in item:
-                    input_text = item["prompt"]
-                    reference = item["completion"][-1]["content"]
-                    input_text = self.tokenizer.apply_chat_template(
-                        input_text, tokenize=False
-                    )
-                else:
-                    continue
+            if not isinstance(item, dict):
+                continue
 
-                input_texts.append(input_text)
-                references.append(reference)
+            input_text = None
+            reference = None
+
+            # Support multiple field name patterns
+            if "input" in item and "output" in item:
+                input_text = item["input"]
+                reference = item["output"]
+            elif "prompt" in item and "completion" in item:
+                input_text = item["prompt"]
+                reference = item["completion"][-1]["content"]
+                input_text = self.tokenizer.apply_chat_template(
+                    input_text, tokenize=False
+                )
+            elif "text" in item:
+                # SFT format - use text as input, response as reference
+                input_text = item["text"]
+                reference = item.get("response", item.get("instruction", item["text"]))
+            elif "instruction" in item and "response" in item:
+                # Direct instruction/response format
+                input_text = item["instruction"]
+                reference = item["response"]
+
+            # Validate non-empty strings
+            if input_text and isinstance(input_text, str) and input_text.strip():
+                if reference and isinstance(reference, str) and reference.strip():
+                    input_texts.append(input_text.strip())
+                    references.append(reference.strip())
+
+        # Return safe empty values to prevent downstream errors
+        if not input_texts:
+            return [], []
 
         return input_texts, references
 
-    def _generate_batch(self, model, input_texts: List[str]) -> List[str]:
-        """Generate text for a batch of inputs"""
-        # Tokenize batch
-        inputs = self.tokenizer(
-            input_texts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=512,  # Adjust based on your model's context length
-        ).to(model.device)
+    def _generate_batch(self, model, input_texts: List[str]) -> torch.Tensor:
+        """Generate text for a batch of inputs with defensive validation"""
+        # Defensive validation for empty inputs
+        if not input_texts:
+            return torch.empty((0, 0), dtype=torch.long).to(model.device)
 
-        return inputs["input_ids"]
+        try:
+            # Tokenize batch
+            inputs = self.tokenizer(
+                input_texts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512,  # Adjust based on your model's context length
+            ).to(model.device)
+
+            return inputs["input_ids"]
+        except Exception as e:
+            # Log error and return empty tensor to prevent crash
+            print(f"Warning: Tokenization error in generation callback: {e}")
+            return torch.empty((0, 0), dtype=torch.long).to(model.device)
 
     def _compute_generation_metrics(self, model, step: int) -> Dict[str, float]:
         """Generate text and compute BLEU/ROUGE metrics with batch processing"""
@@ -121,7 +149,19 @@ class GenerationMetricsCallback(TrainerCallback):
 
         # Process in batches
         input_texts, batch_references = self._prepare_data(self.eval_dataset)
+
+        # Early return if no valid data
+        if not input_texts:
+            print("Warning: No valid eval data for generation metrics")
+            return {}
+
         input_ids = self._generate_batch(model, input_texts)
+
+        # Check for empty generation batch
+        if input_ids.numel() == 0:
+            print("Warning: Empty input_ids from tokenization")
+            return {}
+
         with torch.no_grad():
             for i in tqdm(
                 range(0, len(indices), self.batch_size), desc="Generating for metrics"
