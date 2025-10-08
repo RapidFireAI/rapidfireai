@@ -128,20 +128,15 @@ cleanup() {
         rm -f "$RF_PID_FILE"
     fi
 
-    # Final cleanup - kill any remaining MLflow, gunicorn, or Flask processes
-    pkill -f "mlflow server" 2>/dev/null || true
-    pkill -f "gunicorn.*rapidfireai" 2>/dev/null || true
-    pkill -f "python3.*server.py" 2>/dev/null || true
-    pkill -f "python.*server.py" 2>/dev/null || true
-
-    # Additional cleanup for any remaining processes on our ports
-    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT; do
-        local remaining_pids=$(lsof -ti :$port 2>/dev/null || true)
-        if [[ -n "$remaining_pids" ]]; then
-            print_status "Force killing remaining processes on port $port"
-            echo "$remaining_pids" | xargs kill -9 2>/dev/null || true
-        fi
-    done
+    # Final cleanup - ONLY if NOT in Colab mode
+    # Colab mode skips this to avoid killing Jupyter/IPython infrastructure
+    if [[ "$RF_COLAB_MODE" != "true" ]]; then
+        # Safe, specific patterns for non-Colab environments
+        pkill -f "mlflow server" 2>/dev/null || true
+        pkill -f "gunicorn.*rapidfireai.dispatcher" 2>/dev/null || true
+        # Only kill Flask server if we're not in Colab (frontend doesn't run in Colab)
+        pkill -f "python.*rapidfireai/frontend/server.py" 2>/dev/null || true
+    fi
 
     print_success "All services stopped"
     exit 0
