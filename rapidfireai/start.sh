@@ -578,10 +578,14 @@ start_services() {
     print_status "Starting $total_services service(s)..."
 
     # Start MLflow server (conditionally)
-    if start_mlflow_if_needed; then
-        ((services_started++))
+    if [[ "$RF_COLAB_MODE" != "true" ]] || [[ "$RF_TRACKING_BACKEND" != "tensorboard" ]]; then
+        if start_mlflow; then
+            ((services_started++))
+        else
+            print_error "Failed to start MLflow server"
+        fi
     else
-        print_error "Failed to start MLflow server"
+        print_status "⊗ Skipping MLflow (using TensorBoard-only tracking in Colab mode)"
     fi
 
     # Start API server (always)
@@ -592,10 +596,14 @@ start_services() {
     fi
 
     # Start frontend server (conditionally)
-    if start_frontend_if_needed; then
-        ((services_started++))
+    if [[ "$RF_COLAB_MODE" != "true" ]]; then
+        if start_frontend; then
+            ((services_started++))
+        else
+            print_error "Failed to start frontend server"
+        fi
     else
-        print_error "Failed to start frontend server"
+        print_status "⊗ Skipping frontend (using TensorBoard in Colab mode)"
     fi
 
     return $((total_services - services_started))
