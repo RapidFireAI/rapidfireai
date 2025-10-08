@@ -75,7 +75,7 @@ class Worker:
         DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_name))
 
         # create metric logger
-        tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.base_run_path("") / "tensorboard_logs")
+        tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.experiments_path / "tensorboard_logs")
         self.metric_logger = create_metric_logger(
             backend=TRACKING_BACKEND,
             mlflow_tracking_uri=MLFLOW_URL,

@@ -85,7 +85,7 @@ class Controller:
         # Initialize DataPath temporarily to get experiment path for tensorboard logs
         experiment_path = self.db.get_experiments_path(self.experiment_name)
         DataPath.initialize(self.experiment_name, experiment_path)
-        tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.base_run_path("") / "tensorboard_logs")
+        tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.experiments_path / "tensorboard_logs")
 
         self.metric_logger = create_metric_logger(
             backend=TRACKING_BACKEND,
