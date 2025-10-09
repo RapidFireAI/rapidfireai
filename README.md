@@ -1,13 +1,14 @@
-[![RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs_readme_dark_theme/images/RapidFire-logo-for-light-theme.svg#gh-light-mode-only)](https://rapidfire.ai)
-[![RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs_readme_dark_theme/images/RapidFire-logo-for-dark-theme.svg#gh-dark-mode-only)](https://rapidfire.ai)
 
 <div align="center">
 
-<a href="https://rapidfire.ai">  
+<a href="https://rapidfire.ai"> 
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs_readme_dark_theme/images/RapidFire-logo-for-dark-theme.svg">
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs_readme_dark_theme/images/RapidFire-logo-for-light-theme.svg">
+        <img alt="RapidFire AI" src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs_readme_dark_theme/images/RapidFire-logo-for-light-theme.svg">
+    </picture>
+</a>
 
-
-<a href="https://discord.gg/6vSTtncKNN"><img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs_readme_dark_theme/images/discord-button.svg" alt="Join our Discord" width="200"></a>
-<a href="https://oss-docs.rapidfire.ai"><img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs_readme_dark_theme/images/documentation-button.svg" alt="Documentation" width="200"></a>
 
 </div>
 
