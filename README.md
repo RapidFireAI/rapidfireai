@@ -1,5 +1,3 @@
-
-
 <div align="center">
 
 <a href="https://rapidfire.ai"><picture>
