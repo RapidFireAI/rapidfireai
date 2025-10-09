@@ -3,9 +3,9 @@
 <div align="center">
 
 <a href="https://rapidfire.ai"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/RapidFire-logo-for-dark-theme.png">
+  <source media="(prefers-color-scheme: dark)" srcset="images/RapidFire-logo-for-dark-theme.svg">
   <source media="(prefers-color-scheme: light)" srcset="images/RapidFire-logo-for-light-theme.png">
-  <img alt="RapidFire AI" src="images/duck-transparent.png" height="110" style="max-width: 100%;">
+  <img alt="RapidFire AI" src="images/rubber-duck-transparent.svg" height="110" style="max-width: 100%;">
 </picture></a>
 
 <a href="https://discord.gg/6vSTtncKNN"><img src="images/discord-button.svg" alt="Join our Discord" width="200"></a>
