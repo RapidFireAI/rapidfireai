@@ -6,8 +6,8 @@
   <img alt="RapidFire AI" src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs_readme_dark_theme/images/RapidFire-logo-for-light-theme.svg" height="110" style="max-width: 100%;">
 </picture></a>
 
-<a href="https://discord.gg/6vSTtncKNN"><img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs%2Freadme-dark-theme/images/discord-button.svg" alt="Join our Discord" width="200"></a>
-<a href="https://oss-docs.rapidfire.ai"><img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs%2Freadme-dark-theme/images/documentation-button.svg" alt="Documentation" width="200"></a>
+<a href="https://discord.gg/6vSTtncKNN"><img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs_readme_dark_theme/images/discord-button.svg" alt="Join our Discord" width="200"></a>
+<a href="https://oss-docs.rapidfire.ai"><img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/docs_readme_dark_theme/images/documentation-button.svg" alt="Documentation" width="200"></a>
 
 </div>
 
