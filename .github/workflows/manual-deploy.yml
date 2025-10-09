@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to deploy, without pre-release version (e.g., 0.11.0rc and NOT 0.11.0rc1)'
+        description: 'Version to deploy, without pre-release version (e.g.,v0.11.0rc and NOT v0.11.0rc1)'
         required: true
         type: string
       build_only:
