@@ -73,11 +73,7 @@ jobs:
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "new_branch=$NEW_BRANCH" >> $GITHUB_OUTPUT
 
-      - name: Create new branch and run bump script
-        id: create_and_bump_version
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
+      - name: Create new branch and run bump script again
         run: |
           NEW_NUMERIC_VERSION="${{ steps.determine_version.outputs.new_numeric_version }}"
           NEW_VERSION="${{ steps.determine_version.outputs.new_version }}"
