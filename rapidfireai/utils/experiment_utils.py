@@ -16,7 +16,7 @@ from tqdm import tqdm
 from transformers import logging as transformers_logging
 
 from rapidfireai.db.rf_db import RfDb
-from rapidfireai.utils.constants import MLFLOW_URL, TRACKING_BACKEND, ExperimentStatus, ExperimentTask
+from rapidfireai.utils.constants import MLFLOW_URL, ExperimentStatus, ExperimentTask, get_tracking_backend
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import DBException, ExperimentException
 from rapidfireai.utils.logging import RFLogger
@@ -83,7 +83,7 @@ class ExperimentUtils:
 
         # Clear any existing MLflow context before starting new experiment
         # Only if using MLflow backend
-        if TRACKING_BACKEND in ["mlflow", "both"]:
+        if get_tracking_backend() in ["mlflow", "both"]:
             try:
                 if mlflow.active_run():
                     print("Clearing existing MLflow context before starting new experiment")
@@ -208,7 +208,7 @@ class ExperimentUtils:
         self.db.reset_all_tables()
 
         # Clear MLflow context only if using MLflow backend
-        if TRACKING_BACKEND in ["mlflow", "both"]:
+        if get_tracking_backend() in ["mlflow", "both"]:
             try:
                 if mlflow.active_run():
                     print("Ending active MLflow run before ending experiment")
@@ -346,7 +346,7 @@ class ExperimentUtils:
 
             # Create MLflow experiment only if using MLflow backend
             mlflow_experiment_id = None
-            if TRACKING_BACKEND in ["mlflow", "both"]:
+            if get_tracking_backend() in ["mlflow", "both"]:
                 mlflow_manager = MLflowManager(MLFLOW_URL)
                 mlflow_experiment_id = mlflow_manager.create_experiment(experiment_name)
                 mlflow.tracing.disable_notebook_display()

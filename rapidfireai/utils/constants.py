@@ -4,7 +4,20 @@ import os
 MLFLOW_URL = "http://127.0.0.1:5002"
 
 # Tracking Backend Configuration
-TRACKING_BACKEND = os.getenv("RF_TRACKING_BACKEND", "mlflow")  # Options: 'mlflow', 'tensorboard', 'both'
+def get_tracking_backend() -> str:
+    """
+    Get the tracking backend from environment variable at runtime.
+
+    Returns:
+        str: The tracking backend ('mlflow', 'tensorboard', or 'both')
+
+    Note: This reads from os.environ at runtime to allow setting the env var
+    after module import (important for notebook environments like Colab).
+    """
+    return os.getenv("RF_TRACKING_BACKEND", "mlflow")
+
+# Backwards compatibility: Keep constant but it will be stale if env var changes after import
+TRACKING_BACKEND = get_tracking_backend()  # Options: 'mlflow', 'tensorboard', 'both'
 TENSORBOARD_LOG_DIR = os.getenv("RF_TENSORBOARD_LOG_DIR", None)  # Default set by experiment path
 
 # Shared Memory Constants

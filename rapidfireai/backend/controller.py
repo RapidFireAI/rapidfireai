@@ -20,7 +20,6 @@ from rapidfireai.db.rf_db import RfDb
 from rapidfireai.utils.automl_utils import get_flattened_config_leaf, get_runs
 from rapidfireai.utils.constants import (
     MLFLOW_URL,
-    TRACKING_BACKEND,
     TENSORBOARD_LOG_DIR,
     ControllerTask,
     ExperimentTask,
@@ -29,6 +28,7 @@ from rapidfireai.utils.constants import (
     RunStatus,
     TaskStatus,
     WorkerTask,
+    get_tracking_backend,
 )
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import ControllerException, NoGPUsFoundException
@@ -88,7 +88,7 @@ class Controller:
         tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.experiments_path / "tensorboard_logs")
 
         self.metric_logger = create_metric_logger(
-            backend=TRACKING_BACKEND,
+            backend=get_tracking_backend(),
             mlflow_tracking_uri=MLFLOW_URL,
             tensorboard_log_dir=tensorboard_log_dir,
         )

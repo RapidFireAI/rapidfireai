@@ -24,7 +24,7 @@ from rapidfireai.ml.checkpoint_utils import (
     save_model_to_shared_memory,
 )
 from rapidfireai.ml.trainer import create_trainer_instance
-from rapidfireai.utils.constants import MLFLOW_URL, USE_SHARED_MEMORY, TRACKING_BACKEND, TENSORBOARD_LOG_DIR, RunStatus, SHMObjectType, TaskStatus, WorkerTask
+from rapidfireai.utils.constants import MLFLOW_URL, USE_SHARED_MEMORY, TENSORBOARD_LOG_DIR, RunStatus, SHMObjectType, TaskStatus, WorkerTask, get_tracking_backend
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
@@ -77,7 +77,7 @@ class Worker:
         # create metric logger
         tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.experiments_path / "tensorboard_logs")
         self.metric_logger = create_metric_logger(
-            backend=TRACKING_BACKEND,
+            backend=get_tracking_backend(),
             mlflow_tracking_uri=MLFLOW_URL,
             tensorboard_log_dir=tensorboard_log_dir,
         )
