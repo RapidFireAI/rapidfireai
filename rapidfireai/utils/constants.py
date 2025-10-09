@@ -14,7 +14,11 @@ def get_tracking_backend() -> str:
     Note: This reads from os.environ at runtime to allow setting the env var
     after module import (important for notebook environments like Colab).
     """
-    return os.getenv("RF_TRACKING_BACKEND", "mlflow")
+    backend = os.getenv("RF_TRACKING_BACKEND", "mlflow")
+    print(f"[DEBUG get_tracking_backend] RF_TRACKING_BACKEND={backend}")
+    import traceback
+    print(f"[DEBUG get_tracking_backend] Called from:\n{''.join(traceback.format_stack()[-3:-1])}")
+    return backend
 
 # Backwards compatibility: Keep constant but it will be stale if env var changes after import
 TRACKING_BACKEND = get_tracking_backend()  # Options: 'mlflow', 'tensorboard', 'both'
