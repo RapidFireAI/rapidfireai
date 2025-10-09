@@ -9,7 +9,6 @@ from pathlib import Path
 from pprint import pformat
 from typing import Any
 
-import mlflow
 import torch
 from torch.utils.data import Dataset
 
@@ -185,8 +184,9 @@ class Controller:
                     mlflow_run_id=mlflow_run_id,
                     flattened_config=flattened_config,
                 )
-            except mlflow.exceptions.MlflowException as e:
-                msg = f"Error creating new MLFlow run for run {run_id} - {e}."
+            except Exception as e:
+                # Catch any metric logger exceptions (MLflow, TensorBoard, etc.)
+                msg = f"Error creating new tracking run for run {run_id} - {e}."
                 print(msg)
                 self.metric_logger.end_run(mlflow_run_id)
                 self.logger.error(msg, exc_info=True)

@@ -8,7 +8,6 @@ import sys
 import warnings
 from typing import Any
 
-import mlflow
 import pandas as pd
 import torch
 from IPython.display import display
@@ -20,7 +19,9 @@ from rapidfireai.utils.constants import MLFLOW_URL, ExperimentStatus, Experiment
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import DBException, ExperimentException
 from rapidfireai.utils.logging import RFLogger
-from rapidfireai.utils.mlflow_manager import MLflowManager
+
+# Note: mlflow and MLflowManager are imported lazily inside conditional blocks
+# to avoid MLflow connection attempts when using tensorboard-only mode
 
 
 class ExperimentUtils:
@@ -84,6 +85,7 @@ class ExperimentUtils:
         # Clear any existing MLflow context before starting new experiment
         # Only if using MLflow backend
         if get_tracking_backend() in ["mlflow", "both"]:
+            import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
             try:
                 if mlflow.active_run():
                     print("Clearing existing MLflow context before starting new experiment")
@@ -209,6 +211,8 @@ class ExperimentUtils:
 
         # Clear MLflow context only if using MLflow backend
         if get_tracking_backend() in ["mlflow", "both"]:
+            import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
+            from rapidfireai.utils.mlflow_manager import MLflowManager
             try:
                 if mlflow.active_run():
                     print("Ending active MLflow run before ending experiment")
@@ -347,9 +351,15 @@ class ExperimentUtils:
             # Create MLflow experiment only if using MLflow backend
             mlflow_experiment_id = None
             if get_tracking_backend() in ["mlflow", "both"]:
-                mlflow_manager = MLflowManager(MLFLOW_URL)
-                mlflow_experiment_id = mlflow_manager.create_experiment(experiment_name)
-                mlflow.tracing.disable_notebook_display()
+                import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
+                from rapidfireai.utils.mlflow_manager import MLflowManager
+                try:
+                    mlflow_manager = MLflowManager(MLFLOW_URL)
+                    mlflow_experiment_id = mlflow_manager.create_experiment(experiment_name)
+                    mlflow.tracing.disable_notebook_display()
+                except Exception as e:
+                    # Catch MLflow-specific exceptions (mlflow.exceptions.RestException, etc.)
+                    raise ExperimentException(f"Error creating MLFlow experiment: {e}") from e
 
             # write new experiment details to database
             experiment_id = self.db.create_experiment(
@@ -358,8 +368,12 @@ class ExperimentUtils:
                 config_options={"experiments_path": experiments_path},
             )
             return experiment_id, experiment_name, mlflow_experiment_id
-        except mlflow.exceptions.RestException as e:  # pyright: ignore
-            raise ExperimentException(f"Error creating MLFlow experiment: {e}") from e
+        except ExperimentException:
+            # Re-raise ExperimentExceptions (including MLflow errors from above)
+            raise
+        except Exception as e:
+            # Catch any other unexpected errors
+            raise ExperimentException(f"Error in _create_experiment_internal: {e}") from e
 
     def _generate_unique_experiment_name(self, name: str, existing_names: list[str]) -> str:
         """Increment the suffix of the name after the last '_' till it is unique"""

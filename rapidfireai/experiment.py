@@ -17,8 +17,10 @@ from rapidfireai.utils.constants import MLFLOW_URL
 from rapidfireai.utils.exceptions import ExperimentException
 from rapidfireai.utils.experiment_utils import ExperimentUtils
 from rapidfireai.utils.logging import RFLogger
-from rapidfireai.utils.mlflow_manager import MLflowManager
 from rapidfireai.version import __version__
+
+# Note: MLflowManager is imported lazily in get_results() to avoid
+# connection attempts when using tensorboard-only mode
 
 
 class Experiment:
@@ -102,6 +104,16 @@ class Experiment:
         """
         try:
             runs_info_df = self.experiment_utils.get_runs_info()
+
+            # Check if there are any mlflow_run_ids before importing MLflow
+            has_mlflow_runs = runs_info_df.get("mlflow_run_id") is not None and runs_info_df["mlflow_run_id"].notna().any()
+
+            if not has_mlflow_runs:
+                # No MLflow runs to fetch, return empty DataFrame
+                return pd.DataFrame(columns=["run_id", "step"])
+
+            # Lazy import - only import when we actually have MLflow runs to fetch
+            from rapidfireai.utils.mlflow_manager import MLflowManager
             mlflow_manager = MLflowManager(MLFLOW_URL)
 
             metrics_data = []

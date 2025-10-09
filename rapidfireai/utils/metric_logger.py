@@ -10,7 +10,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 
-from rapidfireai.utils.mlflow_manager import MLflowManager
+# Note: MLflowManager is imported lazily in MLflowMetricLogger to avoid
+# connection attempts when using tensorboard-only mode
 
 
 class MetricLogger(ABC):
@@ -110,6 +111,8 @@ class MLflowMetricLogger(MetricLogger):
         Args:
             tracking_uri: MLflow tracking server URI
         """
+        # Lazy import to avoid connection attempts in tensorboard-only mode
+        from rapidfireai.utils.mlflow_manager import MLflowManager
         self.mlflow_manager = MLflowManager(tracking_uri)
 
     def get_experiment(self, experiment_name: str) -> str:
