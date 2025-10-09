@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS experiments (
     experiment_id INTEGER PRIMARY KEY AUTOINCREMENT,
     experiment_name TEXT NOT NULL,
-    mlflow_experiment_id TEXT NOT NULL,
+    mlflow_experiment_id TEXT,
     config_options TEXT NOT NULL,
     status TEXT NOT NULL,
     current_task TEXT NOT NULL,
