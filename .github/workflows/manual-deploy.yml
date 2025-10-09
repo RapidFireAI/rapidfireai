@@ -1,4 +1,4 @@
-name: Manual Deploy pre-release versionto TestPyPI
+name: 'Manual Deploy pre-release version to PyPI'
 
 on:
   workflow_dispatch:
