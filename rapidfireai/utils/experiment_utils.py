@@ -16,7 +16,7 @@ from tqdm import tqdm
 from transformers import logging as transformers_logging
 
 from rapidfireai.db.rf_db import RfDb
-from rapidfireai.utils.constants import MLFLOW_URL, ExperimentStatus, ExperimentTask
+from rapidfireai.utils.constants import MLFLOW_URL, TRACKING_BACKEND, ExperimentStatus, ExperimentTask
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import DBException, ExperimentException
 from rapidfireai.utils.logging import RFLogger
@@ -82,12 +82,14 @@ class ExperimentUtils:
         self._disable_ml_warnings_display()
 
         # Clear any existing MLflow context before starting new experiment
-        try:
-            if mlflow.active_run():
-                print("Clearing existing MLflow context before starting new experiment")
-                mlflow.end_run()
-        except Exception as e:
-            print(f"Error clearing existing MLflow context: {e}")
+        # Only if using MLflow backend
+        if TRACKING_BACKEND in ["mlflow", "both"]:
+            try:
+                if mlflow.active_run():
+                    print("Clearing existing MLflow context before starting new experiment")
+                    mlflow.end_run()
+            except Exception as e:
+                print(f"Error clearing existing MLflow context: {e}")
 
         # check if experiment is already running
         running_experiment = None
@@ -124,11 +126,18 @@ class ExperimentUtils:
                     given_name,
                     experiments_path,
                 )
-                msg = (
-                    f"The previously running experiment {running_experiment['experiment_name']} was forcibly ended."
-                    f" Created a new experiment with name '{experiment_name}' with Experiment ID: {experiment_id}"
-                    f" and MLFlow Experiment ID: {mlflow_experiment_id} saved at {experiments_path}/{experiment_name}"
-                )
+                if mlflow_experiment_id:
+                    msg = (
+                        f"The previously running experiment {running_experiment['experiment_name']} was forcibly ended."
+                        f" Created a new experiment '{experiment_name}' with Experiment ID: {experiment_id}"
+                        f" and MLflow Experiment ID: {mlflow_experiment_id} at {experiments_path}/{experiment_name}"
+                    )
+                else:
+                    msg = (
+                        f"The previously running experiment {running_experiment['experiment_name']} was forcibly ended."
+                        f" Created a new experiment '{experiment_name}' with Experiment ID: {experiment_id}"
+                        f" at {experiments_path}/{experiment_name} (TensorBoard-only mode)"
+                    )
                 print(msg)
                 log_messages.append(msg)
         # check if experiment name already exists
@@ -137,11 +146,18 @@ class ExperimentUtils:
                 given_name,
                 experiments_path,
             )
-            msg = (
-                "An experiment with the same name already exists."
-                f" Created a new experiment with name '{experiment_name}' with Experiment ID: {experiment_id}"
-                f" and MLFlow Experiment ID: {mlflow_experiment_id} saved at {experiments_path}/{experiment_name}"
-            )
+            if mlflow_experiment_id:
+                msg = (
+                    "An experiment with the same name already exists."
+                    f" Created a new experiment '{experiment_name}' with Experiment ID: {experiment_id}"
+                    f" and MLflow Experiment ID: {mlflow_experiment_id} at {experiments_path}/{experiment_name}"
+                )
+            else:
+                msg = (
+                    "An experiment with the same name already exists."
+                    f" Created a new experiment '{experiment_name}' with Experiment ID: {experiment_id}"
+                    f" at {experiments_path}/{experiment_name} (TensorBoard-only mode)"
+                )
             print(msg)
             log_messages.append(msg)
         else:
@@ -149,10 +165,16 @@ class ExperimentUtils:
                 given_name,
                 experiments_path,
             )
-            msg = (
-                f"Experiment {experiment_name} created with Experiment ID: {experiment_id}"
-                f" and MLFlow Experiment ID: {mlflow_experiment_id} saved at {experiments_path}/{experiment_name}"
-            )
+            if mlflow_experiment_id:
+                msg = (
+                    f"Experiment {experiment_name} created with Experiment ID: {experiment_id}"
+                    f" and MLflow Experiment ID: {mlflow_experiment_id} at {experiments_path}/{experiment_name}"
+                )
+            else:
+                msg = (
+                    f"Experiment {experiment_name} created with Experiment ID: {experiment_id}"
+                    f" at {experiments_path}/{experiment_name} (TensorBoard-only mode)"
+                )
             print(msg)
             log_messages.append(msg)
 
@@ -185,20 +207,21 @@ class ExperimentUtils:
         self.db.set_experiment_status(current_experiment["experiment_id"], ExperimentStatus.COMPLETED)
         self.db.reset_all_tables()
 
-        # Clear MLflow context
-        try:
-            if mlflow.active_run():
-                print("Ending active MLflow run before ending experiment")
-                mlflow.end_run()
-
-            # Also clear context through MLflowManager if available
+        # Clear MLflow context only if using MLflow backend
+        if TRACKING_BACKEND in ["mlflow", "both"]:
             try:
-                mlflow_manager = MLflowManager(MLFLOW_URL)
-                mlflow_manager.clear_context()
-            except Exception as e2:
-                print(f"[Error clearing MLflow context through MLflowManager: {e2}")
-        except Exception as e:
-            print(f"Error clearing MLflow context: {e}")
+                if mlflow.active_run():
+                    print("Ending active MLflow run before ending experiment")
+                    mlflow.end_run()
+
+                # Also clear context through MLflowManager if available
+                try:
+                    mlflow_manager = MLflowManager(MLFLOW_URL)
+                    mlflow_manager.clear_context()
+                except Exception as e2:
+                    print(f"Error clearing MLflow context through MLflowManager: {e2}")
+            except Exception as e:
+                print(f"Error clearing MLflow context: {e}")
 
         # print experiment ended message
         msg = f"Experiment {experiment_name} ended"
@@ -311,23 +334,27 @@ class ExperimentUtils:
             print(f"Error displaying runs info: {e}")
             raise
 
-    def _create_experiment_internal(self, given_name: str, experiments_path: str) -> tuple[int, str, str]:
+    def _create_experiment_internal(self, given_name: str, experiments_path: str) -> tuple[int, str, str | None]:
         """Create new experiment -
         if given_name already exists - increment suffix and create new experiment
         if given_name is new - create new experiment with given name
+        Returns: experiment_id, experiment_name, mlflow_experiment_id (or None if tensorboard-only)
         """
         try:
             given_name = given_name if given_name else "rf-exp"
             experiment_name = self._generate_unique_experiment_name(given_name, self.db.get_all_experiment_names())
 
-            mlflow_manager = MLflowManager(MLFLOW_URL)
-            mlflow_experiment_id = mlflow_manager.create_experiment(experiment_name)
-            mlflow.tracing.disable_notebook_display()
+            # Create MLflow experiment only if using MLflow backend
+            mlflow_experiment_id = None
+            if TRACKING_BACKEND in ["mlflow", "both"]:
+                mlflow_manager = MLflowManager(MLFLOW_URL)
+                mlflow_experiment_id = mlflow_manager.create_experiment(experiment_name)
+                mlflow.tracing.disable_notebook_display()
 
             # write new experiment details to database
             experiment_id = self.db.create_experiment(
                 experiment_name,
-                mlflow_experiment_id,
+                mlflow_experiment_id,  # Will be None for tensorboard-only
                 config_options={"experiments_path": experiments_path},
             )
             return experiment_id, experiment_name, mlflow_experiment_id
