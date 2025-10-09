@@ -1,4 +1,4 @@
-# RapidFire AI
+
 
 <div align="center">
 
@@ -14,6 +14,8 @@
 </div>
 
 [![PyPI version](https://img.shields.io/pypi/v/rapidfireai)](https://pypi.org/project/rapidfireai/)
+
+# RapidFire AI
 
 Rapid experimentation for easier, faster, and more impactful fine-tuning and post-training for LLMs and other DL models — delivering 16–24× higher throughput without extra GPUs.
 
