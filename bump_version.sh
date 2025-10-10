@@ -81,12 +81,6 @@ bump_number() {
 
 update_pyproject_toml_file() {
     local NEW_VERSION="$1"
-
-    IFS='.' read -ra VERSION_PARTS <<< "$NEW_VERSION"
-    local NEW_MAJOR=${VERSION_PARTS[0]}
-    local NEW_MINOR=${VERSION_PARTS[1]}
-    local NEW_PATCH=${VERSION_PARTS[2]}
-
     # Update pyproject.toml
     print_info "Updating pyproject.toml..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -96,7 +90,6 @@ update_pyproject_toml_file() {
         # Linux
         sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
     fi
-
     # Verify the changes
     UPDATED_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
     if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
@@ -128,7 +121,6 @@ update_build_md_file() {
 
 update_requirements_txt_file() {
     local NEW_VERSION="$1"
-
     # Update requirements.txt if it has a version comment
     if grep -q "^# version " requirements.txt; then
         print_info "Updating requirements.txt version comment..."
@@ -138,22 +130,39 @@ update_requirements_txt_file() {
             sed -i "s/^# version .*/# version $NEW_VERSION/" requirements.txt
         fi
     fi
+    # Verify the changes
+    UPDATED_VERSION=$(grep '^# version ' requirements.txt | sed 's/# version \(.*\)/\1/')
+    if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
+        print_error "Failed to update version in requirements.txt"
+        exit 1
+    fi
 }
 
 update_version_py_file() {
     local NEW_VERSION="$1"
+    IFS='.' read -ra VERSION_PARTS <<< "$NEW_VERSION"
+    local NEW_MAJOR=${VERSION_PARTS[0]}
+    local NEW_MINOR=${VERSION_PARTS[1]}
+    local NEW_PATCH=${VERSION_PARTS[2]}
     # Update the central version file
     print_info "Updating rapidfireai/version.py..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
         sed -i '' "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" rapidfireai/version.py
-        sed -i '' "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
+        if [[ "$NEW_PATCH" =~ ^[0-9]+$ ]]; then
+            sed -i '' "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
+        else
+            sed -i '' "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, \"$NEW_PATCH\")/" rapidfireai/version.py
+        fi
     else
         # Linux
         sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" rapidfireai/version.py
-        sed -i "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
+        if [[ "$NEW_PATCH" =~ ^[0-9]+$ ]]; then
+            sed -i "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
+        else
+            sed -i "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, \"$NEW_PATCH\")/" rapidfireai/version.py
+        fi
     fi
-
     # Verify version.py was updated
     UPDATED_VERSION_PY=$(grep '^__version__ = ' rapidfireai/version.py | sed 's/__version__ = "\(.*\)"/\1/')
     if [ "$UPDATED_VERSION_PY" != "$NEW_VERSION" ]; then
@@ -164,8 +173,6 @@ update_version_py_file() {
 
 update_constants_tsx_file() {
     local NEW_VERSION="$1"
-
-
     # Update the JS constants version file
     print_info "Updating rapidfireai/frontend/src/common/constants.tsx..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
