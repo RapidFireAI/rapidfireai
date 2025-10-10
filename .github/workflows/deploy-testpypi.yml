@@ -3,17 +3,124 @@ name: Deploy to TestPyPI
 on:
   push:
     tags:
-      - 'test*'  # Trigger on test tags like test0.9.5, test1.0.0, etc.
+      - 'v*rc'  # Matches tags like v1.2.3rc
 
 jobs:
-  deploy:
+  version-and-build:
+    name: Determine version and build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      new_version: ${{ steps.determine_version.outputs.new_version }}
+      new_branch: ${{ steps.determine_version.outputs.new_branch }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine RC version
+        id: determine_version
+        run: |
+          # Get the triggered tag (e.g., v1.2.3rc)
+          TRIGGERED_TAG="${GITHUB_REF#refs/tags/}"
+          echo "Triggered tag: $TRIGGERED_TAG"
+          
+          # Extract base version (e.g., 1.2.3 from v1.2.3rc)
+          BASE_VERSION=$(echo "$TRIGGERED_TAG" | sed 's/^v\(.*\)rc$/\1/')
+          echo "Base version: $BASE_VERSION"
+          
+          # Find existing RC tags for this base version
+          EXISTING_RCS=$(git tag -l "v${BASE_VERSION}rc*" | grep -E "v${BASE_VERSION}rc[0-9]+$" | sort -V || true)
+          echo "Existing RC tags: $EXISTING_RCS"
+          
+          if [ -z "$EXISTING_RCS" ]; then
+            # No existing RC tags, start with rc1
+            NEW_RC_NUM=1
+          else
+            # Get the latest RC number and increment
+            LATEST_RC=$(echo "$EXISTING_RCS" | tail -n1)
+            LATEST_RC_NUM=$(echo "$LATEST_RC" | sed "s/^v${BASE_VERSION}rc\([0-9]\+\)$/\1/")
+            NEW_RC_NUM=$((LATEST_RC_NUM + 1))
+          fi
+          
+          NEW_NUMERIC_VERSION="${BASE_VERSION}rc${NEW_RC_NUM}"
+          NEW_VERSION="v${BASE_VERSION}rc${NEW_RC_NUM}"
+          NEW_BRANCH="release/${NEW_VERSION}"
+          
+          echo "New numeric version will be: $NEW_NUMERIC_VERSION"
+          echo "New version will be: $NEW_VERSION"
+          echo "New branch will be: $NEW_BRANCH"
+          
+          # Set outputs
+          echo "new_numeric_version=$NEW_NUMERIC_VERSION" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "new_branch=$NEW_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Create new branch and run bump script
+        run: |
+          NEW_NUMERIC_VERSION="${{ steps.determine_version.outputs.new_numeric_version }}"
+          NEW_VERSION="${{ steps.determine_version.outputs.new_version }}"
+          NEW_BRANCH="${{ steps.determine_version.outputs.new_branch }}"
+          TRIGGERED_TAG="${GITHUB_REF#refs/tags/}"
+          
+          echo "Creating branch: $NEW_BRANCH"
+          echo "Target version: $NEW_VERSION"
+          echo "Will delete trigger tag: $TRIGGERED_TAG"
+          
+          # Create and switch to new branch
+          git checkout -b "$NEW_BRANCH"
+
+          # Check if we have any uncommitted changes first
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Found uncommitted changes, committing them first..."
+            git add .
+            git commit -m "Pre-bump commit for $NEW_VERSION"
+          fi
+          
+          # Run bump_version.sh script with new version
+          if [ -f "bump_version.sh" ]; then
+            chmod +x bump_version.sh
+            ./bump_version.sh "$NEW_NUMERIC_VERSION"
+            echo "Ran bump_version.sh with version: $NEW_NUMERIC_VERSION"
+          else
+            echo "Warning: bump_version.sh not found, skipping version bump"
+          fi
+          
+          # Commit any changes made by bump_version.sh
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Committing changes made by bump_version.sh..."
+            git add .
+            git commit -m "Bump version to $NEW_VERSION"
+          else
+            echo "No changes made by bump_version.sh"
+          fi
+          
+          # Create the new RC tag on this branch
+          echo "Creating tag: $NEW_VERSION"
+          git tag "$NEW_VERSION"
+          
+          # Push the new branch and tag
+          echo "Pushing branch and tag..."
+          git push origin "$NEW_BRANCH"
+          git push origin "$NEW_VERSION"
+          
+          # Delete the original trigger tag
+          echo "Deleting original trigger tag: $TRIGGERED_TAG"
+          git push --delete origin "$TRIGGERED_TAG"
+
+          echo "✅ Successfully created $NEW_VERSION on branch $NEW_BRANCH"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -44,16 +151,43 @@ jobs:
           rm -rf dist/ *.egg-info/ .eggs/
           python -m build
 
-      - name: Upload to TestPyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.TESTPYPI_API_TOKEN_SUPPORT_DEV }}
-        run: |
-          python -m twine upload --repository testpypi dist/* --verbose
-
+      - name: Verify package metadata
+        run: twine check dist/*
+      
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-files
+          name: python-package-distributions
           path: dist/
-          retention-days: 30 
+          if-no-files-found: error
+
+  publish-to-testpypi:
+    name: Publish to TestPyPI
+    needs: [version-and-build]
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/rapidfireai
+      
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+      
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v5
+      with:
+        name: python-package-distributions
+        path: dist/
+        
+    - name: Publish to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        print-hash: true
+        
+    - name: Summary
+      run: |
+        echo "🎉 Successfully published version: ${{ needs.version-and-build.outputs.new_version }}"
+        echo "📦 Package available at: https://test.pypi.org/project/rapidfireai/"
+        echo "🌿 Created branch: ${{ needs.version-and-build.outputs.new_branch }}"
