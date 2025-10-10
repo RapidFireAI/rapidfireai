@@ -319,9 +319,6 @@ class InteractiveController:
         if self.run_id:
             self.load_run(self.run_id)
 
-        # Return widget for better Colab compatibility
-        return ui
-
     def auto_refresh(self, interval: int = 5):
         """Auto-refresh status every N seconds (run in background)"""
 
