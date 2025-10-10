@@ -133,14 +133,12 @@ git checkout -b release/vX.Y.Z
 git add .
 git commit -m "Release vX.Y.Z"
 git push --set-upstream origin release/vX.Y.Z
-git tag -a vX.Y.Z -m "Release version vX.Y.Z"
-git push --tags
 ```
 5. **Create/Approval for a PR**: Create and have approved a new PR
 6. **Merge PR**: After approval merge PR
 7. **Draft a new Release**: In [GitHub Releases](https://github.com/RapidFireAI/rapidfireai/releases) Draft a new release:
-- **Create a new tag**
+- **Create a new tag**: vX.Y.Z
 - **Set Title** to vX.Y.Z
 - **Generate release notes**
 - **Publish Release**
-8. **Remove all release candidates**: Remove all release candidate tags and branches
+8. **Remove all release candidates**: Remove all release candidate tags and branches, remove from PyPI 
