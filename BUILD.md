@@ -132,7 +132,8 @@ git checkout -b release/vX.Y.Z
 ```bash
 git add .
 git commit -m "Release vX.Y.Z"
-git push origin vX.Y.Z
+git push origin release/vX.Y.Z
+git tag -a vX.Y.Z -m "Release version vX.Y.Z"
 git push --tags
 ```
 5. **Create/Approval for a PR**: Create and have approved a new PR
