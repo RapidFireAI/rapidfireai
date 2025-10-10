@@ -132,7 +132,7 @@ git checkout -b release/vX.Y.Z
 ```bash
 git add .
 git commit -m "Release vX.Y.Z"
-git push origin release/vX.Y.Z
+git push --set-upstream origin release/vX.Y.Z
 git tag -a vX.Y.Z -m "Release version vX.Y.Z"
 git push --tags
 ```
