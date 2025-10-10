@@ -335,12 +335,9 @@ if ! is_github_actions; then
     print_info "Creating git tag v$NEW_VERSION..."
     git tag -a "v$NEW_VERSION" -m "Release version $NEW_VERSION"
 
-    print_success "🎉 Version $NEW_VERSION has been bumped and tagged!"
-    print_info "To deploy to PyPI, push the tag and create a release:"
-    echo "  git push origin v$NEW_VERSION"
-    echo
-    print_info "Or push all tags:"
-    echo "  git push --tags"
+    print_success "🎉 Version $NEW_VERSION has been bumped!"
+    print_info "Update CHANGELOG.md with all information from PRs since last release, and push up the changes."
+    print_info "To deploy to PyPI, create tag, create release notesand create a release"
 else
     print_success "🎉 Version bump script completed successfully!"
     echo ""   
