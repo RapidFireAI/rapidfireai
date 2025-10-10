@@ -30,7 +30,9 @@ class Dispatcher:
         self.app: Flask = Flask(__name__)
 
         # Enable CORS for all routes
-        _ = CORS(self.app, resources={r"/*": {"origins": CORS_ALLOWED_ORIGINS}})
+        # Allow all origins for local development (dispatcher runs on localhost)
+        # This is safe since the API is not exposed to the internet
+        _ = CORS(self.app, resources={r"/*": {"origins": "*"}})
 
         # register routes
         self.register_routes()
