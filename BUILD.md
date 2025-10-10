@@ -34,12 +34,12 @@ rm -rf dist/ *.egg-info/ .eggs/ && python -m build
 rsync -av dist/ user:~/rapidfire
 
 # from directory where dist/ folder is
-pip install rapidfireai-0.10.1-py3-none-any.whl
+pip install rapidfireai-0.10.2-py3-none-any.whl
 
 export PATH="$HOME/.local/bin:$PATH"
 
 rapidfireai --version
-# RapidFire AI 0.10.1
+# RapidFire AI 0.10.2
 
 # install specific dependencies and initialize rapidfire
 rapidfireai init
@@ -125,20 +125,20 @@ git checkout -b release/vX.Y.Z
 ```
 2. **Run bump_version.sh**: Run `bump_version.sh` with flag as specified above, i.e.
 ```bash
-bump_version.sh minor
+./bump_version.sh minor
 ```
 3. **Update CHANGELOG.md**: Update `CHANGELOG.md` with all information from PRs since last release
 4. **Push code to GitHub**: Push all changes to GitHub, i.e.
 ```bash
 git add .
 git commit -m "Release vX.Y.Z"
-git push
+git push --set-upstream origin release/vX.Y.Z
 ```
 5. **Create/Approval for a PR**: Create and have approved a new PR
 6. **Merge PR**: After approval merge PR
 7. **Draft a new Release**: In [GitHub Releases](https://github.com/RapidFireAI/rapidfireai/releases) Draft a new release:
-- **Create a new tag**
+- **Create a new tag**: vX.Y.Z
 - **Set Title** to vX.Y.Z
 - **Generate release notes**
 - **Publish Release**
-8. **Remove all release candidates**: Remove all release candidate tags and branches
+8. **Remove all release candidates**: Remove all release candidate tags and branches, remove from PyPI 
