@@ -30,17 +30,25 @@ def get_script_path():
     return script_path
 
 
-def run_script(args):
-    """Run the start.sh script with the given arguments."""
+def run_script(args, env_overrides=None):
+    """Run the start.sh script with the given arguments and optional env overrides."""
     script_path = get_script_path()
     
     # Make sure the script is executable
     if not os.access(script_path, os.X_OK):
         os.chmod(script_path, 0o755)
     
+    # Prepare environment
+    env = os.environ.copy()
+    if env_overrides:
+        # Convert all values to strings to satisfy subprocess env requirements
+        for key, value in env_overrides.items():
+            if value is not None:
+                env[key] = str(value)
+    
     # Run the script with the provided arguments
     try:
-        result = subprocess.run([str(script_path)] + args, check=True)
+        result = subprocess.run([str(script_path)] + args, check=True, env=env)
         return result.returncode
     except subprocess.CalledProcessError as e:
         print(f"Error running start.sh: {e}", file=sys.stderr)
@@ -393,6 +401,23 @@ def main():
         help="Command to execute (default: start)"
     )
     
+    # Port configuration flags
+    parser.add_argument(
+        "-p", "--port",
+        type=int,
+        help="Set RapidFireAI frontend server port (default: 3000)"
+    )
+    parser.add_argument(
+        "--mlflow-port",
+        type=int,
+        help="Set MLflow UI port (default: 5002)"
+    )
+    parser.add_argument(
+        "--api-port",
+        type=int,
+        help="Set API server port (default: 8080)"
+    )
+    
     parser.add_argument(
         "--version",
         action="version",
@@ -401,6 +426,19 @@ def main():
     
     args = parser.parse_args()
     
+    # Warn if port flags are used with commands where they don't apply
+    port_flags_set = any([
+        args.port is not None,
+        args.mlflow_port is not None,
+        args.api_port is not None,
+    ])
+    if port_flags_set and args.command not in ("start", "restart"):
+        print(
+            f"Warning: Port options (--port/--mlflow-port/--api-port) are ignored for '{args.command}'. "
+            "Use them with 'start' or 'restart'.",
+            file=sys.stderr,
+        )
+
     # Handle doctor command separately
     if args.command == "doctor":
         return run_doctor()
@@ -409,8 +447,29 @@ def main():
     if args.command == "init":
         return run_init()
     
+    env_overrides = {}
+    if args.command in ("start", "restart"):
+        # Validate ports if provided
+        def _validate_port(value, name):
+            if value is None:
+                return
+            if not (1 <= value <= 65535):
+                print(f"Invalid {name}: {value}. Must be between 1 and 65535.", file=sys.stderr)
+                sys.exit(2)
+        _validate_port(args.port, "--port")
+        _validate_port(args.mlflow_port, "--mlflow-port")
+        _validate_port(args.api_port, "--api-port")
+
+        # Map CLI flags to environment variables consumed by start.sh
+        if args.port is not None:
+            env_overrides["RF_FRONTEND_PORT"] = args.port
+        if args.mlflow_port is not None:
+            env_overrides["RF_MLFLOW_PORT"] = args.mlflow_port
+        if args.api_port is not None:
+            env_overrides["RF_API_PORT"] = args.api_port
+
     # Run the script with the specified command
-    return run_script([args.command])
+    return run_script([args.command], env_overrides=env_overrides)
 
 
 if __name__ == "__main__":
