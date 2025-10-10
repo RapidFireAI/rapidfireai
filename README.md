@@ -1,12 +1,28 @@
+
+<div align="center">
+
+<a href="https://rapidfire.ai"> 
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/RapidFire-logo-for-dark-theme.svg">
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/RapidFire-logo-for-light-theme.svg">
+        <img alt="RapidFire AI" src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/RapidFire-logo-for-light-theme.svg">
+    </picture>
+</a>
+
+
+</div>
+
+[![PyPI version](https://img.shields.io/pypi/v/rapidfireai)](https://pypi.org/project/rapidfireai/)
+
 # RapidFire AI
 
-Rapid experimentation for easier, faster, and more impactful fine-tuning and post-training for LLMs and other DL models.
+Rapid experimentation for easier, faster, and more impactful fine-tuning and post-training for LLMs and other DL models — delivering 16–24× higher throughput without extra GPUs.
 
 ## Overview
 
 RapidFire AI is a new experiment execution framework that transforms your LLM customization experimentation from slow, sequential processes into rapid, intelligent workflows with hyperparallelized training, dynamic real-time experiment control, and automatic multi-GPU system orchestration.
 
-![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/usage.png)
+![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/Workflow-transparent-2-01.png)
 
 RapidFire AI’s adaptive execution engine enables interruptible, chunk-based scheduling so you can compare many configurations concurrently—even on a single GPU—with dynamic real-time control over runs.
 
@@ -185,8 +201,8 @@ pip3 install "huggingface-hub[cli]"
 export PATH="$HOME/.local/bin:$PATH"
 hf auth login --token <your_token>
 
-# checkout the develop branch
-git checkout develop
+# checkout the main branch
+git checkout main
 
 # install the repository as a python package
 pip3 install -r requirements.txt
@@ -221,3 +237,11 @@ lsof -t -i:8081 | xargs kill -9 # dispatcher
 lsof -t -i:5002 | xargs kill -9 # mlflow
 lsof -t -i:3000 | xargs kill -9 # frontend
 ```
+
+## Community & Governance
+
+- Docs: [oss-docs.rapidfire.ai](https://oss-docs.rapidfire.ai)
+- Discord: [Join our Discord](https://discord.gg/6vSTtncKNN)
+- Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- License: [`LICENSE`](LICENSE)
+- Issues: use GitHub Issues for bug reports and feature requests

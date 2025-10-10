@@ -1,10 +1,10 @@
-name: Manual Deploy to TestPyPI
+name: 'Manual Deploy pre-release version to PyPI'
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to deploy (e.g., 0.9.6)'
+        description: 'Version to deploy, without pre-release version (e.g.,v0.11.0rc and NOT v0.11.0rc1)'
         required: true
         type: string
       build_only:
@@ -14,18 +14,136 @@ on:
         type: boolean
 
 jobs:
-  deploy:
+  version-and-build:
+    name: Determine version and build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      new_version: ${{ steps.determine_version.outputs.new_version }}
+      new_branch: ${{ steps.determine_version.outputs.new_branch }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/checkout@v5
         with:
-          python-version: '3.11'
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dependencies
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine RC version
+        id: determine_version
+        run: |
+          # Get the triggered version (e.g., v1.2.3rc)
+          TRIGGERED_VERSION="${{ inputs.version }}"
+          echo "Triggered version: $TRIGGERED_VERSION"
+          
+          # Extract base version (e.g., 1.2.3 from v1.2.3rc)
+          BASE_VERSION=$(echo "$TRIGGERED_VERSION" | sed 's/^v\(.*\)rc$/\1/')
+          echo "Base version: $BASE_VERSION"
+          
+          # Find existing RC tags for this base version
+          EXISTING_RCS=$(git tag -l "v${BASE_VERSION}rc*" | grep -E "v${BASE_VERSION}rc[0-9]+$" | sort -V || true)
+          echo "Existing RC tags: $EXISTING_RCS"
+          
+          if [ -z "$EXISTING_RCS" ]; then
+            # No existing RC tags, start with rc1
+            NEW_RC_NUM=1
+          else
+            # Get the latest RC number and increment
+            LATEST_RC=$(echo "$EXISTING_RCS" | tail -n1)
+            LATEST_RC_NUM=$(echo "$LATEST_RC" | sed "s/^v${BASE_VERSION}rc\([0-9]\+\)$/\1/")
+            NEW_RC_NUM=$((LATEST_RC_NUM + 1))
+          fi
+          
+          NEW_NUMERIC_VERSION="${BASE_VERSION}rc${NEW_RC_NUM}"
+          NEW_VERSION="v${BASE_VERSION}rc${NEW_RC_NUM}"
+          NEW_BRANCH="release/${NEW_VERSION}"
+          
+          echo "New numeric version will be: $NEW_NUMERIC_VERSION"
+          echo "New version will be: $NEW_VERSION"
+          echo "New branch will be: $NEW_BRANCH"
+          
+          # Set outputs
+          echo "new_numeric_version=$NEW_NUMERIC_VERSION" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "new_branch=$NEW_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Create new branch and run bump script again
+        run: |
+          NEW_NUMERIC_VERSION="${{ steps.determine_version.outputs.new_numeric_version }}"
+          NEW_VERSION="${{ steps.determine_version.outputs.new_version }}"
+          NEW_BRANCH="${{ steps.determine_version.outputs.new_branch }}"
+          
+          echo "Creating branch: $NEW_BRANCH"
+          echo "Target version: $NEW_VERSION"
+          
+          # Create and switch to new branch
+          git checkout -b "$NEW_BRANCH"
+
+          # Check if we have any uncommitted changes first
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Found uncommitted changes, committing them first..."
+            git add .
+            git commit -m "Pre-bump commit for $NEW_VERSION"
+          fi
+          
+          # Run bump_version.sh script with new version
+          if [ -f "bump_version.sh" ]; then
+            chmod +x bump_version.sh
+            ./bump_version.sh "$NEW_NUMERIC_VERSION"
+            echo "Ran bump_version.sh with version: $NEW_NUMERIC_VERSION"
+          else
+            echo "Warning: bump_version.sh not found, skipping version bump"
+          fi
+          
+          # Commit any changes made by bump_version.sh
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Committing changes made by bump_version.sh..."
+            git add .
+            git commit -m "Bump version to $NEW_VERSION"
+          else
+            echo "No changes made by bump_version.sh"
+          fi
+          
+          # Create the new RC tag on this branch
+          echo "Creating tag: $NEW_VERSION"
+          git tag "$NEW_VERSION"
+          
+          # Push the new branch and tag
+          echo "Pushing branch and tag..."
+          git push origin "$NEW_BRANCH"
+          git push origin "$NEW_VERSION"
+
+          echo "✅ Successfully created $NEW_VERSION on branch $NEW_BRANCH"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'yarn'
+          cache-dependency-path: 'rapidfireai/frontend/yarn.lock'
+
+      - name: Install frontend dependencies
+        run: |
+          cd rapidfireai/frontend
+          node ./yarn/releases/yarn-4.9.1.cjs install --frozen-lockfile
+
+      - name: Build frontend
+        run: |
+          cd rapidfireai/frontend
+          node ./yarn/releases/yarn-4.9.1.cjs build
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install build twine
@@ -35,28 +153,43 @@ jobs:
           rm -rf dist/ *.egg-info/ .eggs/
           python -m build
 
-      - name: Upload to TestPyPI
-        if: ${{ !inputs.build_only }}
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.TESTPYPI_API_TOKEN_SUPPORT_DEV }}
-        run: |
-          python -m twine upload --repository testpypi dist/*
-
+      - name: Verify package metadata
+        run: twine check dist/*
+      
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-files-v${{ inputs.version }}
+          name: python-package-distributions
           path: dist/
-          retention-days: 30
+          if-no-files-found: error
 
-      - name: Show package info
-        run: |
-          echo "Package built successfully!"
-          echo "Files in dist/:"
-          ls -la dist/
-          if [ "${{ inputs.build_only }}" = "false" ]; then
-            echo "Package uploaded to TestPyPI!"
-          else
-            echo "Build only mode - package not uploaded"
-          fi 
+  publish-to-pypi:
+    name: Publish to PyPI
+    if: ${{ !inputs.build_only }}
+    needs: [version-and-build]
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: pypi
+      url: https://pypi.org/p/rapidfireai
+      
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+      
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v5
+      with:
+        name: python-package-distributions
+        path: dist/
+        
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        print-hash: true
+        
+    - name: Summary
+      run: |
+        echo "🎉 Successfully published version: ${{ needs.version-and-build.outputs.new_version }}"
+        echo "📦 Package available at: https://pypi.org/project/rapidfireai/"
+        echo "🌿 Created branch: ${{ needs.version-and-build.outputs.new_branch }}"

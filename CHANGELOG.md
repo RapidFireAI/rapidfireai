@@ -13,6 +13,18 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.10.2]
+### Changes
+
+- Update links in README file for docs
+- Add helpful links to beginning of notebooks
+- Add comprehensive CLAUDE.md documentation files to guide AI-assisted development across all RapidFire modules
+- Refreshes README hero with centered logo and buttons, adds PyPI badge, clarifies local-only ports, community links, and updates tagline to 16-24x throughput without extra GPUs
+- Refactor bump_version.sh, include option to specify a version
+- Changed manual workflow to handle release candidates
+- Update BUILD.md instructions
+
+
 ## [v0.10.1]
 ### Changes
 

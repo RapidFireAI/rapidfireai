@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rapidfireai"
-version = "0.10.1"
+version = "0.10.2"
 authors = [
     {name = "RapidFire AI Inc.", email = "support@rapidfire.ai"},
 ]
@@ -71,6 +71,9 @@ full = [
 
 [project.urls]
 Homepage = "https://rapidfire.ai"
+Documentation = "https://oss-docs.rapidfire.ai"
+Repository = "https://github.com/RapidFireAI/rapidfireai"
+
 
 [project.scripts]
 rapidfireai = "rapidfireai.cli:main"
