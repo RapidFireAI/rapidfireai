@@ -125,14 +125,14 @@ git checkout -b release/vX.Y.Z
 ```
 2. **Run bump_version.sh**: Run `bump_version.sh` with flag as specified above, i.e.
 ```bash
-bump_version.sh minor
+./bump_version.sh minor
 ```
 3. **Update CHANGELOG.md**: Update `CHANGELOG.md` with all information from PRs since last release
 4. **Push code to GitHub**: Push all changes to GitHub, i.e.
 ```bash
 git add .
 git commit -m "Release vX.Y.Z"
-git push
+git push origin vX.Y.Z
 ```
 5. **Create/Approval for a PR**: Create and have approved a new PR
 6. **Merge PR**: After approval merge PR
