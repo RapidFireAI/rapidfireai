@@ -234,6 +234,19 @@ class InteractiveController:
             clear_output(wait=True)
             print("Cancelled clone")
 
+    def _enable_colab_widgets(self):
+        """Enable custom widget manager for Google Colab"""
+        try:
+            # Try to import google.colab to detect if we're in Colab
+            import google.colab
+
+            # Enable custom widget manager for ipywidgets to work in Colab
+            from google.colab import output
+            output.enable_custom_widget_manager()
+        except ImportError:
+            # Not in Colab, no action needed
+            pass
+
     def _handle_clone(self):
         """Clone/modify the run"""
         try:
@@ -274,6 +287,9 @@ class InteractiveController:
 
     def display(self):
         """Display the interactive controller UI"""
+        # Enable custom widget manager for Google Colab
+        self._enable_colab_widgets()
+
         # Layout
         header = widgets.VBox(
             [
@@ -302,6 +318,9 @@ class InteractiveController:
         # Load initial data if run_id set
         if self.run_id:
             self.load_run(self.run_id)
+
+        # Return widget for better Colab compatibility
+        return ui
 
     def auto_refresh(self, interval: int = 5):
         """Auto-refresh status every N seconds (run in background)"""
