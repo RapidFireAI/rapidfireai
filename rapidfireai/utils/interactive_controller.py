@@ -38,9 +38,8 @@ class InteractiveController:
         # Run selector
         self.run_selector = widgets.Dropdown(
             options=[],
-            description='Select Run:',
+            description='',
             disabled=False,
-            style={'description_width': 'initial'},
             layout=widgets.Layout(width='300px')
         )
         self.load_btn = widgets.Button(
@@ -113,8 +112,18 @@ class InteractiveController:
             description="✗ Cancel", button_style="", disabled=True
         )
 
-        # Output area for messages
-        self.output = widgets.Output()
+        # Status message box
+        self.status_message = widgets.HTML(
+            value='',
+            layout=widgets.Layout(
+                width='100%',
+                min_height='40px',
+                padding='10px',
+                margin='10px 0px',
+                border='2px solid #ddd',
+                border_radius='5px'
+            )
+        )
 
         # Bind button callbacks
         self.refresh_selector_btn.on_click(lambda b: self.fetch_all_runs())
@@ -126,6 +135,30 @@ class InteractiveController:
         self.clone_btn.on_click(lambda b: self._enable_clone_mode())
         self.submit_clone_btn.on_click(lambda b: self._handle_clone())
         self.cancel_clone_btn.on_click(lambda b: self._disable_clone_mode())
+
+    def _show_message(self, message: str, message_type: str = "info"):
+        """Display a status message with styling"""
+        colors = {
+            "success": {"bg": "#d4edda", "border": "#28a745", "text": "#155724"},
+            "error": {"bg": "#f8d7da", "border": "#dc3545", "text": "#721c24"},
+            "info": {"bg": "#d1ecf1", "border": "#17a2b8", "text": "#0c5460"},
+            "warning": {"bg": "#fff3cd", "border": "#ffc107", "text": "#856404"}
+        }
+
+        style = colors.get(message_type, colors["info"])
+
+        self.status_message.value = f'''
+            <div style="
+                background-color: {style['bg']};
+                border: 2px solid {style['border']};
+                color: {style['text']};
+                padding: 10px;
+                border-radius: 5px;
+                font-weight: 600;
+            ">
+                {message}
+            </div>
+        '''
 
     def fetch_all_runs(self):
         """Fetch all runs and populate dropdown"""
@@ -142,28 +175,20 @@ class InteractiveController:
                 options = [(f"Run {run['run_id']} - {run.get('status', 'Unknown')}", run['run_id'])
                           for run in runs]
                 self.run_selector.options = options
-                with self.output:
-                    clear_output(wait=True)
-                    print(f"✓ Found {len(runs)} runs")
+                self._show_message(f"Found {len(runs)} runs", "success")
             else:
                 self.run_selector.options = []
-                with self.output:
-                    clear_output(wait=True)
-                    print("No runs found")
+                self._show_message("No runs found", "info")
 
         except requests.RequestException as e:
-            with self.output:
-                clear_output(wait=True)
-                print(f"✗ Error fetching runs: {e}")
+            self._show_message(f"Error fetching runs: {e}", "error")
 
     def _handle_load(self):
         """Handle load button click"""
         if self.run_selector.value is not None:
             self.load_run(self.run_selector.value)
         else:
-            with self.output:
-                clear_output(wait=True)
-                print("✗ Please select a run first")
+            self._show_message("Please select a run first", "warning")
 
     def load_run(self, run_id: int):
         """Load run details from dispatcher API"""
@@ -184,15 +209,10 @@ class InteractiveController:
 
             # Update UI
             self._update_display()
-
-            with self.output:
-                clear_output(wait=True)
-                print(f"✓ Loaded run {run_id}")
+            self._show_message(f"Loaded run {run_id}", "success")
 
         except requests.RequestException as e:
-            with self.output:
-                clear_output(wait=True)
-                print(f"✗ Error loading run: {e}")
+            self._show_message(f"Error loading run: {e}", "error")
 
     def _update_display(self):
         """Update widget values"""
@@ -219,17 +239,13 @@ class InteractiveController:
             response.raise_for_status()
             result = response.json()
 
-            with self.output:
-                clear_output(wait=True)
-                if result.get("error"):
-                    print(f"✗ Error: {result['error']}")
-                else:
-                    print(f"✓ Resumed run {self.run_id}")
-                    self.load_run(self.run_id)
+            if result.get("error"):
+                self._show_message(f"Error: {result['error']}", "error")
+            else:
+                self._show_message(f"Resumed run {self.run_id}", "success")
+                self.load_run(self.run_id)
         except requests.RequestException as e:
-            with self.output:
-                clear_output(wait=True)
-                print(f"✗ Error resuming run: {e}")
+            self._show_message(f"Error resuming run: {e}", "error")
 
     def _handle_stop(self):
         """Stop the run"""
@@ -242,17 +258,13 @@ class InteractiveController:
             response.raise_for_status()
             result = response.json()
 
-            with self.output:
-                clear_output(wait=True)
-                if result.get("error"):
-                    print(f"✗ Error: {result['error']}")
-                else:
-                    print(f"✓ Stopped run {self.run_id}")
-                    self.load_run(self.run_id)
+            if result.get("error"):
+                self._show_message(f"Error: {result['error']}", "error")
+            else:
+                self._show_message(f"Stopped run {self.run_id}", "success")
+                self.load_run(self.run_id)
         except requests.RequestException as e:
-            with self.output:
-                clear_output(wait=True)
-                print(f"✗ Error stopping run: {e}")
+            self._show_message(f"Error stopping run: {e}", "error")
 
     def _handle_delete(self):
         """Delete the run"""
@@ -265,16 +277,12 @@ class InteractiveController:
             response.raise_for_status()
             result = response.json()
 
-            with self.output:
-                clear_output(wait=True)
-                if result.get("error"):
-                    print(f"✗ Error: {result['error']}")
-                else:
-                    print(f"✓ Deleted run {self.run_id}")
+            if result.get("error"):
+                self._show_message(f"Error: {result['error']}", "error")
+            else:
+                self._show_message(f"Deleted run {self.run_id}", "success")
         except requests.RequestException as e:
-            with self.output:
-                clear_output(wait=True)
-                print(f"✗ Error deleting run: {e}")
+            self._show_message(f"Error deleting run: {e}", "error")
 
     def _enable_clone_mode(self):
         """Enable config editing for clone/modify"""
@@ -283,10 +291,7 @@ class InteractiveController:
         self.submit_clone_btn.disabled = False
         self.cancel_clone_btn.disabled = False
         self.clone_btn.disabled = True
-
-        with self.output:
-            clear_output(wait=True)
-            print("📝 Edit config and click Submit to clone")
+        self._show_message("Edit config and click Submit to clone", "info")
 
     def _disable_clone_mode(self):
         """Disable config editing"""
@@ -297,10 +302,7 @@ class InteractiveController:
         self.submit_clone_btn.disabled = True
         self.cancel_clone_btn.disabled = True
         self.clone_btn.disabled = False
-
-        with self.output:
-            clear_output(wait=True)
-            print("Cancelled clone")
+        self._show_message("Cancelled clone", "info")
 
     def _enable_colab_widgets(self):
         """Enable custom widget manager for Google Colab"""
@@ -322,9 +324,7 @@ class InteractiveController:
             try:
                 new_config = json.loads(self.config_text.value)
             except json.JSONDecodeError as e:
-                with self.output:
-                    clear_output(wait=True)
-                    print(f"✗ Invalid JSON: {e}")
+                self._show_message(f"Invalid JSON: {e}", "error")
                 return
 
             response = requests.post(
@@ -339,19 +339,15 @@ class InteractiveController:
             response.raise_for_status()
             result = response.json()
 
-            with self.output:
-                clear_output(wait=True)
-                if result.get("error") or (result.get("result") is False):
-                    error_msg = result.get("err_msg") or result.get("error")
-                    print(f"✗ Error: {error_msg}")
-                else:
-                    print(f"✓ Cloned run {self.run_id}")
-                    self._disable_clone_mode()
+            if result.get("error") or (result.get("result") is False):
+                error_msg = result.get("err_msg") or result.get("error")
+                self._show_message(f"Error: {error_msg}", "error")
+            else:
+                self._show_message(f"Cloned run {self.run_id}", "success")
+                self._disable_clone_mode()
 
         except requests.RequestException as e:
-            with self.output:
-                clear_output(wait=True)
-                print(f"✗ Error cloning run: {e}")
+            self._show_message(f"Error cloning run: {e}", "error")
 
     def display(self):
         """Display the interactive controller UI"""
@@ -387,7 +383,7 @@ class InteractiveController:
             ]
         )
 
-        ui = widgets.VBox([header, selector_section, actions, config_section, self.output])
+        ui = widgets.VBox([header, self.status_message, selector_section, actions, config_section])
 
         display(ui)
 
