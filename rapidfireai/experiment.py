@@ -137,46 +137,13 @@ class Experiment:
             self._training_thread.start()
 
             # Use IPython display for reliable output in Colab
-            import time
-            status_display = display(HTML(
+            display(HTML(
                 '<div style="padding: 10px; background-color: #d4edda; border: 1px solid #28a745; border-radius: 5px; color: #155724;">'
                 '<b>✓ Training started in background</b><br>'
-                'Use InteractiveController to monitor progress. The notebook kernel will remain responsive while training runs.'
+                'Use InteractiveController to monitor progress. The notebook kernel will remain responsive while training runs.<br>'
+                '<small>Tip: Interact with InteractiveController periodically to keep Colab active.</small>'
                 '</div>'
-            ), display_id=True)
-
-            # Monitor training to keep notebook active (prevents Colab disconnection)
-            try:
-                while self._training_thread and self._training_thread.is_alive():
-                    # Check experiment status
-                    try:
-                        current_task = RfDb().get_experiment_current_task()
-                        # Get run count and status
-                        all_runs = RfDb().get_all_runs()
-                        total_runs = len(all_runs)
-                        completed_runs = sum(1 for r in all_runs.values() if r.get('status') == 'COMPLETED')
-
-                        # Update display in-place
-                        status_display.update(HTML(
-                            '<div style="padding: 10px; background-color: #d1ecf1; border: 1px solid #17a2b8; border-radius: 5px; color: #0c5460;">'
-                            f'<b>🔄 Training in progress...</b><br>'
-                            f'Task: {current_task.value} | Runs: {completed_runs}/{total_runs} completed<br>'
-                            f'<small>This cell will remain active to keep Colab notebook alive. You can interact with other cells.</small>'
-                            '</div>'
-                        ))
-                    except Exception:
-                        # If database query fails, just keep looping
-                        pass
-
-                    time.sleep(10)  # Update every 10 seconds
-            except KeyboardInterrupt:
-                # User interrupted - training continues in background
-                display(HTML(
-                    '<div style="padding: 10px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; color: #856404;">'
-                    '<b>⚠️ Monitoring interrupted by user</b><br>'
-                    'Training continues in background. Use InteractiveController to monitor progress.'
-                    '</div>'
-                ))
+            ))
         else:
             # Original blocking behavior for non-Colab environments
             try:

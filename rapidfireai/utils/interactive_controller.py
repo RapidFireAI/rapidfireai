@@ -125,6 +125,17 @@ class InteractiveController:
             )
         )
 
+        # Experiment status display (live progress)
+        self.experiment_status = widgets.HTML(
+            value='<div style="padding: 10px; background-color: #f8f9fa; border: 2px solid #dee2e6; border-radius: 5px;">'
+                  '<b>Experiment Status:</b> Loading...'
+                  '</div>',
+            layout=widgets.Layout(
+                width='100%',
+                margin='10px 0px'
+            )
+        )
+
         # Bind button callbacks
         self.refresh_selector_btn.on_click(lambda b: self.fetch_all_runs())
         self.load_btn.on_click(lambda b: self._handle_load())
@@ -163,6 +174,60 @@ class InteractiveController:
             </div>
         '''
 
+    def _update_experiment_status(self):
+        """Update experiment status display with live progress"""
+        try:
+            response = requests.get(
+                f"{self.dispatcher_url}/dispatcher/get-all-runs",
+                timeout=5,
+            )
+            response.raise_for_status()
+            runs = response.json()
+
+            if runs:
+                total_runs = len(runs)
+                completed_runs = sum(1 for r in runs if r.get('status') == 'COMPLETED')
+                ongoing_runs = sum(1 for r in runs if r.get('status') == 'ONGOING')
+
+                # Determine status color and icon
+                if completed_runs == total_runs:
+                    bg_color = "#d4edda"
+                    border_color = "#28a745"
+                    text_color = "#155724"
+                    icon = "✓"
+                    status_text = "All runs completed"
+                elif ongoing_runs > 0:
+                    bg_color = "#d1ecf1"
+                    border_color = "#17a2b8"
+                    text_color = "#0c5460"
+                    icon = "🔄"
+                    status_text = "Training in progress"
+                else:
+                    bg_color = "#fff3cd"
+                    border_color = "#ffc107"
+                    text_color = "#856404"
+                    icon = "⏸"
+                    status_text = "Training paused or stopped"
+
+                self.experiment_status.value = (
+                    f'<div style="padding: 10px; background-color: {bg_color}; '
+                    f'border: 2px solid {border_color}; border-radius: 5px; color: {text_color};">'
+                    f'<b>{icon} Experiment Status:</b> {status_text}<br>'
+                    f'<b>Progress:</b> {completed_runs}/{total_runs} runs completed'
+                    '</div>'
+                )
+            else:
+                self.experiment_status.value = (
+                    '<div style="padding: 10px; background-color: #f8f9fa; '
+                    'border: 2px solid #dee2e6; border-radius: 5px;">'
+                    '<b>Experiment Status:</b> No runs found'
+                    '</div>'
+                )
+
+        except requests.RequestException:
+            # Silently fail - don't update status if request fails
+            pass
+
     def fetch_all_runs(self):
         """Fetch all runs and populate dropdown"""
         try:
@@ -182,6 +247,9 @@ class InteractiveController:
             else:
                 self.run_selector.options = []
                 self._show_message("No runs found", "info")
+
+            # Update experiment status
+            self._update_experiment_status()
 
         except requests.RequestException as e:
             self._show_message(f"Error fetching runs: {e}", "error")
@@ -218,6 +286,9 @@ class InteractiveController:
             # Update UI
             self._update_display()
             self._show_message(f"Loaded run {run_id}", "success")
+
+            # Update experiment status
+            self._update_experiment_status()
 
         except requests.RequestException as e:
             self._show_message(f"Error loading run: {e}", "error")
@@ -395,11 +466,11 @@ class InteractiveController:
             ]
         )
 
-        ui = widgets.VBox([header, self.status_message, selector_section, actions, config_section])
+        ui = widgets.VBox([header, self.experiment_status, self.status_message, selector_section, actions, config_section])
 
         display(ui)
 
-        # Automatically fetch available runs
+        # Automatically fetch available runs (this will also update experiment status)
         self.fetch_all_runs()
 
         # Load initial data if run_id set
