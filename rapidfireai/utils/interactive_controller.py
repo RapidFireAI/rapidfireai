@@ -49,6 +49,12 @@ class InteractiveController:
             tooltip="Load the selected run",
             icon="download"
         )
+        self.refresh_selector_btn = widgets.Button(
+            description="Refresh List",
+            button_style="info",
+            tooltip="Refresh the list of available runs",
+            icon="refresh"
+        )
 
         # Status display
         self.status_label = widgets.HTML(value="<b>Status:</b> Not loaded")
@@ -75,10 +81,10 @@ class InteractiveController:
             icon="trash",
         )
         self.refresh_btn = widgets.Button(
-            description="Refresh",
+            description="Refresh Status",
             button_style="info",
-            tooltip="Refresh run status",
-            icon="refresh",
+            tooltip="Refresh current run status and metrics",
+            icon="sync",
         )
 
         # Config editor (for clone/modify)
@@ -111,6 +117,7 @@ class InteractiveController:
         self.output = widgets.Output()
 
         # Bind button callbacks
+        self.refresh_selector_btn.on_click(lambda b: self.fetch_all_runs())
         self.load_btn.on_click(lambda b: self._handle_load())
         self.resume_btn.on_click(lambda b: self._handle_resume())
         self.stop_btn.on_click(lambda b: self._handle_stop())
@@ -363,7 +370,7 @@ class InteractiveController:
         selector_section = widgets.VBox(
             [
                 widgets.HTML("<b>Select a Run:</b>"),
-                widgets.HBox([self.run_selector, self.load_btn]),
+                widgets.HBox([self.run_selector, self.load_btn, self.refresh_selector_btn]),
             ]
         )
 
