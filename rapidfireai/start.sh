@@ -279,6 +279,10 @@ start_mlflow() {
                 grep -A 5 -B 2 "Error\|Exception\|Traceback\|Failed\|ImportError\|ModuleNotFoundError" "$SCRIPT_DIR/mlflow.log" | head -20
             fi
         else
+            if [[ "$RF_COLAB_MODE" == "true" ]] && [[ "$RF_TRACKING_BACKEND" == "tensorboard" ]]; then
+                print_status "⊗ Skipping MLflow (using TensorBoard-only tracking in Colab mode)"
+                return 0
+            fi
             print_error "No mlflow.log file found"
         fi
 
@@ -544,14 +548,34 @@ show_status() {
     # Show log file status
     echo ""
     print_status "Log files:"
-    for log_file in "mlflow.log" "api.log" "frontend.log"; do
-        if [[ -f "$SCRIPT_DIR/$log_file" ]]; then
-            local size=$(du -h "$SCRIPT_DIR/$log_file" | cut -f1)
-            print_status "- $log_file: $size"
+
+    # Always check api.log
+    if [[ -f "$SCRIPT_DIR/api.log" ]]; then
+        local size=$(du -h "$SCRIPT_DIR/api.log" | cut -f1)
+        print_status "- api.log: $size"
+    else
+        print_warning "- api.log: not found"
+    fi
+
+    # Only check mlflow.log if MLflow is running
+    if [[ "$RF_COLAB_MODE" != "true" ]] || [[ "$RF_TRACKING_BACKEND" != "tensorboard" ]]; then
+        if [[ -f "$SCRIPT_DIR/mlflow.log" ]]; then
+            local size=$(du -h "$SCRIPT_DIR/mlflow.log" | cut -f1)
+            print_status "- mlflow.log: $size"
         else
-            print_warning "- $log_file: not found"
+            print_warning "- mlflow.log: not found"
         fi
-    done
+    fi
+
+    # Only check frontend.log if frontend is running
+    if [[ "$RF_COLAB_MODE" != "true" ]]; then
+        if [[ -f "$SCRIPT_DIR/frontend.log" ]]; then
+            local size=$(du -h "$SCRIPT_DIR/frontend.log" | cut -f1)
+            print_status "- frontend.log: $size"
+        else
+            print_warning "- frontend.log: not found"
+        fi
+    fi
 }
 
 # Function to start services based on mode
