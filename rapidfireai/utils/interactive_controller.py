@@ -126,15 +126,15 @@ class InteractiveController:
         )
 
         # Experiment status display (live progress)
-        self.experiment_status = widgets.HTML(
-            value='<div style="padding: 10px; background-color: #f8f9fa; border: 2px solid #dee2e6; border-radius: 5px;">'
-                  '<b>Experiment Status:</b> Loading...'
-                  '</div>',
-            layout=widgets.Layout(
-                width='100%',
-                margin='10px 0px'
-            )
-        )
+        # self.experiment_status = widgets.HTML(
+        #     value='<div style="padding: 10px; background-color: #f8f9fa; border: 2px solid #dee2e6; border-radius: 5px;">'
+        #           '<b>Experiment Status:</b> Loading...'
+        #           '</div>',
+        #     layout=widgets.Layout(
+        #         width='100%',
+        #         margin='10px 0px'
+        #     )
+        # )
 
         # Bind button callbacks
         self.refresh_selector_btn.on_click(lambda b: self.fetch_all_runs())
@@ -249,7 +249,8 @@ class InteractiveController:
                 self._show_message("No runs found", "info")
 
             # Update experiment status
-            self._update_experiment_status()
+            # COMMENTED OUT
+            # self._update_experiment_status()
 
         except requests.RequestException as e:
             self._show_message(f"Error fetching runs: {e}", "error")
@@ -288,7 +289,8 @@ class InteractiveController:
             self._show_message(f"Loaded run {run_id}", "success")
 
             # Update experiment status
-            self._update_experiment_status()
+            # COMMENTED OUT
+            # self._update_experiment_status()
 
         except requests.RequestException as e:
             self._show_message(f"Error loading run: {e}", "error")
@@ -466,11 +468,13 @@ class InteractiveController:
             ]
         )
 
-        ui = widgets.VBox([header, self.experiment_status, self.status_message, selector_section, actions, config_section])
+        # COMMENTED OUT - Displaying experiment status in cell
+        # ui = widgets.VBox([header, self.experiment_status, self.status_message, selector_section, actions, config_section])
+        ui = widgets.VBox([header, self.status_message, selector_section, actions, config_section])
 
         display(ui)
 
-        # Automatically fetch available runs (this will also update experiment status)
+        # Automatically fetch available runs
         self.fetch_all_runs()
 
         # Load initial data if run_id set
