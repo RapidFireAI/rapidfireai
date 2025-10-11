@@ -35,6 +35,21 @@ class InteractiveController:
 
     def _create_widgets(self):
         """Create ipywidgets UI components"""
+        # Run selector
+        self.run_selector = widgets.Dropdown(
+            options=[],
+            description='Select Run:',
+            disabled=False,
+            style={'description_width': 'initial'},
+            layout=widgets.Layout(width='300px')
+        )
+        self.load_btn = widgets.Button(
+            description="Load Run",
+            button_style="primary",
+            tooltip="Load the selected run",
+            icon="download"
+        )
+
         # Status display
         self.status_label = widgets.HTML(value="<b>Status:</b> Not loaded")
         self.chunk_label = widgets.HTML(value="<b>Chunk:</b> N/A")
@@ -42,22 +57,25 @@ class InteractiveController:
 
         # Action buttons
         self.resume_btn = widgets.Button(
-            description="▶ Resume",
+            description="Resume",
             button_style="success",
             tooltip="Resume this run",
             icon="play",
         )
         self.stop_btn = widgets.Button(
-            description="⏹ Stop", button_style="danger", tooltip="Stop this run", icon="stop"
+            description="Stop", 
+            button_style="danger", 
+            tooltip="Stop this run", 
+            icon="stop"
         )
         self.delete_btn = widgets.Button(
-            description="🗑 Delete",
+            description="Delete",
             button_style="danger",
             tooltip="Delete this run",
             icon="trash",
         )
         self.refresh_btn = widgets.Button(
-            description="🔄 Refresh",
+            description="Refresh",
             button_style="info",
             tooltip="Refresh run status",
             icon="refresh",
@@ -71,10 +89,14 @@ class InteractiveController:
             layout=widgets.Layout(width="100%", height="200px"),
         )
         self.warm_start_checkbox = widgets.Checkbox(
-            value=False, description="Warm start", disabled=True
+            value=False,
+            description="Warm Start (continue from previous checkpoint)",
+            disabled=True,
+            style={'description_width': 'initial'},
+            layout=widgets.Layout(margin='10px 0px')
         )
         self.clone_btn = widgets.Button(
-            description="📋 Clone",
+            description="Clone",
             button_style="primary",
             tooltip="Clone this run with modifications",
         )
@@ -89,13 +111,52 @@ class InteractiveController:
         self.output = widgets.Output()
 
         # Bind button callbacks
+        self.load_btn.on_click(lambda b: self._handle_load())
         self.resume_btn.on_click(lambda b: self._handle_resume())
         self.stop_btn.on_click(lambda b: self._handle_stop())
         self.delete_btn.on_click(lambda b: self._handle_delete())
-        self.refresh_btn.on_click(lambda b: self.load_run(self.run_id))
+        self.refresh_btn.on_click(lambda b: self.load_run(self.run_id) if self.run_id else None)
         self.clone_btn.on_click(lambda b: self._enable_clone_mode())
         self.submit_clone_btn.on_click(lambda b: self._handle_clone())
         self.cancel_clone_btn.on_click(lambda b: self._disable_clone_mode())
+
+    def fetch_all_runs(self):
+        """Fetch all runs and populate dropdown"""
+        try:
+            response = requests.get(
+                f"{self.dispatcher_url}/dispatcher/get-all-runs",
+                timeout=5,
+            )
+            response.raise_for_status()
+            runs = response.json()
+
+            if runs:
+                # Create options as (label, value) tuples
+                options = [(f"Run {run['run_id']} - {run.get('status', 'Unknown')}", run['run_id'])
+                          for run in runs]
+                self.run_selector.options = options
+                with self.output:
+                    clear_output(wait=True)
+                    print(f"✓ Found {len(runs)} runs")
+            else:
+                self.run_selector.options = []
+                with self.output:
+                    clear_output(wait=True)
+                    print("No runs found")
+
+        except requests.RequestException as e:
+            with self.output:
+                clear_output(wait=True)
+                print(f"✗ Error fetching runs: {e}")
+
+    def _handle_load(self):
+        """Handle load button click"""
+        if self.run_selector.value is not None:
+            self.load_run(self.run_selector.value)
+        else:
+            with self.output:
+                clear_output(wait=True)
+                print("✗ Please select a run first")
 
     def load_run(self, run_id: int):
         """Load run details from dispatcher API"""
@@ -298,6 +359,14 @@ class InteractiveController:
             ]
         )
 
+        # Run selector section
+        selector_section = widgets.VBox(
+            [
+                widgets.HTML("<b>Select a Run:</b>"),
+                widgets.HBox([self.run_selector, self.load_btn]),
+            ]
+        )
+
         actions = widgets.HBox(
             [self.resume_btn, self.stop_btn, self.delete_btn, self.refresh_btn]
         )
@@ -311,9 +380,12 @@ class InteractiveController:
             ]
         )
 
-        ui = widgets.VBox([header, actions, config_section, self.output])
+        ui = widgets.VBox([header, selector_section, actions, config_section, self.output])
 
         display(ui)
+
+        # Automatically fetch available runs
+        self.fetch_all_runs()
 
         # Load initial data if run_id set
         if self.run_id:
