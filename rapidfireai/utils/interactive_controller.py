@@ -134,7 +134,10 @@ class InteractiveController:
         self.refresh_btn.on_click(lambda b: self.load_run(self.run_id) if self.run_id else None)
         self.clone_btn.on_click(lambda b: self._enable_clone_mode())
         self.submit_clone_btn.on_click(lambda b: self._handle_clone())
-        self.cancel_clone_btn.on_click(lambda b: self._disable_clone_mode())
+        self.cancel_clone_btn.on_click(lambda b: self._handle_cancel_clone())
+
+        # Auto-load run when dropdown selection changes
+        self.run_selector.observe(self._on_run_selected, names='value')
 
     def _show_message(self, message: str, message_type: str = "info"):
         """Display a status message with styling"""
@@ -182,6 +185,11 @@ class InteractiveController:
 
         except requests.RequestException as e:
             self._show_message(f"Error fetching runs: {e}", "error")
+
+    def _on_run_selected(self, change):
+        """Handle dropdown selection change - auto-load run"""
+        if change['new'] is not None:
+            self.load_run(change['new'])
 
     def _handle_load(self):
         """Handle load button click"""
@@ -302,6 +310,10 @@ class InteractiveController:
         self.submit_clone_btn.disabled = True
         self.cancel_clone_btn.disabled = True
         self.clone_btn.disabled = False
+
+    def _handle_cancel_clone(self):
+        """Handle cancel clone button click"""
+        self._disable_clone_mode()
         self._show_message("Cancelled clone", "info")
 
     def _enable_colab_widgets(self):
@@ -357,7 +369,7 @@ class InteractiveController:
         # Layout
         header = widgets.VBox(
             [
-                widgets.HTML("<h3>🎮 Interactive Run Controller</h3>"),
+                widgets.HTML("<h3>Interactive Run Controller</h3>"),
                 widgets.HBox([self.run_id_label, self.status_label, self.chunk_label]),
             ]
         )
