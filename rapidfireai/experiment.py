@@ -41,6 +41,7 @@ class Experiment:
         self.experiment_id: int | None = None
         self.log_server_process: mp.Process | None = None
         self.worker_processes: list[mp.Process] = []
+        self._training_thread: Any = None  # Track background training thread (Colab only)
 
         # create db tables
         try:
@@ -90,13 +91,58 @@ class Experiment:
         seed: int = 42,
     ) -> None:
         """Run the fit"""
+
+        # Check if training is already running
+        if self._training_thread is not None and self._training_thread.is_alive():
+            print("⚠️  Training is already running in background. Please wait for it to complete.")
+            return
+
+        # Detect if running in Google Colab
         try:
-            controller = Controller(self.experiment_id, self.experiment_name)
-            controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed)
-        except Exception as e:
-            if hasattr(self, "logger"):
-                self.logger.opt(exception=True).error(f"Error running fit: {e}")
-            raise ExperimentException(f"Error running fit: {e}, traceback: {traceback.format_exc()}") from e
+            import google.colab
+            in_colab = True
+        except ImportError:
+            in_colab = False
+
+        if in_colab:
+            # Run Controller in background thread to keep kernel responsive
+            import threading
+            import sys
+            from io import StringIO
+
+            def _run_controller_background():
+                """Run controller in background thread with output suppression"""
+                # Suppress stdout to avoid print statements appearing in wrong cells
+                old_stdout = sys.stdout
+                sys.stdout = StringIO()
+
+                try:
+                    controller = Controller(self.experiment_id, self.experiment_name)
+                    controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed)
+                except Exception as e:
+                    # Restore stdout for error logging
+                    sys.stdout = old_stdout
+                    if hasattr(self, "logger"):
+                        self.logger.opt(exception=True).error(f"Error in background training: {e}")
+                    print(f"❌ Error in background training: {e}")
+                finally:
+                    # Restore stdout
+                    sys.stdout = old_stdout
+                    self._training_thread = None
+
+            self._training_thread = threading.Thread(target=_run_controller_background, daemon=True)
+            self._training_thread.start()
+            print("✓ Training started in background. Use InteractiveController to monitor progress.")
+            print("  The notebook kernel will remain responsive while training runs.")
+        else:
+            # Original blocking behavior for non-Colab environments
+            try:
+                controller = Controller(self.experiment_id, self.experiment_name)
+                controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed)
+            except Exception as e:
+                if hasattr(self, "logger"):
+                    self.logger.opt(exception=True).error(f"Error running fit: {e}")
+                raise ExperimentException(f"Error running fit: {e}, traceback: {traceback.format_exc()}") from e
 
     def get_results(self) -> pd.DataFrame:
         """
