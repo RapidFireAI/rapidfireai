@@ -1,9 +1,4 @@
 """This module contains the MLflowManager class which is responsible for managing the MLflow runs."""
-
-print("[DEBUG mlflow_manager.py] Module being imported!")
-import traceback
-print(f"[DEBUG mlflow_manager.py] Imported from:\n{''.join(traceback.format_stack()[-3:-1])}")
-
 import mlflow
 from mlflow.tracking import MlflowClient
 
@@ -16,9 +11,6 @@ class MLflowManager:
         Args:
             tracking_uri: MLflow tracking server URI
         """
-        print(f"[DEBUG MLflowManager.__init__] Creating client with URI: {tracking_uri}")
-        import traceback
-        print(f"[DEBUG MLflowManager.__init__] Called from:\n{''.join(traceback.format_stack()[-3:-1])}")
         self.client = MlflowClient(tracking_uri=tracking_uri)
         self.experiment_id = None
 
@@ -111,7 +103,6 @@ class MLflowManager:
             current_run = mlflow.active_run()
             if current_run:
                 run_id = current_run.info.run_id
-                print(f"[DEBUG] Active run ID: {run_id}")
 
                 # Try to end the run properly using the client first
                 try:
