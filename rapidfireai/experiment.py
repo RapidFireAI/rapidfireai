@@ -109,6 +109,7 @@ class Experiment:
             import threading
             import sys
             from io import StringIO
+            from IPython.display import display, HTML
 
             def _run_controller_background():
                 """Run controller in background thread with output suppression"""
@@ -124,16 +125,24 @@ class Experiment:
                     sys.stdout = old_stdout
                     if hasattr(self, "logger"):
                         self.logger.opt(exception=True).error(f"Error in background training: {e}")
-                    print(f"❌ Error in background training: {e}")
+                    display(HTML(f'<p style="color: red; font-weight: bold;">❌ Error in background training: {e}</p>'))
                 finally:
                     # Restore stdout
                     sys.stdout = old_stdout
+                    # Display completion message
+                    display(HTML('<p style="color: blue; font-weight: bold;">🎉 Training completed! Check InteractiveController for final results.</p>'))
                     self._training_thread = None
 
             self._training_thread = threading.Thread(target=_run_controller_background, daemon=True)
             self._training_thread.start()
-            print("✓ Training started in background. Use InteractiveController to monitor progress.")
-            print("  The notebook kernel will remain responsive while training runs.")
+
+            # Use IPython display for reliable output in Colab
+            display(HTML(
+                '<div style="padding: 10px; background-color: #d4edda; border: 1px solid #28a745; border-radius: 5px; color: #155724;">'
+                '<b>✓ Training started in background</b><br>'
+                'Use InteractiveController to monitor progress. The notebook kernel will remain responsive while training runs.'
+                '</div>'
+            ))
         else:
             # Original blocking behavior for non-Colab environments
             try:
