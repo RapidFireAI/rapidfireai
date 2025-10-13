@@ -88,7 +88,7 @@ If you encounter port conflicts, you can kill existing processes:
 
 ```bash
 lsof -t -i:5002 | xargs kill -9  # mlflow
-lsof -t -i:8080 | xargs kill -9  # dispatcher
+lsof -t -i:8081 | xargs kill -9  # dispatcher
 lsof -t -i:3000 | xargs kill -9  # frontend server
 ```
 
@@ -233,7 +233,7 @@ chmod +x ./rapidfireai/start_dev.sh
 # VSCode can port-forward localhost:3000 where the rf-frontend server will be running
 
 # for port clash issues -
-lsof -t -i:8080 | xargs kill -9 # dispatcher
+lsof -t -i:8081 | xargs kill -9 # dispatcher
 lsof -t -i:5002 | xargs kill -9 # mlflow
 lsof -t -i:3000 | xargs kill -9 # frontend
 ```

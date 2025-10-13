@@ -27,6 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "pandas>=2.3.1",
+    "psutil>=5.9.0",
     "torch>=2.8.0",
     "transformers>=4.55.2",
     "peft>=0.17.0",
@@ -45,14 +46,16 @@ dependencies = [
     "loguru>=0.7.3",
     "ipython>=8.37.0",
     "jupyter>=1.1.1",
-    "ipywidgets>=8.1.7", 
+    "ipywidgets>=7.3.4,<9.0.0",  # Support both v7 (Colab) and v8 (Jupyter)
     "uv>=0.8.14",
+    "tensorboard>=2.11.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=6.0",
     "pytest-cov>=2.0",
+    "pytest-mock>=3.10.0",
     "black>=21.0",
     "flake8>=3.8",
     "mypy>=0.800",

@@ -113,7 +113,7 @@ class RfDb:
     def create_experiment(
         self,
         experiment_name: str,
-        mlflow_experiment_id: str,
+        mlflow_experiment_id: str | None,
         config_options: dict[str, Any],
     ) -> int:
         """Create a new experiment"""

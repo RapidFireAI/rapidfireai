@@ -1,14 +1,9 @@
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 import torch
 from datasets import Dataset
 from tqdm import tqdm
-from transformers import (
-    TrainerCallback,
-    TrainerControl,
-    TrainerState,
-    TrainingArguments,
-)
+from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
 from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
 
@@ -17,10 +12,10 @@ class GenerationMetricsCallback(TrainerCallback):
         self,
         tokenizer,
         eval_dataset: Dataset,
-        generation_config: Optional[Dict] = None,
+        generation_config: dict | None = None,
         compute_metrics: Callable = None,
         batch_size: int = 8,
-        mlflow_manager=None,
+        metric_logger=None,
         mlflow_run_id: str = None,
         completed_steps: int = 0,
     ):
@@ -36,7 +31,7 @@ class GenerationMetricsCallback(TrainerCallback):
             "pad_token_id": tokenizer.pad_token_id,
             "eos_token_id": tokenizer.eos_token_id,
         }
-        self.mlflow_manager = mlflow_manager
+        self.metric_logger = metric_logger
         self.mlflow_run_id = mlflow_run_id
         self.completed_steps = completed_steps
 
@@ -63,8 +58,8 @@ class GenerationMetricsCallback(TrainerCallback):
             state.log_history.append(metrics)
 
         for key, value in metrics.items():
-            if self.mlflow_manager:
-                self.mlflow_manager.log_metric(
+            if self.metric_logger:
+                self.metric_logger.log_metric(
                     self.mlflow_run_id,
                     key,
                     value,
@@ -72,43 +67,69 @@ class GenerationMetricsCallback(TrainerCallback):
                 )
 
     def _prepare_data(self, eval_dataset: Dataset) -> tuple:
-        """Prepare batch data for generation"""
+        """Prepare batch data for generation with defensive validation"""
         input_texts = []
         references = []
 
         for item in eval_dataset:
-            if isinstance(item, dict):
-                if "input" in item and "output" in item:
-                    input_text = item["input"]
-                    reference = item["output"]
-                elif "prompt" in item and "completion" in item:
-                    input_text = item["prompt"]
-                    reference = item["completion"][-1]["content"]
-                    input_text = self.tokenizer.apply_chat_template(
-                        input_text, tokenize=False
-                    )
-                else:
-                    continue
+            if not isinstance(item, dict):
+                continue
 
-                input_texts.append(input_text)
-                references.append(reference)
+            input_text = None
+            reference = None
+
+            # Support multiple field name patterns
+            if "input" in item and "output" in item:
+                input_text = item["input"]
+                reference = item["output"]
+            elif "prompt" in item and "completion" in item:
+                input_text = item["prompt"]
+                reference = item["completion"][-1]["content"]
+                input_text = self.tokenizer.apply_chat_template(input_text, tokenize=False)
+            elif "text" in item:
+                # SFT format - use text as input, response as reference
+                input_text = item["text"]
+                reference = item.get("response", item.get("instruction", item["text"]))
+            elif "instruction" in item and "response" in item:
+                # Direct instruction/response format
+                input_text = item["instruction"]
+                reference = item["response"]
+
+            # Validate non-empty strings
+            if input_text and isinstance(input_text, str) and input_text.strip():
+                if reference and isinstance(reference, str) and reference.strip():
+                    input_texts.append(input_text.strip())
+                    references.append(reference.strip())
+
+        # Return safe empty values to prevent downstream errors
+        if not input_texts:
+            return [], []
 
         return input_texts, references
 
-    def _generate_batch(self, model, input_texts: List[str]) -> List[str]:
-        """Generate text for a batch of inputs"""
-        # Tokenize batch
-        inputs = self.tokenizer(
-            input_texts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=512,  # Adjust based on your model's context length
-        ).to(model.device)
+    def _generate_batch(self, model, input_texts: list[str]) -> torch.Tensor:
+        """Generate text for a batch of inputs with defensive validation"""
+        # Defensive validation for empty inputs
+        if not input_texts:
+            return torch.empty((0, 0), dtype=torch.long).to(model.device)
 
-        return inputs["input_ids"]
+        try:
+            # Tokenize batch
+            inputs = self.tokenizer(
+                input_texts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512,  # Adjust based on your model's context length
+            ).to(model.device)
 
-    def _compute_generation_metrics(self, model, step: int) -> Dict[str, float]:
+            return inputs["input_ids"]
+        except Exception as e:
+            # Log error and return empty tensor to prevent crash
+            print(f"Warning: Tokenization error in generation callback: {e}")
+            return torch.empty((0, 0), dtype=torch.long).to(model.device)
+
+    def _compute_generation_metrics(self, model, step: int) -> dict[str, float]:
         """Generate text and compute BLEU/ROUGE metrics with batch processing"""
         model.eval()
 
@@ -121,16 +142,24 @@ class GenerationMetricsCallback(TrainerCallback):
 
         # Process in batches
         input_texts, batch_references = self._prepare_data(self.eval_dataset)
+
+        # Early return if no valid data
+        if not input_texts:
+            print("Warning: No valid eval data for generation metrics")
+            return {}
+
         input_ids = self._generate_batch(model, input_texts)
+
+        # Check for empty generation batch
+        if input_ids.numel() == 0:
+            print("Warning: Empty input_ids from tokenization")
+            return {}
+
         with torch.no_grad():
-            for i in tqdm(
-                range(0, len(indices), self.batch_size), desc="Generating for metrics"
-            ):
+            for i in tqdm(range(0, len(indices), self.batch_size), desc="Generating for metrics"):
                 input_ids_batch = input_ids[i : i + self.batch_size]
                 with torch.inference_mode(), torch.cuda.amp.autocast():
-                    outputs_batch = model.generate(
-                        input_ids_batch, **self.generation_config
-                    )
+                    outputs_batch = model.generate(input_ids_batch, **self.generation_config)
                 generated_texts = self.tokenizer.batch_decode(
                     outputs_batch[:, input_ids_batch.shape[1] :],
                     skip_special_tokens=True,
@@ -155,18 +184,18 @@ class GenerationMetricsCallback(TrainerCallback):
 
 
 class MLflowLoggingCallback(TrainerCallback):
-    """Callback for logging metrics to MLflow during training"""
+    """Callback for logging metrics to tracking backend during training"""
 
     def __init__(
         self,
-        mlflow_manager,
+        metric_logger,
         mlflow_run_id: str,
         excluded_keys: list = None,
         completed_steps: int = 0,
         chunk_id: int = 0,
         num_epochs_completed: int = 0,
     ):
-        self.mlflow_manager = mlflow_manager
+        self.metric_logger = metric_logger
         self.mlflow_run_id = mlflow_run_id
         self.completed_steps = completed_steps
         self.excluded_keys = excluded_keys or [
@@ -189,22 +218,22 @@ class MLflowLoggingCallback(TrainerCallback):
             for key, value in logs.items():
                 if isinstance(value, (int, float)) and key not in self.excluded_keys:
                     try:
-                        self.mlflow_manager.log_metric(
+                        self.metric_logger.log_metric(
                             self.mlflow_run_id,
                             key,
                             value,
                             step=self.completed_steps + state.global_step,
                         )
                     except Exception as e:
-                        print(f"Warning: Failed to log metric {key} to MLflow: {e}")
+                        print(f"Warning: Failed to log metric {key} to tracking backend: {e}")
             if "eval_loss" not in logs and "train_runtime" not in logs:
-                self.mlflow_manager.log_metric(
+                self.metric_logger.log_metric(
                     self.mlflow_run_id,
                     "chunk number",
                     self.chunk_id,
                     step=self.completed_steps + state.global_step,
                 )
-                self.mlflow_manager.log_metric(
+                self.metric_logger.log_metric(
                     self.mlflow_run_id,
                     "num_epochs_completed",
                     self.num_epochs_completed,
@@ -217,7 +246,7 @@ class LogLevelCallback(TrainerCallback):
     A [`TrainerCallback`] that handles the default flow of the training loop for logs, evaluation and checkpoints.
     """
 
-    def __init__(self, global_step_args: Dict):
+    def __init__(self, global_step_args: dict):
         self.eval_first_step = global_step_args.get("eval_first_step", 0)
         self.actual_steps = global_step_args.get("actual_steps", 0)
         self.log_first_step = global_step_args.get("log_first_step", 0)
@@ -275,10 +304,7 @@ class LogLevelCallback(TrainerCallback):
             control.should_log = True
 
         # Evaluate
-        if (
-            args.eval_strategy == IntervalStrategy.EPOCH
-            and args.eval_delay <= state.epoch
-        ):
+        if args.eval_strategy == IntervalStrategy.EPOCH and args.eval_delay <= state.epoch:
             control.should_evaluate = True
 
         # Save

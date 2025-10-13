@@ -1,8 +1,7 @@
 """Grid search implementation for AutoML training configurations."""
 
 from itertools import product
-from typing import Any, Dict
-from typing import List as ListType
+from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
 from rapidfireai.automl.datatypes import List
@@ -15,7 +14,7 @@ def recursive_expand_gridsearch(item: Any):
         keys = list(item.keys())
         value_lists = [list(recursive_expand_gridsearch(item[k])) for k in keys]
         for values in product(*value_lists):
-            yield dict(zip(keys, values))
+            yield dict(zip(keys, values, strict=False))
     elif isinstance(item, List):
         for value in item.values:
             yield from recursive_expand_gridsearch(value)
@@ -26,7 +25,7 @@ def recursive_expand_gridsearch(item: Any):
 class RFGridSearch(AutoMLAlgorithm):
     """Grid search algorithm that generates all hyperparameter combinations."""
 
-    def get_runs(self, seed: int) -> ListType[Dict[str, Any]]:
+    def get_runs(self, seed: int) -> list[dict[str, Any]]:
         """Generate all possible hyperparameter combinations for grid search."""
         if not isinstance(seed, int) or seed < 0:
             raise AutoMLException("seed must be a non-negative integer")

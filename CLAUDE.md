@@ -96,7 +96,7 @@ git push origin test0.10.2
 
 ```bash
 # Kill services on specific ports if conflicts occur
-lsof -t -i:8080 | xargs kill -9  # dispatcher
+lsof -t -i:8081 | xargs kill -9  # dispatcher
 lsof -t -i:5002 | xargs kill -9  # mlflow
 lsof -t -i:3000 | xargs kill -9  # frontend
 ```
@@ -345,7 +345,7 @@ Run `rapidfireai doctor` to diagnose:
 Common ports:
 - 3000: Frontend dashboard
 - 5002: MLflow tracking server
-- 8080: Dispatcher API
+- 8081: Dispatcher API
 
 Use port killing commands above if conflicts occur.
 

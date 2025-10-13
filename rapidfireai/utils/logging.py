@@ -1,7 +1,6 @@
 import os
 import threading
 from abc import ABC, abstractmethod
-from typing import Dict
 
 from loguru import logger
 
@@ -13,7 +12,7 @@ class BaseRFLogger(ABC):
     """Base class for RapidFire loggers"""
 
     _experiment_name = ""
-    _initialized_loggers: Dict[str, bool] = {}
+    _initialized_loggers: dict[str, bool] = {}
     _lock = threading.Lock()
 
     def __init__(self, level: str = "DEBUG"):
