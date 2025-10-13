@@ -1,7 +1,8 @@
-from enum import Enum
 import os
+from enum import Enum
 
 MLFLOW_URL = "http://127.0.0.1:5002"
+
 
 # Tracking Backend Configuration
 def get_tracking_backend() -> str:
@@ -16,6 +17,7 @@ def get_tracking_backend() -> str:
     """
     backend = os.getenv("RF_TRACKING_BACKEND", "mlflow")
     return backend
+
 
 # Backwards compatibility: Keep constant but it will be stale if env var changes after import
 TRACKING_BACKEND = get_tracking_backend()  # Options: 'mlflow', 'tensorboard', 'both'

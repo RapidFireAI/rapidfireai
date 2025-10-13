@@ -24,7 +24,16 @@ from rapidfireai.ml.checkpoint_utils import (
     save_model_to_shared_memory,
 )
 from rapidfireai.ml.trainer import create_trainer_instance
-from rapidfireai.utils.constants import MLFLOW_URL, USE_SHARED_MEMORY, TENSORBOARD_LOG_DIR, RunStatus, SHMObjectType, TaskStatus, WorkerTask, get_tracking_backend
+from rapidfireai.utils.constants import (
+    MLFLOW_URL,
+    TENSORBOARD_LOG_DIR,
+    USE_SHARED_MEMORY,
+    RunStatus,
+    SHMObjectType,
+    TaskStatus,
+    WorkerTask,
+    get_tracking_backend,
+)
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
@@ -82,7 +91,7 @@ class Worker:
             tensorboard_log_dir=tensorboard_log_dir,
         )
         # Get experiment if using MLflow
-        if hasattr(self.metric_logger, 'get_experiment'):
+        if hasattr(self.metric_logger, "get_experiment"):
             self.metric_logger.get_experiment(self.experiment_name)
 
         # load datasets
@@ -119,7 +128,9 @@ class Worker:
         # torch.manual_seed(run_details["seed"])
         # np.random.seed(run_details["seed"])
         # random.seed(run_details["seed"])
-        effective_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1) * config_leaf["training_args"].get("gradient_accumulation_steps", 1)
+        effective_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1) * config_leaf[
+            "training_args"
+        ].get("gradient_accumulation_steps", 1)
 
         # fetch train dataset chunk
         train_dataset_chunker = DatasetChunks(

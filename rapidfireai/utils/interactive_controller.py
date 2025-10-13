@@ -6,18 +6,14 @@ Provides UI controls for managing training runs similar to the frontend.
 import json
 import threading
 import time
-from typing import Any, Dict, Optional
 
 import requests
-from IPython.display import clear_output, display
+from IPython.display import display
 
 try:
     import ipywidgets as widgets
-except ImportError:
-    raise ImportError(
-        "ipywidgets is required for InteractiveController. "
-        "Install with: pip install ipywidgets"
-    )
+except ImportError as e:
+    raise ImportError("ipywidgets is required for InteractiveController. Install with: pip install ipywidgets") from e
 
 
 class InteractiveController:
@@ -25,8 +21,8 @@ class InteractiveController:
 
     def __init__(self, dispatcher_url: str = "http://127.0.0.1:8081"):
         self.dispatcher_url = dispatcher_url.rstrip("/")
-        self.run_id: Optional[int] = None
-        self.config: Optional[Dict] = None
+        self.run_id: int | None = None
+        self.config: dict | None = None
         self.status: str = "Unknown"
         self.chunk_number: int = 0
 
@@ -37,22 +33,16 @@ class InteractiveController:
         """Create ipywidgets UI components"""
         # Run selector
         self.run_selector = widgets.Dropdown(
-            options=[],
-            description='',
-            disabled=False,
-            layout=widgets.Layout(width='300px')
+            options=[], description="", disabled=False, layout=widgets.Layout(width="300px")
         )
         self.load_btn = widgets.Button(
-            description="Load Run",
-            button_style="primary",
-            tooltip="Load the selected run",
-            icon="download"
+            description="Load Run", button_style="primary", tooltip="Load the selected run", icon="download"
         )
         self.refresh_selector_btn = widgets.Button(
             description="Refresh List",
             button_style="info",
             tooltip="Refresh the list of available runs",
-            icon="refresh"
+            icon="refresh",
         )
 
         # Status display
@@ -67,12 +57,7 @@ class InteractiveController:
             tooltip="Resume this run",
             icon="play",
         )
-        self.stop_btn = widgets.Button(
-            description="Stop", 
-            button_style="danger", 
-            tooltip="Stop this run", 
-            icon="stop"
-        )
+        self.stop_btn = widgets.Button(description="Stop", button_style="danger", tooltip="Stop this run", icon="stop")
         self.delete_btn = widgets.Button(
             description="Delete",
             button_style="danger",
@@ -97,32 +82,28 @@ class InteractiveController:
             value=False,
             description="Warm Start (continue from previous checkpoint)",
             disabled=True,
-            style={'description_width': 'initial'},
-            layout=widgets.Layout(margin='10px 0px')
+            style={"description_width": "initial"},
+            layout=widgets.Layout(margin="10px 0px"),
         )
         self.clone_btn = widgets.Button(
             description="Clone",
             button_style="primary",
             tooltip="Clone this run with modifications",
         )
-        self.submit_clone_btn = widgets.Button(
-            description="✓ Submit Clone", button_style="success", disabled=True
-        )
-        self.cancel_clone_btn = widgets.Button(
-            description="✗ Cancel", button_style="", disabled=True
-        )
+        self.submit_clone_btn = widgets.Button(description="✓ Submit Clone", button_style="success", disabled=True)
+        self.cancel_clone_btn = widgets.Button(description="✗ Cancel", button_style="", disabled=True)
 
         # Status message box
         self.status_message = widgets.HTML(
-            value='',
+            value="",
             layout=widgets.Layout(
-                width='100%',
-                min_height='40px',
-                padding='10px',
-                margin='10px 0px',
-                border='2px solid #ddd',
-                border_radius='5px'
-            )
+                width="100%",
+                min_height="40px",
+                padding="10px",
+                margin="10px 0px",
+                border="2px solid #ddd",
+                border_radius="5px",
+            ),
         )
 
         # Experiment status display (live progress)
@@ -148,7 +129,7 @@ class InteractiveController:
         self.cancel_clone_btn.on_click(lambda b: self._handle_cancel_clone())
 
         # Auto-load run when dropdown selection changes
-        self.run_selector.observe(self._on_run_selected, names='value')
+        self.run_selector.observe(self._on_run_selected, names="value")
 
     def _show_message(self, message: str, message_type: str = "info"):
         """Display a status message with styling"""
@@ -156,23 +137,23 @@ class InteractiveController:
             "success": {"bg": "#d4edda", "border": "#28a745", "text": "#155724"},
             "error": {"bg": "#f8d7da", "border": "#dc3545", "text": "#721c24"},
             "info": {"bg": "#d1ecf1", "border": "#17a2b8", "text": "#0c5460"},
-            "warning": {"bg": "#fff3cd", "border": "#ffc107", "text": "#856404"}
+            "warning": {"bg": "#fff3cd", "border": "#ffc107", "text": "#856404"},
         }
 
         style = colors.get(message_type, colors["info"])
 
-        self.status_message.value = f'''
+        self.status_message.value = f"""
             <div style="
-                background-color: {style['bg']};
-                border: 2px solid {style['border']};
-                color: {style['text']};
+                background-color: {style["bg"]};
+                border: 2px solid {style["border"]};
+                color: {style["text"]};
                 padding: 10px;
                 border-radius: 5px;
                 font-weight: 600;
             ">
                 {message}
             </div>
-        '''
+        """
 
     def _update_experiment_status(self):
         """Update experiment status display with live progress"""
@@ -186,8 +167,8 @@ class InteractiveController:
 
             if runs:
                 total_runs = len(runs)
-                completed_runs = sum(1 for r in runs if r.get('status') == 'COMPLETED')
-                ongoing_runs = sum(1 for r in runs if r.get('status') == 'ONGOING')
+                completed_runs = sum(1 for r in runs if r.get("status") == "COMPLETED")
+                ongoing_runs = sum(1 for r in runs if r.get("status") == "ONGOING")
 
                 # Determine status color and icon
                 if completed_runs == total_runs:
@@ -212,16 +193,16 @@ class InteractiveController:
                 self.experiment_status.value = (
                     f'<div style="padding: 10px; background-color: {bg_color}; '
                     f'border: 2px solid {border_color}; border-radius: 5px; color: {text_color};">'
-                    f'<b>{icon} Experiment Status:</b> {status_text}<br>'
-                    f'<b>Progress:</b> {completed_runs}/{total_runs} runs completed'
-                    '</div>'
+                    f"<b>{icon} Experiment Status:</b> {status_text}<br>"
+                    f"<b>Progress:</b> {completed_runs}/{total_runs} runs completed"
+                    "</div>"
                 )
             else:
                 self.experiment_status.value = (
                     '<div style="padding: 10px; background-color: #f8f9fa; '
                     'border: 2px solid #dee2e6; border-radius: 5px;">'
-                    '<b>Experiment Status:</b> No runs found'
-                    '</div>'
+                    "<b>Experiment Status:</b> No runs found"
+                    "</div>"
                 )
 
         except requests.RequestException:
@@ -240,8 +221,7 @@ class InteractiveController:
 
             if runs:
                 # Create options as (label, value) tuples
-                options = [(f"Run {run['run_id']} - {run.get('status', 'Unknown')}", run['run_id'])
-                          for run in runs]
+                options = [(f"Run {run['run_id']} - {run.get('status', 'Unknown')}", run["run_id"]) for run in runs]
                 self.run_selector.options = options
                 self._show_message(f"Found {len(runs)} runs", "success")
             else:
@@ -257,8 +237,8 @@ class InteractiveController:
 
     def _on_run_selected(self, change):
         """Handle dropdown selection change - auto-load run"""
-        if change['new'] is not None:
-            self.load_run(change['new'])
+        if change["new"] is not None:
+            self.load_run(change["new"])
 
     def _handle_load(self):
         """Handle load button click"""
@@ -397,6 +377,7 @@ class InteractiveController:
 
             # Enable custom widget manager for ipywidgets to work in Colab
             from google.colab import output
+
             output.enable_custom_widget_manager()
         except ImportError:
             # Not in Colab, no action needed
@@ -455,9 +436,7 @@ class InteractiveController:
             ]
         )
 
-        actions = widgets.HBox(
-            [self.resume_btn, self.stop_btn, self.delete_btn, self.refresh_btn]
-        )
+        actions = widgets.HBox([self.resume_btn, self.stop_btn, self.delete_btn, self.refresh_btn])
 
         config_section = widgets.VBox(
             [

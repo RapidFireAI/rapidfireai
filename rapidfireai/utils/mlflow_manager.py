@@ -1,4 +1,5 @@
 """This module contains the MLflowManager class which is responsible for managing the MLflow runs."""
+
 import mlflow
 from mlflow.tracking import MlflowClient
 

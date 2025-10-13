@@ -1,14 +1,9 @@
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 import torch
 from datasets import Dataset
 from tqdm import tqdm
-from transformers import (
-    TrainerCallback,
-    TrainerControl,
-    TrainerState,
-    TrainingArguments,
-)
+from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
 from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
 
@@ -17,7 +12,7 @@ class GenerationMetricsCallback(TrainerCallback):
         self,
         tokenizer,
         eval_dataset: Dataset,
-        generation_config: Optional[Dict] = None,
+        generation_config: dict | None = None,
         compute_metrics: Callable = None,
         batch_size: int = 8,
         metric_logger=None,
@@ -90,9 +85,7 @@ class GenerationMetricsCallback(TrainerCallback):
             elif "prompt" in item and "completion" in item:
                 input_text = item["prompt"]
                 reference = item["completion"][-1]["content"]
-                input_text = self.tokenizer.apply_chat_template(
-                    input_text, tokenize=False
-                )
+                input_text = self.tokenizer.apply_chat_template(input_text, tokenize=False)
             elif "text" in item:
                 # SFT format - use text as input, response as reference
                 input_text = item["text"]
@@ -114,7 +107,7 @@ class GenerationMetricsCallback(TrainerCallback):
 
         return input_texts, references
 
-    def _generate_batch(self, model, input_texts: List[str]) -> torch.Tensor:
+    def _generate_batch(self, model, input_texts: list[str]) -> torch.Tensor:
         """Generate text for a batch of inputs with defensive validation"""
         # Defensive validation for empty inputs
         if not input_texts:
@@ -136,7 +129,7 @@ class GenerationMetricsCallback(TrainerCallback):
             print(f"Warning: Tokenization error in generation callback: {e}")
             return torch.empty((0, 0), dtype=torch.long).to(model.device)
 
-    def _compute_generation_metrics(self, model, step: int) -> Dict[str, float]:
+    def _compute_generation_metrics(self, model, step: int) -> dict[str, float]:
         """Generate text and compute BLEU/ROUGE metrics with batch processing"""
         model.eval()
 
@@ -163,14 +156,10 @@ class GenerationMetricsCallback(TrainerCallback):
             return {}
 
         with torch.no_grad():
-            for i in tqdm(
-                range(0, len(indices), self.batch_size), desc="Generating for metrics"
-            ):
+            for i in tqdm(range(0, len(indices), self.batch_size), desc="Generating for metrics"):
                 input_ids_batch = input_ids[i : i + self.batch_size]
                 with torch.inference_mode(), torch.cuda.amp.autocast():
-                    outputs_batch = model.generate(
-                        input_ids_batch, **self.generation_config
-                    )
+                    outputs_batch = model.generate(input_ids_batch, **self.generation_config)
                 generated_texts = self.tokenizer.batch_decode(
                     outputs_batch[:, input_ids_batch.shape[1] :],
                     skip_special_tokens=True,
@@ -257,7 +246,7 @@ class LogLevelCallback(TrainerCallback):
     A [`TrainerCallback`] that handles the default flow of the training loop for logs, evaluation and checkpoints.
     """
 
-    def __init__(self, global_step_args: Dict):
+    def __init__(self, global_step_args: dict):
         self.eval_first_step = global_step_args.get("eval_first_step", 0)
         self.actual_steps = global_step_args.get("actual_steps", 0)
         self.log_first_step = global_step_args.get("log_first_step", 0)
@@ -315,10 +304,7 @@ class LogLevelCallback(TrainerCallback):
             control.should_log = True
 
         # Evaluate
-        if (
-            args.eval_strategy == IntervalStrategy.EPOCH
-            and args.eval_delay <= state.epoch
-        ):
+        if args.eval_strategy == IntervalStrategy.EPOCH and args.eval_delay <= state.epoch:
             control.should_evaluate = True
 
         # Save

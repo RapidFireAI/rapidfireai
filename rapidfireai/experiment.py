@@ -100,16 +100,18 @@ class Experiment:
         # Detect if running in Google Colab
         try:
             import google.colab
+
             in_colab = True
         except ImportError:
             in_colab = False
 
         if in_colab:
             # Run Controller in background thread to keep kernel responsive
-            import threading
             import sys
+            import threading
             from io import StringIO
-            from IPython.display import display, HTML
+
+            from IPython.display import HTML, display
 
             def _run_controller_background():
                 """Run controller in background thread with output suppression"""
@@ -130,20 +132,26 @@ class Experiment:
                     # Restore stdout
                     sys.stdout = old_stdout
                     # Display completion message
-                    display(HTML('<p style="color: blue; font-weight: bold;">🎉 Training completed! Check InteractiveController for final results.</p>'))
+                    display(
+                        HTML(
+                            '<p style="color: blue; font-weight: bold;">🎉 Training completed! Check InteractiveController for final results.</p>'
+                        )
+                    )
                     self._training_thread = None
 
             self._training_thread = threading.Thread(target=_run_controller_background, daemon=True)
             self._training_thread.start()
 
             # Use IPython display for reliable output in Colab
-            display(HTML(
-                '<div style="padding: 10px; background-color: #d4edda; border: 1px solid #28a745; border-radius: 5px; color: #155724;">'
-                '<b>✓ Training started in background</b><br>'
-                'Use InteractiveController to monitor progress. The notebook kernel will remain responsive while training runs.<br>'
-                '<small>Tip: Interact with InteractiveController periodically to keep Colab active.</small>'
-                '</div>'
-            ))
+            display(
+                HTML(
+                    '<div style="padding: 10px; background-color: #d4edda; border: 1px solid #28a745; border-radius: 5px; color: #155724;">'
+                    "<b>✓ Training started in background</b><br>"
+                    "Use InteractiveController to monitor progress. The notebook kernel will remain responsive while training runs.<br>"
+                    "<small>Tip: Interact with InteractiveController periodically to keep Colab active.</small>"
+                    "</div>"
+                )
+            )
         else:
             # Original blocking behavior for non-Colab environments
             try:
@@ -162,7 +170,9 @@ class Experiment:
             runs_info_df = self.experiment_utils.get_runs_info()
 
             # Check if there are any mlflow_run_ids before importing MLflow
-            has_mlflow_runs = runs_info_df.get("mlflow_run_id") is not None and runs_info_df["mlflow_run_id"].notna().any()
+            has_mlflow_runs = (
+                runs_info_df.get("mlflow_run_id") is not None and runs_info_df["mlflow_run_id"].notna().any()
+            )
 
             if not has_mlflow_runs:
                 # No MLflow runs to fetch, return empty DataFrame
@@ -170,6 +180,7 @@ class Experiment:
 
             # Lazy import - only import when we actually have MLflow runs to fetch
             from rapidfireai.utils.mlflow_manager import MLflowManager
+
             mlflow_manager = MLflowManager(MLFLOW_URL)
 
             metrics_data = []
