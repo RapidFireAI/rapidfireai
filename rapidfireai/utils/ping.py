@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-import socket
 import argparse
+import socket
+
 
 def ping_server(server: str, port: int, timeout=3):
-    """ping server:port """
+    """ping server:port"""
     try:
         socket.setdefaulttimeout(timeout)
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -13,6 +14,7 @@ def ping_server(server: str, port: int, timeout=3):
     else:
         s.close()
         return True
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Ping a server port")

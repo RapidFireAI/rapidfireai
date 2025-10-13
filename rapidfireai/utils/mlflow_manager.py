@@ -104,7 +104,6 @@ class MLflowManager:
             current_run = mlflow.active_run()
             if current_run:
                 run_id = current_run.info.run_id
-                print(f"[DEBUG] Active run ID: {run_id}")
 
                 # Try to end the run properly using the client first
                 try:

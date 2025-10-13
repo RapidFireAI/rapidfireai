@@ -5,7 +5,7 @@ services:
     build: .
     ports:
       - "5002:5002"  # MLflow
-      - "8080:8080"  # API Server
+      - "8081:8081"  # API Server
       - "3000:3000"  # Frontend
     volumes:
       - ./mlruns:/app/mlruns
@@ -16,7 +16,7 @@ services:
       - RF_MLFLOW_HOST=0.0.0.0
       - RF_FRONTEND_PORT=3000
       - RF_FRONTEND_HOST=0.0.0.0
-      - RF_API_PORT=8080
+      - RF_API_PORT=8081
       - RF_API_HOST=0.0.0.0
     restart: unless-stopped
     healthcheck:

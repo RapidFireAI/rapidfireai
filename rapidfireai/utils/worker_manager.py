@@ -84,7 +84,14 @@ class WorkerManager:
         while not self.shutdown_event.is_set():
             try:
                 # Check if parent process is still alive
-                os.getpgid(self.parent_pid)
+                try:
+                    os.getpgid(self.parent_pid)
+                except PermissionError:
+                    # Fallback for restricted environments (e.g., Colab)
+                    # Use psutil to check if parent process exists
+                    import psutil
+                    if not psutil.pid_exists(self.parent_pid):
+                        raise ProcessLookupError("Parent process no longer exists")
                 time.sleep(self.parent_check_interval)
             except ProcessLookupError:
                 self.logger.debug(f"Parent process {self.parent_pid} died, shutting down workers...")
@@ -101,11 +108,14 @@ class WorkerManager:
         """
         self.logger.debug(f"Creating {self.num_workers} worker processes...")
 
-        # Create new process group
-        os.setpgrp()
-        self.process_group_id = os.getpgrp()
-
-        self.logger.debug(f"Starting worker processes in process group {self.process_group_id}")
+        # Create new process group (may not be permitted in restricted environments like Colab)
+        try:
+            os.setpgrp()
+            self.process_group_id = os.getpgrp()
+            self.logger.debug(f"Starting worker processes in process group {self.process_group_id}")
+        except PermissionError:
+            self.logger.debug("Cannot create process group (restricted environment) - will use individual process termination")
+            self.process_group_id = None
 
         worker_ids = []
 

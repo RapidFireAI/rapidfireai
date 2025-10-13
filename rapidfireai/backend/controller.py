@@ -9,7 +9,6 @@ from pathlib import Path
 from pprint import pformat
 from typing import Any
 
-import mlflow
 import torch
 from torch.utils.data import Dataset
 
@@ -20,6 +19,7 @@ from rapidfireai.db.rf_db import RfDb
 from rapidfireai.utils.automl_utils import get_flattened_config_leaf, get_runs
 from rapidfireai.utils.constants import (
     MLFLOW_URL,
+    TENSORBOARD_LOG_DIR,
     ControllerTask,
     ExperimentTask,
     RunEndedBy,
@@ -27,11 +27,12 @@ from rapidfireai.utils.constants import (
     RunStatus,
     TaskStatus,
     WorkerTask,
+    get_tracking_backend,
 )
 from rapidfireai.utils.datapaths import DataPath
 from rapidfireai.utils.exceptions import ControllerException, NoGPUsFoundException
 from rapidfireai.utils.logging import RFLogger
-from rapidfireai.utils.mlflow_manager import MLflowManager
+from rapidfireai.utils.metric_logger import create_metric_logger
 from rapidfireai.utils.serialize import encode_payload
 from rapidfireai.utils.shm_manager import SharedMemoryManager
 from rapidfireai.utils.worker_manager import WorkerManager
@@ -69,19 +70,26 @@ class Controller:
         self.logger.debug(f"Found {self.num_workers} workers/GPUs.")
 
         # initialize shared manager and registry, create shared memory manager instance
-        self.shm_manager: SharedMemoryManager = SharedMemoryManager(
-            name="controller-shm"
-        )
+        self.shm_manager: SharedMemoryManager = SharedMemoryManager(name="controller-shm")
         registry, process_lock = self.shm_manager.get_shm_objects()
 
         # create worker manager
-        self.worker_manager: WorkerManager = WorkerManager(
-            self.num_workers, registry, process_lock
-        )
+        self.worker_manager: WorkerManager = WorkerManager(self.num_workers, registry, process_lock)
 
-        # create mlflow manager
-        self.mlflow_manager: MLflowManager = MLflowManager(MLFLOW_URL)
-        self.mlflow_manager.get_experiment(self.experiment_name)
+        # create metric logger
+        # Initialize DataPath temporarily to get experiment path for tensorboard logs
+        experiment_path = self.db.get_experiments_path(self.experiment_name)
+        DataPath.initialize(self.experiment_name, experiment_path)
+        tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.experiments_path / "tensorboard_logs")
+
+        self.metric_logger = create_metric_logger(
+            backend=get_tracking_backend(),
+            mlflow_tracking_uri=MLFLOW_URL,
+            tensorboard_log_dir=tensorboard_log_dir,
+        )
+        # Get experiment if using MLflow
+        if hasattr(self.metric_logger, "get_experiment"):
+            self.metric_logger.get_experiment(self.experiment_name)
 
         self.logger.debug("Controller initialized")
 
@@ -104,14 +112,12 @@ class Controller:
         for config_leaf in config_leafs:
             flattened_config = get_flattened_config_leaf(config_leaf)
             # print("flattened_config: ",flattened_config)
-            total_steps = self._get_total_step(
-                config_leaf, len_train_dataset, num_chunks
-            )
+            total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks)
 
             # get clone modify info
             warm_started_from = clone_modify_info.get("warm_started_from") if clone_modify_info else None
             cloned_from = clone_modify_info.get("cloned_from") if clone_modify_info else None
-            chunk_offset = clone_modify_info.get("chunk_offset",0) if clone_modify_info else 0
+            chunk_offset = clone_modify_info.get("chunk_offset", 0) if clone_modify_info else 0
 
             run_id = self.db.create_run(
                 config_leaf=config_leaf,
@@ -131,57 +137,44 @@ class Controller:
             try:
                 base_run_path = DataPath.base_run_path(run_id)
                 work_dir_path = DataPath.work_dir_path(base_run_path)
-                initial_checkpoint_path = DataPath.initial_checkpoint_path(
-                    base_run_path
-                )
+                initial_checkpoint_path = DataPath.initial_checkpoint_path(base_run_path)
                 final_checkpoint_path = DataPath.final_checkpoint_path(base_run_path)
-                intermediate_checkpoint_path = DataPath.intermediate_checkpoint_path(
-                    base_run_path
-                )
+                intermediate_checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path)
 
                 Path.mkdir(work_dir_path, parents=True, exist_ok=True)
                 Path.mkdir(initial_checkpoint_path, parents=True, exist_ok=True)
                 Path.mkdir(final_checkpoint_path, parents=True, exist_ok=True)
                 Path.mkdir(intermediate_checkpoint_path, parents=True, exist_ok=True)
             except (PermissionError, OSError) as e:
-                raise ControllerException(
-                    f"Failed to create required Run DataPath directories: {e}"
-                ) from e
+                raise ControllerException(f"Failed to create required Run DataPath directories: {e}") from e
 
-            # create new MlFlow run
+            # create new tracking run
             try:
-                # create new MlFlow run and get the mlflow_run_id
-                mlflow_run_id = self.mlflow_manager.create_run(str(run_id))
+                # create new tracking run and get the mlflow_run_id
+                mlflow_run_id = self.metric_logger.create_run(str(run_id))
 
-                # populate MLFlow with model config info
+                # populate tracking backend with model config info
                 for key, value in flattened_config.items():
-                    self.mlflow_manager.log_param(mlflow_run_id, key, value)
+                    self.metric_logger.log_param(mlflow_run_id, key, value)
                 if warm_started_from:
-                    self.mlflow_manager.log_param(
-                        mlflow_run_id, "warm-start", str(warm_started_from)
-                    )
+                    self.metric_logger.log_param(mlflow_run_id, "warm-start", str(warm_started_from))
                 if cloned_from:
-                    self.mlflow_manager.log_param(
-                        mlflow_run_id, "parent-run", str(cloned_from)
-                    )
-                self.logger.debug(
-                    f"Populated MLFlow with model config info for run {run_id}."
-                )
+                    self.metric_logger.log_param(mlflow_run_id, "parent-run", str(cloned_from))
+                self.logger.debug(f"Populated MLFlow with model config info for run {run_id}.")
                 self.db.set_run_details(
                     run_id=run_id,
                     mlflow_run_id=mlflow_run_id,
                     flattened_config=flattened_config,
                 )
-            except mlflow.exceptions.MlflowException as e:
-                msg = f"Error creating new MLFlow run for run {run_id} - {e}."
+            except Exception as e:
+                # Catch any metric logger exceptions (MLflow, TensorBoard, etc.)
+                msg = f"Error creating new tracking run for run {run_id} - {e}."
                 print(msg)
-                self.mlflow_manager.end_run(mlflow_run_id)
+                self.metric_logger.end_run(mlflow_run_id)
                 self.logger.error(msg, exc_info=True)
 
         total_runs = len(runs)
-        self.logger.info(
-            f"Created {total_runs} runs - \n{pformat(runs, indent=4, width=120)}"
-        )
+        self.logger.info(f"Created {total_runs} runs - \n{pformat(runs, indent=4, width=120)}")
         self.logger.debug(f"Got {total_runs} runs for {source.value}.")
 
         # set experiment task to run_fit
@@ -195,24 +188,17 @@ class Controller:
 
         # check if there are any other runs with the same base model
         base_model_name = self.db.get_run(run_id)["config_leaf"]["model_name"]
-        relevant_runs = self.db.get_runs_by_status(
-            [RunStatus.ONGOING, RunStatus.NEW, RunStatus.STOPPED]
-        )
+        relevant_runs = self.db.get_runs_by_status([RunStatus.ONGOING, RunStatus.NEW, RunStatus.STOPPED])
 
         # get shared object types to delete - if no other runs are using it
         delete_shared_objects = True
         for r_run_id, r_run_details in relevant_runs.items():
-            if (
-                r_run_details["config_leaf"]["model_name"] == base_model_name
-                and r_run_id != run_id
-            ):
+            if r_run_details["config_leaf"]["model_name"] == base_model_name and r_run_id != run_id:
                 delete_shared_objects = False
                 break
 
         # delete model object from shared memory
-        self.shm_manager.delete_model_object(
-            run_id, base_model_name if delete_shared_objects else None
-        )
+        self.shm_manager.delete_model_object(run_id, base_model_name if delete_shared_objects else None)
 
     def _process_interactive_control(
         self,
@@ -237,9 +223,7 @@ class Controller:
                     status=RunStatus.STOPPED,
                     ended_by=RunEndedBy.INTERACTIVE_CONTROL,
                 )
-                self.db.set_ic_ops_task_status(
-                    run_state["task_id"], TaskStatus.COMPLETED
-                )
+                self.db.set_ic_ops_task_status(run_state["task_id"], TaskStatus.COMPLETED)
                 self.ic_logger.info(f"Stopping run {run_id} by Interactive Control")
             elif run_state["status"] == RunStatus.DELETED:
                 # process deleted tasks
@@ -249,16 +233,14 @@ class Controller:
 
                 # delete run from MLFlow
                 mlflow_run_id = self.db.get_run(run_id)["mlflow_run_id"]
-                self.mlflow_manager.delete_run(mlflow_run_id)
+                self.metric_logger.delete_run(mlflow_run_id)
                 # mark run as deleted
                 self.db.set_run_details(
                     run_id=run_id,
                     status=RunStatus.DELETED,
                     ended_by=RunEndedBy.INTERACTIVE_CONTROL,
                 )
-                self.db.set_ic_ops_task_status(
-                    run_state["task_id"], TaskStatus.COMPLETED
-                )
+                self.db.set_ic_ops_task_status(run_state["task_id"], TaskStatus.COMPLETED)
                 self.ic_logger.info(f"Deleting run {run_id} by Interactive Control")
             elif run_state["status"] == RunStatus.ONGOING:
                 # process ongoing tasks
@@ -267,15 +249,11 @@ class Controller:
                     status=RunStatus.ONGOING,
                     ended_by="",
                 )
-                self.db.set_ic_ops_task_status(
-                    run_state["task_id"], TaskStatus.COMPLETED
-                )
+                self.db.set_ic_ops_task_status(run_state["task_id"], TaskStatus.COMPLETED)
                 self.ic_logger.info(f"Resuming run {run_id} by Interactive Control")
             elif run_state["status"] == RunStatus.COMPLETED:
                 # process completed tasks
-                self.logger.warning(
-                    f"Run {run_id} is already completed. Skipping Interactive Control task."
-                )
+                self.logger.warning(f"Run {run_id} is already completed. Skipping Interactive Control task.")
                 self.db.set_ic_ops_task_status(run_state["task_id"], TaskStatus.SKIPPED)
             else:
                 raise ValueError(f"Unsupported run status {run_state['status']}")
@@ -291,9 +269,7 @@ class Controller:
             # add additional_kwargs to config_leaf if it exists in the parent run
             parent_run_details = self.db.get_run(parent_run_id)
             if "additional_kwargs" in parent_run_details["config_leaf"]:
-                config_leaf["additional_kwargs"] = parent_run_details["config_leaf"][
-                    "additional_kwargs"
-                ]
+                config_leaf["additional_kwargs"] = parent_run_details["config_leaf"]["additional_kwargs"]
 
             # create model for the new run
             try:
@@ -311,7 +287,9 @@ class Controller:
                     )
                 elif ic_op == ControllerTask.IC_CLONE_MODIFY_WARM:
                     # calculate clone chunk offset
-                    effective_batch_size = parent_run_details["config_leaf"]["training_args"].get("per_device_train_batch_size", 1) * parent_run_details["config_leaf"]["training_args"].get("gradient_accumulation_steps", 1)
+                    effective_batch_size = parent_run_details["config_leaf"]["training_args"].get(
+                        "per_device_train_batch_size", 1
+                    ) * parent_run_details["config_leaf"]["training_args"].get("gradient_accumulation_steps", 1)
                     chunker = DatasetChunks(
                         len_train_dataset,
                         num_chunks,
@@ -342,12 +320,8 @@ class Controller:
                 )
             except Exception as e:
                 self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.FAILED)
-                self.ic_logger.error(
-                    f"Error creating model for run {parent_run_id}: {e}"
-                )
-                raise ControllerException(
-                    f"Error creating model for run {parent_run_id}: {e}"
-                ) from e
+                self.ic_logger.error(f"Error creating model for run {parent_run_id}: {e}")
+                raise ControllerException(f"Error creating model for run {parent_run_id}: {e}") from e
 
     def _process_interm_ic_ops_states(
         self,
@@ -376,11 +350,7 @@ class Controller:
             if is_clone_modify_task:
                 # clone_modify tasks
                 # get latest run state
-                run_status = (
-                    run_states[run_id]["status"]
-                    if run_id in run_states
-                    else self.db.get_run(run_id)["status"]
-                )
+                run_status = run_states[run_id]["status"] if run_id in run_states else self.db.get_run(run_id)["status"]
 
                 # track clone_modify tasks only for non-deleted runs
                 if run_status != RunStatus.DELETED:
@@ -388,9 +358,7 @@ class Controller:
                     self.ic_logger.info(f"Added {task['ic_op']} task for run {run_id}.")
                 else:
                     self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
-                    self.ic_logger.warning(
-                        f"Skipping {task['ic_op']} task for deleted run {run_id}."
-                    )
+                    self.ic_logger.warning(f"Skipping {task['ic_op']} task for deleted run {run_id}.")
             else:
                 # Non clone_modify tasks
                 if run_id not in run_states:
@@ -407,32 +375,21 @@ class Controller:
                     ControllerTask.IC_STOP,
                 ]:
                     # ignore RESUME/STOP tasks for completed runs
-                    self.ic_logger.warning(
-                        f"Ignoring RESUME/STOP task for run {run_id} as it is already completed"
-                    )
+                    self.ic_logger.warning(f"Ignoring RESUME/STOP task for run {run_id} as it is already completed")
                     self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
-                elif (
-                    current_status == RunStatus.FAILED
-                    and task["ic_op"] != ControllerTask.IC_DELETE
-                ):
+                elif current_status == RunStatus.FAILED and task["ic_op"] != ControllerTask.IC_DELETE:
                     # ignore all tasks except DELETE for failed runs
-                    self.ic_logger.warning(
-                        f"Ignoring task {task['ic_op'].value} for failed run {run_id}"
-                    )
+                    self.ic_logger.warning(f"Ignoring task {task['ic_op'].value} for failed run {run_id}")
                     self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
                 elif current_status == RunStatus.DELETED:
                     # ignore all tasks for deleted runs
-                    self.ic_logger.warning(
-                        f"Ignoring task {task['ic_op'].value} for deleted run {run_id}"
-                    )
+                    self.ic_logger.warning(f"Ignoring task {task['ic_op'].value} for deleted run {run_id}")
                     self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
                 else:
                     # valid ic_op for this run
                     # mark prev task as completed
                     if run_states[run_id]["task_id"] is not None:
-                        self.db.set_ic_ops_task_status(
-                            run_states[run_id]["task_id"], TaskStatus.COMPLETED
-                        )
+                        self.db.set_ic_ops_task_status(run_states[run_id]["task_id"], TaskStatus.COMPLETED)
 
                     # add new task to run states
                     if task["ic_op"] == ControllerTask.IC_STOP:
@@ -445,26 +402,20 @@ class Controller:
                         updated_status = RunStatus.ONGOING
                         info_msg = f"Received RESUME task for run {run_id}"
                     else:
-                        self.db.set_ic_ops_task_status(
-                            task["task_id"], TaskStatus.FAILED
-                        )
+                        self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.FAILED)
                         raise ValueError(f"Unsupported task {task['ic_op']}")
                     run_states[run_id].update(
                         {
                             "task_id": task["task_id"],
                             "task": task["ic_op"],
-                            "status": (
-                                updated_status if updated_status else current_status
-                            ),
+                            "status": (updated_status if updated_status else current_status),
                         }
                     )
                     self.ic_logger.info(info_msg)
 
         return run_states, clone_modify_tasks
 
-    def _get_total_step(
-        self, config_leaf: dict[str, Any], len_train_dataset: int, num_chunks: int
-    ) -> int:
+    def _get_total_step(self, config_leaf: dict[str, Any], len_train_dataset: int, num_chunks: int) -> int:
         """Get the total number of steps for a run."""
         num_train_epochs = config_leaf["training_args"].get("num_train_epochs", 1)
 
@@ -474,25 +425,20 @@ class Controller:
             # ceil to nearest chunk multiple
             total_steps = config_leaf["training_args"]["max_steps"]
         elif num_train_epochs:
-            per_device_train_batch_size = config_leaf["training_args"].get(
-                "per_device_train_batch_size", 1
-            )
-            gradient_accumulation_steps = config_leaf["training_args"].get(
-                "gradient_accumulation_steps", 1
-            )
+            per_device_train_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1)
+            gradient_accumulation_steps = config_leaf["training_args"].get("gradient_accumulation_steps", 1)
             len_dataloader = math.ceil(len_train_dataset / per_device_train_batch_size)
             num_update_steps_per_epoch = max(
-                len_dataloader // gradient_accumulation_steps
-                + int(len_dataloader % gradient_accumulation_steps > 0),
+                len_dataloader // gradient_accumulation_steps + int(len_dataloader % gradient_accumulation_steps > 0),
                 1,
             )
             total_steps = math.ceil(num_train_epochs * num_update_steps_per_epoch)
 
             if config_leaf.get("trainer_type", "SFT") == "GRPO":
                 num_generations = config_leaf["training_args"].get("num_generations", 8)
-                total_steps = (
-                    num_generations * len_train_dataset * num_train_epochs
-                ) // (gradient_accumulation_steps * per_device_train_batch_size)
+                total_steps = (num_generations * len_train_dataset * num_train_epochs) // (
+                    gradient_accumulation_steps * per_device_train_batch_size
+                )
         return total_steps
 
     def run_fit(
@@ -508,9 +454,7 @@ class Controller:
 
         # set experiment task to create models
         self.db.set_experiment_current_task(ExperimentTask.CREATE_MODELS)
-        self.logger.debug(
-            f"Set experiment task to {ExperimentTask.CREATE_MODELS.value}."
-        )
+        self.logger.debug(f"Set experiment task to {ExperimentTask.CREATE_MODELS.value}.")
 
         # save train and eval dataset objects to a file for workers to load
         try:
@@ -595,10 +539,7 @@ class Controller:
                     )
 
                     # skip if task is the same as previous iteration (no change in status) or run is not active
-                    if (
-                        current_task_tuple == prev_task_tuple
-                        or worker_task["run_id"] not in scheduler.run_ids
-                    ):
+                    if current_task_tuple == prev_task_tuple or worker_task["run_id"] not in scheduler.run_ids:
                         continue
 
                     if worker_task["status"] == TaskStatus.COMPLETED:
@@ -611,9 +552,7 @@ class Controller:
                     run_id = worker_task["run_id"]
                     chunk_id = worker_task["chunk_id"]
                     run_details = all_run_details[run_id]
-                    self.logger.debug(
-                        f"Completed task: run {run_id}, chunk {chunk_id} on worker {worker_id}"
-                    )
+                    self.logger.debug(f"Completed task: run {run_id}, chunk {chunk_id} on worker {worker_id}")
                     self.logger.info(
                         f"Run {run_id} completed steps - {run_details['completed_steps']}/{run_details['total_steps']}"
                     )
@@ -635,11 +574,7 @@ class Controller:
 
                     # Update progress
                     progress_percentage = (
-                        (
-                            run_details["completed_steps"]
-                            / run_details["total_steps"]
-                            * 100
-                        )
+                        (run_details["completed_steps"] / run_details["total_steps"] * 100)
                         if run_details["total_steps"] > 0
                         else 0
                     )
@@ -660,16 +595,11 @@ class Controller:
                         )
                     # Check if run has completed only current epoch (hasn't reached total_steps yet)
                     elif (
-                        new_chunks_visited == num_chunks
-                        and run_details["completed_steps"] < run_details["total_steps"]
+                        new_chunks_visited == num_chunks and run_details["completed_steps"] < run_details["total_steps"]
                     ):
                         scheduler.reset_run(run_id)
-                        self.db.set_run_details(
-                            run_id=run_id, num_chunks_visited_curr_epoch=0
-                        )
-                        self.logger.info(
-                            f"Run {run_id} has completed epoch ({new_chunks_visited}/{num_chunks} chunks)"
-                        )
+                        self.db.set_run_details(run_id=run_id, num_chunks_visited_curr_epoch=0)
+                        self.logger.info(f"Run {run_id} has completed epoch ({new_chunks_visited}/{num_chunks} chunks)")
 
                 # Check for failed runs and update scheduler, local state, shm
                 for worker_task in failed_tasks:
@@ -685,12 +615,8 @@ class Controller:
 
                 # Process interactive control tasks (this fetches latest run states internally)
                 try:
-                    currently_scheduled_runs = list(
-                        scheduler.worker_running_current_run.values()
-                    )
-                    run_states, clone_modify_tasks = self._process_interm_ic_ops_states(
-                        currently_scheduled_runs
-                    )
+                    currently_scheduled_runs = list(scheduler.worker_running_current_run.values())
+                    run_states, clone_modify_tasks = self._process_interm_ic_ops_states(currently_scheduled_runs)
                     self._process_interactive_control(
                         run_states,
                         clone_modify_tasks,
@@ -699,9 +625,7 @@ class Controller:
                         num_chunks,
                     )
                 except Exception as e:
-                    raise ControllerException(
-                        f"Error processing interactive control tasks: {e}"
-                    ) from e
+                    raise ControllerException(f"Error processing interactive control tasks: {e}") from e
 
                 # fetch latest run states again (post IC ops states)
                 all_run_details = self.db.get_all_runs()
@@ -715,8 +639,7 @@ class Controller:
                         self.logger.debug(f"Added run {run_id} to scheduler with {chunks_visited} chunks visited")
                     # remove inactive runs from scheduler
                     elif (
-                        run_details["status"] in (RunStatus.STOPPED, RunStatus.DELETED)
-                        and run_id in scheduler.run_ids
+                        run_details["status"] in (RunStatus.STOPPED, RunStatus.DELETED) and run_id in scheduler.run_ids
                     ):
                         scheduler.remove_run(run_id)
                         self.logger.debug(f"Removed run {run_id} from scheduler")
@@ -729,9 +652,7 @@ class Controller:
 
                 # Check termination condition
                 if run_id is None and worker_id is None and chunk_id is None:
-                    self.logger.info(
-                        "Scheduler indicates all runs have completed all chunks"
-                    )
+                    self.logger.info("Scheduler indicates all runs have completed all chunks")
                     all_done = True
                     break
 
@@ -753,9 +674,7 @@ class Controller:
                     chunk_id,
                     config_options={"create_model_fn": create_model_fn},
                 )
-                self.logger.debug(
-                    f"Scheduled run {run_id} on worker {worker_id} for chunk {chunk_id}"
-                )
+                self.logger.debug(f"Scheduled run {run_id} on worker {worker_id} for chunk {chunk_id}")
 
                 # Small delay
                 time.sleep(1)
