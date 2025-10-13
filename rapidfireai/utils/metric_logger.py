@@ -111,9 +111,6 @@ class MLflowMetricLogger(MetricLogger):
         Args:
             tracking_uri: MLflow tracking server URI
         """
-        print(f"[DEBUG MLflowMetricLogger.__init__] Creating MLflow logger with URI: {tracking_uri}")
-        import traceback
-        print(f"[DEBUG MLflowMetricLogger.__init__] Called from:\n{''.join(traceback.format_stack()[-3:-1])}")
         # Lazy import to avoid connection attempts in tensorboard-only mode
         from rapidfireai.utils.mlflow_manager import MLflowManager
         self.mlflow_manager = MLflowManager(tracking_uri)

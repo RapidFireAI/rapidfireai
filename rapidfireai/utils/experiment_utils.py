@@ -85,9 +85,7 @@ class ExperimentUtils:
         # Clear any existing MLflow context before starting new experiment
         # Only if using MLflow backend
         tracking_backend = get_tracking_backend()
-        print(f"[DEBUG create_experiment] Tracking backend: {tracking_backend}")
         if tracking_backend in ["mlflow", "both"]:
-            print("[DEBUG create_experiment] Importing mlflow...")
             import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
             try:
                 if mlflow.active_run():
@@ -214,9 +212,7 @@ class ExperimentUtils:
 
         # Clear MLflow context only if using MLflow backend
         tracking_backend = get_tracking_backend()
-        print(f"[DEBUG end_experiment] Tracking backend: {tracking_backend}")
         if tracking_backend in ["mlflow", "both"]:
-            print("[DEBUG end_experiment] Importing mlflow and MLflowManager...")
             import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
             from rapidfireai.utils.mlflow_manager import MLflowManager
             try:
@@ -357,9 +353,7 @@ class ExperimentUtils:
             # Create MLflow experiment only if using MLflow backend
             mlflow_experiment_id = None
             tracking_backend = get_tracking_backend()
-            print(f"[DEBUG _create_experiment_internal] Tracking backend: {tracking_backend}")
             if tracking_backend in ["mlflow", "both"]:
-                print("[DEBUG _create_experiment_internal] Importing mlflow and MLflowManager...")
                 import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
                 from rapidfireai.utils.mlflow_manager import MLflowManager
                 try:
