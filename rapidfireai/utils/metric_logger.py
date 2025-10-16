@@ -243,11 +243,11 @@ class TensorBoardMetricLogger(MetricLogger):
 
     def delete_run(self, run_id: str) -> None:
         """
-        Delete a TensorBoard run by moving its directory (soft delete).
+        Delete a TensorBoard run by moving its directory outside the log tree (soft delete).
 
-        This is a soft delete - the data is moved to a '.deleted' subdirectory
-        and can be manually recovered if needed. TensorBoard will stop showing
-        the run after its next periodic scan (usually ~30 seconds).
+        This is a soft delete - the data is moved to a sibling '{log_dir}_deleted' directory
+        outside TensorBoard's scan path, so it won't appear in the UI. Data can be manually
+        recovered if needed by moving it back to the log_dir.
 
         Args:
             run_id: Run identifier (directory name)
@@ -260,10 +260,11 @@ class TensorBoardMetricLogger(MetricLogger):
             self.writers[run_id].close()
             del self.writers[run_id]
 
-        # Move the run directory to .deleted folder
+        # Move the run directory to sibling deleted folder (outside log_dir tree)
         run_log_dir = self.log_dir / run_id
         if run_log_dir.exists() and run_log_dir.is_dir():
-            deleted_dir = self.log_dir / ".deleted"
+            # Create deleted directory as sibling, not child, of log_dir
+            deleted_dir = self.log_dir.parent / f"{self.log_dir.name}_deleted"
             deleted_dir.mkdir(exist_ok=True)
 
             # Add timestamp to avoid name collisions
