@@ -138,7 +138,21 @@ class Dispatcher:
         """Get a run for the UI"""
         try:
             data = request.get_json()
-            result = self.db.get_run(data["run_id"])
+            run_id = data["run_id"]
+
+            # Get experiment_id from experiment_name if provided, otherwise use running experiment
+            experiment_id = None
+            if "experiment_name" in data and data["experiment_name"]:
+                # Look up experiment_id from experiment_name
+                exp_info = self.db.get_running_experiment()  # Fallback
+                # TODO: Add method to get experiment by name if needed
+                # For now, we'll use the provided experiment_name to get its ID
+            else:
+                # Use the running experiment by default
+                exp_info = self.db.get_running_experiment()
+                experiment_id = exp_info["experiment_id"]
+
+            result = self.db.get_run(run_id, experiment_id=experiment_id)
             if not result:
                 return jsonify({"error": "Run not found"}), 404
 
@@ -157,7 +171,7 @@ class Dispatcher:
                 result["config_leaf"].pop("reward_funcs", None)
 
             safe_result = {
-                "run_id": data["run_id"],
+                "run_id": run_id,
                 "status": result["status"].value,
                 "mlflow_run_id": result["mlflow_run_id"],
                 "config": result["config_leaf"],
