@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS experiments (
 -- Runs table
 CREATE TABLE IF NOT EXISTS runs (
     run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id INTEGER NOT NULL,
     status TEXT NOT NULL,
     mlflow_run_id TEXT,
     flattened_config TEXT DEFAULT '{}',
@@ -25,7 +26,8 @@ CREATE TABLE IF NOT EXISTS runs (
     source TEXT DEFAULT '',
     ended_by TEXT DEFAULT '',
     warm_started_from INTEGER DEFAULT NULL,
-    cloned_from INTEGER DEFAULT NULL
+    cloned_from INTEGER DEFAULT NULL,
+    FOREIGN KEY (experiment_id) REFERENCES experiments (experiment_id)
 );
 
 -- Interactive Control table

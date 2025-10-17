@@ -120,6 +120,7 @@ class Controller:
             chunk_offset = clone_modify_info.get("chunk_offset", 0) if clone_modify_info else 0
 
             run_id = self.db.create_run(
+                experiment_id=self.experiment_id,
                 config_leaf=config_leaf,
                 status=RunStatus.NEW,
                 completed_steps=0,
