@@ -241,6 +241,38 @@ class TensorBoardMetricLogger(MetricLogger):
         """
         return {}
 
+    def delete_run(self, run_id: str) -> None:
+        """
+        Delete a TensorBoard run by moving its directory outside the log tree (soft delete).
+
+        This is a soft delete - the data is moved to a sibling '{log_dir}_deleted' directory
+        outside TensorBoard's scan path, so it won't appear in the UI. Data can be manually
+        recovered if needed by moving it back to the log_dir.
+
+        Args:
+            run_id: Run identifier (directory name)
+        """
+        import shutil
+        import time
+
+        # Close and remove writer if active
+        if run_id in self.writers:
+            self.writers[run_id].close()
+            del self.writers[run_id]
+
+        # Move the run directory to sibling deleted folder (outside log_dir tree)
+        run_log_dir = self.log_dir / run_id
+        if run_log_dir.exists() and run_log_dir.is_dir():
+            # Create deleted directory as sibling, not child, of log_dir
+            deleted_dir = self.log_dir.parent / f"{self.log_dir.name}_deleted"
+            deleted_dir.mkdir(exist_ok=True)
+
+            # Add timestamp to avoid name collisions
+            timestamp = int(time.time())
+            destination = deleted_dir / f"{run_id}_{timestamp}"
+
+            shutil.move(str(run_log_dir), str(destination))
+    
     def __del__(self):
         """Clean up all writers on deletion."""
         for writer in self.writers.values():
@@ -298,8 +330,9 @@ class DualMetricLogger(MetricLogger):
         return self.mlflow_logger.get_run_metrics(run_id)
 
     def delete_run(self, run_id: str) -> None:
-        """Delete run from MLflow (TensorBoard logs remain on disk)."""
+        """Delete run from both MLflow and TensorBoard."""
         self.mlflow_logger.delete_run(run_id)
+        self.tensorboard_logger.delete_run(run_id)
 
     def clear_context(self) -> None:
         """Clear context in both backends."""

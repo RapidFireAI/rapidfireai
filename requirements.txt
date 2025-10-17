@@ -1,7 +1,7 @@
 # version 0.10.2
 
 # ml
-pandas>=2.3.1
+pandas>=2.0.0,<2.3.0  # Colab compatibility (2.2.2) and cudf constraint
 torch>=2.7.0
 transformers>=4.55.2
 peft>=0.17.0
@@ -18,9 +18,10 @@ mlflow>=3.2.0
 pytest>=8.4.1
 flask>=3.1.1
 flask-cors>=6.0.1
-requests>=2.32.5
+requests>=2.32.0  # Relaxed for Colab (2.32.4)
 loguru>=0.7.3
-ipython>=8.37.0
+ipython>=7.34.0  # Colab compatibility (7.34.0)
 jupyter>=1.1.1
-ipywidgets>=7.3.4
+ipywidgets>=7.3.4,<9.0.0
 uv>=0.8.14
+tensorboard>=2.11.0
