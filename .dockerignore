@@ -1,0 +1,77 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+.eggs
+dist
+build
+*.egg
+.venv
+venv
+env
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# RapidFire AI specific
+rapidfire_experiments
+mlruns
+logs
+tutorial_notebooks
+
+# Docker
+Dockerfile
+Dockerfile-kami
+docker-compose.yml
+docker-compose.prod.yml
+.dockerignore
+
+# Documentation
+*.md
+!README.md
+docs/
+images/
+
+# Tests
+tests/
+.pytest_cache
+.coverage
+htmlcov
+
+# Development scripts
+*.sh
+!rapidfireai/start.sh
+!rapidfireai/start_dev.sh
+
+# Node (will be built in multi-stage)
+node_modules
+.yarn/cache
+.yarn/install-state.gz
+
+# Misc
+.env
+.env.local
+*.bak
+*.tmp
+

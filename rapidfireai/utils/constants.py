@@ -44,8 +44,8 @@ class LogType(Enum):
 class DispatcherConfig:
     """Class to manage the dispatcher configuration"""
 
-    HOST: str = "127.0.0.1"
-    PORT: int = 8081
+    HOST: str = os.getenv("RF_API_HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("RF_API_PORT", "8081"))
 
 
 # Database Constants

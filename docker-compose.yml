@@ -1,28 +1,54 @@
 version: '3.8'
 
 services:
-  rapidfire-oss:
-    build: .
-    ports:
-      - "5002:5002"  # MLflow
-      - "8081:8081"  # API Server
-      - "3000:3000"  # Frontend
-    volumes:
-      - ./mlruns:/app/mlruns
-      - ./db:/root/db
-      - ./logs:/app/logs
+  rapidfireai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rapidfireai:latest
+    container_name: rapidfireai
+    
+    # GPU support - requires nvidia-docker
+    runtime: nvidia
+    
     environment:
+      # Service ports (defaults shown, can customize)
       - RF_MLFLOW_PORT=5002
       - RF_MLFLOW_HOST=0.0.0.0
       - RF_FRONTEND_PORT=3000
       - RF_FRONTEND_HOST=0.0.0.0
       - RF_API_PORT=8081
       - RF_API_HOST=0.0.0.0
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5002 && curl -f http://localhost:3000"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s 
       
+      # Data paths
+      - RF_EXPERIMENT_PATH=/app/rapidfire_experiments
+      - RF_TUTORIAL_PATH=/app/tutorial_notebooks
+      
+      # GPU configuration
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+    
+    ports:
+      - "3000:3000"   # Frontend Dashboard
+      - "5002:5002"   # MLflow Server
+      - "8081:8081"   # Dispatcher API
+    
+    volumes:
+      # Persist experiment data
+      - ./rapidfire_experiments:/app/rapidfire_experiments
+      - ./mlruns:/app/mlruns
+      - ./logs:/app/logs
+      
+      # Mount your datasets
+      - ./data:/app/data
+      
+      # Optional: Mount custom notebooks
+      - ./notebooks:/app/notebooks
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # GPU support for docker-compose (not Swarm)
+    # Note: Requires NVIDIA Container Toolkit installed
+    # For Docker Swarm, use the deploy.resources.reservations syntax instead
+

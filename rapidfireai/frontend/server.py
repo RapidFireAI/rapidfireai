@@ -30,4 +30,7 @@ def serve(path):
         return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
-    app.run(port=3000)
+    app.run(
+        host=os.getenv("RF_FRONTEND_HOST", "127.0.0.1"),
+        port=int(os.getenv("RF_FRONTEND_PORT", "3000"))
+    )

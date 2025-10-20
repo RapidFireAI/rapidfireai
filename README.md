@@ -63,6 +63,22 @@ rapidfireai start
 # open up example notebook and start experiment
 ```
 
+### Running with Docker
+
+For a containerized deployment with GPU support:
+
+```bash
+# Prerequisites: Docker + NVIDIA Container Toolkit
+# Install toolkit: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+
+# Start RapidFire AI
+docker-compose up -d
+
+# Access the dashboard at http://localhost:3000
+```
+
+All experiment data persists in local volumes (`./rapidfire_experiments`, `./mlruns`, `./logs`).
+
 ### Running tutorial notebooks
 
 ```bash

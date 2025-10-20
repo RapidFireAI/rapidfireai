@@ -1,0 +1,42 @@
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+# Avoid interactive prompts in non-interactive build environments
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+ENV HOME=/workspace
+
+# Ensure HOME exists and is writable for any global tooling (e.g., git config)
+RUN mkdir -p "$HOME" && chmod 777 "$HOME"
+
+# Python 3.12
+RUN apt-get update && apt-get install -y \
+    software-properties-common wget ca-certificates \
+ && add-apt-repository ppa:deadsnakes/ppa \
+&& apt-get update && apt-get install -y \
+    python3.12 python3.12-venv python3.12-dev python3-pip git \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
+
+WORKDIR /app
+
+# venv
+RUN python3.12 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install RapidFire AI (package includes dependencies) and utilities
+RUN pip install --upgrade pip \
+ && pip install rapidfireai==0.10.1 gradio huggingface-hub
+
+# Initialize RapidFire AI once (installs specific GPU deps per docs)
+RUN rapidfireai init || true
+
+# Ensure the virtualenv and installed packages are writable by the runtime user
+RUN chown -R 1000:1000 /opt/venv
+
+COPY . .
+
+EXPOSE 3000 5002 8080 7860
+
+# Start the Gradio status UI (it will start RapidFire services itself)
+CMD python3 app.py
