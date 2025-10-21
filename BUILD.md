@@ -34,12 +34,12 @@ rm -rf dist/ *.egg-info/ .eggs/ && python -m build
 rsync -av dist/ user:~/rapidfire
 
 # from directory where dist/ folder is
-pip install rapidfireai-0.10.2-py3-none-any.whl
+pip install rapidfireai-0.11.1-py3-none-any.whl
 
 export PATH="$HOME/.local/bin:$PATH"
 
 rapidfireai --version
-# RapidFire AI 0.10.2
+# RapidFire AI 0.11.1
 
 # install specific dependencies and initialize rapidfire
 rapidfireai init
@@ -79,12 +79,12 @@ The script will:
 - Commit the changes
 - Create a git tag for the new version
 
-#### Manual Release Candidate Deployment
+### Manual Release Candidate Deployment
 The project includes a GitHub Action that builds and deploys to PyPI when manually triggered:
 
-1. Go to: [Manual Deploye Action](https://github.com/RapidFireAI/rapidfireai/actions/workflows/manual-deploy.yml)
+1. Go to: [Manual Deploy Action](https://github.com/RapidFireAI/rapidfireai/actions/workflows/manual-deploy.yml)
 2. Click grey `Run workflow` button
-3. Enter desired version number starting with the letter `v` and ending with the letters `rc` i.e. v1.0.1rc  there is should be no number
+3. Enter desired version number starting with the letter `v` and ending with the letters `rc` i.e. v1.0.1rc  there should be no number
    after the rc letters, the release candidate number will be determined by existing rc versions if any.
 4. Optionally check `Build only` to not upload to PyPI.
 5. Click green `Run Workflow` button
@@ -102,7 +102,7 @@ The above actions will do the following:
 ***Note: Only after releasing final version, delete all rc tags on GitHub, delete all rc release branches, and delete rc builds on pypi.org
 
 
-#### Automated TestPyPI Deployment
+### Automated TestPyPI Deployment
 The project includes a GitHub Action that automatically builds and deploys to TestPyPI when you push a version tag:
 
 1. **Tag a branch**: Tag the desired branch with v
@@ -113,7 +113,7 @@ The project includes a GitHub Action that automatically builds and deploys to Te
 python -m twine upload --repository testpypi dist/*
 ```
 
-#### Semi-Automated PyPI Release Deployment
+### Semi-Automated PyPI Release Deployment
 The project includes a GitHub Action that semi automatically builds and deploys to PyPI when you create a release:
 
 1. **Create a new branch**: Create a branch called `release/vX.Y.Z`, i.e. 
@@ -136,7 +136,7 @@ git push --set-upstream origin release/vX.Y.Z
 ```
 5. **Create/Approval for a PR**: Create and have approved a new PR
 6. **Merge PR**: After approval merge PR
-7. **Draft a new Release**: In [GitHub Releases](https://github.com/RapidFireAI/rapidfireai/releases) Draft a new release:
+7. **Draft Release**: On [GitHub Releases](https://github.com/RapidFireAI/rapidfireai/releases) Draft a new release:
 - **Create a new tag**: vX.Y.Z
 - **Set Title** to vX.Y.Z
 - **Generate release notes**
