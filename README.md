@@ -58,6 +58,10 @@ pip install rapidfireai
 rapidfireai init
 
 # start the rapidfire server
+# For Google Colab run:
+#   export RF_TRACKING_BACKEND=tensorboard
+#   rapidfireai start --colab
+# For standalone run:
 rapidfireai start
 
 # open up example notebook and start experiment
@@ -72,6 +76,9 @@ source .venv/bin/activate
 # https://huggingface.co/docs/hub/en/security-tokens
 pip install "huggingface-hub[cli]"
 hf auth login --token <your_token>
+
+# Due to current issue: https://github.com/huggingface/xet-core/issues/527
+pip uninstall -y hf-xet
 
 # open up example notebook from ./tutorial_notebooks and start experiment
 ```
@@ -200,6 +207,9 @@ pip3 install jupyter
 pip3 install "huggingface-hub[cli]"
 export PATH="$HOME/.local/bin:$PATH"
 hf auth login --token <your_token>
+
+# Due to current issue: https://github.com/huggingface/xet-core/issues/527
+pip uninstall -y hf-xet
 
 # checkout the main branch
 git checkout main
