@@ -13,6 +13,16 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.11.1]
+### Added
+- Support for Google Colab
+- Links for RapidFireAI documentation, GitHub, and Discord in notebooks
+- Support for Tensorboard, currently only Colab
+
+### Changes
+- Relaxed `pip` dependency versions
+
+
 ## [v0.10.2]
 ### Changes
 
