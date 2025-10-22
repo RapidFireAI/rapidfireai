@@ -106,6 +106,25 @@ class InteractiveController:
             ),
         )
 
+        # IC Ops history viewer
+        self.ic_ops_btn = widgets.Button(
+            description="View IC Ops History",
+            button_style="info",
+            tooltip="View all past Interactive Control Operations",
+            icon="history",
+        )
+        self.ic_ops_output = widgets.Output(
+            layout=widgets.Layout(
+                width="100%",
+                max_height="300px",
+                overflow_y="auto",
+                border="1px solid #ddd",
+                padding="10px",
+                margin="10px 0px",
+                display="none",  # Hidden by default
+            )
+        )
+
         # Experiment status display (live progress)
         # self.experiment_status = widgets.HTML(
         #     value='<div style="padding: 10px; background-color: #f8f9fa; border: 2px solid #dee2e6; border-radius: 5px;">'
@@ -127,6 +146,7 @@ class InteractiveController:
         self.clone_btn.on_click(lambda b: self._enable_clone_mode())
         self.submit_clone_btn.on_click(lambda b: self._handle_clone())
         self.cancel_clone_btn.on_click(lambda b: self._handle_cancel_clone())
+        self.ic_ops_btn.on_click(lambda b: self._toggle_ic_ops_history())
 
         # Auto-load run when dropdown selection changes
         self.run_selector.observe(self._on_run_selected, names="value")
@@ -266,7 +286,8 @@ class InteractiveController:
 
             # Update UI
             self._update_display()
-            self._show_message(f"Loaded run {run_id}", "success")
+            # NOTE: "Loaded run" notification suppressed to avoid overwriting more important notifications
+            # self._show_message(f"Loaded run {run_id}", "success")
 
             # Update experiment status
             # COMMENTED OUT
@@ -369,6 +390,47 @@ class InteractiveController:
         self._disable_clone_mode()
         self._show_message("Cancelled clone", "info")
 
+    def _toggle_ic_ops_history(self):
+        """Toggle IC Ops history display"""
+        if self.ic_ops_output.layout.display == "none":
+            # Show and fetch IC ops logs
+            self.ic_ops_output.layout.display = "block"
+            self.ic_ops_btn.description = "Hide IC Ops History"
+            self._fetch_ic_ops_logs()
+        else:
+            # Hide IC ops logs
+            self.ic_ops_output.layout.display = "none"
+            self.ic_ops_btn.description = "View IC Ops History"
+
+    def _fetch_ic_ops_logs(self):
+        """Fetch and display IC Ops logs"""
+        try:
+            response = requests.post(
+                f"{self.dispatcher_url}/dispatcher/get-ic-logs",
+                json={},
+                timeout=5,
+            )
+            response.raise_for_status()
+            logs = response.json()
+
+            # Clear previous output
+            self.ic_ops_output.clear_output()
+
+            with self.ic_ops_output:
+                if logs:
+                    print(f"{'=' * 80}")
+                    print(f"IC OPS HISTORY ({len(logs)} operations)")
+                    print(f"{'=' * 80}\n")
+                    for log in logs:
+                        print(log)
+                else:
+                    print("No IC Ops history found for this experiment.")
+
+        except requests.RequestException as e:
+            self.ic_ops_output.clear_output()
+            with self.ic_ops_output:
+                print(f"Error fetching IC Ops logs: {e}")
+
     def _enable_colab_widgets(self):
         """Enable custom widget manager for Google Colab"""
         try:
@@ -447,9 +509,17 @@ class InteractiveController:
             ]
         )
 
+        # IC Ops history section
+        ic_ops_section = widgets.VBox(
+            [
+                self.ic_ops_btn,
+                self.ic_ops_output,
+            ]
+        )
+
         # COMMENTED OUT - Displaying experiment status in cell
         # ui = widgets.VBox([header, self.experiment_status, self.status_message, selector_section, actions, config_section])
-        ui = widgets.VBox([header, self.status_message, selector_section, actions, config_section])
+        ui = widgets.VBox([header, self.status_message, selector_section, actions, config_section, ic_ops_section])
 
         display(ui)
 
