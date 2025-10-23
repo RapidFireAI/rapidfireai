@@ -62,13 +62,13 @@ rapidfireai --version
 
 # Replace YOUR_TOKEN with your actual Hugging Face token
 # https://huggingface.co/docs/hub/en/security-tokens
-huggingface-cli login --token YOUR_TOKEN
+hf auth login --token YOUR_TOKEN
 
 # Due to current issue: https://github.com/huggingface/xet-core/issues/527
 pip uninstall -y hf-xet
 
+# Install specific dependencies and initialize rapidfireai
 rapidfireai init
-# It will install specific dependencies and initialize rapidfireai
 
 # Start the rapidfireai server
 # For Google Colab run:
