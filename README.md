@@ -54,7 +54,6 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 pip install rapidfireai
-export PATH="$HOME/.local/bin:$PATH"
 
 rapidfireai --version
 # Verify it prints the following:
