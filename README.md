@@ -43,44 +43,47 @@ For additional context, see the overview: [RapidFire AI Overview](https://oss-do
 - [Python 3.12.x](https://www.python.org/downloads/)
 - [PyTorch 2.7.1+](https://pytorch.org/get-started/previous-versions/) with corresponding forward compatible prebuilt CUDA binaries
 
-### Installation/Starting
+### Install and Get Started
+
 
 ```bash
+# Ensure that python3 resolves to python3.12 if needed
+python3 --version  # must be 3.12.x
+
 python3 -m venv .venv
 source .venv/bin/activate
 
-# from pypi
 pip install rapidfireai
 
-# install specific dependencies and initialize rapidfire
-# Optionally set RF_TUTORIAL_PATH environment variable to sepecify
-# alternate location for copying tutorial notebooks to
-rapidfireai init
+rapidfireai --version
+# Verify it prints the following:
+# RapidFire AI 0.11.1
 
-# start the rapidfire server
-# For Google Colab run:
-#   export RF_TRACKING_BACKEND=tensorboard
-#   rapidfireai start --colab
-# For standalone run:
-rapidfireai start
-
-# open up example notebook and start experiment
-```
-
-### Running tutorial notebooks
-
-```bash
-source .venv/bin/activate
-
-# from replace <your_token> with your hugging face token
+# Replace YOUR_TOKEN with your actual Hugging Face token
 # https://huggingface.co/docs/hub/en/security-tokens
-pip install "huggingface-hub[cli]"
-hf auth login --token <your_token>
+hf auth login --token YOUR_TOKEN
 
 # Due to current issue: https://github.com/huggingface/xet-core/issues/527
 pip uninstall -y hf-xet
 
-# open up example notebook from ./tutorial_notebooks and start experiment
+# Install specific dependencies and initialize rapidfireai
+rapidfireai init
+
+# Start the rapidfireai server
+# For Google Colab run:
+#   export RF_TRACKING_BACKEND=tensorboard
+#   rapidfireai start --colab
+# For standalone run:
+
+rapidfireai start
+# It should print about 50 lines, including the following:
+# ...
+# RapidFire Frontend is ready
+# Open your browser and navigate to: http://0.0.0.0:3000
+# ...
+# Press Ctrl+C to stop all services
+
+# Open an example notebook from ./tutorial_notebooks and start experiment
 ```
 
 ### Troubleshooting
