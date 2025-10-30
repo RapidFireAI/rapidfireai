@@ -11,12 +11,12 @@ from typing import Any
 import pandas as pd
 from torch.utils.data import Dataset
 
-from rapidfireai.backend.controller import Controller
-from rapidfireai.db.rf_db import RfDb
-from rapidfireai.utils.constants import MLFLOW_URL
-from rapidfireai.utils.exceptions import ExperimentException
-from rapidfireai.utils.experiment_utils import ExperimentUtils
-from rapidfireai.utils.logging import RFLogger
+from rapidfireai.fit.backend.controller import Controller
+from rapidfireai.fit.db.rf_db import RfDb
+from rapidfireai.fit.utils.constants import MLFLOW_URL
+from rapidfireai.fit.utils.exceptions import ExperimentException
+from rapidfireai.fit.utils.experiment_utils import ExperimentUtils
+from rapidfireai.fit.utils.logging import RFLogger
 from rapidfireai.version import __version__
 
 # Note: MLflowManager is imported lazily in get_results() to avoid
@@ -179,7 +179,7 @@ class Experiment:
                 return pd.DataFrame(columns=["run_id", "step"])
 
             # Lazy import - only import when we actually have MLflow runs to fetch
-            from rapidfireai.utils.mlflow_manager import MLflowManager
+            from rapidfireai.fit.utils.mlflow_manager import MLflowManager
 
             mlflow_manager = MLflowManager(MLFLOW_URL)
 

@@ -84,17 +84,18 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 rapidfireai = [
-    "start.sh",
-    "dispatcher/*.py",
-    "frontend/build/**/*",
-    "frontend/server.py",
-    "frontend/proxy_middleware.py",
-    "ml/*.py",
-    "automl/*.py",
-    "backend/*.py",
-    "db/*.py",
-    "db/*.sql",
-    "utils/*.py",
+    "fit/start.sh",
+    "fit/start_dev.sh",
+    "fit/dispatcher/*.py",
+    "fit/frontend/build/**/*",
+    "fit/frontend/server.py",
+    "fit/frontend/proxy_middleware.py",
+    "fit/ml/*.py",
+    "fit/automl/*.py",
+    "fit/backend/*.py",
+    "fit/db/*.py",
+    "fit/db/*.sql",
+    "fit/utils/*.py",
     "../tutorial_notebooks/**/*",
 ]
 
