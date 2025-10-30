@@ -33,8 +33,10 @@ RF_PID_FILE="${RF_PID_FILE:=rapidfire_pids.txt}"
 
 # Directory paths for pip-installed package
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DISPATCHER_DIR="$SCRIPT_DIR/dispatcher"
-FRONTEND_DIR="$SCRIPT_DIR/frontend"
+# Navigate to rapidfireai/fit directory from setup/fit directory
+RAPIDFIRE_FIT_DIR="$SCRIPT_DIR/../../rapidfireai/fit"
+DISPATCHER_DIR="$RAPIDFIRE_FIT_DIR/dispatcher"
+FRONTEND_DIR="$RAPIDFIRE_FIT_DIR/frontend"
 
 RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
 RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}

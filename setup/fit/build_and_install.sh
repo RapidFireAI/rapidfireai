@@ -29,9 +29,16 @@ print_warning() {
     echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
 }
 
+# Get the project root directory (parent of setup/fit/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Change to project root directory
+cd "$PROJECT_ROOT"
+
 # Check if we're in the right directory
-if [[ ! -f "setup.py" ]] || [[ ! -f "pyproject.toml" ]]; then
-    print_error "This script must be run from the rapidfire-oss directory"
+if [[ ! -f "pyproject.toml" ]]; then
+    print_error "This script must be run from the rapidfireai directory (pyproject.toml not found)"
     exit 1
 fi
 
@@ -78,4 +85,4 @@ if command -v rapidfireai &> /dev/null; then
 else
     print_error "rapidfireai command not found in PATH"
     print_status "You may need to restart your shell or activate your virtual environment"
-fi 
+fi

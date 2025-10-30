@@ -85,13 +85,13 @@ update_pyproject_toml_file() {
     print_info "Updating pyproject.toml..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        sed -i '' "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+        sed -i '' "s/^version = \".*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/pyproject.toml"
     else
         # Linux
-        sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+        sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/pyproject.toml"
     fi
     # Verify the changes
-    UPDATED_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+    UPDATED_VERSION=$(grep '^version = ' "$PROJECT_ROOT/pyproject.toml" | sed 's/version = "\(.*\)"/\1/')
     if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
         print_error "Failed to update version in pyproject.toml"
         exit 1
@@ -101,21 +101,21 @@ update_pyproject_toml_file() {
 update_build_md_file() {
     local NEW_VERSION="$1"
     # Update BUILD.md if it has a version comment
-    if grep -q "^# RapidFire AI" BUILD.md; then
-        print_info "Updating BUILD.md version comment and wheel version..."
+    if grep -q "^# RapidFire AI" "$PROJECT_ROOT/docs/BUILD.md" 2>/dev/null; then
+        print_info "Updating docs/BUILD.md version comment and wheel version..."
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/^# RapidFire AI .*/# RapidFire AI $NEW_VERSION/" BUILD.md
-            sed -i '' "s/^pip install rapidfireai-.*/pip install rapidfireai-$NEW_VERSION-py3-none-any.whl/" BUILD.md
+            sed -i '' "s/^# RapidFire AI .*/# RapidFire AI $NEW_VERSION/" "$PROJECT_ROOT/docs/BUILD.md"
+            sed -i '' "s/^pip install rapidfireai-.*/pip install rapidfireai-$NEW_VERSION-py3-none-any.whl/" "$PROJECT_ROOT/docs/BUILD.md"
         else
-            sed -i "s/^# RapidFire AI .*/# RapidFire AI $NEW_VERSION/" BUILD.md
-            sed -i "s/^pip install rapidfireai-.*/pip install rapidfireai-$NEW_VERSION-py3-none-any.whl/" BUILD.md
+            sed -i "s/^# RapidFire AI .*/# RapidFire AI $NEW_VERSION/" "$PROJECT_ROOT/docs/BUILD.md"
+            sed -i "s/^pip install rapidfireai-.*/pip install rapidfireai-$NEW_VERSION-py3-none-any.whl/" "$PROJECT_ROOT/docs/BUILD.md"
         fi
-    fi
-    # Verify the changes
-    UPDATED_VERSION=$(grep '^pip install rapidfireai-' BUILD.md | sed 's/pip install rapidfireai-\(.*\)-py3-none-any.whl/\1/')
-    if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
-        print_error "Failed to update version in BUILD.md"
-        exit 1
+        # Verify the changes
+        UPDATED_VERSION=$(grep '^pip install rapidfireai-' "$PROJECT_ROOT/docs/BUILD.md" | sed 's/pip install rapidfireai-\(.*\)-py3-none-any.whl/\1/')
+        if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
+            print_error "Failed to update version in docs/BUILD.md"
+            exit 1
+        fi
     fi
 }
 
@@ -148,23 +148,23 @@ update_version_py_file() {
     print_info "Updating rapidfireai/version.py..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        sed -i '' "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" rapidfireai/version.py
+        sed -i '' "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" "$PROJECT_ROOT/rapidfireai/version.py"
         if [[ "$NEW_PATCH" =~ ^[0-9]+$ ]]; then
-            sed -i '' "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
+            sed -i '' "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" "$PROJECT_ROOT/rapidfireai/version.py"
         else
-            sed -i '' "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, \"$NEW_PATCH\")/" rapidfireai/version.py
+            sed -i '' "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, \"$NEW_PATCH\")/" "$PROJECT_ROOT/rapidfireai/version.py"
         fi
     else
         # Linux
-        sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" rapidfireai/version.py
+        sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" "$PROJECT_ROOT/rapidfireai/version.py"
         if [[ "$NEW_PATCH" =~ ^[0-9]+$ ]]; then
-            sed -i "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" rapidfireai/version.py
+            sed -i "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, $NEW_PATCH)/" "$PROJECT_ROOT/rapidfireai/version.py"
         else
-            sed -i "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, \"$NEW_PATCH\")/" rapidfireai/version.py
+            sed -i "s/^__version_info__ = (.*)/__version_info__ = ($NEW_MAJOR, $NEW_MINOR, \"$NEW_PATCH\")/" "$PROJECT_ROOT/rapidfireai/version.py"
         fi
     fi
     # Verify version.py was updated
-    UPDATED_VERSION_PY=$(grep '^__version__ = ' rapidfireai/version.py | sed 's/__version__ = "\(.*\)"/\1/')
+    UPDATED_VERSION_PY=$(grep '^__version__ = ' "$PROJECT_ROOT/rapidfireai/version.py" | sed 's/__version__ = "\(.*\)"/\1/')
     if [ "$UPDATED_VERSION_PY" != "$NEW_VERSION" ]; then
         print_error "Failed to update version in rapidfireai/version.py"
         exit 1
@@ -174,21 +174,28 @@ update_version_py_file() {
 update_constants_tsx_file() {
     local NEW_VERSION="$1"
     # Update the JS constants version file
-    print_info "Updating rapidfireai/frontend/src/common/constants.tsx..."
+    print_info "Updating rapidfireai/fit/frontend/src/common/constants.tsx..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        sed -i '' "s/^export const Version = '.*';/export const Version = '$NEW_VERSION';/" rapidfireai/frontend/src/common/constants.tsx
+        sed -i '' "s/^export const Version = '.*';/export const Version = '$NEW_VERSION';/" "$PROJECT_ROOT/rapidfireai/fit/frontend/src/common/constants.tsx"
     else
         # Linux
-        sed -i "s/^export const Version = '.*';/export const Version = '$NEW_VERSION';/" rapidfireai/frontend/src/common/constants.tsx
+        sed -i "s/^export const Version = '.*';/export const Version = '$NEW_VERSION';/" "$PROJECT_ROOT/rapidfireai/fit/frontend/src/common/constants.tsx"
     fi
     # Verify JS constants was updated
-    UPDATED_VERSION_JS=$(grep '^export const Version = ' rapidfireai/frontend/src/common/constants.tsx | sed "s/export const Version = '\\(.*\\)';/\\1/")
+    UPDATED_VERSION_JS=$(grep '^export const Version = ' "$PROJECT_ROOT/rapidfireai/fit/frontend/src/common/constants.tsx" | sed "s/export const Version = '\\(.*\\)';/\\1/")
     if [ "$UPDATED_VERSION_JS" != "$NEW_VERSION" ]; then
-        print_error "Failed to update version in rapidfireai/frontend/src/common/constants.tsx"
+        print_error "Failed to update version in rapidfireai/fit/frontend/src/common/constants.tsx"
         exit 1
     fi
 }
+
+# Get the project root directory (parent of setup/fit/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Change to project root directory
+cd "$PROJECT_ROOT"
 
 if ! is_github_actions; then
     # Check if we're in a git repository
@@ -328,7 +335,7 @@ print_success "Version updated to $NEW_VERSION"
 if ! is_github_actions; then
     # Commit the changes
     print_info "Committing version bump..."
-    git add pyproject.toml requirements.txt rapidfireai/version.py rapidfireai/frontend/src/common/constants.tsx BUILD.md README.md
+    git add pyproject.toml requirements.txt rapidfireai/version.py rapidfireai/fit/frontend/src/common/constants.tsx docs/BUILD.md README.md
     git commit -m "Bump version to $NEW_VERSION"
 
     # Create and push tag
@@ -340,11 +347,11 @@ if ! is_github_actions; then
     print_info "To deploy to PyPI, create tag, create release notes, and create a release"
 else
     print_success "🎉 Version bump script completed successfully!"
-    echo ""   
+    echo ""
     # Show git status if available
     if command -v git >/dev/null 2>&1; then
         echo ""
         print_info "Modified files:"
         git status --porcelain 2>/dev/null || echo "Git status not available"
-    fi  
+    fi
 fi

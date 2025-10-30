@@ -20,11 +20,13 @@ def get_script_path():
     """Get the path to the start.sh script."""
     # Get the directory where this package is installed
     package_dir = Path(__file__).parent
-    script_path = package_dir / "fit" / "start.sh"
+
+    # Try setup/fit directory relative to package directory
+    script_path = package_dir.parent / "setup" / "fit" / "start.sh"
 
     if not script_path.exists():
         # Fallback: try to find it relative to the current working directory
-        script_path = Path.cwd() / "rapidfireai" / "fit" / "start.sh"
+        script_path = Path.cwd() / "setup" / "fit" / "start.sh"
         if not script_path.exists():
             raise FileNotFoundError(f"Could not find start.sh script at {script_path}")
 
