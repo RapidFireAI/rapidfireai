@@ -43,10 +43,8 @@ CREATE TABLE IF NOT EXISTS contexts (
 CREATE TABLE IF NOT EXISTS pipelines (
     pipeline_id INTEGER PRIMARY KEY AUTOINCREMENT,
     context_id INTEGER,  -- Foreign key to contexts table (NULL if no RAG)
-    pipeline_name TEXT NOT NULL,  -- e.g., "baseline_3B_temp0.7"
     pipeline_type TEXT NOT NULL,  -- 'vllm', 'openai_api', etc.
-    model_config_json TEXT NOT NULL,  -- Full model configuration as JSON
-    sampling_params_json TEXT NOT NULL,  -- Full sampling parameters as JSON
+    pipeline_config_json TEXT NOT NULL,  -- Full pipeline configuration (serialized with encode_payload)
     status TEXT NOT NULL,  -- 'new', 'ongoing', 'completed', 'stopped', 'deleted', 'failed'
     current_shard_id INTEGER DEFAULT 0,  -- Next shard to process
     shards_completed INTEGER DEFAULT 0,  -- Number of shards completed

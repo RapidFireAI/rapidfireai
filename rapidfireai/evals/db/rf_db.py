@@ -7,8 +7,14 @@ Provides high-level interface for CRUD operations on the experiment database.
 import os
 from typing import Any
 
-from rapidfireai.evals.db.db_interface import DatabaseInterface
-from rapidfireai.evals.utils.constants import ContextStatus, ExperimentStatus, PipelineStatus, TaskStatus
+from rf_inferno.db.db_interface import DatabaseInterface
+from rf_inferno.utils.constants import (
+    ContextStatus,
+    ExperimentStatus,
+    PipelineStatus,
+    TaskStatus,
+)
+from rf_inferno.utils.serialize import decode_db_payload, encode_payload
 
 
 class RFDatabase:
@@ -74,7 +80,15 @@ class RFDatabase:
         """
         self.db.execute(
             query,
-            (experiment_name, num_actors, num_shards, num_cpus, num_gpus, mlflow_experiment_id, status.value),
+            (
+                experiment_name,
+                num_actors,
+                num_shards,
+                num_cpus,
+                num_gpus,
+                mlflow_experiment_id,
+                status.value,
+            ),
             commit=True,
         )
         return self.db.cursor.lastrowid
@@ -111,6 +125,27 @@ class RFDatabase:
         """
         query = "UPDATE experiments SET num_shards = ? WHERE experiment_id = ?"
         self.db.execute(query, (num_shards, experiment_id), commit=True)
+
+    def set_experiment_resources(
+        self,
+        experiment_id: int,
+        num_actors: int,
+        num_cpus: int = None,
+        num_gpus: int = None,
+    ):
+        """
+        Update resource allocation for an experiment.
+
+        Args:
+            experiment_id: ID of the experiment
+            num_actors: Number of actors
+            num_cpus: Number of CPUs (optional)
+            num_gpus: Number of GPUs (optional)
+        """
+        query = "UPDATE experiments SET num_actors = ?, num_cpus = ?, num_gpus = ? WHERE experiment_id = ?"
+        self.db.execute(
+            query, (num_actors, num_cpus, num_gpus, experiment_id), commit=True
+        )
 
     def clear_all_data(self):
         """
@@ -245,7 +280,11 @@ class RFDatabase:
         INSERT INTO contexts (context_hash, rag_config_json, prompt_config_json, status, error)
         VALUES (?, ?, ?, ?, '')
         """
-        self.db.execute(query, (context_hash, rag_config_json, prompt_config_json, status.value), commit=True)
+        self.db.execute(
+            query,
+            (context_hash, rag_config_json, prompt_config_json, status.value),
+            commit=True,
+        )
         return self.db.cursor.lastrowid
 
     def get_context(self, context_id: int) -> dict[str, Any] | None:
@@ -334,7 +373,9 @@ class RFDatabase:
         query = "UPDATE contexts SET started_at = ? WHERE context_id = ?"
         self.db.execute(query, (start_time, context_id), commit=True)
 
-    def set_context_end_time(self, context_id: int, end_time: str, duration_seconds: float):
+    def set_context_end_time(
+        self, context_id: int, end_time: str, duration_seconds: float
+    ):
         """
         Set end time and duration for context building.
 
@@ -363,10 +404,8 @@ class RFDatabase:
 
     def create_pipeline(
         self,
-        pipeline_name: str,
         pipeline_type: str,
-        model_config_json: str,
-        sampling_params_json: str,
+        pipeline_config_json: Any,
         context_id: int = None,
         status: PipelineStatus = PipelineStatus.NEW,
     ) -> int:
@@ -376,29 +415,29 @@ class RFDatabase:
         Args:
             pipeline_name: Name/identifier for the pipeline
             pipeline_type: Type of pipeline ('vllm', 'openai_api', etc.)
-            model_config_json: JSON string of model configuration
-            sampling_params_json: JSON string of sampling parameters
+            pipeline_config_json: Pipeline configuration object (will be serialized)
             context_id: Optional context ID for RAG
             status: Initial status (default: PipelineStatus.NEW)
 
         Returns:
             pipeline_id of the created pipeline
         """
+        # Serialize the pipeline config using encode_payload
+        encoded_config = encode_payload(pipeline_config_json)
+
         query = """
         INSERT INTO pipelines (
-            context_id, pipeline_name, pipeline_type,
-            model_config_json, sampling_params_json, status, error,
+            context_id, pipeline_type,
+            pipeline_config_json, status, error,
             current_shard_id, shards_completed, total_samples_processed
-        ) VALUES (?, ?, ?, ?, ?, ?, '', 0, 0, 0)
+        ) VALUES (?, ?, ?, ?, '', '', 0, 0)
         """
         self.db.execute(
             query,
             (
                 context_id,
-                pipeline_name,
                 pipeline_type,
-                model_config_json,
-                sampling_params_json,
+                encoded_config,
                 status.value,
             ),
             commit=True,
@@ -416,8 +455,8 @@ class RFDatabase:
             Dictionary with all pipeline fields, or None if not found
         """
         query = """
-        SELECT pipeline_id, context_id, pipeline_name, pipeline_type,
-               model_config_json, sampling_params_json, status, current_shard_id,
+        SELECT pipeline_id, context_id, pipeline_type,
+               pipeline_config_json, status, current_shard_id,
                shards_completed, total_samples_processed, error, created_at
         FROM pipelines
         WHERE pipeline_id = ?
@@ -425,13 +464,13 @@ class RFDatabase:
         result = self.db.execute(query, (pipeline_id,), fetch=True)
         if result:
             row = result[0]
+            # Decode the pipeline config from the database
+            decoded_config = decode_db_payload(row[4]) if row[4] else None
             return {
                 "pipeline_id": row[0],
                 "context_id": row[1],
-                "pipeline_name": row[2],
                 "pipeline_type": row[3],
-                "model_config_json": row[4],
-                "sampling_params_json": row[5],
+                "pipeline_config_json": decoded_config,
                 "status": row[6],
                 "current_shard_id": row[7],
                 "shards_completed": row[8],
@@ -452,8 +491,8 @@ class RFDatabase:
             Pipeline dictionary, or None if not found
         """
         query = """
-        SELECT pipeline_id, context_id, pipeline_name, pipeline_type,
-               model_config_json, sampling_params_json, status, current_shard_id,
+        SELECT pipeline_id, context_id, pipeline_type,
+               pipeline_config_json, status, current_shard_id,
                shards_completed, total_samples_processed, error, created_at
         FROM pipelines
         WHERE pipeline_id = ?
@@ -461,13 +500,13 @@ class RFDatabase:
         result = self.db.execute(query, params=(pipeline_id,), fetch=True)
         if result and len(result) > 0:
             row = result[0]
+            # Decode the pipeline config from the database
+            decoded_config = decode_db_payload(row[4]) if row[4] else None
             return {
                 "pipeline_id": row[0],
                 "context_id": row[1],
-                "pipeline_name": row[2],
                 "pipeline_type": row[3],
-                "model_config_json": row[4],
-                "sampling_params_json": row[5],
+                "pipeline_config_json": decoded_config,
                 "status": row[6],
                 "current_shard_id": row[7],
                 "shards_completed": row[8],
@@ -485,8 +524,8 @@ class RFDatabase:
             List of pipeline dictionaries (ordered by pipeline_id DESC)
         """
         query = """
-        SELECT pipeline_id, context_id, pipeline_name, pipeline_type,
-               model_config_json, sampling_params_json, status, current_shard_id,
+        SELECT pipeline_id, context_id, pipeline_type,
+               pipeline_config_json, status, current_shard_id,
                shards_completed, total_samples_processed, error, created_at
         FROM pipelines
         ORDER BY pipeline_id DESC
@@ -495,14 +534,14 @@ class RFDatabase:
         pipelines = []
         if result:
             for row in result:
+                # Decode the pipeline config from the database
+                decoded_config = decode_db_payload(row[4]) if row[4] else None
                 pipelines.append(
                     {
                         "pipeline_id": row[0],
                         "context_id": row[1],
-                        "pipeline_name": row[2],
                         "pipeline_type": row[3],
-                        "model_config_json": row[4],
-                        "sampling_params_json": row[5],
+                        "pipeline_config_json": decoded_config,
                         "status": row[6],
                         "current_shard_id": row[7],
                         "shards_completed": row[8],
@@ -525,7 +564,11 @@ class RFDatabase:
         self.db.execute(query, (status.value, pipeline_id), commit=True)
 
     def set_pipeline_progress(
-        self, pipeline_id: int, current_shard_id: int, shards_completed: int, total_samples_processed: int
+        self,
+        pipeline_id: int,
+        current_shard_id: int,
+        shards_completed: int,
+        total_samples_processed: int,
     ):
         """
         Update pipeline progress metrics.
@@ -541,7 +584,11 @@ class RFDatabase:
         SET current_shard_id = ?, shards_completed = ?, total_samples_processed = ?
         WHERE pipeline_id = ?
         """
-        self.db.execute(query, (current_shard_id, shards_completed, total_samples_processed, pipeline_id), commit=True)
+        self.db.execute(
+            query,
+            (current_shard_id, shards_completed, total_samples_processed, pipeline_id),
+            commit=True,
+        )
 
     def set_pipeline_current_shard(self, pipeline_id: int, shard_id: int):
         """
@@ -593,7 +640,9 @@ class RFDatabase:
             pipeline_id, actor_id, shard_id, status, error_message
         ) VALUES (?, ?, ?, ?, '')
         """
-        self.db.execute(query, (pipeline_id, actor_id, shard_id, status.value), commit=True)
+        self.db.execute(
+            query, (pipeline_id, actor_id, shard_id, status.value), commit=True
+        )
         return self.db.cursor.lastrowid
 
     def get_actor_task(self, task_id: int) -> dict[str, Any] | None:
@@ -683,7 +732,9 @@ class RFDatabase:
         query = "UPDATE actor_tasks SET started_at = ? WHERE task_id = ?"
         self.db.execute(query, (start_time, task_id), commit=True)
 
-    def set_actor_task_end_time(self, task_id: int, end_time: str, duration_seconds: float):
+    def set_actor_task_end_time(
+        self, task_id: int, end_time: str, duration_seconds: float
+    ):
         """
         Set end time and duration for an actor task.
 
@@ -734,7 +785,7 @@ class RFDatabase:
             pipeline_id, operation, status, request_data, error, created_at
         ) VALUES (?, ?, ?, ?, '', ?)
         """
-        from rapidfireai.evals.utils.constants import ICStatus
+        from rf_inferno.utils.constants import ICStatus
 
         self.db.execute(
             query,
@@ -750,7 +801,7 @@ class RFDatabase:
         Returns:
             List of dictionaries with IC operation fields
         """
-        from rapidfireai.evals.utils.constants import ICStatus
+        from rf_inferno.utils.constants import ICStatus
 
         query = """
         SELECT ic_id, pipeline_id, operation, status, request_data, error, created_at, processed_at

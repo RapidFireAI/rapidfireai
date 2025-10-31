@@ -3,8 +3,15 @@ from typing import Any
 
 from langchain_community.vectorstores import FAISS
 from langchain_core.embeddings import Embeddings
-from langchain_core.example_selectors import MaxMarginalRelevanceExampleSelector, SemanticSimilarityExampleSelector
+from langchain_core.example_selectors import (
+    MaxMarginalRelevanceExampleSelector,
+    SemanticSimilarityExampleSelector,
+)
 from langchain_core.prompts import FewShotPromptTemplate, PromptTemplate
+import hashlib
+import json
+import asyncio
+import concurrent.futures
 
 
 class PromptManager:
@@ -36,9 +43,13 @@ class PromptManager:
         instructions: str = "",
         instructions_file_path: str = "",
         examples: list[dict[str, str]] = [],
-        embedding_cls: type[Embeddings] = None,  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
+        embedding_cls: type[
+            Embeddings
+        ] = None,  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
         embedding_kwargs: dict[str, Any] | None = None,
-        example_selector_cls: type[MaxMarginalRelevanceExampleSelector | SemanticSimilarityExampleSelector] = None,
+        example_selector_cls: type[
+            MaxMarginalRelevanceExampleSelector | SemanticSimilarityExampleSelector
+        ] = None,
         example_prompt_template: PromptTemplate = None,
         k: int = 3,
     ) -> None:
@@ -92,7 +103,9 @@ class PromptManager:
         """
         if not self.instructions:
             if not self.instructions_file_path:
-                raise ValueError("either instructions or instructions_file_path is required")
+                raise ValueError(
+                    "either instructions or instructions_file_path is required"
+                )
             with open(self.instructions_file_path) as f:
                 self.instructions = f.read()
         if not self.embedding_cls:
@@ -150,7 +163,7 @@ class PromptManager:
         """
         return self.instructions
 
-    async def get_fewshot_examples(self, user_query: str = "") -> str:
+    async def get_fewshot_examples(self, user_queries: list[str]) -> list[str]:
         """
         Generate few-shot examples formatted according to the template.
 
@@ -168,7 +181,34 @@ class PromptManager:
             This method requires that setup_examples() has been called first to set up
             the fewshot_generator.
         """
-        return await self.fewshot_generator.aformat(user_query=user_query)
+
+        async def gather_examples():
+            """Async helper to gather all examples concurrently"""
+            tasks = [
+                self.fewshot_generator.aformat(user_query=user_query)
+                for user_query in user_queries
+            ]
+            return await asyncio.gather(*tasks)
+
+        try:
+            loop = asyncio.get_running_loop()
+
+            def run_in_thread():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    return new_loop.run_until_complete(gather_examples())
+                finally:
+                    new_loop.close()
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_in_thread)
+                fewshot_examples = future.result()
+        except RuntimeError:
+            # No event loop running, safe to use asyncio.run()
+            fewshot_examples = asyncio.run(gather_examples())
+
+        return fewshot_examples
 
     def copy(self) -> "PromptManager":
         """
@@ -206,9 +246,9 @@ class PromptManager:
         """
         state = self.__dict__.copy()
         # Remove unpicklable objects
-        state['embedding_function'] = None
-        state['example_selector'] = None
-        state['fewshot_generator'] = None
+        state["embedding_function"] = None
+        state["example_selector"] = None
+        state["fewshot_generator"] = None
         return state
 
     def __setstate__(self, state):
@@ -219,3 +259,38 @@ class PromptManager:
         after deserialization.
         """
         self.__dict__.update(state)
+
+    def get_hash(self) -> str:
+        """
+        Generate a unique hash for this prompt manager configuration.
+
+        Used for deduplicating contexts in the database - if two pipelines have
+        identical prompt configurations, they can share the same context.
+
+        Returns:
+            SHA256 hash string
+        """
+        prompt_dict = {
+            "instructions": self.instructions,
+            "k": self.k,  # Number of fewshot examples to retrieve
+            "embedding_cls": (
+                self.embedding_cls.__name__ if self.embedding_cls else None
+            ),
+            "embedding_kwargs": self.embedding_kwargs,  # Model name and config
+            "example_selector_cls": (
+                self.example_selector_cls.__name__
+                if self.example_selector_cls
+                else None
+            ),
+            "num_examples": len(self.examples) if self.examples else 0,
+            # Hash the examples themselves to detect changes
+            "examples_hash": (
+                hashlib.sha256(
+                    json.dumps(self.examples, sort_keys=True).encode()
+                ).hexdigest()
+                if self.examples
+                else None
+            ),
+        }
+        prompt_json = json.dumps(prompt_dict, sort_keys=True)
+        return hashlib.sha256(prompt_json.encode()).hexdigest()

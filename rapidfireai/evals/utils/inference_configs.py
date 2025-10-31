@@ -5,10 +5,10 @@ This module provides functions to generate various model configurations
 for multi-pipeline experimentation and hyperparameter exploration.
 """
 
-from rapidfireai.evals.utils.config import VLLMModelConfig
+from rf_inferno.utils.config import RFvLLMModelConfig
 
 
-def get_inference_configs() -> list[VLLMModelConfig]:
+def get_inference_configs() -> list[RFvLLMModelConfig]:
     """
     Generate a list of hardcoded inference configurations for testing.
 
@@ -18,12 +18,12 @@ def get_inference_configs() -> list[VLLMModelConfig]:
     hyperparameter search algorithms, etc.).
 
     Returns:
-        List of VLLMModelConfig instances with different hyperparameter settings
+        List of RFvLLMModelConfig instances with different hyperparameter settings
     """
     configs = []
 
     # Config 1: Baseline configuration with Qwen 3B model
-    config_1 = VLLMModelConfig(
+    config_1 = RFvLLMModelConfig(
         model_config={
             "model": "Qwen/Qwen2.5-3B-Instruct",
             "dtype": "half",
@@ -40,12 +40,13 @@ def get_inference_configs() -> list[VLLMModelConfig]:
             "top_p": 0.9,
             "max_tokens": 512,
         },
-        context_generator=None,
+        rag=None,
+        prompt_manager=None,
     )
     configs.append(config_1)
 
     # Config 2: Higher temperature for more creative outputs
-    config_2 = VLLMModelConfig(
+    config_2 = RFvLLMModelConfig(
         model_config={
             "model": "Qwen/Qwen2.5-3B-Instruct",
             "dtype": "half",
@@ -62,12 +63,13 @@ def get_inference_configs() -> list[VLLMModelConfig]:
             "top_p": 0.95,  # Higher top_p for more diversity
             "max_tokens": 512,
         },
-        context_generator=None,
+        rag=None,
+        prompt_manager=None,
     )
     configs.append(config_2)
 
     # Config 3: Different model (smaller) with lower temperature
-    config_3 = VLLMModelConfig(
+    config_3 = RFvLLMModelConfig(
         model_config={
             "model": "Qwen/Qwen2.5-0.5B-Instruct",  # Smaller model
             "dtype": "half",
@@ -84,29 +86,36 @@ def get_inference_configs() -> list[VLLMModelConfig]:
             "top_p": 0.85,
             "max_tokens": 256,  # Shorter outputs
         },
-        context_generator=None,
+        rag=None,
+        prompt_manager=None,
     )
     configs.append(config_3)
 
     return configs
 
 
-def get_inference_configs_with_names(context_generator=None) -> list[tuple[str, VLLMModelConfig]]:
+def get_inference_configs_with_names(
+    rag=None, prompt_manager=None
+) -> list[tuple[str, RFvLLMModelConfig]]:
     """
     Generate inference configurations with descriptive names.
 
     Args:
-        context_generator: Optional ContextGenerator to attach to all configs
+        rag: Optional RAG specification to attach to all configs
+        prompt_manager: Optional PromptManager to attach to all configs
 
     Returns:
         List of tuples (config_name, config) for easier identification
     """
     configs = get_inference_configs()
 
-    # Attach context_generator to all configs if provided
-    if context_generator:
+    # Attach rag and prompt_manager to all configs if provided
+    if rag or prompt_manager:
         for config in configs:
-            config.context_generator = context_generator
+            if rag:
+                config.rag = rag
+            if prompt_manager:
+                config.prompt_manager = prompt_manager
 
     named_configs = [
         ("baseline_3B_temp0.7", configs[0]),

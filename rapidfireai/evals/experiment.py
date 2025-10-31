@@ -7,20 +7,32 @@ from typing import Any
 
 import ray
 
-from rapidfireai.evals.db import RFDatabase
-from rapidfireai.evals.dispatcher import start_dispatcher_thread
-from rapidfireai.evals.scheduling.controller import Controller
-from rapidfireai.evals.utils.constants import DISPATCHER_HOST, DISPATCHER_PORT, ExperimentStatus, get_dispatcher_url
-from rapidfireai.evals.utils.notebook_ui import NotebookUI
-from rapidfireai.evals.utils.logger import RFLogger
+from rf_inferno.db import RFDatabase
+from rf_inferno.dispatcher import start_dispatcher_thread
+from rf_inferno.scheduling.controller import Controller
+from rf_inferno.utils.constants import (
+    DISPATCHER_HOST,
+    DISPATCHER_PORT,
+    ExperimentStatus,
+    get_dispatcher_url,
+)
+from rf_inferno.utils.notebook_ui import NotebookUI
+from rf_inferno.utils.logger import RFLogger
+from rf_inferno.automl import (
+    RFGridSearch,
+    RFRandomSearch,
+    RFLangChainRagSpec,
+    RFPromptManager,
+)
 
 
 class Experiment:
     def __init__(
         self,
         experiment_name: str,
-        num_actors: int = None,
-        experiment_path: str = os.getenv("RF_EXPERIMENT_PATH", "./rapidfire_experiments"),
+        experiment_path: str = os.getenv(
+            "RF_EXPERIMENT_PATH", "./rapidfire_experiments"
+        ),
         openai_rpm_limit: int | None = None,
         openai_tpm_limit: int | None = None,
         openai_max_completion_tokens: int = 150,
@@ -30,7 +42,6 @@ class Experiment:
 
         Args:
             experiment_name: Name of the experiment
-            num_actors: Number of Ray actors to use (default: auto-detect based on GPUs)
             experiment_path: Path to store experiment artifacts
             openai_rpm_limit: OpenAI API requests per minute limit (required if using OpenAI configs)
             openai_tpm_limit: OpenAI API tokens per minute limit (required if using OpenAI configs)
@@ -48,7 +59,6 @@ class Experiment:
 
         self.experiment_name = experiment_name
         self.experiment_path = experiment_path
-        self.num_actors = num_actors
 
         # OpenAI rate limiting (experiment-wide)
         self.openai_rpm_limit = openai_rpm_limit
@@ -56,7 +66,9 @@ class Experiment:
         self.openai_max_completion_tokens = openai_max_completion_tokens
 
         # Initialize logging
-        self.logging_manager = RFLogger(experiment_name=self.experiment_name, experiment_path=self.experiment_path)
+        self.logging_manager = RFLogger(
+            experiment_name=self.experiment_name, experiment_path=self.experiment_path
+        )
         self.logger = self.logging_manager.get_logger("Experiment")
 
         # Initialize Ray
@@ -67,29 +79,8 @@ class Experiment:
             ignore_reinit_error=True,
         )
 
-        # Use all available resources on the machine
-        available_gpus = ray.cluster_resources().get("GPU", 0)
-        available_cpus = ray.cluster_resources().get("CPU", 0)
-
-        self.num_gpus = available_gpus
-        self.num_cpus = available_cpus
-
-        if self.num_gpus == 0:
-            self.logger.warning("No GPUs available. Be sure to use external APIs for inference.")
-
-        self.logger.info(
-            "Using all available resources: %s\nCPUs: %s\nGPUs: %s\nNumber of actors: %s",
-            json.dumps(ray.cluster_resources(), indent=4),
-            self.num_cpus,
-            self.num_gpus,
-            self.num_actors,
-        )
-
         # Initialize the controller
         self.controller = Controller(
-            num_actors=self.num_actors,
-            num_gpus=self.num_gpus,
-            num_cpus=self.num_cpus,
             experiment_name=self.experiment_name,
             experiment_path=self.experiment_path,
             openai_rpm_limit=self.openai_rpm_limit,
@@ -105,35 +96,31 @@ class Experiment:
 
         self.experiment_id = self.db.create_experiment(
             experiment_name=self.experiment_name,
-            num_actors=self.num_actors,
+            num_actors=0,  # Will be updated in run_evals
             status=ExperimentStatus.RUNNING,
         )
-        self.logger.info(f"Created experiment {self.experiment_id}: {self.experiment_name}")
+        self.logger.info(
+            f"Created experiment {self.experiment_id}: {self.experiment_name}"
+        )
 
         # Start dispatcher in background thread for interactive control
         self.dispatcher_thread = start_dispatcher_thread(
-            host=DISPATCHER_HOST,
-            port=DISPATCHER_PORT,
-            logger=self.logger
+            host=DISPATCHER_HOST, port=DISPATCHER_PORT, logger=self.logger
         )
 
         # Initialize notebook UI controller (will be displayed in run())
         # Auto-detects Colab vs Local environment and uses appropriate URL
-        self.notebook_ui = NotebookUI(
-            dispatcher_url=get_dispatcher_url()
-        )
+        self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url())
 
     def run_evals(
         self,
-        configs: list[tuple[str, Any]],
-        dataset,
-        batch_size: int,
+        config_group: RFGridSearch | RFRandomSearch,
+        dataset: Any,
         num_shards: int = 4,
-        preprocess_fn: Callable = None,
-        postprocess_fn: Callable = None,
-        compute_metrics_fn: Callable = None,
-        accumulate_metrics_fn: Callable = None,
-        online_strategy_kwargs: dict[str, Any] = None,
+        seed: int = 42,
+        num_actors: int = None,
+        gpus_per_actor: int = None,
+        cpus_per_actor: int = None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Run multi-config inference experiment with fair round-robin scheduling.
@@ -142,22 +129,42 @@ class Experiment:
         Each configuration is scheduled fairly using generation-based round-robin scheduling.
 
         Args:
-            configs: List of (config_name, model_config) tuples with context generators
+            config_group: Grid search or random search configuration group
             dataset: Dataset to process
-            batch_size: Batch size for processing
             num_shards: Number of shards to split the dataset into (default: 4)
-            preprocess_fn: Optional preprocessing function
-            postprocess_fn: Optional postprocessing function
-            compute_metrics_fn: Optional metrics computation function
-            accumulate_metrics_fn: Optional metrics accumulation function
-            online_strategy_kwargs: Optional online aggregation strategy parameters
+            seed: Random seed for reproducibility (default: 42)
+            num_actors: Number of Ray actors to use (default: auto-detect based on GPUs)
+            num_gpus: Number of GPUs to use (default: auto-detect from Ray cluster)
+            num_cpus: Number of CPUs to use (default: auto-detect from Ray cluster)
 
         Returns:
             Dict mapping run_id to (aggregated_results, cumulative_metrics) tuple
         """
+        # Auto-detect resources if not provided
+        available_gpus = ray.cluster_resources().get("GPU", 0)
+        available_cpus = ray.cluster_resources().get("CPU", 0)
+
+        if gpus_per_actor is None:
+            gpus_per_actor = available_gpus
+        if cpus_per_actor is None:
+            cpus_per_actor = available_cpus
+        if num_actors is None:
+            # Default to number of GPUs, or 1 if no GPUs available
+            num_actors = int(gpus_per_actor) if gpus_per_actor > 0 else 1
+
+        if gpus_per_actor == 0:
+            self.logger.warning(
+                "No GPUs available. Be sure to use external APIs for inference."
+            )
+
         self.logger.info(
-            f"Running multi-config experiment with {len(configs)} config(s), "
-            f"{num_shards} shard(s), ({self.num_gpus} GPUs, {self.num_cpus} CPUs)"
+            f"Running multi-config experiment with {num_shards} shard(s), "
+            f"({gpus_per_actor} GPUs per actor, {cpus_per_actor} CPUs per actor, {num_actors} actors)"
+        )
+
+        # Update experiment resources in database
+        self.db.set_experiment_resources(
+            self.experiment_id, num_actors, cpus_per_actor, gpus_per_actor
         )
 
         # Display interactive control panel in notebook
@@ -175,15 +182,13 @@ class Experiment:
         try:
             results = self.controller.run_multi_pipeline_inference(
                 experiment_id=self.experiment_id,
-                pipeline_configs=configs,
+                config_group=config_group,
                 dataset=dataset,
-                batch_size=batch_size,
                 num_shards=num_shards,
-                preprocess_fn=preprocess_fn,
-                postprocess_fn=postprocess_fn,
-                compute_metrics_fn=compute_metrics_fn,
-                accumulate_metrics_fn=accumulate_metrics_fn,
-                online_strategy_kwargs=online_strategy_kwargs,
+                seed=seed,
+                num_actors=num_actors,
+                num_gpus=gpus_per_actor,
+                num_cpus=cpus_per_actor,
             )
         except Exception as e:
             self.logger.exception("Error running multi-config experiment")
@@ -210,9 +215,13 @@ class Experiment:
         try:
             experiment = self.db.get_experiment(self.experiment_id)
             if experiment and experiment.get("status") == ExperimentStatus.RUNNING:
-                self.db.set_experiment_status(self.experiment_id, ExperimentStatus.COMPLETED)
+                self.db.set_experiment_status(
+                    self.experiment_id, ExperimentStatus.COMPLETED
+                )
         except Exception as e:
-            self.logger.warning(f"Failed to update experiment status during shutdown: {e}")
+            self.logger.warning(
+                f"Failed to update experiment status during shutdown: {e}"
+            )
 
         # Clean shutdown
         ray.shutdown()

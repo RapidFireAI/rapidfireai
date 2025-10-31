@@ -3,8 +3,13 @@ from typing import Any
 
 from vllm import SamplingParams
 
-from rapidfireai.evals.actors.inference_engines import InferenceEngine, OpenAIInferenceEngine, VLLMInferenceEngine
-from rapidfireai.evals.rag.context_generator import ContextGenerator
+from rf_inferno.actors.inference_engines import (
+    InferenceEngine,
+    OpenAIInferenceEngine,
+    VLLMInferenceEngine,
+)
+from rf_inferno.rag.prompt_manager import PromptManager
+from rf_inferno.rag.rag_pipeline import LangChainRagSpec
 
 
 class ModelConfig(ABC):
@@ -24,12 +29,13 @@ class ModelConfig(ABC):
         pass
 
 
-class VLLMModelConfig(ModelConfig):
+class RFvLLMModelConfig(ModelConfig):
     def __init__(
         self,
         model_config: dict[str, Any],
         sampling_params: dict[str, Any],
-        context_generator: ContextGenerator = None,
+        rag: LangChainRagSpec = None,
+        prompt_manager: PromptManager = None,
     ):
         """
         Initialize VLLM model configuration.
@@ -37,13 +43,20 @@ class VLLMModelConfig(ModelConfig):
         Args:
             model_config: VLLM model configuration (model name, dtype, etc.)
             sampling_params: Sampling parameters (temperature, top_p, etc.)
-            context_generator: Optional context generator containing rag_spec and/or prompt_manager
-                             (index will be built automatically by Controller)
+            rag: Optional RAG specification (index will be built automatically by Controller)
+            prompt_manager: Optional prompt manager for few-shot examples
         """
         super().__init__()
         self.model_config = model_config
         self.sampling_params = SamplingParams(**sampling_params)
-        self.context_generator = context_generator
+        self.rag = rag
+        self.prompt_manager = prompt_manager
+        self._user_params = {
+            "model_config": model_config,
+            "sampling_params": sampling_params,
+            "rag": rag,
+            "prompt_manager": prompt_manager,
+        }
 
     def get_engine_class(self) -> type[InferenceEngine]:
         """Return VLLMInferenceEngine class."""
@@ -76,7 +89,8 @@ class OpenAIAPIModelConfig(ModelConfig):
         self,
         client_config: dict[str, Any],
         model_config: dict[str, Any],
-        context_generator: ContextGenerator = None,
+        rag: LangChainRagSpec = None,
+        prompt_manager: PromptManager = None,
     ):
         """
         Initialize OpenAI API model configuration.
@@ -84,8 +98,8 @@ class OpenAIAPIModelConfig(ModelConfig):
         Args:
             client_config: OpenAI client configuration (api_key, base_url, etc.)
             model_config: Model configuration (model name, temperature, etc.)
-            context_generator: Optional context generator containing rag_spec and/or prompt_manager
-                             (index will be built automatically by Controller)
+            rag: Optional RAG specification (index will be built automatically by Controller)
+            prompt_manager: Optional prompt manager for few-shot examples
 
         Note:
             Rate limiting (rpm_limit, tpm_limit, max_completion_tokens) is now configured at the
@@ -94,7 +108,14 @@ class OpenAIAPIModelConfig(ModelConfig):
         super().__init__()
         self.client_config = client_config
         self.model_config = model_config
-        self.context_generator = context_generator
+        self.rag = rag
+        self.prompt_manager = prompt_manager
+        self._user_params = {
+            "client_config": client_config,
+            "model_config": model_config,
+            "rag": rag,
+            "prompt_manager": prompt_manager,
+        }
 
     def get_engine_class(self) -> type[InferenceEngine]:
         """Return OpenAIInferenceEngine class."""
@@ -123,8 +144,16 @@ class OpenAIAPIModelConfig(ModelConfig):
         """
         # Extract sampling-related parameters from model_config
         sampling_keys = [
-            "temperature", "top_p", "max_completion_tokens",
-            "frequency_penalty", "presence_penalty", "seed",
-            "reasoning_effort"  # For o1 models
+            "temperature",
+            "top_p",
+            "max_completion_tokens",
+            "frequency_penalty",
+            "presence_penalty",
+            "seed",
+            "reasoning_effort",  # For o1 models
         ]
-        return {key: self.model_config.get(key) for key in sampling_keys if key in self.model_config}
+        return {
+            key: self.model_config.get(key)
+            for key in sampling_keys
+            if key in self.model_config
+        }
