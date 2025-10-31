@@ -317,40 +317,40 @@ def get_compute_capability():
         return None
 
 
-def install_packages():
+def install_packages(evals: bool = False):
     """Install packages for the RapidFire AI project."""
     packages = []
     # Generate CUDA requirements file
     cuda_major = get_cuda_version()
     compute_capability = get_compute_capability()
 
-    ## TODO: re-enable once trl has fix
-    # if cuda_major == 12:
-    #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
-    #     packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu126"]})
+    ## TODO: re-enable for fit once trl has fix
+    if evals and cuda_major == 12:
+        print(f"\n🎯 Detected CUDA {cuda_major}.x")
+        packages.append({"package": "vllm==0.7.2", "extra_args": ["--torch-backend=cu124"]})
     # elif cuda_major == 11:
     #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
     #     packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu118"]})
     # else:
     #     print("\n⚠️  CUDA version not detected or unsupported.")
 
-    ## TODO: re-enable once flash-attn has fix
+    # TODO: re-enable for fit once flash-attn has fix
     # if cuda_major is not None:
     #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
 
-    #     # Determine flash-attn version based on CUDA version
-    #     if cuda_major < 8:
-    #         # flash-attn 1.x for CUDA < 8.0
-    #         print("Installing latest flash-attn 1.x for CUDA < 8.0")
-    #         packages.append({"package": "flash-attn<2.0", "extra_args": ["--no-build-isolation"]})
-    #     elif cuda_major == 9:
-    #         # flash-attn 3.x for CUDA 9.0 specifically
-    #         print("Installing latest flash-attn 3.x for CUDA 9.0")
-    #         packages.append({"package": "flash-attn>=3.0,<4.0", "extra_args": ["--no-build-isolation"]})
-    #     elif cuda_major >= 8:
-    #         # flash-attn 2.x for CUDA >= 8.0 (but not 9.0)
-    #         print("Installing flash-attn 2.8.3 for CUDA >= 8.0")
-    #         packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
+        # Determine flash-attn version based on CUDA version
+        if evals and cuda_major < 8:
+            # flash-attn 1.x for CUDA < 8.0
+            print("Installing latest flash-attn 1.x for CUDA < 8.0")
+            packages.append({"package": "flash-attn<2.0", "extra_args": ["--no-build-isolation"]})
+        elif evals and cuda_major == 9:
+            # flash-attn 3.x for CUDA 9.0 specifically
+            print("Installing latest flash-attn 3.x for CUDA 9.0")
+            packages.append({"package": "flash-attn>=3.0,<4.0", "extra_args": ["--no-build-isolation"]})
+        elif evals and cuda_major >= 8:
+            # flash-attn 2.x for CUDA >= 8.0 (but not 9.0)
+            print("Installing flash-attn 2.8.3 for CUDA >= 8.0")
+            packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
     # else:
     #     print("\n⚠️  CUDA version not detected.")
     #     print("Skipping flash-attn installation")
@@ -388,12 +388,12 @@ def copy_tutorial_notebooks():
     return 0
 
 
-def run_init():
+def run_init(evals: bool = False):
     """Run the init command to initialize the project."""
     print("🔧 Initializing RapidFire AI project...")
     print("-" * 30)
     print("Initializing project...")
-    install_packages()
+    install_packages(evals)
     copy_tutorial_notebooks()
 
     return 0
@@ -401,7 +401,24 @@ def run_init():
 
 def main():
     """Main entry point for the rapidfireai command."""
-    parser = argparse.ArgumentParser(description="RapidFire AI - Start/stop/manage services", prog="rapidfireai")
+    parser = argparse.ArgumentParser(description="RapidFire AI - Start/stop/manage services", prog="rapidfireai",
+    epilog="""
+Examples:
+  # Basic initialization
+  rapidfireai init
+  
+  # Initialize with evaluation dependencies
+  rapidfireai init --evals
+  
+  # Start services
+  rapidfireai start
+  
+  # Stop services
+  rapidfireai stop
+
+For more information, visit: https://github.com/RapidFireAI/rapidfireai
+        """
+    )
 
     parser.add_argument(
         "command",
@@ -432,6 +449,8 @@ def main():
         help="Run in Colab mode (skips frontend, conditionally starts MLflow based on tracking backend)",
     )
 
+    parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
+
     args = parser.parse_args()
 
     # Set environment variables from CLI args
@@ -448,7 +467,7 @@ def main():
 
     # Handle init command separately
     if args.command == "init":
-        return run_init()
+        return run_init(args.evals)
 
     # Run the script with the specified command
     return run_script([args.command])
