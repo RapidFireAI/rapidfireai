@@ -35,8 +35,6 @@ dependencies = [
     "ray",
     "pyarrow",
     "numpy",
-    "vllm>=0.7.2",
-    "flash-attn",
     "flashinfer-python",
     "openai",
     "tiktoken",
