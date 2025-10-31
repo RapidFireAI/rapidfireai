@@ -8,7 +8,7 @@ __author__ = "RapidFire AI Inc."
 __email__ = "support@rapidfire.ai"
 
 from rapidfireai.experiment import Experiment
-from rapidfireai.evals.experiment import Experiment as InferExperiment
+from rapidfireai.evals.experiment import Experiment as EvalsExperiment
 
 
 def coming_soon():
