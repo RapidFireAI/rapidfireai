@@ -48,6 +48,7 @@ dependencies = [
     "sentence-transformers",
     "gpustat",
     "psutil",
+    "waitress",
     "scipy",
     "tqdm",
     "ipykernel",
