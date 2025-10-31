@@ -29,6 +29,25 @@ dependencies = [
     "pandas>=2.0.0,<2.3.0",  # Colab compatibility (2.2.2) and cudf constraint
     "psutil>=5.9.0",
     "torch>=2.8.0",
+    "torchvision",
+    "torchaudio",
+    "datasets>=3.6.0",
+    "ray",
+    "vllm>=0.7.2",
+    "flash-attn",
+    "flashinfer-python",
+    "openai",
+    "tiktoken",
+    "langchain",
+    "langchain-core",
+    "langchain-community",
+    "langchain-openai",
+    "langchain-huggingface",
+    "faiss-cpu",
+    "scipy",
+    "tqdm",
+    "ipykernel",
+    "typing-extensions>=4.0.0",
     "transformers>=4.55.2",
     "peft>=0.17.0",
     "trl==0.21.0",
@@ -60,6 +79,7 @@ dev = [
     "flake8>=3.8",
     "mypy>=0.800",
     "pre-commit>=2.0",
+    "ruff",
 ]
 full = [
     "torch>=1.9.0",
@@ -94,6 +114,15 @@ rapidfireai = [
     "fit/db/*.py",
     "fit/db/*.sql",
     "fit/utils/*.py",
+    "infer/actors/*.py",
+    "infer/db/*.py",
+    "infer/db/*.sql",
+    "infer/dispatcher/*.py",
+    "infer/metrics/*.py",
+    "infer/rag/*.py",
+    "infer/scheduling/*.py",
+    "infer/utils/*.py",
+    "infer/*.py",
     "../setup/fit/start.sh",
     "../setup/fit/start_dev.sh",
     "../tutorial_notebooks/**/*",
@@ -141,3 +170,7 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 120
+targer-version = "py312"
