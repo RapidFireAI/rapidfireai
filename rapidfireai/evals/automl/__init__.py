@@ -1,10 +1,10 @@
 """AutoML module for hyperparameter optimization."""
 
-from rf_inferno.automl.base import AutoMLAlgorithm
-from rf_inferno.automl.datatypes import List, Range
-from rf_inferno.automl.grid_search import RFGridSearch
-from rf_inferno.automl.model_config import RFLangChainRagSpec, RFPromptManager
-from rf_inferno.automl.random_search import RFRandomSearch
+from rapidfireai.evals.automl.base import AutoMLAlgorithm
+from rapidfireai.evals.automl.datatypes import List, Range
+from rapidfireai.evals.automl.grid_search import RFGridSearch
+from rapidfireai.evals.automl.model_config import RFLangChainRagSpec, RFPromptManager
+from rapidfireai.evals.automl.random_search import RFRandomSearch
 
 __all__ = [
     "List",

@@ -4,9 +4,9 @@ import inspect
 import copy
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Type, Union, get_type_hints
-from rf_inferno.rag.rag_pipeline import LangChainRagSpec
-from rf_inferno.rag.prompt_manager import PromptManager
-from rf_inferno.automl.datatypes import List, Range
+from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
+from rapidfireai.evals.rag.prompt_manager import PromptManager
+from rapidfireai.evals.automl.datatypes import List, Range
 
 
 def _create_rf_class(base_class: Type, class_name: str):

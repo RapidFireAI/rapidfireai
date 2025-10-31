@@ -7,18 +7,18 @@ from typing import Any
 
 import ray
 
-from rf_inferno.db import RFDatabase
-from rf_inferno.dispatcher import start_dispatcher_thread
-from rf_inferno.scheduling.controller import Controller
-from rf_inferno.utils.constants import (
+from rapidfireai.evals.db import RFDatabase
+from rapidfireai.evals.dispatcher import start_dispatcher_thread
+from rapidfireai.evals.scheduling.controller import Controller
+from rapidfireai.evals.utils.constants import (
     DISPATCHER_HOST,
     DISPATCHER_PORT,
     ExperimentStatus,
     get_dispatcher_url,
 )
-from rf_inferno.utils.notebook_ui import NotebookUI
-from rf_inferno.utils.logger import RFLogger
-from rf_inferno.automl import (
+from rapidfireai.evals.utils.notebook_ui import NotebookUI
+from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.evals.automl import (
     RFGridSearch,
     RFRandomSearch,
     RFLangChainRagSpec,

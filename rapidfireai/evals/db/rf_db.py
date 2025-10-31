@@ -7,14 +7,14 @@ Provides high-level interface for CRUD operations on the experiment database.
 import os
 from typing import Any
 
-from rf_inferno.db.db_interface import DatabaseInterface
-from rf_inferno.utils.constants import (
+from rapidfireai.evals.db.db_interface import DatabaseInterface
+from rapidfireai.evals.utils.constants import (
     ContextStatus,
     ExperimentStatus,
     PipelineStatus,
     TaskStatus,
 )
-from rf_inferno.utils.serialize import decode_db_payload, encode_payload
+from rapidfireai.evals.utils.serialize import decode_db_payload, encode_payload
 
 
 class RFDatabase:
@@ -785,7 +785,7 @@ class RFDatabase:
             pipeline_id, operation, status, request_data, error, created_at
         ) VALUES (?, ?, ?, ?, '', ?)
         """
-        from rf_inferno.utils.constants import ICStatus
+        from rapidfireai.evals.utils.constants import ICStatus
 
         self.db.execute(
             query,
@@ -801,7 +801,7 @@ class RFDatabase:
         Returns:
             List of dictionaries with IC operation fields
         """
-        from rf_inferno.utils.constants import ICStatus
+        from rapidfireai.evals.utils.constants import ICStatus
 
         query = """
         SELECT ic_id, pipeline_id, operation, status, request_data, error, created_at, processed_at
