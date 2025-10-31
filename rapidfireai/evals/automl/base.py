@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from rf_inferno.automl.datatypes import List
+from rapidfireai.evals.automl.datatypes import List
 
 
 class AutoMLAlgorithm(ABC):

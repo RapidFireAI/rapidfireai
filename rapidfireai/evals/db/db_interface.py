@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from rf_inferno.utils.constants import DBConfig
+from rapidfireai.evals.utils.constants import DBConfig
 
 
 class DatabaseInterface:

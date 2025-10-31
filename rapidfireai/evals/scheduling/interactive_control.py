@@ -11,14 +11,14 @@ Handles dynamic pipeline management operations during experiment execution:
 import json
 import time
 
-from rf_inferno.actors.rate_limiter_actor import RateLimiterActor
+from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
 
-from rf_inferno.db import RFDatabase
-from rf_inferno.metrics.aggregator import Aggregator
-from rf_inferno.scheduling.pipeline_scheduler import PipelineScheduler
-from rf_inferno.utils.config import OpenAIAPIModelConfig, RFvLLMModelConfig
-from rf_inferno.utils.constants import ICOperation, ICStatus, PipelineStatus
-from rf_inferno.utils.logger import RFLogger
+from rapidfireai.evals.db import RFDatabase
+from rapidfireai.evals.metrics.aggregator import Aggregator
+from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
+from rapidfireai.evals.utils.config import OpenAIAPIModelConfig, RFvLLMModelConfig
+from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
+from rapidfireai.evals.utils.logger import RFLogger
 
 
 class InteractiveControlHandler:

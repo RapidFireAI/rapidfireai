@@ -6,17 +6,17 @@ from typing import Any
 
 import ray
 
-from rf_inferno.actors.doc_actor import DocProcessingActor
-from rf_inferno.actors.inference_engines import InferenceEngine
-from rf_inferno.actors.query_actor import QueryProcessingActor
-from rf_inferno.data.dataset import DataLoader
-from rf_inferno.db import RFDatabase
-from rf_inferno.metrics.aggregator import Aggregator
-from rf_inferno.scheduling.interactive_control import InteractiveControlHandler
-from rf_inferno.scheduling.pipeline_scheduler import PipelineScheduler
-from rf_inferno.scheduling.scheduler import Scheduler
-from rf_inferno.utils.config import ModelConfig, RFvLLMModelConfig
-from rf_inferno.utils.constants import (
+from rapidfireai.evals.actors.doc_actor import DocProcessingActor
+from rapidfireai.evals.actors.inference_engines import InferenceEngine
+from rapidfireai.evals.actors.query_actor import QueryProcessingActor
+from rapidfireai.evals.data.dataset import DataLoader
+from rapidfireai.evals.db import RFDatabase
+from rapidfireai.evals.metrics.aggregator import Aggregator
+from rapidfireai.evals.scheduling.interactive_control import InteractiveControlHandler
+from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
+from rapidfireai.evals.scheduling.scheduler import Scheduler
+from rapidfireai.evals.utils.config import ModelConfig, RFvLLMModelConfig
+from rapidfireai.evals.utils.constants import (
     NUM_CPUS_PER_DOC_ACTOR,
     NUM_QUERY_PROCESSING_ACTORS,
     ContextStatus,
@@ -24,13 +24,13 @@ from rf_inferno.utils.constants import (
     PipelineStatus,
     TaskStatus,
 )
-from rf_inferno.utils.logger import RFLogger
-from rf_inferno.utils.progress_display import (
+from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.evals.utils.progress_display import (
     ContextBuildingDisplay,
     PipelineProgressDisplay,
 )
-from rf_inferno.automl import RFGridSearch, RFRandomSearch
-from rf_inferno.utils.automl_utils import get_runs
+from rapidfireai.evals.automl import RFGridSearch, RFRandomSearch
+from rapidfireai.evals.utils.automl_utils import get_runs
 
 
 class Controller:
@@ -722,7 +722,7 @@ class Controller:
         has_openai_pipeline = False
         openai_model_names = []
         for pipeline_id, pipeline_config in pipeline_id_to_config.items():
-            from rf_inferno.utils.config import OpenAIAPIModelConfig
+            from rapidfireai.evals.utils.config import OpenAIAPIModelConfig
 
             pipeline = pipeline_config["pipeline"]
             if isinstance(pipeline.model_config, OpenAIAPIModelConfig):
@@ -743,7 +743,7 @@ class Controller:
                     "Please provide openai_rpm_limit and openai_tpm_limit to Experiment constructor."
                 )
 
-            from rf_inferno.actors.rate_limiter_actor import RateLimiterActor
+            from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
 
             rate_limiter_actor = RateLimiterActor.remote(
                 model_names=openai_model_names,

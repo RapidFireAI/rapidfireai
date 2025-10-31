@@ -3,13 +3,13 @@ from typing import Any
 
 from vllm import SamplingParams
 
-from rf_inferno.actors.inference_engines import (
+from rapidfireai.evals.actors.inference_engines import (
     InferenceEngine,
     OpenAIInferenceEngine,
     VLLMInferenceEngine,
 )
-from rf_inferno.rag.prompt_manager import PromptManager
-from rf_inferno.rag.rag_pipeline import LangChainRagSpec
+from rapidfireai.evals.rag.prompt_manager import PromptManager
+from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
 
 
 class ModelConfig(ABC):

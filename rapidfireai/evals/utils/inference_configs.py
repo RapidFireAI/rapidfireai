@@ -5,7 +5,7 @@ This module provides functions to generate various model configurations
 for multi-pipeline experimentation and hyperparameter exploration.
 """
 
-from rf_inferno.utils.config import RFvLLMModelConfig
+from rapidfireai.evals.utils.config import RFvLLMModelConfig
 
 
 def get_inference_configs() -> list[RFvLLMModelConfig]:

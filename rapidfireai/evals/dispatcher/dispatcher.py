@@ -14,8 +14,8 @@ from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from waitress import serve
 
-from rf_inferno.db import RFDatabase
-from rf_inferno.utils.constants import ICOperation
+from rapidfireai.evals.db import RFDatabase
+from rapidfireai.evals.utils.constants import ICOperation
 
 CORS_ALLOWED_ORIGINS = ["http://localhost:3000", "http://localhost"]
 

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from rf_inferno.automl.base import AutoMLAlgorithm
+from rapidfireai.evals.automl.base import AutoMLAlgorithm
 
 # TODO: add code to validate param_config
 

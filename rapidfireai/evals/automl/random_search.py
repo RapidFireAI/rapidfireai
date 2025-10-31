@@ -7,8 +7,8 @@ from itertools import product
 from typing import Any, Dict
 from typing import List as ListType
 
-from rf_inferno.automl.base import AutoMLAlgorithm
-from rf_inferno.automl.datatypes import List, Range
+from rapidfireai.evals.automl.base import AutoMLAlgorithm
+from rapidfireai.evals.automl.datatypes import List, Range
 
 
 def encode_payload(payload: Dict[str, Any]) -> str:
