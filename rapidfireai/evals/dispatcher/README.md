@@ -14,10 +14,10 @@ REST API for interactive control of running experiments. Allows dynamic pipeline
 The dispatcher **automatically starts** when you create an `Experiment` object. It runs in a background thread and cleans up automatically when the experiment ends.
 
 ```python
-from rapidfireai.evals.experiment import Experiment
+from rapidfireai.experiment import Experiment
 
 # Dispatcher starts automatically on http://127.0.0.1:5000
-experiment = Experiment(experiment_name="my-experiment", num_actors=2)
+experiment = Experiment(experiment_name="my-experiment", mode="eval")
 
 # Now you can use the dispatcher API for interactive control
 # ...
