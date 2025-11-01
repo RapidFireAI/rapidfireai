@@ -1,7 +1,6 @@
 import hashlib
 import json
 import time
-from collections.abc import Callable
 from typing import Any
 
 import ray
@@ -9,13 +8,14 @@ import ray
 from rapidfireai.evals.actors.doc_actor import DocProcessingActor
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.actors.query_actor import QueryProcessingActor
+from rapidfireai.evals.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.evals.data.dataset import DataLoader
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.interactive_control import InteractiveControlHandler
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.evals.scheduling.scheduler import Scheduler
-from rapidfireai.evals.utils.config import ModelConfig, RFvLLMModelConfig
+from rapidfireai.evals.utils.automl_utils import get_runs
 from rapidfireai.evals.utils.constants import (
     NUM_CPUS_PER_DOC_ACTOR,
     NUM_QUERY_PROCESSING_ACTORS,
@@ -25,12 +25,7 @@ from rapidfireai.evals.utils.constants import (
     TaskStatus,
 )
 from rapidfireai.evals.utils.logger import RFLogger
-from rapidfireai.evals.utils.progress_display import (
-    ContextBuildingDisplay,
-    PipelineProgressDisplay,
-)
-from rapidfireai.evals.automl import RFGridSearch, RFRandomSearch
-from rapidfireai.evals.utils.automl_utils import get_runs
+from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 
 
 class Controller:
@@ -71,9 +66,7 @@ class Controller:
         self.openai_max_completion_tokens = openai_max_completion_tokens
 
         # Initialize logger
-        logging_manager = RFLogger(
-            experiment_name=self.experiment_name, experiment_path=self.experiment_path
-        )
+        logging_manager = RFLogger(experiment_name=self.experiment_name, experiment_path=self.experiment_path)
         self.logger = logging_manager.get_logger("Controller")
 
         # Cache for RAG contexts (persists only during Controller lifetime)
@@ -119,13 +112,9 @@ class Controller:
                 continue
             if isinstance(value, type):  # Classes
                 continue
-            if (
-                hasattr(value, "__module__") and "ray" in value.__module__
-            ):  # Ray objects
+            if hasattr(value, "__module__") and "ray" in value.__module__:  # Ray objects
                 continue
-            if (
-                hasattr(value, "__class__") and "torch" in value.__class__.__module__
-            ):  # PyTorch objects
+            if hasattr(value, "__class__") and "torch" in value.__class__.__module__:  # PyTorch objects
                 continue
 
             # Try to serialize the value
@@ -174,9 +163,7 @@ class Controller:
             prompt_hash = prompt_manager.get_hash() if prompt_manager else None
 
             if prompt_hash:
-                context_hash = hashlib.sha256(
-                    f"{rag_hash}:{prompt_hash}".encode()
-                ).hexdigest()
+                context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
             else:
                 context_hash = rag_hash
 
@@ -220,9 +207,7 @@ class Controller:
         for context_hash, (rag_spec, prompt_manager) in unique_contexts.items():
             # Check if already built in this Controller session
             if context_hash in self._context_cache:
-                self.logger.info(
-                    f"Context {context_hash[:8]}... already in cache (session), reusing"
-                )
+                self.logger.info(f"Context {context_hash[:8]}... already in cache (session), reusing")
                 continue
 
             # Need to build new context
@@ -279,16 +264,12 @@ class Controller:
             return
 
         num_contexts = len(contexts_to_build)
-        self.logger.info(
-            f"Creating {num_contexts} DocProcessingActor(s) for parallel processing"
-        )
+        self.logger.info(f"Creating {num_contexts} DocProcessingActor(s) for parallel processing")
 
         # Prepare context info for display (add enable_gpu flag)
         for context_info in contexts_to_build:
             rag_spec = context_info["rag"]
-            context_info["enable_gpu"] = (
-                rag_spec.enable_gpu_search if rag_spec else False
-            )
+            context_info["enable_gpu"] = rag_spec.enable_gpu_search if rag_spec else False
 
         # Initialize progress display for context building
         context_display = ContextBuildingDisplay(contexts_to_build)
@@ -320,9 +301,7 @@ class Controller:
             )
 
             # Submit build task (non-blocking)
-            components_future = doc_actor.build_rag_components.remote(
-                rag_spec, prompt_manager
-            )
+            components_future = doc_actor.build_rag_components.remote(rag_spec, prompt_manager)
 
             actor_tasks.append(
                 {
@@ -353,17 +332,13 @@ class Controller:
                 # Update database
                 db.set_context_end_time(context_id, end_time, duration)
                 db.set_context_status(context_id, ContextStatus.ONGOING)
-                self.logger.info(
-                    f"Built context {context_id} ({context_hash[:8]}...) successfully in {duration:.2f}s"
-                )
+                self.logger.info(f"Built context {context_id} ({context_hash[:8]}...) successfully in {duration:.2f}s")
 
                 # Cache for session-level reuse
                 self._context_cache[context_hash] = (context_id, context_generator_ref)
 
                 # Update display
-                context_display.update_context(
-                    context_hash, status="complete", duration=duration
-                )
+                context_display.update_context(context_hash, status="complete", duration=duration)
 
             except Exception as e:
                 end_time = time.time()
@@ -371,31 +346,25 @@ class Controller:
 
                 db.set_context_status(context_id, ContextStatus.FAILED)
                 db.set_context_error(context_id, str(e))
-                self.logger.exception(
-                    f"Failed to build context {context_id} ({context_hash[:8]}...)"
-                )
+                self.logger.exception(f"Failed to build context {context_id} ({context_hash[:8]}...)")
 
                 # Update display
-                context_display.update_context(
-                    context_hash, status="failed", duration=duration
-                )
+                context_display.update_context(context_hash, status="failed", duration=duration)
 
                 # HALT: Context creation is critical - stop the entire experiment
                 context_display.stop()
                 error_message = (
-                    f"\n{'='*80}\n"
+                    f"\n{'=' * 80}\n"
                     f"❌ CRITICAL ERROR: RAG Source Preprocessing Failed\n"
-                    f"{'='*80}\n"
+                    f"{'=' * 80}\n"
                     f"RAG Source ID: {context_id}\n"
                     f"Context Hash: {context_hash[:16]}...\n"
                     f"Error: {str(e)}\n"
-                    f"{'='*80}\n"
+                    f"{'=' * 80}\n"
                     f"\nThe experiment has been halted. Please fix the error and try again.\n"
                 )
                 print(error_message)
-                raise RuntimeError(
-                    f"Context creation failed for context {context_id}"
-                ) from e
+                raise RuntimeError(f"Context creation failed for context {context_id}") from e
 
             finally:
                 # Clean up DocProcessingActor
@@ -404,9 +373,7 @@ class Controller:
         # Stop the context building display
         context_display.stop()
 
-        self.logger.info(
-            f"Completed parallel context building for {num_contexts} context(s)"
-        )
+        self.logger.info(f"Completed parallel context building for {num_contexts} context(s)")
 
     def create_query_actors(
         self,
@@ -431,18 +398,16 @@ class Controller:
         gpus_per_actor = self.num_gpus // num_actors
         cpus_per_actor = self.num_cpus // num_actors
 
-        assert (
-            gpus_per_actor > 0
-        ), "Not enough GPUs available. Got {self.num_gpus} GPUs and {num_actors} actors, need at least 1 GPU per actor"
-        assert (
-            cpus_per_actor > 0
-        ), "Not enough CPUs available. Got {self.num_cpus} CPUs and {num_actors} actors, need at least 1 CPU per actor"
+        assert gpus_per_actor > 0, (
+            "Not enough GPUs available. Got {self.num_gpus} GPUs and {num_actors} actors, need at least 1 GPU per actor"
+        )
+        assert cpus_per_actor > 0, (
+            "Not enough CPUs available. Got {self.num_cpus} CPUs and {num_actors} actors, need at least 1 CPU per actor"
+        )
 
         actors = []
         for i in range(num_actors):
-            actor = QueryProcessingActor.options(
-                num_gpus=gpus_per_actor, num_cpus=cpus_per_actor
-            ).remote(
+            actor = QueryProcessingActor.options(num_gpus=gpus_per_actor, num_cpus=cpus_per_actor).remote(
                 engine_class=engine_class,
                 engine_kwargs=engine_kwargs,
                 context_generator_ref=context_generator_ref,
@@ -486,9 +451,7 @@ class Controller:
 
                 # Create combined context hash
                 if prompt_hash:
-                    context_hash = hashlib.sha256(
-                        f"{rag_hash}:{prompt_hash}".encode()
-                    ).hexdigest()
+                    context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
                 else:
                     context_hash = rag_hash
 
@@ -535,9 +498,7 @@ class Controller:
         for pipeline_id in pipeline_ids:
             pipeline_config = pipeline_id_to_config[pipeline_id]
             pipeline = pipeline_config["pipeline"]
-            pipeline_name = pipeline_config.get(
-                "pipeline_name", f"Pipeline {pipeline_id}"
-            )
+            pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
 
             # Check pipeline status
             pipeline_status = db.get_pipeline(pipeline_id)["status"]
@@ -545,20 +506,14 @@ class Controller:
             # Skip pipelines that didn't complete successfully
             if pipeline_status != PipelineStatus.COMPLETED.value:
                 if pipeline_status == PipelineStatus.FAILED.value:
-                    self.logger.warning(
-                        f"Pipeline {pipeline_id} failed, skipping final metrics"
-                    )
+                    self.logger.warning(f"Pipeline {pipeline_id} failed, skipping final metrics")
                 else:
-                    self.logger.info(
-                        f"Pipeline {pipeline_id} has status {pipeline_status}, skipping final metrics"
-                    )
+                    self.logger.info(f"Pipeline {pipeline_id} has status {pipeline_status}, skipping final metrics")
                 continue
 
             # Skip pipelines with no results (cloned but never processed)
             if not pipeline_results[pipeline_id]["results"]:
-                self.logger.info(
-                    f"Pipeline {pipeline_id} has no results, skipping final metrics"
-                )
+                self.logger.info(f"Pipeline {pipeline_id} has no results, skipping final metrics")
                 continue
 
             aggregator = pipeline_aggregators[pipeline_id]
@@ -587,9 +542,7 @@ class Controller:
             db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
             if progress_display:
                 progress_display.update_pipeline(pipeline_id, status="COMPLETED")
-            self.logger.info(
-                f"Pipeline {pipeline_id} ({pipeline_name}) completed successfully"
-            )
+            self.logger.info(f"Pipeline {pipeline_id} ({pipeline_name}) completed successfully")
 
         if progress_display:
             progress_display.stop()
@@ -631,9 +584,7 @@ class Controller:
         # PHASE 1: Shard the dataset
         shards = self.dataloader.get_shards_from_data(dataset, num_shards)
         shard_sizes = [len(shard) for shard in shards]
-        self.logger.info(
-            f"Dataset sharded into {num_shards} shard(s). Shard sizes: {shard_sizes}"
-        )
+        self.logger.info(f"Dataset sharded into {num_shards} shard(s). Shard sizes: {shard_sizes}")
 
         config_leaves = get_runs(config_group, seed)
 
@@ -651,9 +602,7 @@ class Controller:
         cpus_per_actor = num_cpus // num_actors if num_actors > 0 else 1
 
         for i in range(num_actors):
-            actor = QueryProcessingActor.options(
-                num_gpus=gpus_per_actor, num_cpus=cpus_per_actor
-            ).remote(
+            actor = QueryProcessingActor.options(num_gpus=gpus_per_actor, num_cpus=cpus_per_actor).remote(
                 experiment_name=self.experiment_name,
                 experiment_path=self.experiment_path,
                 actor_id=i,
@@ -663,9 +612,7 @@ class Controller:
         self.logger.info(f"Created {num_actors} query processing actors (generic pool)")
 
         # PHASE 5: Register pipelines in database
-        pipeline_ids, pipeline_id_to_config = self._register_pipelines(
-            config_leaves, db
-        )
+        pipeline_ids, pipeline_id_to_config = self._register_pipelines(config_leaves, db)
 
         # PHASE 6: Initialize PipelineScheduler
         scheduler = PipelineScheduler(
@@ -696,12 +643,8 @@ class Controller:
 
         # Initialize progress display table
         pipeline_info = []
-        pipeline_configs = [
-            pipeline_id_to_config[pipeline_id] for pipeline_id in pipeline_ids
-        ]
-        for pipeline_id, pipeline_config in zip(
-            pipeline_ids, pipeline_configs, strict=False
-        ):
+        pipeline_configs = [pipeline_id_to_config[pipeline_id] for pipeline_id in pipeline_ids]
+        for pipeline_id, pipeline_config in zip(pipeline_ids, pipeline_configs, strict=False):
             # Extract model name from config
             if (
                 hasattr(pipeline_config["pipeline"], "model_config")
@@ -731,9 +674,7 @@ class Controller:
                 if model_name not in openai_model_names:
                     openai_model_names.append(model_name)
                 # Map this pipeline to the shared rate limiter (will be created below)
-                pipeline_to_rate_limiter[pipeline_id] = (
-                    None  # Placeholder, will be set after creation
-                )
+                pipeline_to_rate_limiter[pipeline_id] = None  # Placeholder, will be set after creation
 
         # Create single rate limiter actor for all OpenAI pipelines if needed
         if has_openai_pipeline:
@@ -788,9 +729,7 @@ class Controller:
                 task_id = task_info["task_id"]
 
                 # Check if all batches are done
-                ready_futures, remaining_futures = ray.wait(
-                    futures, num_returns=len(futures), timeout=0
-                )
+                ready_futures, remaining_futures = ray.wait(futures, num_returns=len(futures), timeout=0)
 
                 if len(ready_futures) == len(futures):
                     # All batches completed
@@ -799,33 +738,23 @@ class Controller:
                         aggregator = pipeline_aggregators[pipeline_id]
                         pipeline_config = pipeline_id_to_config[pipeline_id]
                         pipeline = pipeline_config["pipeline"]
-                        shard_results, shard_metrics = (
-                            aggregator.aggregate_with_progress(
-                                futures=ready_futures,
-                                accumulate_metrics_fn=pipeline.accumulate_metrics_fn,
-                            )
+                        shard_results, shard_metrics = aggregator.aggregate_with_progress(
+                            futures=ready_futures,
+                            accumulate_metrics_fn=pipeline.accumulate_metrics_fn,
                         )
 
                         # Merge into pipeline's overall results
                         for key in shard_results:
                             if key in pipeline_results[pipeline_id]["results"]:
-                                pipeline_results[pipeline_id]["results"][key].extend(
-                                    shard_results[key]
-                                )
+                                pipeline_results[pipeline_id]["results"][key].extend(shard_results[key])
                             else:
-                                pipeline_results[pipeline_id]["results"][key] = (
-                                    shard_results[key].copy()
-                                )
+                                pipeline_results[pipeline_id]["results"][key] = shard_results[key].copy()
 
                         for key in shard_metrics:
                             if key in pipeline_results[pipeline_id]["metrics"]:
-                                pipeline_results[pipeline_id]["metrics"][key].extend(
-                                    shard_metrics[key]
-                                )
+                                pipeline_results[pipeline_id]["metrics"][key].extend(shard_metrics[key])
                             else:
-                                pipeline_results[pipeline_id]["metrics"][key] = (
-                                    shard_metrics[key].copy()
-                                )
+                                pipeline_results[pipeline_id]["metrics"][key] = shard_metrics[key].copy()
 
                         # Update database
                         end_time = time.time()
@@ -836,9 +765,7 @@ class Controller:
 
                         # Update pipeline progress
                         shards_completed = shard_id + 1
-                        samples_processed = shards_completed * len(
-                            shards[0]
-                        )  # Approximate
+                        samples_processed = shards_completed * len(shards[0])  # Approximate
                         db.set_pipeline_progress(
                             pipeline_id,
                             shard_id + 1,
@@ -849,24 +776,15 @@ class Controller:
                         # Check if pipeline completed all shards
                         if shards_completed >= num_shards:
                             # Mark as completed (metrics will be finalized in Phase 8)
-                            db.set_pipeline_status(
-                                pipeline_id, PipelineStatus.COMPLETED
-                            )
-                            progress_display.update_pipeline(
-                                pipeline_id, status="COMPLETED"
-                            )
-                            self.logger.info(
-                                f"Pipeline {pipeline_id} completed all {num_shards} shards"
-                            )
+                            db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
+                            progress_display.update_pipeline(pipeline_id, status="COMPLETED")
+                            self.logger.info(f"Pipeline {pipeline_id} completed all {num_shards} shards")
 
                         # Compute current metrics with confidence intervals
                         confidence_value = None
                         display_metrics = {}
 
-                        if (
-                            pipeline.accumulate_metrics_fn
-                            and aggregator.online_strategy
-                        ):
+                        if pipeline.accumulate_metrics_fn and aggregator.online_strategy:
                             # Accumulate metrics from all completed shards
                             try:
                                 cumulative_metrics = pipeline.accumulate_metrics_fn(
@@ -881,28 +799,18 @@ class Controller:
                                 if "Accuracy" in metrics_with_ci:
                                     acc_data = metrics_with_ci["Accuracy"]
                                     if isinstance(acc_data, dict):
-                                        display_metrics["Accuracy"] = {
-                                            "value": acc_data.get("value", 0)
-                                        }
+                                        display_metrics["Accuracy"] = {"value": acc_data.get("value", 0)}
                                         # Use margin of error as confidence display
                                         if "margin_of_error" in acc_data:
-                                            confidence_value = acc_data[
-                                                "margin_of_error"
-                                            ]
+                                            confidence_value = acc_data["margin_of_error"]
 
                                 # Calculate throughput (samples/second)
-                                elapsed_time = time.time() - pipeline_start_times.get(
-                                    pipeline_id, time.time()
-                                )
+                                elapsed_time = time.time() - pipeline_start_times.get(pipeline_id, time.time())
                                 if elapsed_time > 0:
                                     throughput = samples_processed / elapsed_time
-                                    display_metrics["Throughput"] = {
-                                        "value": throughput
-                                    }
+                                    display_metrics["Throughput"] = {"value": throughput}
                             except Exception as e:
-                                self.logger.debug(
-                                    f"Could not compute live metrics: {e}"
-                                )
+                                self.logger.debug(f"Could not compute live metrics: {e}")
 
                         # Update progress display
                         progress_display.update_pipeline(
@@ -923,9 +831,7 @@ class Controller:
                     except Exception as e:
                         # Task failed - mark pipeline as FAILED but continue with other pipelines
                         error_msg = str(e)
-                        self.logger.exception(
-                            f"Pipeline {pipeline_id} failed on shard {shard_id}"
-                        )
+                        self.logger.exception(f"Pipeline {pipeline_id} failed on shard {shard_id}")
 
                         # Update database
                         db.set_actor_task_status(task_id, TaskStatus.FAILED)
@@ -936,19 +842,17 @@ class Controller:
                         # Display error in notebook (but don't halt the experiment)
                         pipeline_config = pipeline_id_to_config.get(pipeline_id)
                         pipeline_name = (
-                            pipeline_config.get(
-                                "pipeline_name", f"Pipeline {pipeline_id}"
-                            )
+                            pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
                             if pipeline_config
                             else f"Pipeline {pipeline_id}"
                         )
                         error_display = (
-                            f"\n{'='*80}\n"
+                            f"\n{'=' * 80}\n"
                             f"⚠️  Run {pipeline_id} ({pipeline_name}) FAILED\n"
-                            f"{'='*80}\n"
+                            f"{'=' * 80}\n"
                             f"Shard: {shard_id + 1}/{num_shards}\n"
                             f"Error: {error_msg}\n"
-                            f"{'='*80}\n"
+                            f"{'=' * 80}\n"
                             f"This run has been marked as FAILED. The experiment will continue with other runs.\n"
                         )
                         print(error_display)
@@ -1008,9 +912,7 @@ class Controller:
 
             pipeline_config = pipeline_id_to_config[pipeline_id]
             pipeline = pipeline_config["pipeline"]
-            pipeline_name = pipeline_config.get(
-                "pipeline_name", f"Pipeline {pipeline_id}"
-            )
+            pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
             model_config = pipeline.model_config
 
             # Update pipeline status
@@ -1058,9 +960,7 @@ class Controller:
 
                 # Create combined context hash
                 if prompt_hash:
-                    context_hash = hashlib.sha256(
-                        f"{rag_hash}:{prompt_hash}".encode()
-                    ).hexdigest()
+                    context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
                 else:
                     context_hash = rag_hash
 
@@ -1072,12 +972,8 @@ class Controller:
 
             # Inject rate limiter actor and max_completion_tokens for OpenAI pipelines
             if pipeline_id in pipeline_to_rate_limiter:
-                engine_kwargs["rate_limiter_actor"] = pipeline_to_rate_limiter[
-                    pipeline_id
-                ]
-                engine_kwargs["max_completion_tokens"] = (
-                    self.openai_max_completion_tokens
-                )
+                engine_kwargs["rate_limiter_actor"] = pipeline_to_rate_limiter[pipeline_id]
+                engine_kwargs["max_completion_tokens"] = self.openai_max_completion_tokens
 
             ray.get(
                 actor.initialize_for_pipeline.remote(
@@ -1087,9 +983,7 @@ class Controller:
                 )
             )
 
-            self.logger.debug(
-                f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})"
-            )
+            self.logger.debug(f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})")
 
             futures = []
             preprocess_fn = pipeline.preprocess_fn
@@ -1101,9 +995,7 @@ class Controller:
                     batch,
                     preprocess_fn=preprocess_fn,
                     postprocess_fn=postprocess_fn,
-                    compute_metrics_fn=(
-                        compute_metrics_fn if accumulate_metrics_fn else None
-                    ),
+                    compute_metrics_fn=(compute_metrics_fn if accumulate_metrics_fn else None),
                 )
                 futures.append(future)
 
