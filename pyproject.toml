@@ -119,6 +119,7 @@ rapidfireai = [
     "fit/db/*.sql",
     "fit/utils/*.py",
     "evals/actors/*.py",
+    "evals/data/*.py",
     "evals/db/*.py",
     "evals/db/*.sql",
     "evals/dispatcher/*.py",
