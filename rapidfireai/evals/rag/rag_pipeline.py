@@ -10,7 +10,7 @@ Uses FAISS by default for both CPU and GPU similarity search with optimized inde
 
 import copy
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Optional, List as list
 import hashlib
 import json
 
@@ -23,6 +23,22 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStore
 from langchain_text_splitters import TextSplitter
+from langchain_core.documents import BaseDocumentCompressor
+from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+
+def _default_document_template(doc: Document) -> str:
+    """
+    Default document formatting template.
+    
+    Args:
+        doc: A langchain Document to format.
+        
+    Returns:
+        Formatted string with metadata and content.
+    """
+    metadata = "; ".join([f"{k}: {v}" for k, v in doc.metadata.items()])
+    return f"{metadata}:\n{doc.page_content}"
 
 
 class LangChainRagSpec:
@@ -59,17 +75,16 @@ class LangChainRagSpec:
         self,
         document_loader: BaseLoader,
         text_splitter: TextSplitter,
-        embedding_cls: type[
-            Embeddings
-        ],  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
-        embedding_kwargs: dict[str, Any] | None = None,
-        retriever: BaseRetriever | None = None,
-        vector_store: VectorStore | None = None,
+        embedding_cls: type[Embeddings],  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
+        embedding_kwargs: Optional[dict[str, Any]] | None = None,
+        retriever: Optional[BaseRetriever] | None = None,
+        vector_store: Optional[VectorStore] | None = None,
         search_type: str = "similarity",
         search_kwargs: dict | None = None,
-        reranker: Callable[[list[Document]], list[Document]] | None = None,
+        reranker_cls: Optional[type[BaseDocumentCompressor]] | None = None,
+        reranker_kwargs: Optional[dict[str, Any]] | None = None,
         enable_gpu_search: bool = False,
-        document_template: Callable[[Document], str] | None = None,
+        document_template: Optional[Callable[[Document], str]] | None = None,
     ) -> None:
         """
         Initialize the RAG specification with LangChain components.
@@ -112,19 +127,19 @@ class LangChainRagSpec:
             RuntimeError: If GPU mode is requested but CUDA GPU is not available.
         """
         # Validate required parameters
-        if not document_loader:
-            raise ValueError("document_loader is required")
-        if not text_splitter:
-            raise ValueError("text_splitter is required")
+        # Note: document_loader and text_splitter can be None if retriever/vector_store
+        # are provided (for query-time reconstruction from serialized components)
+        if not document_loader and not retriever and not vector_store:
+            raise ValueError("document_loader is required unless retriever or vector_store is provided")
+        if not text_splitter and not retriever and not vector_store:
+            raise ValueError("text_splitter is required unless retriever or vector_store is provided")
         if not embedding_cls:
             raise ValueError("embedding_cls is required")
 
         # Validate search_type
         valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
         if search_type not in valid_search_types:
-            raise ValueError(
-                f"search_type must be one of {valid_search_types}, got: {search_type}"
-            )
+            raise ValueError(f"search_type must be one of {valid_search_types}, got: {search_type}")
 
         self.document_loader = document_loader
         self.text_splitter = text_splitter
@@ -135,12 +150,7 @@ class LangChainRagSpec:
         if document_template:
             self.template = document_template
         else:
-
-            def default_template(doc: Document) -> str:
-                metadata = "; ".join([f"{k}: {v}" for k, v in doc.metadata.items()])
-                return f"{metadata}:\n{doc.page_content}"
-
-            self.template = default_template
+            self.template = _default_document_template
 
         # Default search kwargs with type safety
         self.search_kwargs: dict[str, Any] = {
@@ -154,8 +164,33 @@ class LangChainRagSpec:
 
         self.vector_store = vector_store
         self.retriever = retriever
-        self.reranker = reranker
+        self.reranker_cls = reranker_cls
+        self.reranker_kwargs = reranker_kwargs or {}
         self.enable_gpu_search = enable_gpu_search
+        self.reranker = None
+
+    @staticmethod
+    def default_template(doc: Document) -> str:
+        """
+        Default document formatting template.
+        
+        Args:
+            doc: A langchain Document to format.
+            
+        Returns:
+            Formatted string with metadata and content.
+        """
+        return _default_document_template(doc)
+
+    @property
+    def document_template(self) -> Callable[[Document], str]:
+        """
+        Get the document template function.
+        
+        Returns:
+            The document template callable.
+        """
+        return self.template
 
     def build_index(self) -> None:
         """
@@ -181,6 +216,22 @@ class LangChainRagSpec:
         """
         # Create embedding instance with provided configuration
         self.embedding = self.embedding_cls(**self.embedding_kwargs)
+
+        if self.reranker_cls:
+            if self.reranker_cls is CrossEncoderReranker:
+                hf_model_name = self.reranker_kwargs.pop("model_name", "cross-encoder/ms-marco-MiniLM-L6-v2")
+                hf_model_kwargs = self.reranker_kwargs.pop("model_kwargs", {})
+                
+                self.reranker = self.reranker_cls(
+                    model=HuggingFaceCrossEncoder(
+                        model_name=hf_model_name,
+                        model_kwargs=hf_model_kwargs
+                    ),
+                    **self.reranker_kwargs
+                )
+            else:
+                self.reranker = self.reranker_cls(**self.reranker_kwargs)
+
         # Initialize vector store and retriever based on provided parameters
         if not self.retriever and not self.vector_store:
             try:
@@ -189,9 +240,7 @@ class LangChainRagSpec:
                     # FAISS vector store will be built (adding documents) in _build_vector_store() method
                     self.vector_store = FAISS(
                         embedding_function=self.embedding,
-                        index=faiss.IndexFlatL2(
-                            len(self.embedding.embed_query("RapidFire AI is awesome!"))
-                        ),
+                        index=faiss.IndexFlatL2(len(self.embedding.embed_query("RapidFire AI is awesome!"))),
                         docstore=InMemoryDocstore(),
                         index_to_docstore_id={},
                     )
@@ -201,13 +250,9 @@ class LangChainRagSpec:
                     # TODO: move these to constants.py
                     M = 16  # good default value: controls the number of bidirectional connections of each node
                     ef_construction = 64  # 4-8x of M: Size of dynamic candidate list during construction
-                    ef_search = (
-                        32  # 2-4x of M: Size of dynamic candidate list during search
-                    )
+                    ef_search = 32  # 2-4x of M: Size of dynamic candidate list during search
 
-                    hnsw_index = faiss.IndexHNSWFlat(
-                        len(self.embedding.embed_query("RapidFire AI is awesome!")), M
-                    )
+                    hnsw_index = faiss.IndexHNSWFlat(len(self.embedding.embed_query("RapidFire AI is awesome!")), M)
                     hnsw_index.hnsw.efConstruction = ef_construction
                     hnsw_index.hnsw.efSearch = ef_search
 
@@ -249,17 +294,12 @@ class LangChainRagSpec:
             text_splitter=self.text_splitter,  # Shared reference
             embedding_cls=self.embedding_cls,  # Shared reference
             embedding_kwargs=self.embedding_kwargs,  # Shared reference
-            retriever=copy.deepcopy(
-                self.retriever
-            ),  # Will be created fresh in initialize() if not provided
+            retriever=copy.deepcopy(self.retriever),  # Will be created fresh in initialize() if not provided
             vector_store=self.vector_store,  # Will be created fresh in initialize() if not provided
             search_type=self.search_type,  # Shared reference
-            search_kwargs=copy.deepcopy(
-                self.search_kwargs
-            ),  # Deep copy to avoid shared refs
-            reranker=copy.deepcopy(
-                self.reranker
-            ),  # Deep copy in case reranker has mutable state
+            search_kwargs=copy.deepcopy(self.search_kwargs),  # Deep copy to avoid shared refs
+            reranker_cls=self.reranker_cls,  # Shared reference
+            reranker_kwargs=copy.deepcopy(self.reranker_kwargs),  # Deep copy to avoid shared refs
             enable_gpu_search=self.enable_gpu_search,  # Include GPU setting
         )
 
@@ -302,9 +342,7 @@ class LangChainRagSpec:
         all_splits = self._split_documents(documents=self._load_documents())
         self.vector_store.add_documents(documents=all_splits)
 
-    def _retrieve_from_vector_store(
-        self, batch_queries: list[str]
-    ) -> list[list[Document]]:
+    def _retrieve_from_vector_store(self, batch_queries: list[str]) -> list[list[Document]]:
         """
         Retrieve relevant documents from the vector store for batch queries.
 
@@ -378,6 +416,48 @@ class LangChainRagSpec:
             return [self.reranker(docs) for docs in batch_docs]
         return batch_docs
 
+    def serialize_documents(self, batch_docs: list[list[Document]]) -> list[str]:
+        """
+        Serialize batch documents into formatted strings for context injection.
+        """
+        separator = "\n\n"
+        return [separator.join([self.template(d) for d in docs]) for docs in batch_docs]
+
+    def get_context(self, batch_queries: list[str], use_reranker: bool = True, serialize: bool = True) -> list[str]:
+        """
+        Retrieve and serialize relevant context documents for batch queries.
+        
+        This is a convenience method that retrieves context documents. By default,
+        it uses reranking if a reranker is configured. Set use_reranker=False to
+        skip reranking and just retrieve and serialize documents.
+        
+        Args:
+            batch_queries: List of query strings to retrieve context for.
+            use_reranker: Whether to apply reranking if a reranker is configured.
+                         Default: True. Set to False to skip reranking.
+        
+        Returns:
+            List of formatted context strings, one per query.
+            
+        Raises:
+            ValueError: If retriever is not configured (build_index() not called).
+        """
+        if not self.retriever:
+            raise ValueError("retriever not configured. Call build_index() first.")
+        
+        # Batch retrieval
+        batch_docs = self.retriever.batch(batch_queries)
+        
+        # Optionally rerank
+        if use_reranker:
+            batch_docs = self._rerank_docs(batch_queries=batch_queries, batch_docs=batch_docs)
+        
+        # Serialize documents
+        if serialize:
+            return self.serialize_documents(batch_docs=batch_docs)
+        else:
+            return batch_docs
+
     def get_hash(self) -> str:
         """
         Generate a unique hash for this RAG configuration.
@@ -402,21 +482,39 @@ class LangChainRagSpec:
             rag_dict["text_splitter_type"] = type(text_splitter).__name__
 
         # Embedding configuration
-        rag_dict["embedding_cls"] = (
-            self.embedding_cls.__name__ if self.embedding_cls else None
-        )
-        rag_dict["embedding_kwargs"] = (
-            self.embedding_kwargs
-        )  # Contains model_name, device, etc.
+        rag_dict["embedding_cls"] = self.embedding_cls.__name__ if self.embedding_cls else None
+        rag_dict["embedding_kwargs"] = self.embedding_kwargs  # Contains model_name, device, etc.
 
         # Search configuration
         rag_dict["search_type"] = self.search_type
-        rag_dict["search_kwargs"] = (
-            self.search_kwargs
-        )  # Contains k and other search params
+        rag_dict["search_kwargs"] = self.search_kwargs  # Contains k and other search params
         rag_dict["enable_gpu_search"] = self.enable_gpu_search
-        rag_dict["has_reranker"] = self.reranker is not None
+        rag_dict["has_reranker"] = self.reranker_cls is not None and self.reranker_kwargs is not None
 
         # Convert to JSON string and hash
         rag_json = json.dumps(rag_dict, sort_keys=True)
         return hashlib.sha256(rag_json.encode()).hexdigest()
+
+    def _rerank_docs(self, batch_queries: list[str], batch_docs: list[list[Document]]) -> list[list[Document]]:
+        """
+        Optionally rerank batch documents using the configured BaseDocumentCompressor.
+        
+        The reranker (BaseDocumentCompressor) is applied to each query's document list 
+        individually using the compress_documents() method, which requires both the 
+        query and documents as input.
+        
+        Args:
+            batch_queries: A list of query strings corresponding to each document list.
+            batch_docs: A batch of document lists where each inner list contains
+                       documents for a single query.
+            
+        Returns:
+            List[List[Document]]: The batch of documents, reranked if a reranker
+                                 (BaseDocumentCompressor) is configured, otherwise 
+                                 returned as-is. Maintains the same structure as input.
+        """
+        if self.reranker:
+            # Apply reranker to each query's documents individually
+            return [self.reranker.compress_documents(docs, query) 
+                    for query, docs in zip(batch_queries, batch_docs)]
+        return batch_docs

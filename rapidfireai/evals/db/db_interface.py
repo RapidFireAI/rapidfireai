@@ -45,9 +45,7 @@ class DatabaseInterface:
         except sqlite3.Error as e:
             raise Exception(f"Failed to initialize database connection: {e}") from e
         except Exception as e:
-            raise Exception(
-                f"Unexpected error during database initialization: {e}"
-            ) from e
+            raise Exception(f"Unexpected error during database initialization: {e}") from e
 
     @staticmethod
     def retry_on_locked(
@@ -79,9 +77,7 @@ class DatabaseInterface:
                 if last_exception:
                     raise last_exception
                 else:
-                    raise RuntimeError(
-                        "All retries failed but no exception was captured"
-                    )
+                    raise RuntimeError("All retries failed but no exception was captured")
 
             return wrapper
 
@@ -104,9 +100,7 @@ class DatabaseInterface:
         except sqlite3.Error as e:
             raise Exception(f"Failed to optimize database: {e}") from e
         except Exception as e:
-            raise Exception(
-                f"Unexpected error during database optimization: {e}"
-            ) from e
+            raise Exception(f"Unexpected error during database optimization: {e}") from e
 
     @retry_on_locked()
     def execute(
@@ -123,11 +117,7 @@ class DatabaseInterface:
 
         try:
             # Execute the query with parameters if provided
-            result = (
-                self.cursor.execute(query, params)
-                if params
-                else self.cursor.execute(query)
-            )
+            result = self.cursor.execute(query, params) if params else self.cursor.execute(query)
 
             # Commit the transaction if commit is True
             if commit:
@@ -138,10 +128,6 @@ class DatabaseInterface:
                 return result.fetchall()
 
         except sqlite3.Error as e:
-            raise Exception(
-                f"Database error executing query '{query[:50]}...': {e}"
-            ) from e
+            raise Exception(f"Database error executing query '{query[:50]}...': {e}") from e
         except Exception as e:
-            raise Exception(
-                f"Unexpected error executing query '{query[:50]}...': {e}"
-            ) from e
+            raise Exception(f"Unexpected error executing query '{query[:50]}...': {e}") from e

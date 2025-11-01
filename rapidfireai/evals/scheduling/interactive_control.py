@@ -16,7 +16,7 @@ from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
-from rapidfireai.evals.utils.config import OpenAIAPIModelConfig, RFvLLMModelConfig
+from rapidfireai.evals.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
 from rapidfireai.evals.utils.logger import RFLogger
 
@@ -39,9 +39,7 @@ class InteractiveControlHandler:
             context_cache: Controller's context cache (maps context_hash -> (context_id, ObjectRef))
         """
         # Initialize logger
-        logging_manager = RFLogger(
-            experiment_name=experiment_name, experiment_path=experiment_path
-        )
+        logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
         self.logger = logging_manager.get_logger("InteractiveControl")
 
         # Reference to controller's context cache
@@ -93,14 +91,10 @@ class InteractiveControlHandler:
                     self._handle_stop(pipeline_id, scheduler, db, progress_display)
 
                 elif operation == ICOperation.RESUME.value:
-                    self._handle_resume(
-                        pipeline_id, scheduler, db, num_shards, progress_display
-                    )
+                    self._handle_resume(pipeline_id, scheduler, db, num_shards, progress_display)
 
                 elif operation == ICOperation.DELETE.value:
-                    self._handle_delete(
-                        pipeline_id, scheduler, db, pipeline_results, progress_display
-                    )
+                    self._handle_delete(pipeline_id, scheduler, db, pipeline_results, progress_display)
 
                 elif operation == ICOperation.CLONE.value:
                     self._handle_clone(
@@ -121,9 +115,7 @@ class InteractiveControlHandler:
 
                 # Mark as completed
                 db.update_ic_operation_status(ic_id, ICStatus.COMPLETED.value)
-                self.logger.info(
-                    f"Completed IC operation {ic_id}: {operation} (pipeline {pipeline_id})"
-                )
+                self.logger.info(f"Completed IC operation {ic_id}: {operation} (pipeline {pipeline_id})")
 
                 # add delay to prevent retry storms
                 time.sleep(0.5)
@@ -137,11 +129,7 @@ class InteractiveControlHandler:
                 time.sleep(0.5)
 
     def _handle_stop(
-        self,
-        pipeline_id: int,
-        scheduler: PipelineScheduler,
-        db: RFDatabase,
-        progress_display=None,
+        self, pipeline_id: int, scheduler: PipelineScheduler, db: RFDatabase, progress_display=None
     ) -> None:
         """
         Stop a pipeline (remove from scheduling, save progress).
@@ -162,17 +150,10 @@ class InteractiveControlHandler:
         if progress_display:
             progress_display.update_pipeline(pipeline_id, status="STOPPED")
 
-        self.logger.info(
-            f"Stopped pipeline {pipeline_id} at {shards_completed} shards completed"
-        )
+        self.logger.info(f"Stopped pipeline {pipeline_id} at {shards_completed} shards completed")
 
     def _handle_resume(
-        self,
-        pipeline_id: int,
-        scheduler: PipelineScheduler,
-        db: RFDatabase,
-        num_shards: int,
-        progress_display=None,
+        self, pipeline_id: int, scheduler: PipelineScheduler, db: RFDatabase, num_shards: int, progress_display=None
     ) -> None:
         """
         Resume a stopped pipeline (re-add to scheduler with saved progress).
@@ -194,9 +175,7 @@ class InteractiveControlHandler:
 
         # Validate pipeline was stopped
         if pipeline["status"] != PipelineStatus.STOPPED.value:
-            raise ValueError(
-                f"Pipeline {pipeline_id} is not stopped (status: {pipeline['status']})"
-            )
+            raise ValueError(f"Pipeline {pipeline_id} is not stopped (status: {pipeline['status']})")
 
         # Re-add to scheduler with existing progress
         scheduler.add_pipeline(pipeline_id, shards_completed)
@@ -208,9 +187,7 @@ class InteractiveControlHandler:
         if progress_display:
             progress_display.update_pipeline(pipeline_id, status="ONGOING")
 
-        self.logger.info(
-            f"Resumed pipeline {pipeline_id} from shard {shards_completed}/{num_shards}"
-        )
+        self.logger.info(f"Resumed pipeline {pipeline_id} from shard {shards_completed}/{num_shards}")
 
     def _handle_delete(
         self,
@@ -279,9 +256,7 @@ class InteractiveControlHandler:
         # Parse request data
         data = json.loads(request_data)
         context_id = data["context_id"]
-        pipeline_type = data.get(
-            "pipeline_type", "vllm"
-        )  # Default to vllm for backwards compatibility
+        pipeline_type = data.get("pipeline_type", "vllm")  # Default to vllm for backwards compatibility
 
         # Get context info from database
         context = db.get_context(context_id)
@@ -292,9 +267,7 @@ class InteractiveControlHandler:
 
         # Validate context exists in controller cache
         if context_hash not in self._context_cache:
-            raise ValueError(
-                f"Context {context_hash} not loaded in controller cache. Cannot clone pipeline."
-            )
+            raise ValueError(f"Context {context_hash} not loaded in controller cache. Cannot clone pipeline.")
 
         # Get rag and prompt_manager from any existing pipeline that uses this context
         # We need to reconstruct these from an existing pipeline since cache only has components_ref
@@ -305,10 +278,7 @@ class InteractiveControlHandler:
             if existing_pipeline:
                 # Check if this pipeline uses the same context
                 existing_pipeline_db = db.get_pipeline(existing_pipeline_id)
-                if (
-                    existing_pipeline_db
-                    and existing_pipeline_db.get("context_id") == context_id
-                ):
+                if existing_pipeline_db and existing_pipeline_db.get("context_id") == context_id:
                     rag = getattr(existing_pipeline, "rag", None)
                     prompt_manager = getattr(existing_pipeline, "prompt_manager", None)
                     break
@@ -330,7 +300,7 @@ class InteractiveControlHandler:
             model_config_dict = data["model_config"]
 
             # Note: Rate limiting is now configured at the experiment level
-            model_config = OpenAIAPIModelConfig(
+            model_config = RFOpenAIAPIModelConfig(
                 client_config=client_config,
                 model_config=model_config_dict,
                 rag=rag,
@@ -338,17 +308,15 @@ class InteractiveControlHandler:
             )
 
         else:
-            raise ValueError(
-                f"Unknown pipeline_type: {pipeline_type}. Supported types: 'vllm', 'openai'"
-            )
+            raise ValueError(f"Unknown pipeline_type: {pipeline_type}. Supported types: 'vllm', 'openai'")
 
         # Register pipeline using existing Controller method
         # Note: This requires calling back to Controller's _register_pipelines
         # For now, we'll do the registration manually here to avoid circular dependency
-
+        
         # Wrap model_config in pipeline_config dict structure to match expected format
         pipeline_config_dict = {"pipeline": model_config}
-
+        
         new_pipeline_id = db.create_pipeline(
             context_id=context_id,
             pipeline_type=pipeline_type,
@@ -361,10 +329,7 @@ class InteractiveControlHandler:
 
         # Reuse experiment-wide rate limiter actor for OpenAI pipelines
         # Since rate limiting is now at the experiment level, all OpenAI pipelines share the same rate limiter
-        if (
-            isinstance(model_config, OpenAIAPIModelConfig)
-            and pipeline_to_rate_limiter is not None
-        ):
+        if isinstance(model_config, RFOpenAIAPIModelConfig) and pipeline_to_rate_limiter is not None:
             # Get the shared rate limiter actor from any existing OpenAI pipeline
             existing_rate_limiter = None
             for pid, rate_limiter_actor in pipeline_to_rate_limiter.items():
@@ -375,9 +340,7 @@ class InteractiveControlHandler:
             if existing_rate_limiter:
                 # Reuse the experiment-wide rate limiter
                 pipeline_to_rate_limiter[new_pipeline_id] = existing_rate_limiter
-                self.logger.info(
-                    f"Cloned OpenAI pipeline {new_pipeline_id} will use experiment-wide rate limiter"
-                )
+                self.logger.info(f"Cloned OpenAI pipeline {new_pipeline_id} will use experiment-wide rate limiter")
             else:
                 # This should not happen - experiment should always have a rate limiter for OpenAI pipelines
                 raise RuntimeError(
@@ -389,18 +352,12 @@ class InteractiveControlHandler:
         aggregator = Aggregator()
         pipeline_config = pipeline_id_to_config[new_pipeline_id]
         if hasattr(pipeline_config["pipeline"], "online_strategy"):
-            aggregator.set_online_strategy(
-                **pipeline_config["pipeline"].online_strategy
-            )
+            aggregator.set_online_strategy(**pipeline_config["pipeline"].online_strategy)
         aggregator.set_total_population_size(len(dataset))
         pipeline_aggregators[new_pipeline_id] = aggregator
 
         # Initialize results tracking
-        pipeline_results[new_pipeline_id] = {
-            "results": {},
-            "metrics": {},
-            "start_time": None,
-        }
+        pipeline_results[new_pipeline_id] = {"results": {}, "metrics": {}, "start_time": None}
 
         # Add to scheduler (starts from shard 0)
         scheduler.add_pipeline(new_pipeline_id, shards_completed=0)
@@ -408,24 +365,76 @@ class InteractiveControlHandler:
         # Update status to ONGOING (will be scheduled in next iteration)
         db.set_pipeline_status(new_pipeline_id, PipelineStatus.ONGOING)
 
-        # Extract model name for display
-        if (
-            hasattr(pipeline_config["pipeline"], "model_config")
-            and "model" in pipeline_config["pipeline"].model_config
-        ):
-            model_name = pipeline_config["pipeline"].model_config["model"]
-        elif isinstance(model_config, OpenAIAPIModelConfig):
+        # Extract model name and metadata for display
+        pipeline = pipeline_config["pipeline"]
+        
+        # Extract model name
+        if isinstance(model_config, RFOpenAIAPIModelConfig):
             # For OpenAI, model name is in model_config.model_config
             model_name = model_config.model_config.get("model", "Unknown")
         elif isinstance(model_config, RFvLLMModelConfig):
             # For vLLM, model name is in model_config.model_config
             model_name = model_config.model_config.get("model", "Unknown")
+        elif hasattr(pipeline, "model_config") and pipeline.model_config is not None:
+            if "model" in pipeline.model_config:
+                model_name = pipeline.model_config["model"]
+            else:
+                model_name = "Unknown"
         else:
             model_name = "Unknown"
+        
+        # Extract metadata fields (similar to controller.py)
+        search_type = None
+        rag_k = None
+        top_n = None
+        chunk_size = None
+        chunk_overlap = None
+        sampling_params = None
+        prompt_manager_k = None
+        model_config_dict = None
+        
+        if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
+            # Extract full model config (excluding the model name)
+            model_config_copy = pipeline.model_config.copy()
+            model_config_copy.pop("model", None)
+            if model_config_copy:  # Only assign if there are other configs
+                model_config_dict = model_config_copy
+        
+        # Extract RAG-related fields
+        if hasattr(pipeline, "rag") and pipeline.rag is not None:
+            search_type = getattr(pipeline.rag, "search_type", None)
+            if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs is not None:
+                rag_k = pipeline.rag.search_kwargs.get("k", None)
+            if hasattr(pipeline.rag, "reranker_kwargs") and pipeline.rag.reranker_kwargs is not None:
+                top_n = pipeline.rag.reranker_kwargs.get("top_n", None)
+            if hasattr(pipeline.rag, "text_splitter") and pipeline.rag.text_splitter is not None:
+                chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)
+                chunk_overlap = getattr(pipeline.rag.text_splitter, "_chunk_overlap", None)
+        
+        # Extract sampling params
+        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
+            sampling_params = pipeline.sampling_params
+        
+        # Extract prompt_manager fields
+        if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
+            prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
 
         # Add to progress display
         if progress_display:
-            progress_display.add_pipeline(new_pipeline_id, model_name, status="ONGOING")
+            progress_display.add_pipeline(
+                pipeline_id=new_pipeline_id,
+                pipeline_config=pipeline_config,
+                model_name=model_name,
+                status="ONGOING",
+                search_type=search_type,
+                rag_k=rag_k,
+                top_n=top_n,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                sampling_params=sampling_params,
+                prompt_manager_k=prompt_manager_k,
+                model_config=model_config_dict,
+            )
 
         self.logger.info(
             f"Cloned new pipeline {new_pipeline_id}, type={pipeline_type}) "

@@ -2,27 +2,17 @@
 
 from typing import Any
 
-from rapidfireai.evals.automl.base import AutoMLAlgorithm
+from  rapidfireai.evals.automl.base import AutoMLAlgorithm
 
 # TODO: add code to validate param_config
 
 
-def get_flattened_config_leaf(
-    param_config: dict[str, Any], prefix: str = ""
-) -> dict[str, Any]:
+def get_flattened_config_leaf(param_config: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     """Flattens the param_config dictionary into a single hierarchy"""
     items = []
     for k, v in param_config.items():
         # Skip empty keys and specific keys
-        if not k or k in [
-            "compute_metrics",
-            "formatting_func",
-            "output_dir",
-            "logging_dir",
-            "reward_funcs",
-            "task_type",
-            "torch_dtype",
-        ]:
+        if not k or k in ["compute_metrics", "formatting_func", "output_dir", "logging_dir", "reward_funcs", "task_type","torch_dtype"]:
             continue
 
         # Create the full key name with prefix to avoid collisions
@@ -45,9 +35,7 @@ def get_flattened_config_leaf(
     return dict(items)
 
 
-def get_runs(
-    param_config: AutoMLAlgorithm | dict[str, Any] | list[Any], seed: int
-) -> list[dict[str, Any]]:
+def get_runs(param_config: AutoMLAlgorithm | dict[str, Any] | list[Any], seed: int) -> list[dict[str, Any]]:
     """Get the runs for the given param_config."""
     # FIXME: how do we handle seed for dict and list?
     if isinstance(param_config, AutoMLAlgorithm):

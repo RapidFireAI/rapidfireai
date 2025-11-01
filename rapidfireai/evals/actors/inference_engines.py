@@ -107,6 +107,13 @@ class OpenAIInferenceEngine(InferenceEngine):
         from openai import AsyncOpenAI
         import ray
 
+        if rate_limiter_actor is None:
+            raise ValueError(
+                "rate_limiter_actor cannot be None for OpenAIInferenceEngine. "
+                "OpenAI pipelines require rate limiting. Please ensure the Controller "
+                "properly injects the rate_limiter_actor for OpenAI pipelines."
+            )
+
         self.client = AsyncOpenAI(**client_config)
         self.model_config = model_config.copy()
         self.model_name = self.model_config["model"]
@@ -183,7 +190,7 @@ class OpenAIInferenceEngine(InferenceEngine):
 
         # Wait for rate limit slot using remote call
         while True:
-            acquire_ref = self.rate_limiter_actor.acquire_slot.remote(estimated_tokens)
+            acquire_ref = self.rate_limiter_actor.acquire_slot.remote(estimated_tokens, self.model_name)
             can_proceed, wait_time, request_id = await acquire_ref
 
             if can_proceed:
@@ -200,7 +207,6 @@ class OpenAIInferenceEngine(InferenceEngine):
 
             # Get the response content
             content = response.choices[0].message.content
-
             # Check if response is empty
             if content is None or content.strip() == "":
                 # Silently handle empty response (avoid flooding notebook output)

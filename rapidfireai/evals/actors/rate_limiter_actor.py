@@ -21,44 +21,40 @@ class RateLimiterActor:
 
     def __init__(
         self,
-        model_names: list[str] | str,
-        rpm_limit: int = 500,
-        tpm_limit: int = 500000,
+        model_rate_limits: dict[str, dict[str, int]],
         max_completion_tokens: int = 150,
         limit_safety_ratio: float = 0.98,
         minimum_wait_time: float = 3.0,
     ):
         """
-        Initialize the centralized rate limiter.
+        Initialize the centralized rate limiter with per-model rate limits.
 
         Args:
-            model_names: OpenAI model name(s) for token counting
-            rpm_limit: Requests per minute limit
-            tpm_limit: Tokens per minute limit
+            model_rate_limits: Dict mapping model name to rate limits, e.g.
+                {"gpt-4": {"rpm": 500, "tpm": 50000}, "gpt-3.5-turbo": {"rpm": 1000, "tpm": 100000}}
             max_completion_tokens: Maximum completion tokens per request
             limit_safety_ratio: Safety margin (default 0.98 = 98% of limit)
             minimum_wait_time: Minimum wait time when rate limited (seconds)
         """
         self.limiter = OpenAIRateLimiter(
-            model_names=model_names,
-            rpm_limit=rpm_limit,
-            tpm_limit=tpm_limit,
+            model_rate_limits=model_rate_limits,
             max_completion_tokens=max_completion_tokens,
             limit_safety_ratio=limit_safety_ratio,
             minimum_wait_time=minimum_wait_time,
         )
 
-    async def acquire_slot(self, estimated_tokens: int):
+    async def acquire_slot(self, estimated_tokens: int, model_name: str):
         """
-        Try to acquire a slot for a new request.
+        Try to acquire a slot for a new request for a specific model.
 
         Args:
             estimated_tokens: Projected token usage for this request
+            model_name: Name of the model making the request
 
         Returns:
             Tuple of (can_proceed: bool, wait_time: float, request_id: Optional[int])
         """
-        return await self.limiter.acquire_slot(estimated_tokens)
+        return await self.limiter.acquire_slot(estimated_tokens, model_name)
 
     async def update_actual_usage(self, request_id: int, actual_tokens: int, status: RequestStatus):
         """
@@ -84,18 +80,14 @@ class RateLimiterActor:
         """
         return self.limiter.estimate_total_tokens(messages, model_name)
 
-    def get_stats(self) -> dict:
+    async def get_stats(self) -> dict:
         """
         Get current rate limiter statistics.
 
         Returns:
-            Dictionary with current RPM, TPM, and limits
+            Dictionary with current RPM, TPM, and limits per model
         """
-        return {
-            "rpm_limit": self.limiter.enforced_rpm_limit,
-            "tpm_limit": self.limiter.enforced_tpm_limit,
-            "total_requests": len(self.limiter._all_requests),
-        }
+        return await self.limiter.get_current_usage()
 
 
 # Export for use in other modules

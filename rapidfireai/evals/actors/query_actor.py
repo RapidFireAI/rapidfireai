@@ -14,7 +14,8 @@ from typing import Any
 import ray
 
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
-from rapidfireai.evals.rag.context_generator import ContextGenerator
+from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
+from rapidfireai.evals.rag.prompt_manager import PromptManager
 from rapidfireai.evals.utils.logger import RFLogger
 
 
@@ -55,7 +56,8 @@ class QueryProcessingActor:
 
         # Pipeline-specific components (initialized later)
         self.inference_engine = None
-        self.context_generator = None
+        self.rag_spec = None  # RAG specification with retriever, template, etc.
+        self.prompt_manager = None  # Prompt manager for few-shot examples
         self.current_engine_config_hash = None  # Track currently loaded model
 
     def initialize_for_pipeline(
@@ -122,54 +124,83 @@ class QueryProcessingActor:
         else:
             self.logger.info(f"Reusing existing inference engine (config hash: {config_hash[:8]})")
 
-        # Build ContextGenerator from shared components (if provided)
-        self.context_generator = None
+        # Recreate RAG spec and prompt manager from shared components (if provided)
+        self.rag_spec = None
+        self.prompt_manager = None
         if context_generator_ref is not None:
             # Ray automatically dereferences ObjectRefs passed to remote actors
             # So we receive the dict directly, not an ObjectRef
 
-            # NOTE: Keep FAISS on CPU for query actors to avoid GPU memory conflicts
-            # The DocProcessingActor builds the index on GPU (fast), transfers to CPU,
-            # and shares it. Query actors use CPU FAISS which is still fast for retrieval
-            # and avoids memory management issues with multiple actors sharing GPUs.
+            # Check if RAG components are present (context might only have prompt_manager)
+            has_rag_components = "faiss_index_bytes" in context_generator_ref
 
-            self.logger.info("Using CPU-based FAISS for retrieval (avoids GPU memory conflicts)")
+            # Recreate RAG spec if RAG components are present
+            if has_rag_components:
+                # NOTE: Keep FAISS on CPU for query actors to avoid GPU memory conflicts
+                # The DocProcessingActor builds the index on GPU (fast), transfers to CPU,
+                # and shares it. Query actors use CPU FAISS which is still fast for retrieval
+                # and avoids memory management issues with multiple actors sharing GPUs.
 
-            # Deserialize FAISS index to create an independent copy for this actor
-            # FAISS indices are not thread-safe, so each actor needs its own copy
-            import pickle
-            from langchain_community.vectorstores import FAISS
+                self.logger.info("Using CPU-based FAISS for retrieval (avoids GPU memory conflicts)")
 
-            self.logger.info("Deserializing FAISS index for this actor...")
-            faiss_index = pickle.loads(context_generator_ref["faiss_index_bytes"])
-            docstore = pickle.loads(context_generator_ref["docstore_bytes"])
-            index_to_docstore_id = pickle.loads(context_generator_ref["index_to_docstore_id_bytes"])
+                # Deserialize FAISS index to create an independent copy for this actor
+                # FAISS indices are not thread-safe, so each actor needs its own copy
+                import pickle
+                from langchain_community.vectorstores import FAISS
 
-            # Recreate the embedding function
-            embedding_cls = context_generator_ref["embedding_cls"]
-            embedding_kwargs = context_generator_ref["embedding_kwargs"]
-            embedding_function = embedding_cls(**embedding_kwargs)
-            self.logger.info(f"Recreated embedding function: {embedding_cls.__name__}")
+                self.logger.info("Deserializing FAISS index for this actor...")
+                faiss_index = pickle.loads(context_generator_ref["faiss_index_bytes"])
+                docstore = pickle.loads(context_generator_ref["docstore_bytes"])
+                index_to_docstore_id = pickle.loads(context_generator_ref["index_to_docstore_id_bytes"])
 
-            # Create a new FAISS vector store with the deserialized components
-            vector_store = FAISS(
-                embedding_function=embedding_function,
-                index=faiss_index,
-                docstore=docstore,
-                index_to_docstore_id=index_to_docstore_id
-            )
-            self.logger.info("Created independent FAISS vector store for this actor")
+                # Recreate the embedding function
+                embedding_cls = context_generator_ref["embedding_cls"]
+                embedding_kwargs = context_generator_ref["embedding_kwargs"]
+                embedding_function = embedding_cls(**embedding_kwargs)
+                self.logger.info(f"Recreated embedding function: {embedding_cls.__name__}")
 
-            # Create the retriever
-            search_type = context_generator_ref["search_type"]
-            search_kwargs = context_generator_ref["search_kwargs"]
-            retriever = vector_store.as_retriever(
-                search_type=search_type,
-                search_kwargs=search_kwargs
-            )
-            self.logger.info(f"Recreated retriever with search_type={search_type}")
+                # Create a new FAISS vector store with the deserialized components
+                vector_store = FAISS(
+                    embedding_function=embedding_function,
+                    index=faiss_index,
+                    docstore=docstore,
+                    index_to_docstore_id=index_to_docstore_id
+                )
+                self.logger.info("Created independent FAISS vector store for this actor")
+
+                # Create the retriever
+                search_type = context_generator_ref["search_type"]
+                search_kwargs = context_generator_ref["search_kwargs"]
+                retriever = vector_store.as_retriever(
+                    search_type=search_type,
+                    search_kwargs=search_kwargs
+                )
+                self.logger.info(f"Recreated retriever with search_type={search_type}")
+
+                # Recreate RAG spec with query-time components
+                # We don't need document_loader or text_splitter for query-time operations,
+                # so we use None/placeholder values
+                self.rag_spec = LangChainRagSpec(
+                    document_loader=None,  # Not needed for query-time
+                    text_splitter=None,  # Not needed for query-time
+                    embedding_cls=embedding_cls,
+                    embedding_kwargs=embedding_kwargs,
+                    retriever=retriever,
+                    vector_store=vector_store,
+                    search_type=search_type,
+                    search_kwargs=search_kwargs,
+                    reranker_cls=context_generator_ref.get("reranker_cls"),
+                    reranker_kwargs=context_generator_ref.get("reranker_kwargs"),
+                    enable_gpu_search=False,  # Query actors always use CPU
+                    document_template=context_generator_ref.get("template"),
+                )
+                # Manually set the embedding and template since we bypassed normal initialization
+                self.rag_spec.embedding = embedding_function
+                self.rag_spec.template = context_generator_ref.get("template")
+                self.logger.info("Recreated RAG spec with retriever and template")
 
             # Set up PromptManager if provided (reinitialize after deserialization)
+            # This can exist with or without RAG components
             prompt_manager = context_generator_ref.get("prompt_manager")
             if prompt_manager:
                 # Check if we need to recreate the embedding and fewshot generator
@@ -177,13 +208,8 @@ class QueryProcessingActor:
                 if not hasattr(prompt_manager, "fewshot_generator") or prompt_manager.fewshot_generator is None:
                     # Recreate embedding_function and fewshot_generator
                     prompt_manager.setup_examples()
-
-            # Create ContextGenerator with pre-built components (runtime pattern)
-            self.context_generator = ContextGenerator(
-                retriever=retriever,
-                document_template=context_generator_ref.get("template"),
-                prompt_manager=prompt_manager,
-            )
+                self.prompt_manager = prompt_manager
+                self.logger.info("Recreated prompt manager")
 
     def _has_gpu(self) -> bool:
         """
@@ -230,7 +256,7 @@ class QueryProcessingActor:
 
             # Stage 1: Preprocess - build prompts with context/examples
             if preprocess_fn:
-                batch_data = preprocess_fn(batch_data, self.context_generator)
+                batch_data = preprocess_fn(batch_data, self.rag_spec, self.prompt_manager)
 
             # Stage 2: Generate using the inference engine
             prompts = batch_data["prompts"]
@@ -251,7 +277,6 @@ class QueryProcessingActor:
                     }
                 }
                 batch_metrics = {**default_metrics, **compute_metrics_fn(batch_data)}
-
             return batch_data, batch_metrics
 
         except Exception:

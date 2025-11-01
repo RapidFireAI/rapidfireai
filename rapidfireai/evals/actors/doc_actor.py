@@ -45,83 +45,88 @@ class DocProcessingActor:
 
     def build_rag_components(
         self,
-        rag_spec: LangChainRagSpec,
-        prompt_manager: PromptManager = None,
+        rag_spec: LangChainRagSpec | None,
+        prompt_manager: PromptManager | None = None,
     ) -> dict[str, Any]:
         """
-        Build RAG components and return them for sharing.
+        Build RAG components and/or prompt manager and return them for sharing.
 
         This method performs the heavy lifting of:
-        - Loading and splitting documents
-        - Generating embeddings
-        - Building FAISS index (on GPU if enabled)
-        - Transferring GPU index to CPU for serialization
+        - Loading and splitting documents (if RAG spec provided)
+        - Generating embeddings (if RAG spec provided)
+        - Building FAISS index (on GPU if enabled, if RAG spec provided)
+        - Transferring GPU index to CPU for serialization (if RAG spec provided)
         - Initializing prompt manager (if provided)
 
         Args:
-            rag_spec: RAG specification with document loader, embeddings config, etc.
+            rag_spec: Optional RAG specification with document loader, embeddings config, etc.
+                     Can be None for prompt-only pipelines.
             prompt_manager: Optional prompt manager for few-shot examples
 
         Returns:
             Dictionary containing initialized components ready for sharing:
-                - vector_store: FAISS vector store (with CPU index for serialization)
-                - retriever: Configured retriever
-                - embedding: Embedding model instance
-                - search_type: Search type (similarity, mmr, etc.)
-                - search_kwargs: Search parameters
-                - template: Document formatting template
+                - faiss_index_bytes: Serialized FAISS index (if RAG spec provided)
+                - docstore_bytes: Serialized docstore (if RAG spec provided)
+                - index_to_docstore_id_bytes: Serialized mapping (if RAG spec provided)
+                - embedding_cls: Embedding class (if RAG spec provided)
+                - embedding_kwargs: Embedding kwargs (if RAG spec provided)
+                - search_type: Search type (if RAG spec provided)
+                - search_kwargs: Search parameters (if RAG spec provided)
+                - template: Document formatting template (if RAG spec provided)
                 - prompt_manager: Initialized prompt manager (if provided)
-                - enable_gpu_search: Flag indicating if GPU search was used during build
+                - enable_gpu_search: Flag indicating if GPU search was used during build (if RAG spec provided)
+                - reranker: Reranker function (if RAG spec provided and reranker exists)
         """
-        self.logger.info("DocProcessingActor: Starting RAG initialization...")
+        self.logger.info("DocProcessingActor: Starting context initialization...")
 
-        # Build RAG (embeddings, FAISS index) with retry logic for rate limits
+        # Build RAG (embeddings, FAISS index) with retry logic for rate limits (if RAG spec provided)
         # If enable_gpu_search=True, this builds on GPU
-        self.logger.info("Building FAISS index...")
+        if rag_spec:
+            self.logger.info("Building FAISS index...")
 
-        retry_count = 0
-        last_error = None
+            retry_count = 0
+            last_error = None
 
-        while retry_count < MAX_RATE_LIMIT_RETRIES:
-            try:
-                rag_spec.build_index()
-                self.logger.info("FAISS index built successfully")
-                break  # Success!
-            except Exception as e:
-                last_error = e
+            while retry_count < MAX_RATE_LIMIT_RETRIES:
+                try:
+                    rag_spec.build_index()
+                    self.logger.info("FAISS index built successfully")
+                    break  # Success!
+                except Exception as e:
+                    last_error = e
 
-                # Check if it's a rate limit error
-                if is_rate_limit_error(e):
-                    retry_count += 1
-                    if retry_count < MAX_RATE_LIMIT_RETRIES:
-                        # Exponential backoff: 2, 4, 8, 16, 32 seconds
-                        wait_time = RATE_LIMIT_BACKOFF_BASE ** retry_count
-                        self.logger.warning(
-                            f"Rate limit hit during FAISS index building. "
-                            f"Retry {retry_count}/{MAX_RATE_LIMIT_RETRIES} in {wait_time}s..."
-                        )
-                        time.sleep(wait_time)
+                    # Check if it's a rate limit error
+                    if is_rate_limit_error(e):
+                        retry_count += 1
+                        if retry_count < MAX_RATE_LIMIT_RETRIES:
+                            # Exponential backoff: 2, 4, 8, 16, 32 seconds
+                            wait_time = RATE_LIMIT_BACKOFF_BASE ** retry_count
+                            self.logger.warning(
+                                f"Rate limit hit during FAISS index building. "
+                                f"Retry {retry_count}/{MAX_RATE_LIMIT_RETRIES} in {wait_time}s..."
+                            )
+                            time.sleep(wait_time)
+                        else:
+                            self.logger.error(f"Max retries ({MAX_RATE_LIMIT_RETRIES}) exceeded for rate limit errors")
+                            raise
                     else:
-                        self.logger.error(f"Max retries ({MAX_RATE_LIMIT_RETRIES}) exceeded for rate limit errors")
+                        # Not a rate limit error - fail immediately
+                        self.logger.error(f"Non-rate-limit error during FAISS index building: {type(e).__name__}")
                         raise
-                else:
-                    # Not a rate limit error - fail immediately
-                    self.logger.error(f"Non-rate-limit error during FAISS index building: {type(e).__name__}")
-                    raise
 
-        if last_error and retry_count >= MAX_RATE_LIMIT_RETRIES:
-            raise last_error
+            if last_error and retry_count >= MAX_RATE_LIMIT_RETRIES:
+                raise last_error
 
-        # Transfer GPU index to CPU for serialization (if GPU was used)
-        if rag_spec.enable_gpu_search:
-            self.logger.info("Transferring FAISS index from GPU to CPU for serialization...")
+            # Transfer GPU index to CPU for serialization (if GPU was used)
+            if rag_spec.enable_gpu_search:
+                self.logger.info("Transferring FAISS index from GPU to CPU for serialization...")
 
-            # Transfer the GPU index to CPU
-            cpu_index = faiss.index_gpu_to_cpu(rag_spec.vector_store.index)
+                # Transfer the GPU index to CPU
+                cpu_index = faiss.index_gpu_to_cpu(rag_spec.vector_store.index)
 
-            # Replace GPU index with CPU version
-            rag_spec.vector_store.index = cpu_index
-            self.logger.info("FAISS index transferred to CPU successfully")
+                # Replace GPU index with CPU version
+                rag_spec.vector_store.index = cpu_index
+                self.logger.info("FAISS index transferred to CPU successfully")
 
         # Set up PromptManager if provided (with retry logic for rate limits)
         if prompt_manager:
@@ -160,39 +165,47 @@ class DocProcessingActor:
             if last_error and retry_count >= MAX_RATE_LIMIT_RETRIES:
                 raise last_error
 
-        # Serialize FAISS index to bytes for independent deserialization in each actor
+        # Serialize FAISS index to bytes for independent deserialization in each actor (if RAG spec provided)
         # FAISS indices are not thread-safe across processes, so each actor needs its own copy
         import pickle
 
-        # Get the FAISS index and the docstore
-        faiss_index = rag_spec.vector_store.index
-        docstore = rag_spec.vector_store.docstore
-        index_to_docstore_id = rag_spec.vector_store.index_to_docstore_id
+        # Initialize components dict
+        components = {}
 
-        # Serialize FAISS index to bytes
-        self.logger.info("Serializing FAISS index for cross-actor sharing...")
-        faiss_index_bytes = pickle.dumps(faiss_index)
-        docstore_bytes = pickle.dumps(docstore)
-        index_to_docstore_id_bytes = pickle.dumps(index_to_docstore_id)
+        if rag_spec:
+            # Get the FAISS index and the docstore
+            faiss_index = rag_spec.vector_store.index
+            docstore = rag_spec.vector_store.docstore
+            index_to_docstore_id = rag_spec.vector_store.index_to_docstore_id
 
-        self.logger.info(f"FAISS index serialized: {len(faiss_index_bytes)} bytes")
+            # Serialize FAISS index to bytes
+            self.logger.info("Serializing FAISS index for cross-actor sharing...")
+            faiss_index_bytes = pickle.dumps(faiss_index)
+            docstore_bytes = pickle.dumps(docstore)
+            index_to_docstore_id_bytes = pickle.dumps(index_to_docstore_id)
 
-        # Package components for sharing
-        # Note: Pass serialized FAISS index, not the vector_store object
-        components = {
-            "faiss_index_bytes": faiss_index_bytes,  # Serialized FAISS index
-            "docstore_bytes": docstore_bytes,  # Serialized docstore
-            "index_to_docstore_id_bytes": index_to_docstore_id_bytes,  # Serialized mapping
-            "embedding_cls": rag_spec.embedding_cls,  # Class to recreate embedding
-            "embedding_kwargs": rag_spec.embedding_kwargs,  # Kwargs to recreate embedding
-            "search_type": rag_spec.search_type,
-            "search_kwargs": rag_spec.search_kwargs,
-            "template": rag_spec.template,
-            "prompt_manager": prompt_manager,
-            "enable_gpu_search": rag_spec.enable_gpu_search,  # Track GPU usage
-        }
+            self.logger.info(f"FAISS index serialized: {len(faiss_index_bytes)} bytes")
 
-        self.logger.info("DocProcessingActor: RAG components ready for sharing (FAISS index serialized)")
+            # Package RAG components for sharing
+            components.update({
+                "faiss_index_bytes": faiss_index_bytes,  # Serialized FAISS index
+                "docstore_bytes": docstore_bytes,  # Serialized docstore
+                "index_to_docstore_id_bytes": index_to_docstore_id_bytes,  # Serialized mapping
+                "embedding_cls": rag_spec.embedding_cls,  # Class to recreate embedding
+                "embedding_kwargs": rag_spec.embedding_kwargs,  # Kwargs to recreate embedding
+                "search_type": rag_spec.search_type,
+                "search_kwargs": rag_spec.search_kwargs,
+                "template": rag_spec.template,
+                "enable_gpu_search": rag_spec.enable_gpu_search,  # Track GPU usage
+                "reranker_cls": rag_spec.reranker_cls,  # Reranker class (if any)
+                "reranker_kwargs": rag_spec.reranker_kwargs,  # Reranker kwargs (if any)
+            })
+
+        # Add prompt_manager if provided (works with or without RAG)
+        if prompt_manager:
+            components["prompt_manager"] = prompt_manager
+
+        self.logger.info("DocProcessingActor: Context components ready for sharing")
         return components
 
 
