@@ -1,17 +1,15 @@
 """Random search implementation for AutoML hyperparameter optimization."""
 
-import random
-import json
 import hashlib
-from itertools import product
-from typing import Any, Dict
-from typing import List as ListType
+import json
+import random
+from typing import Any
 
 from rapidfireai.evals.automl.base import AutoMLAlgorithm
 from rapidfireai.evals.automl.datatypes import List, Range
 
 
-def encode_payload(payload: Dict[str, Any]) -> str:
+def encode_payload(payload: dict[str, Any]) -> str:
     """Create a hashable representation of a configuration dictionary."""
     json_str = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.md5(json_str.encode()).hexdigest()
@@ -24,9 +22,7 @@ def recursive_expand_randomsearch(item: Any):
         return item.__class__(**sampled_params)
     elif isinstance(item, dict):
         return {k: recursive_expand_randomsearch(v) for k, v in item.items()}
-    elif isinstance(item, List):
-        return item.sample()
-    elif isinstance(item, Range):
+    elif isinstance(item, List) or isinstance(item, Range):
         return item.sample()
     else:
         return item
@@ -35,7 +31,7 @@ def recursive_expand_randomsearch(item: Any):
 class RFRandomSearch(AutoMLAlgorithm):
     """Random search algorithm that samples num_runs hyperparameter combinations."""
 
-    def get_runs(self, seed: int = 42) -> ListType[Dict[str, Any]]:
+    def get_runs(self, seed: int = 42) -> list[dict[str, Any]]:
         """Generate num_runs random hyperparameter combinations."""
         if seed is not None and (not isinstance(seed, int) or seed < 0):
             raise Exception("seed must be a non-negative integer")
@@ -70,20 +66,12 @@ class RFRandomSearch(AutoMLAlgorithm):
                 for pipeline in pipelines:
                     # Sample model config parameters
                     pipeline_instances = (
-                        [{}]
-                        if pipeline is None
-                        else [recursive_expand_randomsearch(pipeline._user_params)]
+                        [{}] if pipeline is None else [recursive_expand_randomsearch(pipeline._user_params)]
                     )
 
-                    additional_kwargs = {
-                        k: v
-                        for k, v in config.items()
-                        if k != "pipeline" and v is not None
-                    }
+                    additional_kwargs = {k: v for k, v in config.items() if k != "pipeline" and v is not None}
                     additional_kwargs_instances = (
-                        [{}]
-                        if not additional_kwargs
-                        else [recursive_expand_randomsearch(additional_kwargs)]
+                        [{}] if not additional_kwargs else [recursive_expand_randomsearch(additional_kwargs)]
                     )
 
                     # Generate random search combinations

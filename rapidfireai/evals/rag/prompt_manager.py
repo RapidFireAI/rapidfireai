@@ -1,17 +1,14 @@
+import asyncio
+import concurrent.futures
+import hashlib
+import json
 from copy import deepcopy
 from typing import Any
 
 from langchain_community.vectorstores import FAISS
 from langchain_core.embeddings import Embeddings
-from langchain_core.example_selectors import (
-    MaxMarginalRelevanceExampleSelector,
-    SemanticSimilarityExampleSelector,
-)
+from langchain_core.example_selectors import MaxMarginalRelevanceExampleSelector, SemanticSimilarityExampleSelector
 from langchain_core.prompts import FewShotPromptTemplate, PromptTemplate
-import hashlib
-import json
-import asyncio
-import concurrent.futures
 
 
 class PromptManager:
@@ -43,13 +40,9 @@ class PromptManager:
         instructions: str = "",
         instructions_file_path: str = "",
         examples: list[dict[str, str]] = [],
-        embedding_cls: type[
-            Embeddings
-        ] = None,  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
+        embedding_cls: type[Embeddings] = None,  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
         embedding_kwargs: dict[str, Any] | None = None,
-        example_selector_cls: type[
-            MaxMarginalRelevanceExampleSelector | SemanticSimilarityExampleSelector
-        ] = None,
+        example_selector_cls: type[MaxMarginalRelevanceExampleSelector | SemanticSimilarityExampleSelector] = None,
         example_prompt_template: PromptTemplate = None,
         k: int = 3,
     ) -> None:
@@ -103,9 +96,7 @@ class PromptManager:
         """
         if not self.instructions:
             if not self.instructions_file_path:
-                raise ValueError(
-                    "either instructions or instructions_file_path is required"
-                )
+                raise ValueError("either instructions or instructions_file_path is required")
             with open(self.instructions_file_path) as f:
                 self.instructions = f.read()
         if not self.embedding_cls:
@@ -184,10 +175,7 @@ class PromptManager:
 
         async def gather_examples():
             """Async helper to gather all examples concurrently"""
-            tasks = [
-                self.fewshot_generator.aformat(user_query=user_query)
-                for user_query in user_queries
-            ]
+            tasks = [self.fewshot_generator.aformat(user_query=user_query) for user_query in user_queries]
             return await asyncio.gather(*tasks)
 
         try:
@@ -273,21 +261,13 @@ class PromptManager:
         prompt_dict = {
             "instructions": self.instructions,
             "k": self.k,  # Number of fewshot examples to retrieve
-            "embedding_cls": (
-                self.embedding_cls.__name__ if self.embedding_cls else None
-            ),
+            "embedding_cls": (self.embedding_cls.__name__ if self.embedding_cls else None),
             "embedding_kwargs": self.embedding_kwargs,  # Model name and config
-            "example_selector_cls": (
-                self.example_selector_cls.__name__
-                if self.example_selector_cls
-                else None
-            ),
+            "example_selector_cls": (self.example_selector_cls.__name__ if self.example_selector_cls else None),
             "num_examples": len(self.examples) if self.examples else 0,
             # Hash the examples themselves to detect changes
             "examples_hash": (
-                hashlib.sha256(
-                    json.dumps(self.examples, sort_keys=True).encode()
-                ).hexdigest()
+                hashlib.sha256(json.dumps(self.examples, sort_keys=True).encode()).hexdigest()
                 if self.examples
                 else None
             ),

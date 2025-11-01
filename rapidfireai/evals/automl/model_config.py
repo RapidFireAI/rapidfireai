@@ -1,21 +1,21 @@
 """Model configuration for AutoML training."""
 
-import inspect
 import copy
-from dataclasses import dataclass
-from typing import Any, Callable, Optional, Type, Union, get_type_hints
-from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
-from rapidfireai.evals.rag.prompt_manager import PromptManager
+import inspect
+from typing import get_type_hints
+
 from rapidfireai.evals.automl.datatypes import List, Range
+from rapidfireai.evals.rag.prompt_manager import PromptManager
+from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
 
 
-def _create_rf_class(base_class: Type, class_name: str):
+def _create_rf_class(base_class: type, class_name: str):
     """Creating a RF class that dynamically inherits all constructor parameters and supports singleton, list, and Range values."""
     if not inspect.isclass(base_class):
         raise ValueError(f"base_class must be a class, got {type(base_class)}")
 
     sig = inspect.signature(base_class.__init__)
-    constructor_params = [p for p in sig.parameters.keys() if p != "self"]
+    constructor_params = list(sig.parameters.keys())
 
     type_hints = get_type_hints(base_class)
     new_type_hints = {}

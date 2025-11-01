@@ -95,7 +95,7 @@ class DocProcessingActor:
                     retry_count += 1
                     if retry_count < MAX_RATE_LIMIT_RETRIES:
                         # Exponential backoff: 2, 4, 8, 16, 32 seconds
-                        wait_time = RATE_LIMIT_BACKOFF_BASE ** retry_count
+                        wait_time = RATE_LIMIT_BACKOFF_BASE**retry_count
                         self.logger.warning(
                             f"Rate limit hit during FAISS index building. "
                             f"Retry {retry_count}/{MAX_RATE_LIMIT_RETRIES} in {wait_time}s..."
@@ -143,7 +143,7 @@ class DocProcessingActor:
                         retry_count += 1
                         if retry_count < MAX_RATE_LIMIT_RETRIES:
                             # Exponential backoff: 2, 4, 8, 16, 32 seconds
-                            wait_time = RATE_LIMIT_BACKOFF_BASE ** retry_count
+                            wait_time = RATE_LIMIT_BACKOFF_BASE**retry_count
                             self.logger.warning(
                                 f"Rate limit hit during PromptManager setup. "
                                 f"Retry {retry_count}/{MAX_RATE_LIMIT_RETRIES} in {wait_time}s..."

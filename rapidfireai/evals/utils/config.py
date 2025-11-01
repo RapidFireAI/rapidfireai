@@ -3,11 +3,7 @@ from typing import Any
 
 from vllm import SamplingParams
 
-from rapidfireai.evals.actors.inference_engines import (
-    InferenceEngine,
-    OpenAIInferenceEngine,
-    VLLMInferenceEngine,
-)
+from rapidfireai.evals.actors.inference_engines import InferenceEngine, OpenAIInferenceEngine, VLLMInferenceEngine
 from rapidfireai.evals.rag.prompt_manager import PromptManager
 from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
 
@@ -152,8 +148,4 @@ class OpenAIAPIModelConfig(ModelConfig):
             "seed",
             "reasoning_effort",  # For o1 models
         ]
-        return {
-            key: self.model_config.get(key)
-            for key in sampling_keys
-            if key in self.model_config
-        }
+        return {key: self.model_config.get(key) for key in sampling_keys if key in self.model_config}

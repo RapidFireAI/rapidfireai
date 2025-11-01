@@ -5,10 +5,9 @@ Provides HTTP endpoints for dynamic pipeline management during experiment execut
 """
 
 import json
+import logging
 import threading
 import traceback
-import logging
-
 
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
@@ -306,9 +305,7 @@ class Dispatcher:
                 sampling_params = data.get("sampling_params")
                 if not sampling_params:
                     return (
-                        jsonify(
-                            {"error": "sampling_params is required for VLLM pipelines"}
-                        ),
+                        jsonify({"error": "sampling_params is required for VLLM pipelines"}),
                         400,
                     )
 
@@ -316,9 +313,7 @@ class Dispatcher:
                 client_config = data.get("client_config")
                 if not client_config:
                     return (
-                        jsonify(
-                            {"error": "client_config is required for OpenAI pipelines"}
-                        ),
+                        jsonify({"error": "client_config is required for OpenAI pipelines"}),
                         400,
                     )
 
@@ -482,9 +477,7 @@ def _cleanup_old_dispatcher(port: int, logger=None) -> None:
 
     try:
         # Find process using the port
-        result = subprocess.run(
-            ["lsof", "-ti", f":{port}"], capture_output=True, text=True, timeout=2
-        )
+        result = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True, timeout=2)
         if result.returncode == 0 and result.stdout.strip():
             pids = result.stdout.strip().split("\n")
             for pid in pids:
@@ -501,9 +494,7 @@ def _cleanup_old_dispatcher(port: int, logger=None) -> None:
         pass  # lsof might not be available
 
 
-def start_dispatcher_thread(
-    host: str = "127.0.0.1", port: int = 5000, logger=None
-) -> threading.Thread | None:
+def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 5000, logger=None) -> threading.Thread | None:
     """
     Start the dispatcher REST API server in a background daemon thread.
 
@@ -549,14 +540,10 @@ def start_dispatcher_thread(
         msg = f"Started interactive control dispatcher on http://{host}:{port}"
         if logger:
             logger.info(msg)
-            logger.info(
-                "Use dispatcher API to dynamically stop/resume/delete/clone pipelines"
-            )
+            logger.info("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
         else:
             print(msg)
-            print(
-                "Use dispatcher API to dynamically stop/resume/delete/clone pipelines"
-            )
+            print("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
 
         return dispatcher_thread
 

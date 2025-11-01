@@ -1,8 +1,7 @@
 """Grid search implementation for AutoML training configurations."""
 
 from itertools import product
-from typing import Any, Dict
-from typing import List as ListType
+from typing import Any
 
 from rapidfireai.evals.automl.base import AutoMLAlgorithm
 from rapidfireai.evals.automl.datatypes import List
@@ -18,7 +17,7 @@ def recursive_expand_gridsearch(item: Any):
         keys = list(item.keys())
         value_lists = [list(recursive_expand_gridsearch(item[k])) for k in keys]
         for values in product(*value_lists):
-            yield dict(zip(keys, values))
+            yield dict(zip(keys, values, strict=False))
     elif isinstance(item, List):
         for value in item.values:
             yield from recursive_expand_gridsearch(value)
@@ -29,7 +28,7 @@ def recursive_expand_gridsearch(item: Any):
 class RFGridSearch(AutoMLAlgorithm):
     """Grid search algorithm that generates all hyperparameter combinations."""
 
-    def get_runs(self, seed: int = 42) -> ListType[Dict[str, Any]]:
+    def get_runs(self, seed: int = 42) -> list[dict[str, Any]]:
         """Generate all possible hyperparameter combinations for grid search."""
         if not isinstance(seed, int) or seed < 0:
             raise Exception("seed must be a non-negative integer")
@@ -37,10 +36,7 @@ class RFGridSearch(AutoMLAlgorithm):
         try:
             runs = []
             for config in self.configs:
-                if "vllm_config" in config:
-                    pipeline = config["vllm_config"]
-                else:
-                    pipeline = config["openai_config"]
+                pipeline = config["vllm_config"] if "vllm_config" in config else config["openai_config"]
                 if pipeline is None:
                     pipelines = [None]
                 elif isinstance(pipeline, List):
@@ -51,30 +47,18 @@ class RFGridSearch(AutoMLAlgorithm):
                     pipelines = [pipeline]
 
                 for pipeline in pipelines:
-                    pipeline_instances = (
-                        [{}]
-                        if pipeline is None
-                        else list(recursive_expand_gridsearch(pipeline))
-                    )
+                    pipeline_instances = [{}] if pipeline is None else list(recursive_expand_gridsearch(pipeline))
 
-                    additional_kwargs = {
-                        k: v
-                        for k, v in config.items()
-                        if k != "pipeline" and v is not None
-                    }
+                    additional_kwargs = {k: v for k, v in config.items() if k != "pipeline" and v is not None}
                     additional_kwargs_instances = (
-                        [{}]
-                        if not additional_kwargs
-                        else list(recursive_expand_gridsearch(additional_kwargs))
+                        [{}] if not additional_kwargs else list(recursive_expand_gridsearch(additional_kwargs))
                     )
 
                     for pipeline_params in pipeline_instances:
                         for additional_kwargs_dict in additional_kwargs_instances:
                             # pipeline_params could be an instance (from recursive_expand_gridsearch) or a dict
                             if isinstance(pipeline_params, dict):
-                                pipeline_instance = pipeline.__class__(
-                                    **pipeline_params
-                                )
+                                pipeline_instance = pipeline.__class__(**pipeline_params)
                             else:
                                 # It's already an instance
                                 pipeline_instance = pipeline_params

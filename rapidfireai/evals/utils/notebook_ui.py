@@ -4,8 +4,9 @@ Provides interactive controls for managing runs during experiments.
 ROBUST VERSION - Fixed polling, error handling, and race conditions.
 """
 
-from IPython.display import display, HTML
 import uuid
+
+from IPython.display import HTML, display
 
 
 class NotebookUI:

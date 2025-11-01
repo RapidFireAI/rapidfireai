@@ -31,8 +31,4 @@ def is_rate_limit_error(error: Exception) -> bool:
         return True
 
     # Check if it's an OpenAI error with rate_limit_exceeded code
-    if hasattr(error, "code") and error.code == "rate_limit_exceeded":
-        return True
-
-    return False
-
+    return hasattr(error, "code") and error.code == "rate_limit_exceeded"

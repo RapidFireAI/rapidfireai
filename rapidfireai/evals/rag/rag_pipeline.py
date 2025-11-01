@@ -9,16 +9,16 @@ Uses FAISS by default for both CPU and GPU similarity search with optimized inde
 """
 
 import copy
-from collections.abc import Callable
-from typing import Any
 import hashlib
 import json
+from collections.abc import Callable
+from typing import Any
 
 import faiss
-from langchain_community.document_loaders.base import BaseLoader
-from langchain_core.documents import Document
 from langchain_community.docstore.in_memory import InMemoryDocstore
+from langchain_community.document_loaders.base import BaseLoader
 from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStore
@@ -59,9 +59,7 @@ class LangChainRagSpec:
         self,
         document_loader: BaseLoader,
         text_splitter: TextSplitter,
-        embedding_cls: type[
-            Embeddings
-        ],  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
+        embedding_cls: type[Embeddings],  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
         embedding_kwargs: dict[str, Any] | None = None,
         retriever: BaseRetriever | None = None,
         vector_store: VectorStore | None = None,
@@ -122,9 +120,7 @@ class LangChainRagSpec:
         # Validate search_type
         valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
         if search_type not in valid_search_types:
-            raise ValueError(
-                f"search_type must be one of {valid_search_types}, got: {search_type}"
-            )
+            raise ValueError(f"search_type must be one of {valid_search_types}, got: {search_type}")
 
         self.document_loader = document_loader
         self.text_splitter = text_splitter
@@ -189,9 +185,7 @@ class LangChainRagSpec:
                     # FAISS vector store will be built (adding documents) in _build_vector_store() method
                     self.vector_store = FAISS(
                         embedding_function=self.embedding,
-                        index=faiss.IndexFlatL2(
-                            len(self.embedding.embed_query("RapidFire AI is awesome!"))
-                        ),
+                        index=faiss.IndexFlatL2(len(self.embedding.embed_query("RapidFire AI is awesome!"))),
                         docstore=InMemoryDocstore(),
                         index_to_docstore_id={},
                     )
@@ -201,13 +195,9 @@ class LangChainRagSpec:
                     # TODO: move these to constants.py
                     M = 16  # good default value: controls the number of bidirectional connections of each node
                     ef_construction = 64  # 4-8x of M: Size of dynamic candidate list during construction
-                    ef_search = (
-                        32  # 2-4x of M: Size of dynamic candidate list during search
-                    )
+                    ef_search = 32  # 2-4x of M: Size of dynamic candidate list during search
 
-                    hnsw_index = faiss.IndexHNSWFlat(
-                        len(self.embedding.embed_query("RapidFire AI is awesome!")), M
-                    )
+                    hnsw_index = faiss.IndexHNSWFlat(len(self.embedding.embed_query("RapidFire AI is awesome!")), M)
                     hnsw_index.hnsw.efConstruction = ef_construction
                     hnsw_index.hnsw.efSearch = ef_search
 
@@ -249,17 +239,11 @@ class LangChainRagSpec:
             text_splitter=self.text_splitter,  # Shared reference
             embedding_cls=self.embedding_cls,  # Shared reference
             embedding_kwargs=self.embedding_kwargs,  # Shared reference
-            retriever=copy.deepcopy(
-                self.retriever
-            ),  # Will be created fresh in initialize() if not provided
+            retriever=copy.deepcopy(self.retriever),  # Will be created fresh in initialize() if not provided
             vector_store=self.vector_store,  # Will be created fresh in initialize() if not provided
             search_type=self.search_type,  # Shared reference
-            search_kwargs=copy.deepcopy(
-                self.search_kwargs
-            ),  # Deep copy to avoid shared refs
-            reranker=copy.deepcopy(
-                self.reranker
-            ),  # Deep copy in case reranker has mutable state
+            search_kwargs=copy.deepcopy(self.search_kwargs),  # Deep copy to avoid shared refs
+            reranker=copy.deepcopy(self.reranker),  # Deep copy in case reranker has mutable state
             enable_gpu_search=self.enable_gpu_search,  # Include GPU setting
         )
 
@@ -302,9 +286,7 @@ class LangChainRagSpec:
         all_splits = self._split_documents(documents=self._load_documents())
         self.vector_store.add_documents(documents=all_splits)
 
-    def _retrieve_from_vector_store(
-        self, batch_queries: list[str]
-    ) -> list[list[Document]]:
+    def _retrieve_from_vector_store(self, batch_queries: list[str]) -> list[list[Document]]:
         """
         Retrieve relevant documents from the vector store for batch queries.
 
@@ -402,18 +384,12 @@ class LangChainRagSpec:
             rag_dict["text_splitter_type"] = type(text_splitter).__name__
 
         # Embedding configuration
-        rag_dict["embedding_cls"] = (
-            self.embedding_cls.__name__ if self.embedding_cls else None
-        )
-        rag_dict["embedding_kwargs"] = (
-            self.embedding_kwargs
-        )  # Contains model_name, device, etc.
+        rag_dict["embedding_cls"] = self.embedding_cls.__name__ if self.embedding_cls else None
+        rag_dict["embedding_kwargs"] = self.embedding_kwargs  # Contains model_name, device, etc.
 
         # Search configuration
         rag_dict["search_type"] = self.search_type
-        rag_dict["search_kwargs"] = (
-            self.search_kwargs
-        )  # Contains k and other search params
+        rag_dict["search_kwargs"] = self.search_kwargs  # Contains k and other search params
         rag_dict["enable_gpu_search"] = self.enable_gpu_search
         rag_dict["has_reranker"] = self.reranker is not None
 
