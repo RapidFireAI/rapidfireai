@@ -8,12 +8,7 @@ import os
 from typing import Any
 
 from rapidfireai.evals.db.db_interface import DatabaseInterface
-from rapidfireai.evals.utils.constants import (
-    ContextStatus,
-    ExperimentStatus,
-    PipelineStatus,
-    TaskStatus,
-)
+from rapidfireai.evals.utils.constants import ContextStatus, ExperimentStatus, PipelineStatus, TaskStatus
 from rapidfireai.evals.utils.serialize import decode_db_payload, encode_payload
 
 
@@ -143,18 +138,29 @@ class RFDatabase:
             num_gpus: Number of GPUs (optional)
         """
         query = "UPDATE experiments SET num_actors = ?, num_cpus = ?, num_gpus = ? WHERE experiment_id = ?"
-        self.db.execute(
-            query, (num_actors, num_cpus, num_gpus, experiment_id), commit=True
-        )
+        self.db.execute(query, (num_actors, num_cpus, num_gpus, experiment_id), commit=True)
 
-    def clear_all_data(self):
+    def reset_all_tables(self, experiments_table: bool = False) -> None:
         """
-        Clear ALL data from the database.
+        Clear data from experiment tables.
+
+        Args:
+            experiments_table: If True, also clear the experiments table (default: False)
         """
-        self.db.execute("DELETE FROM actor_tasks", commit=True)
-        self.db.execute("DELETE FROM contexts", commit=True)
-        self.db.execute("DELETE FROM interactive_control", commit=True)
-        self.db.execute("DELETE FROM pipelines", commit=True)
+        # Clear dependent tables first (due to foreign keys)
+        tables = ["actor_tasks", "contexts", "interactive_control", "pipelines"]
+
+        for table in tables:
+            self.db.execute(f"DELETE FROM {table}", commit=True)
+
+        # Optionally clear experiments table
+        if experiments_table:
+            self.db.execute("DELETE FROM experiments", commit=True)
+            tables.append("experiments")
+
+        # Reset auto-increment indices
+        for table in tables:
+            self.db.execute("DELETE FROM sqlite_sequence WHERE name = ?", (table,), commit=True)
 
     def get_experiment(self, experiment_id: int) -> dict[str, Any] | None:
         """
@@ -214,7 +220,7 @@ class RFDatabase:
         result = self.db.execute(query, fetch=True)
         return [row[0] for row in result] if result else []
 
-    def get_current_experiment(self) -> dict[str, Any] | None:
+    def get_running_experiment(self) -> dict[str, Any] | None:
         """
         Get the currently running experiment (most recent if multiple).
 
@@ -229,7 +235,7 @@ class RFDatabase:
         ORDER BY experiment_id DESC
         LIMIT 1
         """
-        result = self.db.execute(query, fetch=True)
+        result = self.db.execute(query, (ExperimentStatus.RUNNING.value,), fetch=True)
         if result:
             row = result[0]
             return {
@@ -373,9 +379,7 @@ class RFDatabase:
         query = "UPDATE contexts SET started_at = ? WHERE context_id = ?"
         self.db.execute(query, (start_time, context_id), commit=True)
 
-    def set_context_end_time(
-        self, context_id: int, end_time: str, duration_seconds: float
-    ):
+    def set_context_end_time(self, context_id: int, end_time: str, duration_seconds: float):
         """
         Set end time and duration for context building.
 
@@ -443,42 +447,6 @@ class RFDatabase:
             commit=True,
         )
         return self.db.cursor.lastrowid
-
-    def set_pipeline_progress(self, pipeline_id: int) -> dict[str, Any] | None:
-        """
-        Get pipeline by ID.
-
-        Args:
-            pipeline_id: ID of the pipeline
-
-        Returns:
-            Dictionary with all pipeline fields, or None if not found
-        """
-        query = """
-        SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config_json, status, current_shard_id,
-               shards_completed, total_samples_processed, error, created_at
-        FROM pipelines
-        WHERE pipeline_id = ?
-        """
-        result = self.db.execute(query, (pipeline_id,), fetch=True)
-        if result:
-            row = result[0]
-            # Decode the pipeline config from the database
-            decoded_config = decode_db_payload(row[4]) if row[4] else None
-            return {
-                "pipeline_id": row[0],
-                "context_id": row[1],
-                "pipeline_type": row[3],
-                "pipeline_config_json": decoded_config,
-                "status": row[6],
-                "current_shard_id": row[7],
-                "shards_completed": row[8],
-                "total_samples_processed": row[9],
-                "error": row[10],
-                "created_at": row[11],
-            }
-        return None
 
     def get_pipeline(self, pipeline_id: int) -> dict[str, Any] | None:
         """
@@ -640,9 +608,7 @@ class RFDatabase:
             pipeline_id, actor_id, shard_id, status, error_message
         ) VALUES (?, ?, ?, ?, '')
         """
-        self.db.execute(
-            query, (pipeline_id, actor_id, shard_id, status.value), commit=True
-        )
+        self.db.execute(query, (pipeline_id, actor_id, shard_id, status.value), commit=True)
         return self.db.cursor.lastrowid
 
     def get_actor_task(self, task_id: int) -> dict[str, Any] | None:
@@ -732,9 +698,7 @@ class RFDatabase:
         query = "UPDATE actor_tasks SET started_at = ? WHERE task_id = ?"
         self.db.execute(query, (start_time, task_id), commit=True)
 
-    def set_actor_task_end_time(
-        self, task_id: int, end_time: str, duration_seconds: float
-    ):
+    def set_actor_task_end_time(self, task_id: int, end_time: str, duration_seconds: float):
         """
         Set end time and duration for an actor task.
 

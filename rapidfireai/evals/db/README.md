@@ -60,11 +60,12 @@ db.close()
 
 ### Experiments
 - `create_experiment(name, num_shards, num_actors, ...) -> exp_id`
-- `get_current_experiment() -> dict`
+- `get_running_experiment() -> dict`
 - `get_all_experiment_names() -> list[str]`
 - `set_experiment_status(exp_id, status)`
 - `set_experiment_error(exp_id, error)`
 - `get_experiment_error(exp_id) -> str`
+- `reset_all_tables(experiments_table=False)`
 
 ### Contexts (RAG)
 - `create_context(hash, rag_json, prompt_json) -> context_id`
@@ -97,6 +98,7 @@ db.close()
 - `running` - Currently executing
 - `completed` - Successfully finished
 - `failed` - Encountered error
+- `cancelled` - User cancelled
 
 ### Contexts
 - `pending` - Not yet built

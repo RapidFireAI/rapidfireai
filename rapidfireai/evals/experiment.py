@@ -1,38 +1,25 @@
-import json
 import logging
 import os
 import time
-from collections.abc import Callable
 from typing import Any
 
 import ray
 
+from rapidfireai.evals.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.dispatcher import start_dispatcher_thread
 from rapidfireai.evals.scheduling.controller import Controller
-from rapidfireai.evals.utils.constants import (
-    DISPATCHER_HOST,
-    DISPATCHER_PORT,
-    ExperimentStatus,
-    get_dispatcher_url,
-)
-from rapidfireai.evals.utils.notebook_ui import NotebookUI
+from rapidfireai.evals.utils.constants import DISPATCHER_HOST, DISPATCHER_PORT, ExperimentStatus, get_dispatcher_url
+from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
 from rapidfireai.evals.utils.logger import RFLogger
-from rapidfireai.evals.automl import (
-    RFGridSearch,
-    RFRandomSearch,
-    RFLangChainRagSpec,
-    RFPromptManager,
-)
+from rapidfireai.evals.utils.notebook_ui import NotebookUI
 
 
 class Experiment:
     def __init__(
         self,
         experiment_name: str,
-        experiment_path: str = os.getenv(
-            "RF_EXPERIMENT_PATH", "./rapidfire_experiments"
-        ),
+        experiment_path: str = os.getenv("RF_EXPERIMENT_PATH", "./rapidfire_experiments"),
         openai_rpm_limit: int | None = None,
         openai_tpm_limit: int | None = None,
         openai_max_completion_tokens: int = 150,
@@ -65,11 +52,22 @@ class Experiment:
         self.openai_tpm_limit = openai_tpm_limit
         self.openai_max_completion_tokens = openai_max_completion_tokens
 
-        # Initialize logging
-        self.logging_manager = RFLogger(
-            experiment_name=self.experiment_name, experiment_path=self.experiment_path
+        # Initialize experiment utils
+        self.experiment_utils = ExperimentUtils()
+
+        # Create experiment using experiment_utils
+        self.experiment_id, self.experiment_name, log_messages = self.experiment_utils.create_experiment(
+            given_name=self.experiment_name,
+            experiments_path=os.path.abspath(experiment_path),
         )
+
+        # Initialize logging
+        self.logging_manager = RFLogger(experiment_name=self.experiment_name, experiment_path=self.experiment_path)
         self.logger = self.logging_manager.get_logger("Experiment")
+
+        # Log creation messages
+        for msg in log_messages:
+            self.logger.info(msg)
 
         # Initialize Ray
         ray.init(
@@ -78,6 +76,9 @@ class Experiment:
             configure_logging=True,
             ignore_reinit_error=True,
         )
+
+        # Create database reference (for run_evals usage)
+        self.db = RFDatabase()
 
         # Initialize the controller
         self.controller = Controller(
@@ -88,25 +89,8 @@ class Experiment:
             openai_max_completion_tokens=self.openai_max_completion_tokens,
         )
 
-        # Create experiment in database
-        self.db = RFDatabase()
-
-        # Clear all previous data for a fresh start
-        self.db.clear_all_data()
-
-        self.experiment_id = self.db.create_experiment(
-            experiment_name=self.experiment_name,
-            num_actors=0,  # Will be updated in run_evals
-            status=ExperimentStatus.RUNNING,
-        )
-        self.logger.info(
-            f"Created experiment {self.experiment_id}: {self.experiment_name}"
-        )
-
         # Start dispatcher in background thread for interactive control
-        self.dispatcher_thread = start_dispatcher_thread(
-            host=DISPATCHER_HOST, port=DISPATCHER_PORT, logger=self.logger
-        )
+        self.dispatcher_thread = start_dispatcher_thread(host=DISPATCHER_HOST, port=DISPATCHER_PORT, logger=self.logger)
 
         # Initialize notebook UI controller (will be displayed in run())
         # Auto-detects Colab vs Local environment and uses appropriate URL
@@ -153,9 +137,7 @@ class Experiment:
             num_actors = int(gpus_per_actor) if gpus_per_actor > 0 else 1
 
         if gpus_per_actor == 0:
-            self.logger.warning(
-                "No GPUs available. Be sure to use external APIs for inference."
-            )
+            self.logger.warning("No GPUs available. Be sure to use external APIs for inference.")
 
         self.logger.info(
             f"Running multi-config experiment with {num_shards} shard(s), "
@@ -163,9 +145,7 @@ class Experiment:
         )
 
         # Update experiment resources in database
-        self.db.set_experiment_resources(
-            self.experiment_id, num_actors, cpus_per_actor, gpus_per_actor
-        )
+        self.db.set_experiment_resources(self.experiment_id, num_actors, cpus_per_actor, gpus_per_actor)
 
         # Display interactive control panel in notebook
         # Give dispatcher a moment to start up
@@ -211,19 +191,14 @@ class Experiment:
         Shuts down Ray actors and terminates the experiment.
         Note: Dispatcher thread is a daemon and will automatically clean up.
         """
-        # Mark experiment as completed if still running (safe with try-except)
-        try:
-            experiment = self.db.get_experiment(self.experiment_id)
-            if experiment and experiment.get("status") == ExperimentStatus.RUNNING:
-                self.db.set_experiment_status(
-                    self.experiment_id, ExperimentStatus.COMPLETED
-                )
-        except Exception as e:
-            self.logger.warning(
-                f"Failed to update experiment status during shutdown: {e}"
-            )
+        # Use experiment_utils to end the experiment properly
+        self.experiment_utils.end_experiment(internal=False)
 
-        # Clean shutdown
+        # Clean shutdown Ray
         ray.shutdown()
         self.logger.info("All actors shut down")
         self.logger.info("Dispatcher will automatically shut down (daemon thread)")
+
+    def cancel_current(self) -> None:
+        """Cancel current running evaluation tasks."""
+        self.experiment_utils.cancel_current(internal=False)
