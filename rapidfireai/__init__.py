@@ -15,4 +15,4 @@ def coming_soon():
     """Placeholder function - full functionality coming soon."""
     return "RapidFire AI package is under development. Stay tuned!"
 
-__all__ = ["Experiment", "EvalsExperiment"]
+__all__ = ["Experiment"]
