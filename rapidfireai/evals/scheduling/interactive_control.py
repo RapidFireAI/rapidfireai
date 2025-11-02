@@ -320,7 +320,7 @@ class InteractiveControlHandler:
         new_pipeline_id = db.create_pipeline(
             context_id=context_id,
             pipeline_type=pipeline_type,
-            pipeline_config_json=pipeline_config_dict,
+            pipeline_config=pipeline_config_dict,
             status=PipelineStatus.NEW,
         )
 

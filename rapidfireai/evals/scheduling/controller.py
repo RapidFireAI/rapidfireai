@@ -466,7 +466,7 @@ class Controller:
             pipeline_id = db.create_pipeline(
                 context_id=context_id,
                 pipeline_type="vllm",
-                pipeline_config_json=pipeline_config,
+                pipeline_config=pipeline_config,
                 status=PipelineStatus.NEW,
             )
             pipeline_ids.append(pipeline_id)
