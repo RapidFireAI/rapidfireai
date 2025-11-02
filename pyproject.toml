@@ -38,8 +38,6 @@ dependencies = [
     "ray",
 
     # LLM Inference
-    "vllm==0.7.2",
-    "flash-attn",
     "flashinfer-python",
 
     # OpenAI API
