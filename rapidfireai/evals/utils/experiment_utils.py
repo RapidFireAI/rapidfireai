@@ -138,7 +138,7 @@ class ExperimentUtils:
         logger.info(msg)
 
     def cancel_current(self, internal: bool = False) -> None:
-        """Cancel the current task - marks experiment as cancelled"""
+        """Cancel the current task - marks experiment as cancelled and resets pipeline/context states"""
         # check if experiment is running
         try:
             current_experiment = self.db.get_running_experiment()
@@ -153,10 +153,14 @@ class ExperimentUtils:
         logger = logging_manager.get_logger("ExperimentUtils")
 
         try:
+            # Reset experiment states (mark pipelines/contexts/tasks as failed)
+            self.db.reset_experiment_states()
+            logger.info("Reset experiment states - marked ongoing pipelines, contexts, and tasks as failed")
+
             # Mark experiment as cancelled
             self.db.set_experiment_status(current_experiment["experiment_id"], ExperimentStatus.CANCELLED)
 
-            msg = "Experiment marked as cancelled. Running tasks will complete their current batch."
+            msg = "Experiment marked as cancelled. Ongoing pipelines, contexts, and tasks have been marked as failed."
             if not internal:
                 print(msg)
             logger.info(msg)

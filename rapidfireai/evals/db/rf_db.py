@@ -173,6 +173,52 @@ class RFDatabase:
         for table in tables:
             self.db.execute("DELETE FROM sqlite_sequence WHERE name = ?", (table,), commit=True)
 
+    def reset_experiment_states(self) -> None:
+        """
+        Reset the experiment states when a running task is cancelled.
+        Marks ongoing/new pipelines as FAILED and their contexts as FAILED.
+        Similar to fit mode's reset_experiment_states().
+        """
+        from rapidfireai.evals.utils.constants import ContextStatus, PipelineStatus, TaskStatus
+
+        # Mark all scheduled and in-progress actor tasks as failed
+        query = """
+            UPDATE actor_tasks
+            SET status = ?
+            WHERE status = ? OR status = ?
+        """
+        self.db.execute(
+            query, (TaskStatus.FAILED.value, TaskStatus.IN_PROGRESS.value, TaskStatus.SCHEDULED.value), commit=True
+        )
+
+        # Mark ongoing and new pipelines as failed
+        query = """
+            UPDATE pipelines
+            SET status = ?
+            WHERE status = ? OR status = ?
+        """
+        self.db.execute(
+            query, (PipelineStatus.FAILED.value, PipelineStatus.ONGOING.value, PipelineStatus.NEW.value), commit=True
+        )
+
+        # Mark ongoing and new contexts as failed
+        query = """
+            UPDATE contexts
+            SET status = ?
+            WHERE status = ? OR status = ?
+        """
+        self.db.execute(
+            query, (ContextStatus.FAILED.value, ContextStatus.ONGOING.value, ContextStatus.NEW.value), commit=True
+        )
+
+        # Reset all pending interactive control tasks
+        query = """
+            UPDATE interactive_control
+            SET status = ?
+            WHERE status = ?
+        """
+        self.db.execute(query, (TaskStatus.FAILED.value, TaskStatus.SCHEDULED.value), commit=True)
+
     def get_experiment(self, experiment_id: int) -> dict[str, Any] | None:
         """
         Get experiment details by ID.

@@ -329,6 +329,14 @@ class Experiment:
             f"({gpus_per_actor} GPUs per actor, {cpus_per_actor} CPUs per actor, {num_actors} actors)"
         )
 
+        # Reset states of any existing pipelines/contexts/tasks from previous runs
+        # (in case run_evals() is called multiple times on the same experiment)
+        try:
+            self.db.reset_experiment_states()
+            self.logger.info("Reset states of existing pipelines/contexts/tasks (marked as failed)")
+        except Exception as e:
+            self.logger.warning(f"Failed to reset experiment states: {e}")
+
         # Update experiment resources in database
         self.db.set_experiment_resources(self.experiment_id, num_actors, cpus_per_actor, gpus_per_actor)
 
