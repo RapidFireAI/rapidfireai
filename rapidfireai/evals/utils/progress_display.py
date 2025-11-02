@@ -10,6 +10,7 @@ Requires: pandas and IPython (for Jupyter display)
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import pandas as pd
 from IPython.display import display
@@ -78,7 +79,6 @@ class ContextBuildingDisplay:
             rows.append(
                 {
                     "RAG Source ID": ctx_id,
-                    "Context Hash": ctx_hash_display,
                     "Status": status,
                     "Duration": duration,
                     "Details": details,
@@ -154,37 +154,113 @@ class PipelineProgressDisplay:
     - Model name
     - Current shard progress (X/Y)
     - Confidence interval
+    - Pipeline configuration fields (search_type, chunk_size, etc.)
     - Other metrics (accuracy, throughput, etc.)
     """
 
-    def __init__(self, pipelines: list[tuple[int, str, str]], num_shards: int):
+    def __init__(self, pipelines: list[dict], num_shards: int):
         """
         Initialize the progress display.
 
         Args:
-            pipelines: List of (pipeline_id, pipeline_name, model_name) tuples
+            pipelines: List of pipeline info dicts with keys:
+                      - pipeline_id (required)
+                      - pipeline_config (required)
+                      - model_name (required)
+                      - search_type (optional)
+                      - rag_k (optional)
+                      - top_n (optional)
+                      - chunk_size (optional)
+                      - chunk_overlap (optional)
+                      - sampling_params (optional)
+                      - prompt_manager_k (optional)
+                      - model_config (optional)
             num_shards: Total number of shards
         """
         self.pipelines = pipelines
         self.num_shards = num_shards
-        self.pipeline_data = {
-            pid: {
-                "name": name,
-                "model": model,
+
+        # Extract pipeline_id, name, and model, plus all optional fields
+        self.pipeline_data = {}
+        self.pipeline_metadata = {}  # Store additional metadata for each pipeline
+
+        for pipeline_info in pipelines:
+            pid = pipeline_info["pipeline_id"]
+            pipeline_config = pipeline_info["pipeline_config"]
+            pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pid}")
+            model_name = pipeline_info.get("model_name", "Unknown")
+
+            self.pipeline_data[pid] = {
+                "name": pipeline_name,
+                "model": model_name,
                 "shard": 0,
                 "confidence": "-",
                 "metrics": {},
                 "status": "ONGOING",
             }
-            for pid, name, model in pipelines
-        }
+
+            # Store additional metadata fields (only non-None values)
+            metadata = {}
+            for key in ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
+                       "sampling_params", "prompt_manager_k", "model_config"]:
+                if key in pipeline_info:
+                    metadata[key] = pipeline_info[key]
+            self.pipeline_metadata[pid] = metadata
+
         self.display_handle = None
 
     def _create_dataframe(self) -> pd.DataFrame:
         """Create a DataFrame with current pipeline progress data."""
-        rows = []
-        for pid, name, model in self.pipelines:
+        # Collect all unique metric names across all pipelines
+        all_metric_names = set()
+        for pipeline_info in self.pipelines:
+            pid = pipeline_info["pipeline_id"]
             data = self.pipeline_data[pid]
+            all_metric_names.update(data["metrics"].keys())
+
+        # Sort metrics for consistent display order (prefer common metrics first)
+        metric_precedence = ["Accuracy", "Precision", "Recall", "F1 Score", "NDCG@5", "MRR", "Throughput", "Total", "Samples Processed"]
+        ordered_metrics = []
+        remaining_metrics = []
+
+        for metric in metric_precedence:
+            if metric in all_metric_names:
+                ordered_metrics.append(metric)
+
+        for metric in sorted(all_metric_names):
+            if metric not in ordered_metrics:
+                remaining_metrics.append(metric)
+
+        ordered_metrics.extend(remaining_metrics)
+
+        # Collect all unique metadata field names across pipelines (for column consistency)
+        all_metadata_fields = set()
+        for pipeline_info in self.pipelines:
+            pid = pipeline_info["pipeline_id"]
+            metadata = self.pipeline_metadata.get(pid, {})
+            all_metadata_fields.update(metadata.keys())
+
+        # Define display order for metadata fields
+        metadata_precedence = ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
+                              "sampling_params", "prompt_manager_k", "model_config"]
+        ordered_metadata = []
+        remaining_metadata = []
+
+        for field in metadata_precedence:
+            if field in all_metadata_fields:
+                ordered_metadata.append(field)
+
+        for field in sorted(all_metadata_fields):
+            if field not in ordered_metadata:
+                remaining_metadata.append(field)
+
+        ordered_metadata.extend(remaining_metadata)
+
+        rows = []
+        for pipeline_info in self.pipelines:
+            pid = pipeline_info["pipeline_id"]
+            data = self.pipeline_data[pid]
+            metadata = self.pipeline_metadata.get(pid, {})
 
             # Format progress
             progress = f"{data['shard']}/{self.num_shards}"
@@ -194,32 +270,132 @@ class PipelineProgressDisplay:
             if confidence != "-" and isinstance(confidence, (int, float)):
                 confidence = f"{confidence:.3f}"
 
-            # Format metrics
-            accuracy = data["metrics"].get("Accuracy", {}).get("value", "-")
-            if isinstance(accuracy, (int, float)):
-                accuracy = f"{accuracy:.2%}"
-
-            throughput = data["metrics"].get("Throughput", {}).get("value", "-")
-            if isinstance(throughput, (int, float)):
-                throughput = f"{throughput:.1f}/s"
-
             # Get status
             status = data.get("status", "ONGOING")
 
-            rows.append(
-                {
-                    "Run ID": pid,
-                    "Name": name,
-                    "Model": model,
-                    "Status": status,
-                    "Progress": progress,
-                    "Accuracy": str(accuracy),
-                    "Conf. Interval": str(confidence),
-                    "Throughput": str(throughput),
-                }
-            )
+            # Start with standard columns
+            row = {
+                "Run ID": pid,
+                "Model": data["model"],
+                "Status": status,
+                "Progress": progress,
+                "Conf. Interval": str(confidence),
+            }
+
+            # Add metadata fields
+            for field_name in ordered_metadata:
+                if field_name in metadata:
+                    value = metadata[field_name]
+                    # Format the value for display
+                    formatted_value = self._format_metadata_field(field_name, value)
+                    row[field_name] = formatted_value
+                else:
+                    row[field_name] = "-"
+
+            # Add all metrics with confidence intervals
+            for metric_name in ordered_metrics:
+                metric_data = data["metrics"].get(metric_name, {})
+                if isinstance(metric_data, dict):
+                    metric_value = metric_data.get("value", "-")
+                    lower_bound = metric_data.get("lower_bound")
+                    upper_bound = metric_data.get("upper_bound")
+                    margin_of_error = metric_data.get("margin_of_error")
+                    is_algebraic = metric_data.get("is_algebraic", False)
+                else:
+                    metric_value = metric_data
+                    lower_bound = upper_bound = margin_of_error = None
+                    is_algebraic = False
+
+                # Format metric value based on type and name
+                if metric_value != "-":
+                    if isinstance(metric_value, (int, float)):
+                        # Format percentages for common metrics (0-1 range)
+                        if metric_name in ["Accuracy", "Precision", "Recall", "F1 Score", "NDCG@5", "MRR"]:
+                            formatted_value = f"{metric_value:.2%}"
+                            # Add confidence interval if available
+                            if is_algebraic and lower_bound is not None and upper_bound is not None:
+                                # Show as "value [lower, upper]" format
+                                formatted_value += f" [{lower_bound:.2%}, {upper_bound:.2%}]"
+                        elif metric_name == "Throughput":
+                            formatted_value = f"{metric_value:.1f}/s"
+                        elif metric_name in ["Total", "Samples Processed"]:
+                            formatted_value = f"{int(metric_value):,}"
+                        else:
+                            # Default formatting for other numeric metrics
+                            if abs(metric_value) < 1:
+                                formatted_value = f"{metric_value:.4f}"
+                                # Add CI for algebraic metrics
+                                if is_algebraic and lower_bound is not None and upper_bound is not None:
+                                    formatted_value += f" [{lower_bound:.4f}, {upper_bound:.4f}]"
+                            else:
+                                formatted_value = f"{metric_value:.2f}"
+                                # Add CI for algebraic metrics
+                                if is_algebraic and lower_bound is not None and upper_bound is not None:
+                                    formatted_value += f" [{lower_bound:.2f}, {upper_bound:.2f}]"
+
+                        metric_value = formatted_value
+
+                row[metric_name] = str(metric_value)
+
+            rows.append(row)
 
         return pd.DataFrame(rows)
+
+    def _format_metadata_field(self, field_name: str, value: Any) -> str:
+        """
+        Format a metadata field value for display.
+
+        Args:
+            field_name: Name of the metadata field
+            value: Value to format
+
+        Returns:
+            Formatted string representation
+        """
+        if value is None:
+            return "-"
+
+        # Handle dict values (like sampling_params, model_config)
+        if isinstance(value, dict):
+            # Format as compact JSON-like string
+            if field_name == "sampling_params":
+                # Format sampling params more nicely
+                parts = []
+                if "temperature" in value:
+                    parts.append(f"temp={value['temperature']}")
+                if "top_p" in value:
+                    parts.append(f"top_p={value['top_p']}")
+                if "top_k" in value:
+                    parts.append(f"top_k={value['top_k']}")
+                if "max_tokens" in value:
+                    parts.append(f"max_t={value['max_tokens']}")
+                # If we have formatted parts, use them, otherwise show abbreviated dict
+                if parts:
+                    return ", ".join(parts)
+                else:
+                    return str(value)[:50]  # Truncate long dicts
+            elif field_name == "model_config":
+                # Format model config as key=value pairs
+                parts = [f"{k}={v}" for k, v in value.items() if k != "model"]
+                return ", ".join(parts) if parts else "-"
+            else:
+                # Default dict formatting
+                return str(value)[:50]  # Truncate long dicts
+
+        # Handle list values
+        if isinstance(value, list):
+            return f"[{', '.join(str(v) for v in value[:5])}]"  # Show first 5 items
+
+        # Handle numeric values
+        if isinstance(value, (int, float)):
+            return str(value)
+
+        # Handle string values
+        if isinstance(value, str):
+            return value
+
+        # Fallback: convert to string
+        return str(value)
 
     def start(self):
         """Start the live display."""
@@ -277,18 +453,40 @@ class PipelineProgressDisplay:
         # Re-render the display
         self._render()
 
-    def add_pipeline(self, pipeline_id: int, pipeline_name: str, model_name: str, status: str = "ONGOING"):
+    def add_pipeline(
+        self,
+        pipeline_id: int,
+        pipeline_config: dict,
+        model_name: str = "Unknown",
+        status: str = "ONGOING",
+        **metadata
+    ):
         """
         Add a new pipeline to the display (for dynamically cloned pipelines).
 
         Args:
             pipeline_id: ID of the new pipeline
-            pipeline_name: Name of the new pipeline
-            model_name: Model name used by the pipeline
+            pipeline_config: Pipeline configuration dict (must have "pipeline_name" key)
+            model_name: Model name used by the pipeline (default: "Unknown")
             status: Initial status (default: "ONGOING")
+            **metadata: Optional metadata fields (search_type, rag_k, top_n, etc.)
         """
+        pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
+
+        # Build pipeline info dict
+        pipeline_info_dict = {
+            "pipeline_id": pipeline_id,
+            "pipeline_config": pipeline_config,
+            "model_name": model_name,
+        }
+
+        # Add any metadata fields that are not None
+        for key, value in metadata.items():
+            if value is not None:
+                pipeline_info_dict[key] = value
+
         # Add to pipelines list
-        self.pipelines.append((pipeline_id, pipeline_name, model_name))
+        self.pipelines.append(pipeline_info_dict)
 
         # Initialize pipeline data
         self.pipeline_data[pipeline_id] = {
@@ -299,6 +497,14 @@ class PipelineProgressDisplay:
             "metrics": {},
             "status": status,
         }
+
+        # Store metadata
+        metadata_dict = {}
+        for key in ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
+                   "sampling_params", "prompt_manager_k", "model_config"]:
+            if key in pipeline_info_dict:
+                metadata_dict[key] = pipeline_info_dict[key]
+        self.pipeline_metadata[pipeline_id] = metadata_dict
 
         # Re-render the display
         self._render()

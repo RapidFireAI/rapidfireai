@@ -11,7 +11,7 @@ import uuid
 class NotebookUI:
     """Notebook UI for interactive run control using JavaScript"""
 
-    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8081", refresh_rate_seconds: float = 3.0):
+    def __init__(self, dispatcher_url: str = "http://127.0.0.1:5000", refresh_rate_seconds: float = 3.0):
         self.dispatcher_url = dispatcher_url.rstrip("/")
         self.widget_id = f"controller_{uuid.uuid4().hex[:8]}"
         self.refresh_rate_ms = int(refresh_rate_seconds * 1000)  # Convert to milliseconds
@@ -222,7 +222,7 @@ class NotebookUI:
                 <div id="status-message" class="status-message" style="display: none;"></div>
 
                 <div class="section">
-                    <div class="section-label">Select a Run:</div>
+                    <div class="section-label">Select a Config ID:</div>
                     <div class="selector-row">
                         <select id="pipeline-selector">
                             <option value="">Loading...</option>
@@ -366,7 +366,7 @@ class NotebookUI:
                         }}
                     }}
 
-                    // Fetch all pipelines - called by unified refresh
+                    // Fetch all pipeline IDs - called by unified refresh (OPTIMIZED)
                     async function fetchAllPipelines(isUserAction = false) {{
                         // Skip if too many active requests (prevent pileup)
                         if (activeRequests.size > 2) {{
@@ -376,12 +376,12 @@ class NotebookUI:
 
                         try {{
                             const response = await safeFetch(
-                                DISPATCHER_URL + '/dispatcher/get-all-pipelines',
+                                DISPATCHER_URL + '/dispatcher/list-all-pipeline-ids',
                                 {{
                                     method: 'GET',
                                     headers: {{ 'Content-Type': 'application/json' }}
                                 }},
-                                'get-all-pipelines'
+                                'list-all-pipeline-ids'
                             );
 
                             if (!response.ok) {{
@@ -420,12 +420,12 @@ class NotebookUI:
                                 // Save current selection
                                 const currentlySelectedId = elements.pipelineSelector.value;
 
-                                // Rebuild dropdown
+                                // Rebuild dropdown (show only pipeline IDs)
                                 elements.pipelineSelector.innerHTML = '';
                                 pipelines.forEach(pipeline => {{
                                     const option = document.createElement('option');
                                     option.value = pipeline.pipeline_id;
-                                    option.textContent = `Run ${{pipeline.pipeline_id}}: ${{pipeline.pipeline_name}} - ${{pipeline.status || 'Unknown'}}`;
+                                    option.textContent = `Config ID: ${{pipeline.pipeline_id}} (${{pipeline.status || 'unknown'}})`;
                                     elements.pipelineSelector.appendChild(option);
                                 }});
 
@@ -452,7 +452,7 @@ class NotebookUI:
                         }}
                     }}
 
-                    // Load pipeline details
+                    // Load pipeline config (OPTIMIZED - only fetches config JSON when needed)
                     async function loadPipeline(pipelineId, isUserAction = false) {{
                         if (!pipelineId) return;
 
@@ -465,53 +465,48 @@ class NotebookUI:
                         currentPipelineId = pipelineId;
 
                         try {{
+                            // Fetch config JSON using new lightweight endpoint
                             const response = await safeFetch(
-                                DISPATCHER_URL + '/dispatcher/get-pipeline',
+                                DISPATCHER_URL + `/dispatcher/get-pipeline-config-json/${{pipelineId}}`,
                                 {{
-                                    method: 'POST',
-                                    headers: {{ 'Content-Type': 'application/json' }},
-                                    body: JSON.stringify({{ pipeline_id: parseInt(pipelineId) }})
+                                    method: 'GET',
+                                    headers: {{ 'Content-Type': 'application/json' }}
                                 }},
-                                'get-pipeline'
+                                'get-pipeline-config-json'
                             );
 
                             if (!response.ok) {{
-                                console.log('Failed to load pipeline:', response.status);
+                                console.log('Failed to load pipeline config:', response.status);
                                 return;
                             }}
 
                             const data = await response.json();
                             lastSuccessfulFetch = Date.now();
 
-                            let modelConfig = {{}};
-                            let samplingParams = {{}};
-                            try {{
-                                modelConfig = JSON.parse(data.model_config_json || '{{}}');
-                                samplingParams = JSON.parse(data.sampling_params_json || '{{}}');
-                            }} catch (e) {{
-                                console.error('Error parsing config:', e);
-                            }}
+                            // data.pipeline_config_json is already parsed JSON
+                            const configJson = data.pipeline_config_json || {{}};
 
-                            currentConfig = {{
-                                pipeline_name: data.pipeline_name,
-                                pipeline_type: data.pipeline_type,
-                                model_config: modelConfig,
-                                sampling_params: samplingParams,
-                                context_id: data.context_id
-                            }};
+                            currentConfig = configJson;
+                            currentContextId = data.context_id;
+
+                            // Get status/shards from the already-fetched list
+                            const pipelineInfo = Array.from(document.getElementById('pipeline-selector').options)
+                                .find(opt => opt.value == pipelineId);
+                            const statusMatch = pipelineInfo ? pipelineInfo.textContent.match(/\\((.+?)\\)/) : null;
+                            const status = statusMatch ? statusMatch[1] : 'unknown';
 
                             updateDisplay(
                                 pipelineId,
-                                data.status || 'Unknown',
-                                data.shards_completed || 0,
-                                data.total_samples_processed || 0,
+                                status,
+                                null,  // shards info not needed for display
+                                null,  // shards info not needed for display
                                 currentConfig,
                                 data.context_id
                             );
                         }} catch (error) {{
-                            console.log('Error loading pipeline:', error.message);
+                            console.log('Error loading pipeline config:', error.message);
                             if (isUserAction) {{
-                                showMessage('Error loading pipeline. Will retry automatically.', 'warning');
+                                showMessage('Error loading config. Will retry automatically.', 'warning');
                             }}
                         }}
                     }}
@@ -676,35 +671,32 @@ class NotebookUI:
                     }}
 
                     async function handleClone() {{
-                        if (!currentPipelineId || !currentContextId) {{
-                            showMessage('No pipeline or context loaded', 'error');
+                        if (!currentPipelineId) {{
+                            showMessage('No pipeline selected', 'error');
                             return;
                         }}
 
                         try {{
-                            let newConfig;
+                            // Parse the edited config JSON
+                            let editedConfig;
                             try {{
-                                newConfig = JSON.parse(elements.configText.value);
+                                editedConfig = JSON.parse(elements.configText.value);
                             }} catch (e) {{
                                 showMessage('Invalid JSON: ' + e.message, 'error');
                                 return;
                             }}
 
-                            const cloneRequest = {{
-                                context_id: currentContextId,
-                                pipeline_name: newConfig.pipeline_name || `cloned_${{currentPipelineId}}`,
-                                pipeline_type: newConfig.pipeline_type || 'vllm'
-                            }};
-
-                            if (cloneRequest.pipeline_type === 'vllm') {{
-                                cloneRequest.model_config = newConfig.model_config || {{}};
-                                cloneRequest.sampling_params = newConfig.sampling_params || {{}};
-                            }} else if (cloneRequest.pipeline_type === 'openai') {{
-                                cloneRequest.client_config = newConfig.client_config || {{}};
-                                cloneRequest.model_config = newConfig.model_config || {{}};
-                                cloneRequest.rpm_limit = newConfig.rpm_limit || 500;
-                                cloneRequest.tpm_limit = newConfig.tpm_limit || 90000;
+                            // Validate required fields
+                            if (!editedConfig.pipeline_type) {{
+                                showMessage('config_json must include pipeline_type', 'error');
+                                return;
                             }}
+
+                            // Prepare clone request with new format
+                            const cloneRequest = {{
+                                parent_pipeline_id: currentPipelineId,
+                                config_json: editedConfig
+                            }};
 
                             const response = await safeFetch(
                                 DISPATCHER_URL + '/dispatcher/clone-pipeline',
@@ -723,7 +715,7 @@ class NotebookUI:
                             if (result.error) {{
                                 showMessage('Error: ' + result.error, 'error');
                             }} else {{
-                                showMessage(`✓ Cloned pipeline successfully`, 'success');
+                                showMessage(`✓ Cloned from Config ID ${{currentPipelineId}} successfully!`, 'success');
                                 disableCloneMode();
                                 setTimeout(fetchAllPipelines, 1000);
                             }}

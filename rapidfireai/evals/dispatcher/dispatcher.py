@@ -51,38 +51,17 @@ class Dispatcher:
         route_prefix = "/dispatcher"
 
         # Health check
-        self.app.add_url_rule(
-            f"{route_prefix}/health-check",
-            "health_check",
-            self.health_check,
-            methods=["GET"],
-        )
+        self.app.add_url_rule(f"{route_prefix}/health-check", "health_check", self.health_check, methods=["GET"])
 
         # Interactive control operations
+        self.app.add_url_rule(f"{route_prefix}/stop-pipeline", "stop_pipeline", self.stop_pipeline, methods=["POST"])
         self.app.add_url_rule(
-            f"{route_prefix}/stop-pipeline",
-            "stop_pipeline",
-            self.stop_pipeline,
-            methods=["POST"],
+            f"{route_prefix}/resume-pipeline", "resume_pipeline", self.resume_pipeline, methods=["POST"]
         )
         self.app.add_url_rule(
-            f"{route_prefix}/resume-pipeline",
-            "resume_pipeline",
-            self.resume_pipeline,
-            methods=["POST"],
+            f"{route_prefix}/delete-pipeline", "delete_pipeline", self.delete_pipeline, methods=["POST"]
         )
-        self.app.add_url_rule(
-            f"{route_prefix}/delete-pipeline",
-            "delete_pipeline",
-            self.delete_pipeline,
-            methods=["POST"],
-        )
-        self.app.add_url_rule(
-            f"{route_prefix}/clone-pipeline",
-            "clone_pipeline",
-            self.clone_pipeline,
-            methods=["POST"],
-        )
+        self.app.add_url_rule(f"{route_prefix}/clone-pipeline", "clone_pipeline", self.clone_pipeline, methods=["POST"])
 
         # Status queries
         self.app.add_url_rule(
@@ -92,24 +71,25 @@ class Dispatcher:
             methods=["GET"],
         )
         self.app.add_url_rule(
-            f"{route_prefix}/all-operations",
-            "get_all_operations",
-            self.get_all_operations,
-            methods=["GET"],
+            f"{route_prefix}/all-operations", "get_all_operations", self.get_all_operations, methods=["GET"]
         )
 
         # Pipeline queries (for UI)
         self.app.add_url_rule(
-            f"{route_prefix}/get-all-pipelines",
-            "get_all_pipelines",
-            self.get_all_pipelines,
-            methods=["GET"],
+            f"{route_prefix}/list-all-pipeline-ids", "list_all_pipeline_ids", self.list_all_pipeline_ids, methods=["GET"]
         )
         self.app.add_url_rule(
-            f"{route_prefix}/get-pipeline",
-            "get_pipeline",
-            self.get_pipeline,
-            methods=["POST"],
+            f"{route_prefix}/get-pipeline-config-json/<int:pipeline_id>",
+            "get_pipeline_config_json",
+            self.get_pipeline_config_json,
+            methods=["GET"],
+        )
+        # Legacy endpoints (kept for backwards compatibility)
+        self.app.add_url_rule(
+            f"{route_prefix}/get-all-pipelines", "get_all_pipelines", self.get_all_pipelines, methods=["GET"]
+        )
+        self.app.add_url_rule(
+            f"{route_prefix}/get-pipeline", "get_pipeline", self.get_pipeline, methods=["POST"]
         )
 
     def health_check(self) -> tuple[Response, int]:
@@ -151,15 +131,7 @@ class Dispatcher:
                 pipeline_id=pipeline_id,
             )
 
-            return (
-                jsonify(
-                    {
-                        "ic_id": ic_id,
-                        "message": f"Stop request created for pipeline {pipeline_id}",
-                    }
-                ),
-                200,
-            )
+            return jsonify({"ic_id": ic_id, "message": f"Stop request created for pipeline {pipeline_id}"}), 200
 
         except Exception as e:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
@@ -196,15 +168,7 @@ class Dispatcher:
                 pipeline_id=pipeline_id,
             )
 
-            return (
-                jsonify(
-                    {
-                        "ic_id": ic_id,
-                        "message": f"Resume request created for pipeline {pipeline_id}",
-                    }
-                ),
-                200,
-            )
+            return jsonify({"ic_id": ic_id, "message": f"Resume request created for pipeline {pipeline_id}"}), 200
 
         except Exception as e:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
@@ -241,41 +205,29 @@ class Dispatcher:
                 pipeline_id=pipeline_id,
             )
 
-            return (
-                jsonify(
-                    {
-                        "ic_id": ic_id,
-                        "message": f"Delete request created for pipeline {pipeline_id}",
-                    }
-                ),
-                200,
-            )
+            return jsonify({"ic_id": ic_id, "message": f"Delete request created for pipeline {pipeline_id}"}), 200
 
         except Exception as e:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
     def clone_pipeline(self) -> tuple[Response, int]:
         """
-        Clone a new pipeline using an existing context.
+        Clone a new pipeline from a parent pipeline with edited configuration.
 
-        Request body (VLLM):
-            {
-                "context_id": int,
-                "pipeline_name": str (optional),
-                "pipeline_type": "vllm" (optional, default),
-                "model_config": dict,
-                "sampling_params": dict
-            }
+        The clone inherits the parent's context_id, RAG, and prompt_manager.
+        Only the JSON-editable parameters can be modified.
 
-        Request body (OpenAI):
+        Request body:
             {
-                "context_id": int,
-                "pipeline_name": str (optional),
-                "pipeline_type": "openai",
-                "client_config": dict,
-                "model_config": dict,
-                "rpm_limit": int (optional),
-                "tpm_limit": int (optional)
+                "parent_pipeline_id": int,  # ID of the pipeline to clone
+                "config_json": {            # Edited configuration
+                    "pipeline_type": "vllm" | "openai",
+                    "model_config": {...},
+                    "sampling_params": {...},  # for vLLM
+                    "client_config": {...},    # for OpenAI
+                    "batch_size": int,         # optional
+                    "online_strategy_kwargs": {...}  # optional
+                }
             }
 
         Returns:
@@ -286,65 +238,43 @@ class Dispatcher:
             if not data:
                 return jsonify({"error": "No JSON data provided"}), 400
 
-            context_id = data.get("context_id")
-            if context_id is None:
-                return jsonify({"error": "context_id is required"}), 400
+            parent_pipeline_id = data.get("parent_pipeline_id")
+            if parent_pipeline_id is None:
+                return jsonify({"error": "parent_pipeline_id is required"}), 400
 
-            pipeline_type = data.get("pipeline_type", "vllm").lower()
-            if pipeline_type not in ["vllm", "openai"]:
-                return (
-                    jsonify({"error": "pipeline_type must be 'vllm' or 'openai'"}),
-                    400,
-                )
+            config_json = data.get("config_json")
+            if not config_json:
+                return jsonify({"error": "config_json is required"}), 400
 
-            model_config = data.get("model_config")
-            if not model_config:
-                return jsonify({"error": "model_config is required"}), 400
+            # Validate parent pipeline exists
+            parent_pipeline = self.db.get_pipeline(parent_pipeline_id)
+            if not parent_pipeline:
+                return jsonify({"error": f"Parent pipeline {parent_pipeline_id} not found"}), 404
 
-            # Validate required fields based on pipeline type
-            if pipeline_type == "vllm":
-                sampling_params = data.get("sampling_params")
-                if not sampling_params:
-                    return (
-                        jsonify(
-                            {"error": "sampling_params is required for VLLM pipelines"}
-                        ),
-                        400,
-                    )
+            # Validate config_json has required fields
+            pipeline_type = config_json.get("pipeline_type")
+            if not pipeline_type:
+                return jsonify({"error": "config_json must include 'pipeline_type'"}), 400
 
-            elif pipeline_type == "openai":
-                client_config = data.get("client_config")
-                if not client_config:
-                    return (
-                        jsonify(
-                            {"error": "client_config is required for OpenAI pipelines"}
-                        ),
-                        400,
-                    )
+            if pipeline_type.lower() not in ["vllm", "openai"]:
+                return jsonify({"error": "pipeline_type must be 'vllm' or 'openai'"}), 400
 
-            # Validate context exists
-            context = self.db.get_context(context_id)
-            if not context:
-                return jsonify({"error": f"Context {context_id} not found"}), 404
+            # Type-specific validation
+            if pipeline_type.lower() == "vllm":
+                if "model_config" not in config_json or "sampling_params" not in config_json:
+                    return jsonify({"error": "vLLM pipelines require 'model_config' and 'sampling_params'"}), 400
 
-            # Prepare request data (pass through all fields from user)
+            elif pipeline_type.lower() == "openai":
+                if "client_config" not in config_json or "model_config" not in config_json:
+                    return jsonify({"error": "OpenAI pipelines require 'client_config' and 'model_config'"}), 400
+
+            # Prepare request data for IC operation
             request_data = {
-                "context_id": context_id,
-                "pipeline_type": pipeline_type,
+                "parent_pipeline_id": parent_pipeline_id,
+                "config_json": config_json,
             }
 
-            # Add type-specific fields
-            if pipeline_type == "vllm":
-                request_data["model_config"] = model_config
-                request_data["sampling_params"] = data["sampling_params"]
-
-            elif pipeline_type == "openai":
-                request_data["client_config"] = data["client_config"]
-                request_data["model_config"] = model_config
-                request_data["rpm_limit"] = data.get("rpm_limit", 500)
-                request_data["tpm_limit"] = data.get("tpm_limit", 90000)
-
-            # Create IC operation (pipeline_id is None for CLONE)
+            # Create IC operation (pipeline_id is None for CLONE, as new ID will be generated)
             ic_id = self.db.create_ic_operation(
                 operation=ICOperation.CLONE.value,
                 pipeline_id=None,
@@ -355,7 +285,7 @@ class Dispatcher:
                 jsonify(
                     {
                         "ic_id": ic_id,
-                        "message": f"Clone request created with context {context_id} (type: {pipeline_type})",
+                        "message": f"Clone request created from parent pipeline {parent_pipeline_id}",
                     }
                 ),
                 200,
@@ -398,9 +328,45 @@ class Dispatcher:
         except Exception as e:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
+    def list_all_pipeline_ids(self) -> tuple[Response, int]:
+        """
+        Get lightweight list of pipeline IDs with minimal info (optimized for polling).
+
+        Returns:
+            List of pipelines with only: pipeline_id, status, shards_completed, total_samples_processed
+        """
+        try:
+            pipelines = self.db.get_all_pipeline_ids()
+            return jsonify(pipelines), 200
+
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+    def get_pipeline_config_json(self, pipeline_id: int) -> tuple[Response, int]:
+        """
+        Get only the config JSON for a specific pipeline (for clone operations).
+
+        Args:
+            pipeline_id: ID of the pipeline (from URL path)
+
+        Returns:
+            Pipeline config JSON
+        """
+        try:
+            config_data = self.db.get_pipeline_config_json(pipeline_id)
+            if not config_data:
+                return jsonify({"error": f"Pipeline {pipeline_id} not found"}), 404
+
+            return jsonify(config_data), 200
+
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
     def get_all_pipelines(self) -> tuple[Response, int]:
         """
         Get all pipelines (for UI dropdown).
+
+        LEGACY: Use list_all_pipeline_ids() for better performance.
 
         Returns:
             List of all pipelines
@@ -457,7 +423,7 @@ def run_dispatcher(host: str = "127.0.0.1", port: int = 5000) -> None:
         dispatcher = Dispatcher()
 
         # Suppress Flask/werkzeug request logging
-        log = logging.getLogger("werkzeug")
+        log = logging.getLogger('werkzeug')
         log.setLevel(logging.ERROR)
 
         # Use waitress to serve the Flask app
@@ -471,25 +437,26 @@ def run_dispatcher(host: str = "127.0.0.1", port: int = 5000) -> None:
 def _check_port_in_use(port: int) -> bool:
     """Check if a port is already in use."""
     import socket
-
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(("127.0.0.1", port)) == 0
+        return s.connect_ex(('127.0.0.1', port)) == 0
 
 
 def _cleanup_old_dispatcher(port: int, logger=None) -> None:
     """Kill any old dispatcher processes using the port."""
     import subprocess
-
     try:
         # Find process using the port
         result = subprocess.run(
-            ["lsof", "-ti", f":{port}"], capture_output=True, text=True, timeout=2
+            ['lsof', '-ti', f':{port}'],
+            capture_output=True,
+            text=True,
+            timeout=2
         )
         if result.returncode == 0 and result.stdout.strip():
-            pids = result.stdout.strip().split("\n")
+            pids = result.stdout.strip().split('\n')
             for pid in pids:
                 try:
-                    subprocess.run(["kill", "-9", pid], timeout=2)
+                    subprocess.run(['kill', '-9', pid], timeout=2)
                     msg = f"Killed old process (PID {pid}) on port {port}"
                     if logger:
                         logger.info(msg)
@@ -501,9 +468,7 @@ def _cleanup_old_dispatcher(port: int, logger=None) -> None:
         pass  # lsof might not be available
 
 
-def start_dispatcher_thread(
-    host: str = "127.0.0.1", port: int = 5000, logger=None
-) -> threading.Thread | None:
+def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 5000, logger=None) -> threading.Thread | None:
     """
     Start the dispatcher REST API server in a background daemon thread.
 
@@ -530,7 +495,6 @@ def start_dispatcher_thread(
 
             # Wait a moment and check again
             import time
-
             time.sleep(0.5)
             if _check_port_in_use(port):
                 error_msg = f"Port {port} still in use after cleanup. Restart your kernel or system."
@@ -539,24 +503,17 @@ def start_dispatcher_thread(
 
         # Create daemon thread (auto-cleanup when main process ends)
         dispatcher_thread = threading.Thread(
-            target=run_dispatcher,
-            kwargs={"host": host, "port": port},
-            daemon=True,
-            name="DispatcherThread",
+            target=run_dispatcher, kwargs={"host": host, "port": port}, daemon=True, name="DispatcherThread"
         )
         dispatcher_thread.start()
 
         msg = f"Started interactive control dispatcher on http://{host}:{port}"
         if logger:
             logger.info(msg)
-            logger.info(
-                "Use dispatcher API to dynamically stop/resume/delete/clone pipelines"
-            )
+            logger.info("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
         else:
             print(msg)
-            print(
-                "Use dispatcher API to dynamically stop/resume/delete/clone pipelines"
-            )
+            print("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
 
         return dispatcher_thread
 

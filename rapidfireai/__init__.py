@@ -23,7 +23,7 @@ except ImportError:
         """
         Placeholder for EvalsExperiment when evaluation dependencies are not installed.
         """
-        
+
         def __init__(self, *args, **kwargs):
             raise ImportError(
                 "\n" + "="*70 + "\n"
@@ -34,10 +34,10 @@ except ImportError:
                 "  Option 2: rapidfireai init --evals\n"
                 "="*70
             )
-        
+
         def __repr__(self):
             return "<EvalsExperiment: Not Available (missing dependencies)>"
-    
+
     EvalsExperiment = _EvalsExperimentPlaceholder
 
 
@@ -45,4 +45,5 @@ def coming_soon():
     """Placeholder function - full functionality coming soon."""
     return "RapidFire AI package is under development. Stay tuned!"
 
-__all__ = ["Experiment", "EvalsExperiment", "EVALS_AVAILABLE"]
+
+__all__ = ["Experiment", "__version__", "__version_info__", "EvalsExperiment", "EVALS_AVAILABLE"]

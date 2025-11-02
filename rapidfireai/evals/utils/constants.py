@@ -50,6 +50,7 @@ class ExperimentStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class ContextStatus(str, Enum):
@@ -106,7 +107,9 @@ class DBConfig:
     # Use user's home directory for database path
     import os
 
-    DB_PATH: str = os.path.join(os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~", "db"))), "rapidfire.db")
+    DB_PATH: str = os.path.join(
+        os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~", "db"))), "rapidfire_evals.db"
+    )
 
     # Connection settings
     CONNECTION_TIMEOUT: float = 30.0

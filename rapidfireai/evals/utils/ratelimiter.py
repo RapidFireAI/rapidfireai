@@ -23,26 +23,24 @@ class RequestRecord:
     timestamp: float  # When the request acquired a slot
     projected_tokens: int  # Estimated max tokens
     status: RequestStatus
+    model_name: str  # Model name for this request
     actual_tokens: int | None = None  # Actual usage, known only after completion
 
 
 class OpenAIRateLimiter:
     def __init__(
         self,
-        model_names: list[str],
-        rpm_limit: int = 500,
-        tpm_limit: int = 500000,
+        model_rate_limits: dict[str, dict[str, int]],
         max_completion_tokens: int = 150,
         limit_safety_ratio: float = 0.98,
         minimum_wait_time: float = 3.0,
     ):
         """
-        Initialize the rate limiter with sliding window tracking and support for multiple models.
+        Initialize the rate limiter with sliding window tracking and per-model rate limits.
 
         Args:
-            model_names: List of OpenAI model names for token counting (or single model name string)
-            rpm_limit: Requests per minute limit (actual API limit)
-            tpm_limit: Tokens per minute limit (actual API limit)
+            model_rate_limits: Dict mapping model name to rate limits, e.g.
+                {"gpt-4": {"rpm": 500, "tpm": 50000}, "gpt-3.5-turbo": {"rpm": 1000, "tpm": 100000}}
             max_completion_tokens: Maximum completion tokens per request
             limit_safety_ratio: Safety margin as percentage of limits (default 0.98 = 98%)
             minimum_wait_time: Minimum wait time when rate limited (default 3.0 seconds)
@@ -52,13 +50,27 @@ class OpenAIRateLimiter:
         self.minimum_wait_time = minimum_wait_time
         self.max_completion_tokens = max_completion_tokens
 
-        # Actual API limits (as specified by the API provider)
-        self.actual_rpm_limit = rpm_limit
-        self.actual_tpm_limit = tpm_limit
+        # Per-model rate limits
+        self.model_rate_limits = model_rate_limits
+        self.model_names = list(model_rate_limits.keys())
 
-        # Enforced limits (with safety margin applied)
-        self.enforced_rpm_limit = int(limit_safety_ratio * rpm_limit)
-        self.enforced_tpm_limit = int(limit_safety_ratio * tpm_limit)
+        # Actual API limits per model (as specified by the API provider)
+        self.actual_rpm_limits: dict[str, int] = {
+            model: limits["rpm"] for model, limits in model_rate_limits.items()
+        }
+        self.actual_tpm_limits: dict[str, int] = {
+            model: limits["tpm"] for model, limits in model_rate_limits.items()
+        }
+
+        # Enforced limits per model (with safety margin applied)
+        self.enforced_rpm_limits: dict[str, int] = {
+            model: int(limit_safety_ratio * limits["rpm"])
+            for model, limits in model_rate_limits.items()
+        }
+        self.enforced_tpm_limits: dict[str, int] = {
+            model: int(limit_safety_ratio * limits["tpm"])
+            for model, limits in model_rate_limits.items()
+        }
 
         # Request tracking
         self._request_counter = 0  # Unique ID generator
@@ -70,11 +82,10 @@ class OpenAIRateLimiter:
         self._all_requests: dict[int, RequestRecord] = {}  # request_id -> RequestRecord
 
         # For token counting - support multiple models
-        self.model_names = model_names
         self.encoders: dict[str, tiktoken.Encoding] = {}
 
         # Initialize encoders for all models
-        for model_name in model_names:
+        for model_name in self.model_names:
             try:
                 self.encoders[model_name] = tiktoken.encoding_for_model(model_name)
             except KeyError:
@@ -147,17 +158,26 @@ class OpenAIRateLimiter:
         for req_id in expired_ids:
             del self._current_requests[req_id]
 
-    def _calculate_current_usage(self):
+    def _calculate_current_usage(self, model_name: str):
         """
-        Calculate current RPM and TPM usage in the sliding window.
+        Calculate current RPM and TPM usage in the sliding window for a specific model.
 
         For pending requests: use projected_tokens
         For completed requests: use actual_tokens
+
+        Args:
+            model_name: Model name to calculate usage for
+
+        Returns:
+            Tuple of (current_rpm, current_tpm) for this model
         """
         current_rpm = 0
         current_tpm = 0
 
         for record in self._current_requests.values():
+            if record.model_name != model_name:
+                continue
+
             current_rpm += 1
 
             if record.status == RequestStatus.COMPLETED and record.actual_tokens is not None:
@@ -168,38 +188,56 @@ class OpenAIRateLimiter:
 
         return current_rpm, current_tpm
 
-    async def acquire_slot(self, estimated_tokens: int):
+    async def acquire_slot(self, estimated_tokens: int, model_name: str):
         """
-        Try to acquire a slot for a new request.
+        Try to acquire a slot for a new request for a specific model.
 
         Args:
             estimated_tokens: Projected token usage for this request
+            model_name: Name of the model making the request
 
         Returns:
             Tuple of (can_proceed: bool, wait_time: float, request_id: Optional[int])
         """
+        if model_name not in self.enforced_rpm_limits:
+            raise ValueError(
+                f"Model '{model_name}' not found in rate limits. Available models: {list(self.enforced_rpm_limits.keys())}"
+            )
+
         async with self._lock:
             self._cleanup_old_requests()
 
-            current_rpm, current_tpm = self._calculate_current_usage()
+            current_rpm, current_tpm = self._calculate_current_usage(model_name)
+            enforced_rpm_limit = self.enforced_rpm_limits[model_name]
+            enforced_tpm_limit = self.enforced_tpm_limits[model_name]
 
-            # Check if this request would exceed enforced RPM limit
-            if current_rpm >= self.enforced_rpm_limit:
-                # Find the oldest request to determine wait time
-                oldest_timestamp = min(record.timestamp for record in self._current_requests.values())
-                wait_time = max(self.minimum_wait_time, 60 - (time.time() - oldest_timestamp))
+            # Check if this request would exceed enforced RPM limit for this model
+            if current_rpm >= enforced_rpm_limit:
+                # Find the oldest request for this model to determine wait time
+                model_requests = [r for r in self._current_requests.values() if r.model_name == model_name]
+                if model_requests:
+                    oldest_timestamp = min(record.timestamp for record in model_requests)
+                    wait_time = max(self.minimum_wait_time, 60 - (time.time() - oldest_timestamp))
+                else:
+                    wait_time = self.minimum_wait_time
                 print(
-                    f"RPM limit hit - waiting {wait_time:.1f}s (RPM: {current_rpm}/{self.enforced_rpm_limit}, TPM: {current_tpm}/{self.enforced_tpm_limit})"
+                    f"RPM limit hit for {model_name} - waiting {wait_time:.1f}s "
+                    f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
                 )
                 return False, wait_time, None
 
-            # Check if this request would exceed enforced TPM limit
-            if current_tpm + estimated_tokens >= self.enforced_tpm_limit:
-                # Find the oldest request to determine wait time
-                oldest_timestamp = min(record.timestamp for record in self._current_requests.values())
-                wait_time = max(self.minimum_wait_time, 60 - (time.time() - oldest_timestamp))
+            # Check if this request would exceed enforced TPM limit for this model
+            if current_tpm + estimated_tokens >= enforced_tpm_limit:
+                # Find the oldest request for this model to determine wait time
+                model_requests = [r for r in self._current_requests.values() if r.model_name == model_name]
+                if model_requests:
+                    oldest_timestamp = min(record.timestamp for record in model_requests)
+                    wait_time = max(self.minimum_wait_time, 60 - (time.time() - oldest_timestamp))
+                else:
+                    wait_time = self.minimum_wait_time
                 print(
-                    f"TPM limit hit - waiting {wait_time:.1f}s (RPM: {current_rpm}/{self.enforced_rpm_limit}, TPM: {current_tpm}/{self.enforced_tpm_limit})"
+                    f"TPM limit hit for {model_name} - waiting {wait_time:.1f}s "
+                    f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
                 )
                 return False, wait_time, None
 
@@ -212,6 +250,7 @@ class OpenAIRateLimiter:
                 timestamp=time.time(),
                 projected_tokens=estimated_tokens,
                 status=RequestStatus.PENDING,
+                model_name=model_name,
                 actual_tokens=None,
             )
 
@@ -254,69 +293,96 @@ class OpenAIRateLimiter:
 
     async def get_current_usage(self):
         """
-        Get current rate limit usage statistics.
+        Get current rate limit usage statistics per model.
 
         Returns:
-            Dict with current usage information (both sliding window and historical)
+            Dict with current usage information per model (both sliding window and historical)
         """
         async with self._lock:
             self._cleanup_old_requests()
-            current_rpm, current_tpm = self._calculate_current_usage()
 
-            # Count current requests by status (sliding window)
-            current_pending = sum(1 for r in self._current_requests.values() if r.status == RequestStatus.PENDING)
-            current_completed = sum(1 for r in self._current_requests.values() if r.status == RequestStatus.COMPLETED)
-            current_failed = sum(1 for r in self._current_requests.values() if r.status == RequestStatus.FAILED)
-            current_empty = sum(1 for r in self._current_requests.values() if r.status == RequestStatus.EMPTY_RESPONSE)
+            # Aggregate stats per model
+            per_model_stats = {}
+            for model_name in self.model_names:
+                current_rpm, current_tpm = self._calculate_current_usage(model_name)
 
-            # Count all historical requests by status
-            total_pending = sum(1 for r in self._all_requests.values() if r.status == RequestStatus.PENDING)
-            total_completed = sum(1 for r in self._all_requests.values() if r.status == RequestStatus.COMPLETED)
-            total_failed = sum(1 for r in self._all_requests.values() if r.status == RequestStatus.FAILED)
-            total_empty = sum(1 for r in self._all_requests.values() if r.status == RequestStatus.EMPTY_RESPONSE)
+                # Count current requests by status for this model (sliding window)
+                model_current = [r for r in self._current_requests.values() if r.model_name == model_name]
+                current_pending = sum(1 for r in model_current if r.status == RequestStatus.PENDING)
+                current_completed = sum(1 for r in model_current if r.status == RequestStatus.COMPLETED)
+                current_failed = sum(1 for r in model_current if r.status == RequestStatus.FAILED)
+                current_empty = sum(1 for r in model_current if r.status == RequestStatus.EMPTY_RESPONSE)
 
-            # Calculate total historical tokens
-            total_tokens = sum(
-                r.actual_tokens if r.actual_tokens is not None else r.projected_tokens
-                for r in self._all_requests.values()
-            )
+                # Count all historical requests by status for this model
+                model_all = [r for r in self._all_requests.values() if r.model_name == model_name]
+                total_pending = sum(1 for r in model_all if r.status == RequestStatus.PENDING)
+                total_completed = sum(1 for r in model_all if r.status == RequestStatus.COMPLETED)
+                total_failed = sum(1 for r in model_all if r.status == RequestStatus.FAILED)
+                total_empty = sum(1 for r in model_all if r.status == RequestStatus.EMPTY_RESPONSE)
+
+                # Calculate total historical tokens for this model
+                total_tokens = sum(
+                    r.actual_tokens if r.actual_tokens is not None else r.projected_tokens
+                    for r in model_all
+                )
+
+                per_model_stats[model_name] = {
+                    # Current sliding window (60 seconds)
+                    "current_requests": current_rpm,
+                    "current_tokens": current_tpm,
+                    "current_pending_requests": current_pending,
+                    "current_completed_requests": current_completed,
+                    "current_failed_requests": current_failed,
+                    "current_empty_response_requests": current_empty,
+                    # Historical (all time since start)
+                    "total_requests": len(model_all),
+                    "total_tokens": total_tokens,
+                    "total_pending_requests": total_pending,
+                    "total_completed_requests": total_completed,
+                    "total_failed_requests": total_failed,
+                    "total_empty_response_requests": total_empty,
+                    # Actual API limits
+                    "actual_rpm_limit": self.actual_rpm_limits[model_name],
+                    "actual_tpm_limit": self.actual_tpm_limits[model_name],
+                    # Enforced limits (with safety margin)
+                    "enforced_rpm_limit": self.enforced_rpm_limits[model_name],
+                    "enforced_tpm_limit": self.enforced_tpm_limits[model_name],
+                    # Utilization against enforced limits (current window)
+                    "rpm_utilization": current_rpm / self.enforced_rpm_limits[model_name]
+                    if self.enforced_rpm_limits[model_name] > 0
+                    else 0,
+                    "tpm_utilization": current_tpm / self.enforced_tpm_limits[model_name]
+                    if self.enforced_tpm_limits[model_name] > 0
+                    else 0,
+                    # Utilization against actual limits (shows safety buffer)
+                    "actual_rpm_utilization": current_rpm / self.actual_rpm_limits[model_name]
+                    if self.actual_rpm_limits[model_name] > 0
+                    else 0,
+                    "actual_tpm_utilization": current_tpm / self.actual_tpm_limits[model_name]
+                    if self.actual_tpm_limits[model_name] > 0
+                    else 0,
+                }
 
             # Session duration
             session_duration = time.time() - self._start_time
 
+            # Overall totals (across all models)
+            total_all_requests = len(self._all_requests)
+            total_all_tokens = sum(
+                r.actual_tokens if r.actual_tokens is not None else r.projected_tokens
+                for r in self._all_requests.values()
+            )
+
             return {
-                # Current sliding window (60 seconds)
-                "current_requests": current_rpm,
-                "current_tokens": current_tpm,
-                "current_pending_requests": current_pending,
-                "current_completed_requests": current_completed,
-                "current_failed_requests": current_failed,
-                "current_empty_response_requests": current_empty,
-                # Historical (all time since start)
-                "total_requests": len(self._all_requests),
-                "total_tokens": total_tokens,
-                "total_pending_requests": total_pending,
-                "total_completed_requests": total_completed,
-                "total_failed_requests": total_failed,
-                "total_empty_response_requests": total_empty,
-                # Session info
+                "per_model": per_model_stats,
+                # Overall session info
                 "session_duration_seconds": session_duration,
-                "average_requests_per_minute": (len(self._all_requests) / session_duration * 60)
+                "average_requests_per_minute": (total_all_requests / session_duration * 60)
                 if session_duration > 0
                 else 0,
-                "average_tokens_per_minute": (total_tokens / session_duration * 60) if session_duration > 0 else 0,
-                # Actual API limits
-                "actual_rpm_limit": self.actual_rpm_limit,
-                "actual_tpm_limit": self.actual_tpm_limit,
-                # Enforced limits (with safety margin)
-                "enforced_rpm_limit": self.enforced_rpm_limit,
-                "enforced_tpm_limit": self.enforced_tpm_limit,
-                # Utilization against enforced limits (current window)
-                "rpm_utilization": current_rpm / self.enforced_rpm_limit if self.enforced_rpm_limit > 0 else 0,
-                "tpm_utilization": current_tpm / self.enforced_tpm_limit if self.enforced_tpm_limit > 0 else 0,
-                # Utilization against actual limits (shows safety buffer)
-                "actual_rpm_utilization": current_rpm / self.actual_rpm_limit if self.actual_rpm_limit > 0 else 0,
-                "actual_tpm_utilization": current_tpm / self.actual_tpm_limit if self.actual_tpm_limit > 0 else 0,
+                "average_tokens_per_minute": (total_all_tokens / session_duration * 60)
+                if session_duration > 0
+                else 0,
                 # Configuration
                 "limit_safety_ratio": self.limit_safety_ratio,
                 "minimum_wait_time": self.minimum_wait_time,
