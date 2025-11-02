@@ -538,6 +538,60 @@ class RFDatabase:
             }
         return None
 
+    def get_all_pipeline_ids(self) -> list[dict[str, Any]]:
+        """
+        Get lightweight list of all pipelines with minimal info (no config).
+
+        Optimized for auto-polling - returns only IDs and status without deserializing configs.
+
+        Returns:
+            List of dicts with: pipeline_id, status, shards_completed, total_samples_processed
+        """
+        query = """
+        SELECT pipeline_id, status, shards_completed, total_samples_processed
+        FROM pipelines
+        ORDER BY pipeline_id DESC
+        """
+        result = self.db.execute(query, fetch=True)
+        pipelines = []
+        if result:
+            for row in result:
+                pipelines.append(
+                    {
+                        "pipeline_id": row[0],
+                        "status": row[1],
+                        "shards_completed": row[2],
+                        "total_samples_processed": row[3],
+                    }
+                )
+        return pipelines
+
+    def get_pipeline_config_json(self, pipeline_id: int) -> dict[str, Any] | None:
+        """
+        Get only the JSON config for a specific pipeline (for display/clone).
+
+        Args:
+            pipeline_id: ID of the pipeline
+
+        Returns:
+            Dictionary with pipeline_config_json, or None if not found
+        """
+        import json
+
+        query = """
+        SELECT pipeline_config_json, context_id
+        FROM pipelines
+        WHERE pipeline_id = ?
+        """
+        result = self.db.execute(query, (pipeline_id,), fetch=True)
+        if result and result[0][0]:
+            json_config = json.loads(result[0][0])
+            return {
+                "pipeline_config_json": json_config,
+                "context_id": result[0][1]
+            }
+        return None
+
     def get_all_pipelines(self) -> list[dict[str, Any]]:
         """
         Get all pipelines, ordered by pipeline ID.

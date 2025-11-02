@@ -36,7 +36,7 @@ class InteractiveControlHandler:
         Args:
             experiment_name: Name of the experiment
             experiment_path: Path to experiment logs/artifacts
-            context_cache: Controller's context cache (maps context_hash -> (context_id, ObjectRef))
+            context_cache: Controller's context cache (maps Need to ensure that -> (context_id, ObjectRef)
         """
         # Initialize logger
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
@@ -236,10 +236,13 @@ class InteractiveControlHandler:
         progress_display=None,
     ) -> int:
         """
-        Clone a new pipeline using an existing context.
+        Clone a new pipeline from a parent pipeline with edited configuration.
+
+        The clone inherits the parent's context_id, RAG, and prompt_manager.
+        Only the JSON-editable parameters (model config, sampling params, etc.) are modified.
 
         Args:
-            request_data: JSON string with clone parameters
+            request_data: JSON string with {"parent_pipeline_id": int, "config_json": {...}}
             scheduler: PipelineScheduler instance
             db: Database instance
             num_shards: Total number of shards
@@ -247,7 +250,7 @@ class InteractiveControlHandler:
             pipeline_aggregators: Dict mapping pipeline_id to Aggregator
             pipeline_results: Dict mapping pipeline_id to results/metrics
             pipeline_id_to_config: Dict mapping pipeline_id to (name, config)
-            online_strategy_kwargs: Optional online aggregation strategy parameters
+            pipeline_to_rate_limiter: Optional dict for OpenAI rate limiters
             progress_display: Optional progress display to update
 
         Returns:
@@ -255,76 +258,122 @@ class InteractiveControlHandler:
         """
         # Parse request data
         data = json.loads(request_data)
-        context_id = data["context_id"]
-        pipeline_type = data.get("pipeline_type", "vllm")  # Default to vllm for backwards compatibility
+        parent_pipeline_id = data["parent_pipeline_id"]
+        edited_json = data["config_json"]
 
-        # Get context info from database
+        # Get parent pipeline from database to inherit context_id
+        parent_pipeline_db = db.get_pipeline(parent_pipeline_id)
+        if not parent_pipeline_db:
+            raise ValueError(f"Parent pipeline {parent_pipeline_id} not found in database")
+
+        context_id = parent_pipeline_db["context_id"]
+
+        # Validate that the context exists in the database
         context = db.get_context(context_id)
         if not context:
-            raise ValueError(f"Context {context_id} not found in database")
+            raise ValueError(
+                f"Context {context_id} from parent pipeline {parent_pipeline_id} not found in database. "
+                f"The context may have been deleted."
+            )
 
-        context_hash = context["context_hash"]
+        self.logger.info(f"Validated context {context_id} exists (status: {context.get('status', 'unknown')})")
 
-        # Validate context exists in controller cache
-        if context_hash not in self._context_cache:
-            raise ValueError(f"Context {context_hash} not loaded in controller cache. Cannot clone pipeline.")
+        # Get parent's FULL deserialized configuration from database
+        # This includes rag and prompt_manager Python objects (stored via dill serialization)
+        parent_full_config = parent_pipeline_db.get("pipeline_config")
+        if not parent_full_config:
+            raise ValueError(
+                f"Parent pipeline {parent_pipeline_id} has no stored configuration. "
+                f"Cannot clone without parent's config."
+            )
 
-        # Get rag and prompt_manager from any existing pipeline that uses this context
-        # We need to reconstruct these from an existing pipeline since cache only has components_ref
-        rag = None
-        prompt_manager = None
-        for existing_pipeline_id, existing_config in pipeline_id_to_config.items():
-            existing_pipeline = existing_config.get("pipeline")
-            if existing_pipeline:
-                # Check if this pipeline uses the same context
-                existing_pipeline_db = db.get_pipeline(existing_pipeline_id)
-                if existing_pipeline_db and existing_pipeline_db.get("context_id") == context_id:
-                    rag = getattr(existing_pipeline, "rag", None)
-                    prompt_manager = getattr(existing_pipeline, "prompt_manager", None)
-                    break
+        parent_model_config = parent_full_config["pipeline"]
 
-        # Create appropriate ModelConfig based on pipeline type
+        # Directly inherit RAG and prompt_manager from parent's deserialized config
+        rag = getattr(parent_model_config, "rag", None)
+        prompt_manager = getattr(parent_model_config, "prompt_manager", None)
+
+        self.logger.info(
+            f"Retrieved parent config from database for pipeline {parent_pipeline_id}: "
+            f"rag={'present' if rag else 'None'}, "
+            f"prompt_manager={'present' if prompt_manager else 'None'}"
+        )
+
+        # Extract pipeline type from edited JSON (or inherit from parent)
+        pipeline_type = edited_json.get("pipeline_type")
+        if not pipeline_type:
+            # If not specified in JSON, infer from parent
+            if isinstance(parent_model_config, RFvLLMModelConfig):
+                pipeline_type = "vllm"
+            elif isinstance(parent_model_config, RFOpenAIAPIModelConfig):
+                pipeline_type = "openai"
+            else:
+                raise ValueError("Cannot determine pipeline type from parent")
+
+        # Apply JSON edits on top of parent's configuration
         if pipeline_type.lower() == "vllm":
-            model_config_dict = data["model_config"]
-            sampling_params_dict = data["sampling_params"]
+            # Get parent's baseline config
+            parent_model_config_dict = getattr(parent_model_config, "model_config", {})
+            parent_sampling_params = getattr(parent_model_config, "sampling_params", {})
+
+            # Apply edits from JSON (use parent as fallback)
+            model_config_dict = edited_json.get("model_config", parent_model_config_dict)
+            sampling_params_dict = edited_json.get("sampling_params", parent_sampling_params)
 
             model_config = RFvLLMModelConfig(
                 model_config=model_config_dict,
                 sampling_params=sampling_params_dict,
-                rag=rag,
-                prompt_manager=prompt_manager,
+                rag=rag,  # Inherited from parent
+                prompt_manager=prompt_manager,  # Inherited from parent
             )
 
         elif pipeline_type.lower() == "openai":
-            client_config = data["client_config"]
-            model_config_dict = data["model_config"]
+            # Get parent's baseline config
+            parent_client_config = getattr(parent_model_config, "client_config", {})
+            parent_model_config_dict = getattr(parent_model_config, "model_config", {})
+            parent_rpm = getattr(parent_model_config, "rpm_limit", 500)
+            parent_tpm = getattr(parent_model_config, "tpm_limit", 500_000)
 
-            # Note: Rate limiting is now configured at the experiment level
+            # Apply edits from JSON (use parent as fallback)
+            client_config = edited_json.get("client_config", parent_client_config)
+            model_config_dict = edited_json.get("model_config", parent_model_config_dict)
+
             model_config = RFOpenAIAPIModelConfig(
                 client_config=client_config,
                 model_config=model_config_dict,
-                rag=rag,
-                prompt_manager=prompt_manager,
+                rag=rag,  # Inherited from parent
+                prompt_manager=prompt_manager,  # Inherited from parent
+                rpm_limit=edited_json.get("rpm_limit", parent_rpm),
+                tpm_limit=edited_json.get("tpm_limit", parent_tpm),
             )
 
         else:
             raise ValueError(f"Unknown pipeline_type: {pipeline_type}. Supported types: 'vllm', 'openai'")
 
-        # Register pipeline using existing Controller method
-        # Note: This requires calling back to Controller's _register_pipelines
-        # For now, we'll do the registration manually here to avoid circular dependency
-        
-        # Wrap model_config in pipeline_config dict structure to match expected format
-        pipeline_config_dict = {"pipeline": model_config}
-        
+        # Build complete pipeline_config structure (inherit from parent if not in JSON)
+        parent_batch_size = parent_full_config.get("batch_size", 32)
+        parent_online_strategy = parent_full_config.get("online_strategy_kwargs")
+
+        pipeline_config_dict = {
+            "pipeline": model_config,
+            "batch_size": edited_json.get("batch_size", parent_batch_size),
+        }
+
+        # Add online_strategy_kwargs if present (inherit from parent if not in JSON)
+        if "online_strategy_kwargs" in edited_json:
+            pipeline_config_dict["online_strategy_kwargs"] = edited_json["online_strategy_kwargs"]
+        elif parent_online_strategy:
+            pipeline_config_dict["online_strategy_kwargs"] = parent_online_strategy
+
+        # Create new pipeline in database
         new_pipeline_id = db.create_pipeline(
-            context_id=context_id,
+            context_id=context_id,  # Inherited from parent
             pipeline_type=pipeline_type,
             pipeline_config=pipeline_config_dict,
             status=PipelineStatus.NEW,
         )
 
-        # Add to pipeline_id_to_config mapping (keep same structure as original)
+        # Add to pipeline_id_to_config mapping
         pipeline_id_to_config[new_pipeline_id] = pipeline_config_dict
 
         # Reuse experiment-wide rate limiter actor for OpenAI pipelines
@@ -367,7 +416,7 @@ class InteractiveControlHandler:
 
         # Extract model name and metadata for display
         pipeline = pipeline_config["pipeline"]
-        
+
         # Extract model name
         if isinstance(model_config, RFOpenAIAPIModelConfig):
             # For OpenAI, model name is in model_config.model_config
@@ -382,7 +431,7 @@ class InteractiveControlHandler:
                 model_name = "Unknown"
         else:
             model_name = "Unknown"
-        
+
         # Extract metadata fields (similar to controller.py)
         search_type = None
         rag_k = None
@@ -392,14 +441,14 @@ class InteractiveControlHandler:
         sampling_params = None
         prompt_manager_k = None
         model_config_dict = None
-        
+
         if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
             # Extract full model config (excluding the model name)
             model_config_copy = pipeline.model_config.copy()
             model_config_copy.pop("model", None)
             if model_config_copy:  # Only assign if there are other configs
                 model_config_dict = model_config_copy
-        
+
         # Extract RAG-related fields
         if hasattr(pipeline, "rag") and pipeline.rag is not None:
             search_type = getattr(pipeline.rag, "search_type", None)
@@ -410,11 +459,11 @@ class InteractiveControlHandler:
             if hasattr(pipeline.rag, "text_splitter") and pipeline.rag.text_splitter is not None:
                 chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)
                 chunk_overlap = getattr(pipeline.rag.text_splitter, "_chunk_overlap", None)
-        
+
         # Extract sampling params
         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
             sampling_params = pipeline.sampling_params
-        
+
         # Extract prompt_manager fields
         if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
             prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
@@ -437,8 +486,8 @@ class InteractiveControlHandler:
             )
 
         self.logger.info(
-            f"Cloned new pipeline {new_pipeline_id}, type={pipeline_type}) "
-            f"using context {context_id} ({context_hash[:8]})"
+            f"Cloned new pipeline {new_pipeline_id} (type={pipeline_type}) "
+            f"using context {context_id} from parent pipeline {parent_pipeline_id}"
         )
 
         return new_pipeline_id
