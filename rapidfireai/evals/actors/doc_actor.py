@@ -6,7 +6,6 @@ of embeddings and FAISS indexes. After building, components are placed in
 Ray's object store for sharing across query processing actors.
 """
 
-import time
 from typing import Any
 
 import faiss
@@ -14,8 +13,6 @@ import ray
 
 from rapidfireai.evals.rag.prompt_manager import PromptManager
 from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
-from rapidfireai.evals.utils.constants import MAX_RATE_LIMIT_RETRIES, RATE_LIMIT_BACKOFF_BASE
-from rapidfireai.evals.utils.error_utils import is_rate_limit_error
 from rapidfireai.evals.utils.logger import RFLogger
 
 
@@ -79,43 +76,12 @@ class DocProcessingActor:
         """
         self.logger.info("DocProcessingActor: Starting context initialization...")
 
-        # Build RAG (embeddings, FAISS index) with retry logic for rate limits (if RAG spec provided)
+        # Build RAG (embeddings, FAISS index) if RAG spec provided
         # If enable_gpu_search=True, this builds on GPU
         if rag_spec:
             self.logger.info("Building FAISS index...")
-
-            retry_count = 0
-            last_error = None
-
-            while retry_count < MAX_RATE_LIMIT_RETRIES:
-                try:
-                    rag_spec.build_index()
-                    self.logger.info("FAISS index built successfully")
-                    break  # Success!
-                except Exception as e:
-                    last_error = e
-
-                    # Check if it's a rate limit error
-                    if is_rate_limit_error(e):
-                        retry_count += 1
-                        if retry_count < MAX_RATE_LIMIT_RETRIES:
-                            # Exponential backoff: 2, 4, 8, 16, 32 seconds
-                            wait_time = RATE_LIMIT_BACKOFF_BASE ** retry_count
-                            self.logger.warning(
-                                f"Rate limit hit during FAISS index building. "
-                                f"Retry {retry_count}/{MAX_RATE_LIMIT_RETRIES} in {wait_time}s..."
-                            )
-                            time.sleep(wait_time)
-                        else:
-                            self.logger.error(f"Max retries ({MAX_RATE_LIMIT_RETRIES}) exceeded for rate limit errors")
-                            raise
-                    else:
-                        # Not a rate limit error - fail immediately
-                        self.logger.error(f"Non-rate-limit error during FAISS index building: {type(e).__name__}")
-                        raise
-
-            if last_error and retry_count >= MAX_RATE_LIMIT_RETRIES:
-                raise last_error
+            rag_spec.build_index()
+            self.logger.info("FAISS index built successfully")
 
             # Transfer GPU index to CPU for serialization (if GPU was used)
             if rag_spec.enable_gpu_search:
@@ -128,42 +94,11 @@ class DocProcessingActor:
                 rag_spec.vector_store.index = cpu_index
                 self.logger.info("FAISS index transferred to CPU successfully")
 
-        # Set up PromptManager if provided (with retry logic for rate limits)
+        # Set up PromptManager if provided
         if prompt_manager:
             self.logger.info("Setting up PromptManager...")
-
-            retry_count = 0
-            last_error = None
-
-            while retry_count < MAX_RATE_LIMIT_RETRIES:
-                try:
-                    prompt_manager.setup_examples()
-                    self.logger.info("PromptManager setup successfully")
-                    break  # Success!
-                except Exception as e:
-                    last_error = e
-
-                    # Check if it's a rate limit error
-                    if is_rate_limit_error(e):
-                        retry_count += 1
-                        if retry_count < MAX_RATE_LIMIT_RETRIES:
-                            # Exponential backoff: 2, 4, 8, 16, 32 seconds
-                            wait_time = RATE_LIMIT_BACKOFF_BASE ** retry_count
-                            self.logger.warning(
-                                f"Rate limit hit during PromptManager setup. "
-                                f"Retry {retry_count}/{MAX_RATE_LIMIT_RETRIES} in {wait_time}s..."
-                            )
-                            time.sleep(wait_time)
-                        else:
-                            self.logger.error(f"Max retries ({MAX_RATE_LIMIT_RETRIES}) exceeded for rate limit errors")
-                            raise
-                    else:
-                        # Not a rate limit error - fail immediately
-                        self.logger.error(f"Non-rate-limit error during PromptManager setup: {type(e).__name__}")
-                        raise
-
-            if last_error and retry_count >= MAX_RATE_LIMIT_RETRIES:
-                raise last_error
+            prompt_manager.setup_examples()
+            self.logger.info("PromptManager setup successfully")
 
         # Serialize FAISS index to bytes for independent deserialization in each actor (if RAG spec provided)
         # FAISS indices are not thread-safe across processes, so each actor needs its own copy
