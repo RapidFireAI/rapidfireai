@@ -52,7 +52,7 @@ dependencies = [
     "langchain-huggingface",
 
     # Vector Search
-    "faiss-gpu",
+    "faiss-gpu-cu12",
 
     # Statistical Analysis
     "scipy",
