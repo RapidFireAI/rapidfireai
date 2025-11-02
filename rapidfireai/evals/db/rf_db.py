@@ -151,14 +151,27 @@ class RFDatabase:
             query, (num_actors, num_cpus, num_gpus, experiment_id), commit=True
         )
 
-    def clear_all_data(self):
+    def reset_all_tables(self, experiments_table: bool = False) -> None:
         """
-        Clear ALL data from the database.
+        Clear data from experiment tables.
+
+        Args:
+            experiments_table: If True, also clear the experiments table (default: False)
         """
-        self.db.execute("DELETE FROM actor_tasks", commit=True)
-        self.db.execute("DELETE FROM contexts", commit=True)
-        self.db.execute("DELETE FROM interactive_control", commit=True)
-        self.db.execute("DELETE FROM pipelines", commit=True)
+        # Clear dependent tables first (due to foreign keys)
+        tables = ["actor_tasks", "contexts", "interactive_control", "pipelines"]
+
+        for table in tables:
+            self.db.execute(f"DELETE FROM {table}", commit=True)
+
+        # Optionally clear experiments table
+        if experiments_table:
+            self.db.execute("DELETE FROM experiments", commit=True)
+            tables.append("experiments")
+
+        # Reset auto-increment indices
+        for table in tables:
+            self.db.execute("DELETE FROM sqlite_sequence WHERE name = ?", (table,), commit=True)
 
     def get_experiment(self, experiment_id: int) -> dict[str, Any] | None:
         """
@@ -218,7 +231,7 @@ class RFDatabase:
         result = self.db.execute(query, fetch=True)
         return [row[0] for row in result] if result else []
 
-    def get_current_experiment(self) -> dict[str, Any] | None:
+    def get_running_experiment(self) -> dict[str, Any] | None:
         """
         Get the currently running experiment (most recent if multiple).
 
@@ -233,7 +246,7 @@ class RFDatabase:
         ORDER BY experiment_id DESC
         LIMIT 1
         """
-        result = self.db.execute(query, fetch=True)
+        result = self.db.execute(query, (ExperimentStatus.RUNNING.value,), fetch=True)
         if result:
             row = result[0]
             return {
