@@ -131,7 +131,7 @@ rapidfireai = "rapidfireai.cli:main"
 [[tool.uv.index]]
 name = "flashinfer"
 url = "https://flashinfer.ai/whl/cu124/torch2.5/"
-default = flase
+default = false
 
 [tool.uv.sources]
 flashinfer-python = { index = "flashinfer" }
