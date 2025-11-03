@@ -94,7 +94,7 @@ dependencies = [
     "dill>=0.3.8",
     "mlflow>=3.2.0",
     "pytest>=8.4.1",
-    "requests==2.32.4",  # Relaxed for Colab (2.32.4)
+    "requests>=2.32.4",  # Relaxed for Colab (2.32.4)
     "loguru>=0.7.3",
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
     "jupyter>=1.1.1",
