@@ -60,10 +60,11 @@ dependencies = [
     "scipy==1.16.1",
 
     # Data Manipulation & Display
-    "pandas>=2.0.0,<2.3.0",  # Colab compatibility (2.2.2) and cudf constraint
+    # "pandas>=2.0.0,<2.3.0",  # Colab compatibility (2.2.2) and cudf constraint
+    "pandas==2.3.2",
     "pyarrow==21.0.0",
-    #"numpy==1.26.4",
-    "numpy",
+    "numpy==1.26.4",
+    #"numpy",
     "unstructured==0.18.15",
 
     # REST API (Dispatcher)
