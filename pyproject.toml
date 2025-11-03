@@ -33,7 +33,7 @@ dependencies = [
     "transformers==4.56.1",
     "datasets==3.6.0",
     "sentence-transformers==5.1.0",
-    "gpustat=1.1.1",
+    "gpustat==1.1.1",
 
     # Distributed Computing
     "ray==2.44.1",
