@@ -19,7 +19,7 @@ class Experiment:
     def __init__(
         self,
         experiment_name: str,
-        mode: str,
+        mode: str = "fit",
         experiment_path: str = os.getenv("RF_EXPERIMENT_PATH", "./rapidfire_experiments"),
     ) -> None:
         """
