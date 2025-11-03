@@ -42,8 +42,10 @@ dependencies = [
     "transformers==4.56.1",
 
     # OpenAI API
-    "openai==1.106.1",
-    "tiktoken==0.11.0",
+    #"openai==1.106.1",
+    #"tiktoken==0.11.0",
+    "openai",
+    "tiktoken",
 
     # LangChain Ecosystem
     "langchain",
@@ -98,15 +100,15 @@ dependencies = [
     "jupyter>=1.1.1",
     "uv>=0.8.14",
     "pytensor==2.31.7",  # Needed for Colab
-    "thinc==8.3.4", # Needed for Colab compatibility with old numpy
-    "pymc==5.25.1", # Needed for Colab compatibility with old numpy
-    "jax==0.7.1", # Needed for Colab compatibility with old numpy
-    "jax-cuda12-pjrt==0.7.1", # Needed for Colab compatibility with old numpy
-    "jax-cuda12-plugin==0.7.1", # Needed for Colab compatibility with old numpy
-    "jaxlib==0.7.1", # Needed for Colab compatibility with old numpy
-    "opencv-contrib-python==4.11.0.86", # Needed for Colab compatibility with old numpy
-    "opencv-python==4.11.0.86", # Needed for Colab compatibility with old numpy
-    "opencv-python-headless==4.11.0.86", # Needed for Colab compatibility with old numpy
+    #"thinc==8.3.4", # Needed for Colab compatibility with old numpy
+    #"pymc==5.25.1", # Needed for Colab compatibility with old numpy
+    #"jax==0.7.1", # Needed for Colab compatibility with old numpy
+    #"jax-cuda12-pjrt==0.7.1", # Needed for Colab compatibility with old numpy
+    #"jax-cuda12-plugin==0.7.1", # Needed for Colab compatibility with old numpy
+    #"jaxlib==0.7.1", # Needed for Colab compatibility with old numpy
+    #"opencv-contrib-python==4.11.0.86", # Needed for Colab compatibility with old numpy
+    #"opencv-python==4.11.0.86", # Needed for Colab compatibility with old numpy
+    #"opencv-python-headless==4.11.0.86", # Needed for Colab compatibility with old numpy
 ]
 
 [project.optional-dependencies]
