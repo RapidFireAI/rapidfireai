@@ -96,8 +96,8 @@ dependencies = [
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
     "jupyter>=1.1.1",
     "uv>=0.8.14",
-    "pytensor==2.34.0",  # Needed for Colab
-    "pymc==5.22.0", # Needed for Colab compatibility with old numpy
+    "pytensor==2.32.0",  # Needed for Colab
+    "pymc==5.25.1", # Needed for Colab compatibility with old numpy
     "jax==0.7.1", # Needed for Colab compatibility with old numpy
     "jax-cuda12-pjrt==0.7.1", # Needed for Colab compatibility with old numpy
     "jax-cuda12-plugin==0.7.1", # Needed for Colab compatibility with old numpy
