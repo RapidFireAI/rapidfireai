@@ -235,10 +235,10 @@ class OpenAIRateLimiter:
                     wait_time = max(self.minimum_wait_time, 60 - (time.time() - oldest_timestamp))
                 else:
                     wait_time = self.minimum_wait_time
-                print(
-                    f"TPM limit hit for {model_name} - waiting {wait_time:.1f}s "
-                    f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
-                )
+                # print(
+                #     f"TPM limit hit for {model_name} - waiting {wait_time:.1f}s "
+                #     f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
+                # )
                 return False, wait_time, None
 
             # Reserve the slot
