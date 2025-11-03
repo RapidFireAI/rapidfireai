@@ -126,16 +126,6 @@ Repository = "https://github.com/RapidFireAI/rapidfireai"
 [project.scripts]
 rapidfireai = "rapidfireai.cli:main"
 
-[tool.uv]
-
-[[tool.uv.index]]
-name = "flashinfer"
-url = "https://flashinfer.ai/whl/cu124/torch2.5/"
-default = false
-
-[tool.uv.sources]
-flashinfer-python = { index = "flashinfer" }
-
 [tool.setuptools]
 packages = ["rapidfireai"]
 include-package-data = true
