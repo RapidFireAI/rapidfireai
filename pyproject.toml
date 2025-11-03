@@ -96,6 +96,11 @@ dependencies = [
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
     "jupyter>=1.1.1",
     "uv>=0.8.14",
+    "pytensor==2.34.0",  # Needed for Colab
+    "jaxlib==0.7.1", # Needed for Colab compatibility with old numpy
+    "opencv-contrib-python==4.11.0.86", # Needed for Colab compatibility with old numpy
+    "opencv-python==4.11.0.86", # Needed for Colab compatibility with old numpy
+    "opencv-python-headless==4.11.0.86", # Needed for Colab compatibility with old numpy
 ]
 
 [project.optional-dependencies]
