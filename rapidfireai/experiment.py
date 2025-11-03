@@ -169,9 +169,6 @@ class Experiment:
         # Start dispatcher in background thread for interactive control
         self.dispatcher_thread = start_dispatcher_thread(host=DISPATCHER_HOST, port=DISPATCHER_PORT, logger=self.logger)
 
-        # Initialize notebook UI controller
-        self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url())
-
     def run_fit(
         self,
         param_config: Any,
@@ -344,6 +341,11 @@ class Experiment:
         # Give dispatcher a moment to start up
         time.sleep(0.5)
         try:
+            # Initialize notebook UI controller
+            from rapidfireai.evals.utils.notebook_ui import NotebookUI
+            from rapidfireai.evals.utils.constants import get_dispatcher_url
+
+            self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url())
             self.notebook_ui.display()
         except Exception as e:
             self.logger.warning(f"Failed to display notebook UI: {e}")
