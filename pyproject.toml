@@ -47,6 +47,7 @@ dependencies = [
 
     # LangChain Ecosystem
     "langchain",
+    "langchain-classic",
     "langchain-core",
     "langchain-community",
     "langchain-openai",
