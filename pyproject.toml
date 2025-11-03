@@ -61,7 +61,6 @@ dependencies = [
 
     # Data Manipulation & Display
     "pandas>=2.0.0,<2.3.0",  # Colab compatibility (2.2.2) and cudf constraint
-    # "pandas",
     "pyarrow",
     "numpy",
     "unstructured",

@@ -324,6 +324,11 @@ def install_packages(evals: bool = False):
     cuda_major = get_cuda_version()
     compute_capability = get_compute_capability()
 
+    if not evals:
+        # Upgrading pytorch to 2.7.0 for fit
+        print("Upgrading pytorch to 2.7.0 for fit")
+        packages.append({"package": "torch==2.7.0", "extra_args": ["--upgrade"]})
+
     ## TODO: re-enable for fit once trl has fix
     if evals and cuda_major == 12:
         print(f"\n🎯 Detected CUDA {cuda_major}.x")
