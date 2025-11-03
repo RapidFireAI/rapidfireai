@@ -101,7 +101,7 @@ except Exception as e:
 
 **Usage**:
 ```bash
-gunicorn -c rapidfireai/dispatcher/gunicorn.conf.py rapidfireai.dispatcher.dispatcher:app
+gunicorn -c rapidfireai/fit/dispatcher/gunicorn.conf.py rapidfireai.fit.dispatcher.dispatcher:app
 ```
 
 **Production Notes**:
@@ -236,15 +236,15 @@ Asynchronous communication via database (no direct RPC).
 **Development**:
 ```bash
 # Via start_dev.sh (starts all services)
-./rapidfireai/start_dev.sh start
+./rapidfireai/fit/start_dev.sh start
 
 # Or manually
-python -m flask --app rapidfireai.dispatcher.dispatcher:app run --port 8081
+python -m flask --app rapidfireai.fit.dispatcher.dispatcher:app run --port 8081
 ```
 
 **Production** (via start.sh):
 ```bash
-gunicorn -c rapidfireai/dispatcher/gunicorn.conf.py rapidfireai.dispatcher.dispatcher:app
+gunicorn -c rapidfireai/fit/dispatcher/gunicorn.conf.py rapidfireai.fit.dispatcher.dispatcher:app
 ```
 
 **Testing**:
