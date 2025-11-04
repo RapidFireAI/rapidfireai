@@ -16,21 +16,23 @@
 
 # RapidFire AI
 
-Rapid experimentation for easier, faster, and more impactful fine-tuning and post-training for LLMs and other DL models — delivering 16–24× higher throughput without extra GPUs.
+Rapid experimentation for easier, faster, and more impactful AI customization. 
+Built for agentic RAG, context engineering, fine-tuning, and post-training of LLMs and other DL models. 
+Delivers 16-24x higher throughput without extra resources.
 
 ## Overview
 
-RapidFire AI is a new experiment execution framework that transforms your LLM customization experimentation from slow, sequential processes into rapid, intelligent workflows with hyperparallelized training, dynamic real-time experiment control, and automatic multi-GPU system orchestration.
+RapidFire AI is a new experiment execution framework that transforms your AI customization experimentation from slow, sequential processes into rapid, intelligent workflows with hyperparallelized execution, dynamic real-time experiment control, and automatic system optimization.
 
-![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/Workflow-transparent-2-01.png)
+![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/rf-usage-both.png)
 
-RapidFire AI’s adaptive execution engine enables interruptible, chunk-based scheduling so you can compare many configurations concurrently—even on a single GPU—with dynamic real-time control over runs.
+RapidFire AI's adaptive execution engine allows interruptible, shard-based scheduling so you can compare many configurations concurrently, even on a single GPU (for self-hosted models) or a CPU-only machine (for closed model APIs) with dynamic real-time control over runs.
 
-- **Hyperparallelized Execution**: Higher throughput, simultaneous, data chunk-at-a-time training to show side-by-side differences.
-- **Interactive control (IC Ops)**: Stop, Resume, Clone-Modify, and optionally warm start runs in real-time from the dashboard.
-- **Automatic Optimization**: Intelligent single and multi-GPU orchestration to optimze utilization with minimal overhead.
+- **Hyperparallelized Execution**: Higher throughput, simultaneous, data shard-at-a-time execution to show side-by-side differences.
+- **Interactive Control (IC Ops)**: Stop, Resume, Clone-Modify, and optionally warm start runs in real-time from the dashboard.
+- **Automatic Optimization**: Intelligent single and multi-GPU orchestration to optimize utilization with minimal overhead for self-hosted models; intelligent token spend and rate limit apportioning for closed model APIs.
 
-![Chunk-based concurrent execution (1 GPU)](https://oss-docs.rapidfire.ai/en/latest/_images/gantt-1gpu.png)
+![Shard-based concurrent execution (1 GPU)](https://oss-docs.rapidfire.ai/en/latest/_images/gantt-1gpu.png)
 
 For additional context, see the overview: [RapidFire AI Overview](https://oss-docs.rapidfire.ai/en/latest/overview.html)
 
@@ -66,8 +68,11 @@ hf auth login --token YOUR_TOKEN
 # Due to current issue: https://github.com/huggingface/xet-core/issues/527
 pip uninstall -y hf-xet
 
-# Install specific dependencies and initialize rapidfireai
+# For Fine-tuning/Post-Training: Install specific dependencies and initialize rapidfireai
 rapidfireai init
+[OR]
+# For RAG/Context Engineering Evals: Install specific dependencies and initialize rapidfireai for SFT/RFT
+rapidfireai init --evals
 
 # Start the rapidfireai server
 # For Google Colab run:
@@ -75,6 +80,7 @@ rapidfireai init
 #   rapidfireai start --colab
 # For standalone run:
 
+# For Fine-tuning/Post-Training only: Start dashboard metrics server
 rapidfireai start
 # It should print about 50 lines, including the following:
 # ...
@@ -118,7 +124,7 @@ First-of-its-kind dynamic real-time control over runs in flight. Can be invoked 
 
 - Stop active runs; puts them in a dormant state
 - Resume stopped runs; makes them active again
-- Clone and modify existing runs, with or without warm starting from parent’s weights
+- Clone and modify existing runs, with or without warm starting from parent's weights
 - Delete unwanted or failed runs
 
 ### Multi-GPU Support
@@ -137,7 +143,7 @@ rapidfireai/
 ├── backend/         # Core backend components (controller, scheduler, worker)
 ├── db/              # Database interface and SQLite operations
 ├── dispatcher/      # Flask-based web API for UI communication
-├── frontend/         # Frontend components (dashboard, IC Ops implementation)
+├── frontend/        # Frontend components (dashboard, IC Ops implementation)
 ├── ml/              # ML training utilities and trainer classes
 ├── utils/           # Utility functions and helper modules
 └── experiment.py    # Main experiment lifecycle management
@@ -167,11 +173,11 @@ Uses SQLite for persistent storage of metadata of experiments, runs, and artifac
 
 ### Controller
 
-Runs as part of the user’s console or Notebook process. Orchestrates the entire training lifecycle including model creation, worker management, and scheduling. The `run_fit` logic handles sample preprocessing, model creation for given knob configurations, worker initialization, and continuous monitoring of training progress across distributed workers.
+Runs as part of the user’s console or Notebook process. Orchestrates the entire training lifecycle including model creation, worker management, and scheduling, as well as the entire RAG/context engineering pipeline for evals. The `run_fit` logic handles sample preprocessing, model creation for given knob configurations, worker initialization, and continuous monitoring of training progress across distributed workers. The `run_evals` logic handles data chunking, embedding, retrieval, reranking, context construction, and generation for inference evals.
 
 ### Worker
 
-Handles the actual model training and inference on the GPUs. Workers poll the Database for tasks, load dataset chunks, and execute training runs with checkpointing and progress reporting. Currently expects any given model for given batch size to fit on a single GPU.
+Handles the actual model training and inference on the GPUs for `run_fit` and the data preprocessing and inference evals for `run_evals`. Workers poll the Database for tasks, load dataset shards, and execute training runs with checkpointing and progress reporting. Currently expects any given model for given batch size to fit on a single GPU.
 
 ### Experiment
 
