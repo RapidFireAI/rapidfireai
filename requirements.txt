@@ -1,4 +1,4 @@
-# version 0.11.1
+# version 0.12.1
 
 # ml
 pandas>=2.0.0,<2.3.0  # Colab compatibility (2.2.2) and cudf constraint
