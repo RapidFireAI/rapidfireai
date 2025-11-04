@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [v0.12.2]
+## [v0.12.3]
 ### Fixed
 - Image locations in tuorial notebooks
 
