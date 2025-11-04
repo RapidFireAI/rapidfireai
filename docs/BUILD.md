@@ -55,19 +55,19 @@ Use the included `bump_version.sh` script to automatically increment version num
 
 ```bash
 # Bump patch version (0.9.5 → 0.9.6)
-./bump_version.sh patch
+./setup/bump_version.sh patch
 
 # Bump minor version (0.9.5 → 0.10.0)
-./bump_version.sh minor
+./setup/bump_version.sh minor
 
 # Bump major version (0.9.5 → 1.0.0)
-./bump_version.sh major
+./setup/bump_version.sh major
 
 # Bump release candidate version (0.9.5 → 0.9.6rc1)
-./bump_version.sh rc
+./setup/bump_version.sh rc
 
 # Bump to a specific version
-./bump_version.sh 1.1.1rc1
+./setup/bump_version.sh 1.1.1rc1
 ```
 
 The script will:
@@ -125,7 +125,7 @@ git checkout -b release/vX.Y.Z
 ```
 2. **Run bump_version.sh**: Run `bump_version.sh` with flag as specified above, i.e.
 ```bash
-./bump_version.sh minor
+./setup/bump_version.sh minor
 ```
 3. **Update CHANGELOG.md**: Update `CHANGELOG.md` with all information from PRs since last release
 4. **Push code to GitHub**: Push all changes to GitHub, i.e.
