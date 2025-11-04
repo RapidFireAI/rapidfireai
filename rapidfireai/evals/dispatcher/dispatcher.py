@@ -2,6 +2,7 @@
 Dispatcher REST API for Interactive Control of RF-Inferno Experiments.
 
 Provides HTTP endpoints for dynamic pipeline management during experiment execution.
+FIXED: Now properly handles CORS preflight (OPTIONS) requests for VS Code/Cursor webview.
 """
 
 import json
@@ -47,53 +48,66 @@ class Dispatcher:
         self.register_routes()
 
     def register_routes(self) -> None:
-        """Register all REST API routes."""
+        """Register all REST API routes with OPTIONS support for CORS preflight."""
         route_prefix = "/dispatcher"
 
+        # CRITICAL: Add after_request handler to ensure CORS headers on ALL responses including OPTIONS
+        @self.app.after_request
+        def after_request(response):
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+            response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+            response.headers.add('Access-Control-Max-Age', '3600')
+            return response
+
         # Health check
-        self.app.add_url_rule(f"{route_prefix}/health-check", "health_check", self.health_check, methods=["GET"])
+        self.app.add_url_rule(f"{route_prefix}/health-check", "health_check", self.health_check, methods=["GET", "OPTIONS"])
 
         # Interactive control operations
-        self.app.add_url_rule(f"{route_prefix}/stop-pipeline", "stop_pipeline", self.stop_pipeline, methods=["POST"])
+        self.app.add_url_rule(f"{route_prefix}/stop-pipeline", "stop_pipeline", self.stop_pipeline, methods=["POST", "OPTIONS"])
         self.app.add_url_rule(
-            f"{route_prefix}/resume-pipeline", "resume_pipeline", self.resume_pipeline, methods=["POST"]
+            f"{route_prefix}/resume-pipeline", "resume_pipeline", self.resume_pipeline, methods=["POST", "OPTIONS"]
         )
         self.app.add_url_rule(
-            f"{route_prefix}/delete-pipeline", "delete_pipeline", self.delete_pipeline, methods=["POST"]
+            f"{route_prefix}/delete-pipeline", "delete_pipeline", self.delete_pipeline, methods=["POST", "OPTIONS"]
         )
-        self.app.add_url_rule(f"{route_prefix}/clone-pipeline", "clone_pipeline", self.clone_pipeline, methods=["POST"])
+        self.app.add_url_rule(f"{route_prefix}/clone-pipeline", "clone_pipeline", self.clone_pipeline, methods=["POST", "OPTIONS"])
 
         # Status queries
         self.app.add_url_rule(
             f"{route_prefix}/operation-status/<int:ic_id>",
             "get_operation_status",
             self.get_operation_status,
-            methods=["GET"],
+            methods=["GET", "OPTIONS"],
         )
         self.app.add_url_rule(
-            f"{route_prefix}/all-operations", "get_all_operations", self.get_all_operations, methods=["GET"]
+            f"{route_prefix}/all-operations", "get_all_operations", self.get_all_operations, methods=["GET", "OPTIONS"]
         )
 
         # Pipeline queries (for UI)
         self.app.add_url_rule(
-            f"{route_prefix}/list-all-pipeline-ids", "list_all_pipeline_ids", self.list_all_pipeline_ids, methods=["GET"]
+            f"{route_prefix}/list-all-pipeline-ids", "list_all_pipeline_ids", self.list_all_pipeline_ids, methods=["GET", "OPTIONS"]
         )
         self.app.add_url_rule(
             f"{route_prefix}/get-pipeline-config-json/<int:pipeline_id>",
             "get_pipeline_config_json",
             self.get_pipeline_config_json,
-            methods=["GET"],
+            methods=["GET", "OPTIONS"],
         )
         # Legacy endpoints (kept for backwards compatibility)
         self.app.add_url_rule(
-            f"{route_prefix}/get-all-pipelines", "get_all_pipelines", self.get_all_pipelines, methods=["GET"]
+            f"{route_prefix}/get-all-pipelines", "get_all_pipelines", self.get_all_pipelines, methods=["GET", "OPTIONS"]
         )
         self.app.add_url_rule(
-            f"{route_prefix}/get-pipeline", "get_pipeline", self.get_pipeline, methods=["POST"]
+            f"{route_prefix}/get-pipeline", "get_pipeline", self.get_pipeline, methods=["POST", "OPTIONS"]
         )
 
     def health_check(self) -> tuple[Response, int]:
         """Health check endpoint."""
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({"status": "ok"}), 200
+
         try:
             return jsonify({"status": "ok", "message": "Dispatcher is running"}), 200
         except Exception as e:
@@ -111,6 +125,10 @@ class Dispatcher:
         Returns:
             ic_id of the created operation
         """
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
         try:
             data = request.get_json()
             if not data:
@@ -148,6 +166,10 @@ class Dispatcher:
         Returns:
             ic_id of the created operation
         """
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
         try:
             data = request.get_json()
             if not data:
@@ -185,6 +207,10 @@ class Dispatcher:
         Returns:
             ic_id of the created operation
         """
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
         try:
             data = request.get_json()
             if not data:
@@ -233,6 +259,10 @@ class Dispatcher:
         Returns:
             ic_id of the created operation
         """
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
         try:
             data = request.get_json()
             if not data:
@@ -304,6 +334,10 @@ class Dispatcher:
         Returns:
             Operation details including status
         """
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
         try:
             operation = self.db.get_ic_operation(ic_id)
             if not operation:
@@ -321,6 +355,10 @@ class Dispatcher:
         Returns:
             List of all operations
         """
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
         try:
             operations = self.db.get_all_ic_operations()
             return jsonify(operations), 200
@@ -335,6 +373,10 @@ class Dispatcher:
         Returns:
             List of pipelines with only: pipeline_id, status, shards_completed, total_samples_processed
         """
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
         try:
             pipelines = self.db.get_all_pipeline_ids()
             return jsonify(pipelines), 200
@@ -352,6 +394,10 @@ class Dispatcher:
         Returns:
             Pipeline config JSON
         """
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
         try:
             config_data = self.db.get_pipeline_config_json(pipeline_id)
             if not config_data:
@@ -371,6 +417,10 @@ class Dispatcher:
         Returns:
             List of all pipelines
         """
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
         try:
             pipelines = self.db.get_all_pipelines()
             return jsonify(pipelines), 200
@@ -390,6 +440,10 @@ class Dispatcher:
         Returns:
             Pipeline details
         """
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
         try:
             data = request.get_json()
             if not data:

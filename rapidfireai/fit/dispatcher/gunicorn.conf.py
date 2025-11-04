@@ -7,7 +7,7 @@ from rapidfireai.fit.utils.constants import DispatcherConfig
 bind = f"{DispatcherConfig.HOST}:{DispatcherConfig.PORT}"
 workers = 1  # Single worker for Colab/single-user environments to save memory
 
-wsgi_app = "rapidfireai.dispatcher.dispatcher:serve_forever()"
+wsgi_app = "rapidfireai.fit.dispatcher.dispatcher:serve_forever()"
 
 
 def on_starting(server):

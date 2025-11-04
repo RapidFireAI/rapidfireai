@@ -1,5 +1,5 @@
 """
-This module contains the unified Experiment class for both fit and eval modes.
+This module contains the unified Experiment class for both fit and evals modes.
 """
 
 import logging
@@ -14,12 +14,12 @@ import pandas as pd
 
 
 class Experiment:
-    """Unified Experiment class for both fit and eval modes."""
+    """Unified Experiment class for both fit and evals modes."""
 
     def __init__(
         self,
         experiment_name: str,
-        mode: str,
+        mode: str = "fit",
         experiment_path: str = os.getenv("RF_EXPERIMENT_PATH", "./rapidfire_experiments"),
     ) -> None:
         """
@@ -27,15 +27,15 @@ class Experiment:
 
         Args:
             experiment_name: Name of the experiment
-            mode: Either "fit" or "eval"
+            mode: Either "fit" or "evals"
             experiment_path: Path to store experiment artifacts (default: ./rapidfire_experiments)
 
         Raises:
-            ValueError: If mode is not "fit" or "eval"
+            ValueError: If mode is not "fit" or "evals"
         """
         # Validate mode
-        if mode not in ["fit", "eval"]:
-            raise ValueError(f"Invalid mode: {mode}. Must be 'fit' or 'eval'")
+        if mode not in ["fit", "evals"]:
+            raise ValueError(f"Invalid mode: {mode}. Must be 'fit' or 'evals'")
 
         self.mode = mode
         self.experiment_name = experiment_name
@@ -46,7 +46,7 @@ class Experiment:
         if mode == "fit":
             self._init_fit_mode()
         else:
-            self._init_eval_mode()
+            self._init_evals_mode()
 
     def _init_fit_mode(self) -> None:
         """Initialize fit-specific components."""
@@ -106,9 +106,9 @@ class Experiment:
                 f"Error setting up signal handlers: {e}, traceback: {traceback.format_exc()}"
             ) from e
 
-    def _init_eval_mode(self) -> None:
-        """Initialize eval-specific components."""
-        # Import eval-specific modules
+    def _init_evals_mode(self) -> None:
+        """Initialize evals-specific components."""
+        # Import evals-specific modules
         import ray
 
         from rapidfireai.evals.db import RFDatabase
@@ -302,10 +302,10 @@ class Experiment:
             Dict mapping run_id to (aggregated_results, cumulative_metrics) tuple
 
         Raises:
-            ValueError: If not in eval mode
+            ValueError: If not in evals mode
         """
-        if self.mode != "eval":
-            raise ValueError("run_evals() is only available in 'eval' mode")
+        if self.mode != "evals":
+            raise ValueError("run_evals() is only available in 'evals' mode")
 
         from rapidfireai.evals.utils.constants import ExperimentStatus
 
@@ -467,7 +467,7 @@ class Experiment:
         """
         Cancel the current task.
 
-        Works in both fit and eval modes.
+        Works in both fit and evals modes.
         """
         if self.mode == "fit":
             ExperimentException = self._ExperimentException
@@ -487,7 +487,7 @@ class Experiment:
         """
         End the experiment and clean up resources.
 
-        Works in both fit and eval modes with mode-specific cleanup.
+        Works in both fit and evals modes with mode-specific cleanup.
         """
         if self.mode == "fit":
             ExperimentException = self._ExperimentException

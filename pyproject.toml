@@ -10,9 +10,9 @@ authors = [
 ]
 description = "RapidFire AI: Rapid Experimentation Engine for Customizing LLMs"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
-keywords = ["ai", "rapidfire", "rapidfireai", "llm", "deep-learning", "artificial-intelligence", "machine-learning", "mlflow", "experiment-tracking"]
+keywords = ["ai", "rapidfire", "rapidfireai", "llm", "deep-learning", "artificial-intelligence", "machine-learning", "mlflow", "experiment-tracking", "fine-tuning", "post-training", "rag", "context-engineering"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -20,79 +20,134 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
+    # fit and evals dependencies
     # Core ML/AI Framework
     "torch==2.5.1",
-    "torchvision",
-    "torchaudio",
-    "transformers",
+    "torchvision==0.20.1",
+    "torchaudio==2.5.1",
     "datasets==3.6.0",
-    "sentence-transformers",
+    "sentence-transformers==5.1.0",
+    "gpustat==1.1.1",
 
     # Distributed Computing
-    "ray",
+    "ray==2.44.1",
 
     # LLM Inference
-    "vllm==0.7.2",
-    "flash-attn",
-    "flashinfer-python",
+    "transformers==4.56.1",
 
     # OpenAI API
-    "openai",
-    "tiktoken",
+    "openai==1.106.1",
+    "tiktoken==0.11.0",
 
     # LangChain Ecosystem
     "langchain",
+    "langchain-classic",
     "langchain-core",
     "langchain-community",
     "langchain-openai",
     "langchain-huggingface",
 
     # Vector Search
-    "faiss-gpu",
+    "faiss-gpu-cu12==1.12.0",
 
     # Statistical Analysis
-    "scipy",
+    "scipy==1.16.1",
 
     # Data Manipulation & Display
-    "pandas",
+    # "pandas>=2.0.0,<2.3.0",  # Colab compatibility (2.2.2) and cudf constraint
+    "pandas==2.3.2",
+    "pyarrow==21.0.0",
+    "numpy==1.26.4",
+    "unstructured==0.18.15",
 
     # REST API (Dispatcher)
-    "flask",
-    "flask-cors",
-    "waitress",
+    "flask>=3.1.1",
+    "flask-cors>=6.0.1",
+    "waitress>=3.0.2",
 
     # Notebook
-    "ipykernel",
-    "ipywidgets",
-    "tensorboard",
+    "ipykernel==6.30.1",
+    # "ipykernel",
+    "ipywidgets>=7.3.4,<9.0.0",  # Support both v7 (Colab) and v8 (Jupyter)
+    "tensorboard>=2.11.0",
 
     # JSON Query Tool
-    "jq",
+    "jq==1.10.0",
+
+    # Other
+    "psutil==7.0.0",
+    "tqdm==4.67.1",
+    "typing-extensions>=4.0.0",
+    "peft>=0.17.0",
+    "trl==0.21.0",
+    "bitsandbytes>=0.47.0",
+    "nltk>=3.9.1",
+    "evaluate>=0.4.5",
+    "rouge-score>=0.1.2",
+    "sentencepiece>=0.2.1",
+    "dill>=0.3.8",
+    "mlflow>=3.2.0",
+    "pytest>=8.4.1",
+    "requests>=2.32.0",  # Relaxed for Colab (2.32.4)
+    "loguru>=0.7.3",
+    "ipython>=7.34.0",  # Colab compatibility (7.34.0)
+    "jupyter>=1.1.1",
+    "uv>=0.8.14",
+
+    # Colab compatibility
+    # # Core ML/AI Framework
+    # "sentence-transformers==5.1.0",
+
+    # # Distributed Computing
+    # "ray==2.44.1",
+
+    # # LLM Inference
+    # "transformers==4.56.1",
+
+    # # OpenAI API
+    # "openai==1.106.1",
+    # "tiktoken==0.11.0",
+
+    # # LangChain Ecosystem
+    # "langchain",
+    # "langchain-classic",
+    # "langchain-core",
+    # "langchain-community",
+    # "langchain-openai",
+    # "langchain-huggingface",
+
+    # # Vector Search
+    # "faiss-gpu-cu12==1.12.0",
+
+    # # Statistical Analysis
+
+    # # Data Manipulation & Display
+    # "unstructured==0.18.15",
+
+    # # REST API (Dispatcher)
+    # "flask>=3.1.1",
+    # "flask-cors>=6.0.1",
+    # "waitress>=3.0.2",
+
+    # # Notebook
+
+    # # JSON Query Tool
+    # "jq==1.10.0",
+
+    # # Other
+
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=6.0",
-    "pytest-cov>=2.0",
-    "pytest-mock>=3.10.0",
-    "black>=21.0",
-    "flake8>=3.8",
-    "mypy>=0.800",
-    "pre-commit>=2.0",
-    "ruff",
 ]
 full = [
-    "torch>=1.9.0",
-    "transformers>=4.20.0",
-    "peft>=0.3.0",
-    "trl==0.21.0",
-    "bitsandbytes>=0.39.0",
 ]
 
 [project.urls]
@@ -170,7 +225,7 @@ rapidfireai = "rapidfireai"
 
 [tool.black]
 line-length = 88
-target-version = ['py310']
+target-version = ['py312']
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -181,4 +236,4 @@ addopts = "-v --tb=short"
 
 [tool.ruff]
 line-length = 120
-targer-version = "py310"
+targer-version = "py312"

@@ -12,7 +12,7 @@ include rapidfireai/fit/frontend/proxy_middleware.py
 include rapidfireai/fit/frontend/build/**/*
 include rapidfireai/fit/frontend/package.json
 
-# Include Python modules
+# Include Python modules - fit
 recursive-include rapidfireai/fit/dispatcher *.py
 recursive-include rapidfireai/fit/ml *.py
 recursive-include rapidfireai/fit/automl *.py
@@ -20,8 +20,19 @@ recursive-include rapidfireai/fit/backend *.py
 recursive-include rapidfireai/fit/db *.py *.sql
 recursive-include rapidfireai/fit/utils *.py
 
-# Include tutorial notebooks
-recursive-include tutorial_notebooks *.ipynb
+# Include Python modules - evals
+recursive-include rapidfireai/evals/actors *.py
+recursive-include rapidfireai/evals/automl *.py
+recursive-include rapidfireai/evals/data *.py
+recursive-include rapidfireai/evals/db *.py *.sql
+recursive-include rapidfireai/evals/dispatcher *.py
+recursive-include rapidfireai/evals/metrics *.py
+recursive-include rapidfireai/evals/rag *.py
+recursive-include rapidfireai/evals/scheduling *.py
+recursive-include rapidfireai/evals/utils *.py
+
+# Include tutorial notebooks (including datasets)
+recursive-include tutorial_notebooks *
 
 # Explicitly exclude unwanted files and directories - be very specific
 exclude rapidfireai/fit/frontend/node_modules
