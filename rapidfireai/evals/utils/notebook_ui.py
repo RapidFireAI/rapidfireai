@@ -23,7 +23,7 @@ class NotebookUI:
         self.pending_actions = []
 
     def _generate_html(self):
-        """Generate HTML using window.postMessage for communication"""
+        """Generate HTML using fetch API for communication"""
         return f"""
         <div id="{self.widget_id}" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto;">
             <style>
@@ -109,40 +109,26 @@ class NotebookUI:
                         cancelCloneBtn: document.getElementById('cancel-clone-btn')
                     }};
 
-                    // Use XMLHttpRequest instead of fetch (bypasses service worker)
-                    function xhrRequest(url, method = 'GET', body = null) {{
-                        return new Promise((resolve, reject) => {{
-                            const xhr = new XMLHttpRequest();
-                            xhr.open(method, url, true);
-                            xhr.setRequestHeader('Content-Type', 'application/json');
-                            xhr.timeout = 8000;
+                    // Use fetch API with explicit CORS mode
+                    async function xhrRequest(url, method = 'GET', body = null) {{
+                        const options = {{
+                            method: method,
+                            headers: {{
+                                'Content-Type': 'application/json'
+                            }},
+                            mode: 'cors',
+                            credentials: 'omit'
+                        }};
 
-                            xhr.onload = function() {{
-                                if (xhr.status >= 200 && xhr.status < 300) {{
-                                    try {{
-                                        resolve(JSON.parse(xhr.responseText));
-                                    }} catch(e) {{
-                                        resolve(xhr.responseText);
-                                    }}
-                                }} else {{
-                                    reject(new Error('HTTP ' + xhr.status));
-                                }}
-                            }};
+                        if (body) {{
+                            options.body = JSON.stringify(body);
+                        }}
 
-                            xhr.onerror = function() {{
-                                reject(new Error('Network error'));
-                            }};
-
-                            xhr.ontimeout = function() {{
-                                reject(new Error('Request timeout'));
-                            }};
-
-                            if (body) {{
-                                xhr.send(JSON.stringify(body));
-                            }} else {{
-                                xhr.send();
-                            }}
-                        }});
+                        const response = await fetch(url, options);
+                        if (!response.ok) {{
+                            throw new Error('HTTP ' + response.status);
+                        }}
+                        return await response.json();
                     }}
 
                     async function fetchPipelines() {{

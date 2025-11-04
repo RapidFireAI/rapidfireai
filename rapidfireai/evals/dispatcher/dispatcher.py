@@ -42,7 +42,14 @@ class Dispatcher:
 
         # Enable CORS for local development
         # Dispatcher runs on localhost, safe to allow all origins
-        _ = CORS(self.app, resources={r"/*": {"origins": "*"}})
+        _ = CORS(self.app,
+             resources={r"/*": {
+                 "origins": "*",
+                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                 "allow_headers": ["Content-Type", "Authorization"],
+                 "expose_headers": ["Content-Type"],
+                 "supports_credentials": False
+             }})
 
         # Register routes
         self.register_routes()
@@ -51,14 +58,16 @@ class Dispatcher:
         """Register all REST API routes with OPTIONS support for CORS preflight."""
         route_prefix = "/dispatcher"
 
-        # CRITICAL: Add after_request handler to ensure CORS headers on ALL responses including OPTIONS
-        @self.app.after_request
-        def after_request(response):
-            response.headers.add('Access-Control-Allow-Origin', '*')
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-            response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-            response.headers.add('Access-Control-Max-Age', '3600')
-            return response
+        # CRITICAL: Add before_request handler to handle OPTIONS preflight requests globally
+        @self.app.before_request
+        def handle_preflight():
+            if request.method == "OPTIONS":
+                response = jsonify({})
+                response.headers.add('Access-Control-Allow-Origin', '*')
+                response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+                response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+                response.headers.add('Access-Control-Max-Age', '3600')
+                return response
 
         # Health check
         self.app.add_url_rule(f"{route_prefix}/health-check", "health_check", self.health_check, methods=["GET", "OPTIONS"])
