@@ -354,10 +354,26 @@ class InteractiveControlHandler:
         parent_batch_size = parent_full_config.get("batch_size", 32)
         parent_online_strategy = parent_full_config.get("online_strategy_kwargs")
 
+        # Inherit function keys from parent (these cannot be edited via JSON)
+        parent_preprocess_fn = parent_full_config.get("preprocess_fn")
+        parent_postprocess_fn = parent_full_config.get("postprocess_fn")
+        parent_compute_metrics_fn = parent_full_config.get("compute_metrics_fn")
+        parent_accumulate_metrics_fn = parent_full_config.get("accumulate_metrics_fn")
+
         pipeline_config_dict = {
             "pipeline": model_config,
             "batch_size": edited_json.get("batch_size", parent_batch_size),
         }
+
+        # Inherit function keys from parent (required for batch processing)
+        if parent_preprocess_fn is not None:
+            pipeline_config_dict["preprocess_fn"] = parent_preprocess_fn
+        if parent_postprocess_fn is not None:
+            pipeline_config_dict["postprocess_fn"] = parent_postprocess_fn
+        if parent_compute_metrics_fn is not None:
+            pipeline_config_dict["compute_metrics_fn"] = parent_compute_metrics_fn
+        if parent_accumulate_metrics_fn is not None:
+            pipeline_config_dict["accumulate_metrics_fn"] = parent_accumulate_metrics_fn
 
         # Add online_strategy_kwargs if present (inherit from parent if not in JSON)
         if "online_strategy_kwargs" in edited_json:

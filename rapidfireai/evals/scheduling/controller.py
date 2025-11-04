@@ -139,7 +139,7 @@ class Controller:
             # Check if pipeline has a RAG spec or prompt_manager
             pipeline_config = config_leaf["pipeline"]
             has_rag_attr = hasattr(pipeline_config, "rag")
-            
+
             # Get RAG spec and prompt_manager
             rag_spec = getattr(pipeline_config, "rag", None) if has_rag_attr else None
             prompt_manager = getattr(pipeline_config, "prompt_manager", None)
@@ -151,7 +151,7 @@ class Controller:
             # Compute context hash
             rag_hash = rag_spec.get_hash() if rag_spec else None
             prompt_hash = prompt_manager.get_hash() if prompt_manager else None
-            
+
             # Create combined context hash
             if rag_hash and prompt_hash:
                 context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
@@ -441,15 +441,15 @@ class Controller:
             has_rag_attr = hasattr(pipeline, "rag")
             rag_spec = getattr(pipeline, "rag", None) if has_rag_attr else None
             prompt_manager = getattr(pipeline, "prompt_manager", None)
-            
+
             # Check if pipeline has RAG or prompt_manager to look up context
             if rag_spec or prompt_manager:
                 # Get RAG hash if present
                 rag_hash = rag_spec.get_hash() if rag_spec else None
-                
+
                 # Get prompt_manager hash if present
                 prompt_hash = prompt_manager.get_hash() if prompt_manager else None
-                
+
                 # Create combined context hash (matches logic in _collect_unique_contexts)
                 if rag_hash and prompt_hash:
                     context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
@@ -459,7 +459,7 @@ class Controller:
                     context_hash = prompt_hash
                 else:
                     context_hash = None
-                    
+
                 if context_hash and context_hash in self._context_cache:
                     context_id, _ = self._context_cache[context_hash]
 
@@ -537,10 +537,10 @@ class Controller:
                 start_time=start_time,
                 end_time=end_time,
             )
-            
+
             # Add confidence intervals to final metrics before storing
             samples_processed = sum(
-                m.get("value", 0) 
+                m.get("value", 0)
                 for m in pipeline_results[pipeline_id]["metrics"].get("Samples Processed", [{}])
             )
             if aggregator.online_strategy and samples_processed > 0:
@@ -559,7 +559,7 @@ class Controller:
                 # Update display with final metrics to ensure all metrics are shown
                 # Add confidence intervals to final metrics if online strategy is available
                 samples_processed = sum(
-                    m.get("value", 0) 
+                    m.get("value", 0)
                     for m in pipeline_results[pipeline_id]["metrics"].get("Samples Processed", [{}])
                 )
                 if aggregator.online_strategy and samples_processed > 0:
@@ -568,7 +568,7 @@ class Controller:
                     )
                 else:
                     metrics_with_ci = cumulative_metrics
-                
+
                 # Convert cumulative_metrics format to display format with CI info
                 display_metrics = {}
                 for metric_name, metric_data in metrics_with_ci.items():
@@ -582,9 +582,9 @@ class Controller:
                         }
                     else:
                         display_metrics[metric_name] = {"value": metric_data}
-                
+
                 progress_display.update_pipeline(
-                    pipeline_id, 
+                    pipeline_id,
                     status="COMPLETED",
                     metrics=display_metrics
                 )
@@ -697,7 +697,7 @@ class Controller:
             sampling_params = None
             prompt_manager_k = None
             model_config = None
-            
+
             # Extract model name from config
             pipeline = pipeline_config["pipeline"]
             if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
@@ -708,7 +708,7 @@ class Controller:
                 model_config_copy.pop("model", None)
                 if model_config_copy:  # Only assign if there are other configs
                     model_config = model_config_copy
-            
+
             # Extract RAG-related fields
             if hasattr(pipeline, "rag") and pipeline.rag is not None:
                 search_type = getattr(pipeline.rag, "search_type", None)
@@ -719,11 +719,11 @@ class Controller:
                 if hasattr(pipeline.rag, "text_splitter") and pipeline.rag.text_splitter is not None:
                     chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)
                     chunk_overlap = getattr(pipeline.rag.text_splitter, "_chunk_overlap", None)
-            
+
             # Extract sampling params
             if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
                 sampling_params = pipeline._user_params.get("sampling_params", None)
-            
+
             # Extract prompt_manager fields
             if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
                 prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
@@ -734,7 +734,7 @@ class Controller:
                 "pipeline_config": pipeline_config,
                 "model_name": model_name,
             }
-            
+
             # Add optional fields only if they're not None
             if search_type is not None:
                 pipeline_info_dict["search_type"] = search_type
@@ -763,7 +763,7 @@ class Controller:
         model_rate_limits = {}
         max_completion_tokens_by_model = {}
         pipeline_to_max_completion_tokens = {}
-        
+
         for pipeline_id, pipeline_config in pipeline_id_to_config.items():
             from rapidfireai.evals.automl import RFOpenAIAPIModelConfig
             pipeline = pipeline_config["pipeline"]
@@ -771,13 +771,13 @@ class Controller:
                 has_openai_pipeline = True
                 model_config = pipeline.model_config
                 model_name = model_config.get("model", "gpt-3.5-turbo")
-                
+
                 if pipeline.rpm_limit is None or pipeline.tpm_limit is None:
                     raise ValueError(
                         f"OpenAI pipeline {pipeline_id} (model: {model_name}) is missing rate limits. "
                         f"Please provide rpm_limit and tpm_limit to RFOpenAIAPIModelConfig."
                     )
-                
+
                 if model_name not in model_rate_limits:
                     model_rate_limits[model_name] = {
                         "rpm": pipeline.rpm_limit,
@@ -790,9 +790,9 @@ class Controller:
                         f"Model {model_name} has inconsistent rate limits across pipelines. "
                         f"Using first encountered values: {model_rate_limits[model_name]}"
                     )
-                
+
                 pipeline_to_max_completion_tokens[pipeline_id] = model_config.get(
-                    "max_completion_tokens", 
+                    "max_completion_tokens",
                     max_completion_tokens_by_model.get(model_name, 150)
                 )
                 pipeline_to_rate_limiter[pipeline_id] = None
@@ -816,7 +816,7 @@ class Controller:
                     pipeline = pipeline_config["pipeline"]
                     model_name = pipeline.model_config.get("model", "gpt-3.5-turbo")
                     pipeline_to_max_completion_tokens[pipeline_id] = max_completion_tokens_by_model.get(
-                        model_name, 
+                        model_name,
                         pipeline.model_config.get("max_completion_tokens", 150)
                     )
 
@@ -1078,15 +1078,15 @@ class Controller:
             has_rag_attr = hasattr(pipeline, "rag")
             rag_spec = getattr(pipeline, "rag", None) if has_rag_attr else None
             prompt_manager = getattr(pipeline, "prompt_manager", None)
-            
+
             # Check if pipeline has RAG or prompt_manager to look up context
             if rag_spec or prompt_manager:
                 # Get RAG hash if present
                 rag_hash = rag_spec.get_hash() if rag_spec else None
-                
+
                 # Get prompt_manager hash if present
                 prompt_hash = prompt_manager.get_hash() if prompt_manager else None
-                
+
                 # Create combined context hash (matches logic in _collect_unique_contexts)
                 if rag_hash and prompt_hash:
                     context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
@@ -1096,7 +1096,7 @@ class Controller:
                     context_hash = prompt_hash
                 else:
                     context_hash = None
-                    
+
                 if context_hash and context_hash in self._context_cache:
                     _, context_generator_ref = self._context_cache[context_hash]
 
@@ -1124,10 +1124,10 @@ class Controller:
             self.logger.debug(f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})")
 
             futures = []
-            preprocess_fn = pipeline_config["preprocess_fn"]
-            postprocess_fn = pipeline_config["postprocess_fn"]
-            compute_metrics_fn = pipeline_config["compute_metrics_fn"]
-            accumulate_metrics_fn = pipeline_config["accumulate_metrics_fn"]
+            preprocess_fn = pipeline_config.get("preprocess_fn")
+            postprocess_fn = pipeline_config.get("postprocess_fn")
+            compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
+            accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
             for batch in batches:
                 future = actor.process_batch.remote(
                     batch,
