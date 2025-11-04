@@ -119,6 +119,12 @@ class ExperimentUtils:
                 print("No experiment is currently running. Nothing to end.")
             return
 
+        # Check if there's actually a running experiment
+        if current_experiment is None:
+            if not internal:
+                print("No experiment is currently running. Nothing to end.")
+            return
+
         # create logger
         experiment_name = current_experiment["experiment_name"]
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path="./rapidfire_experiments")
@@ -143,6 +149,12 @@ class ExperimentUtils:
         try:
             current_experiment = self.db.get_running_experiment()
         except Exception:
+            if not internal:
+                print("No experiment is currently running. Nothing to cancel.")
+            return
+
+        # Check if there's actually a running experiment
+        if current_experiment is None:
             if not internal:
                 print("No experiment is currently running. Nothing to cancel.")
             return
@@ -184,6 +196,10 @@ class ExperimentUtils:
         try:
             given_name = given_name if given_name else "rf-exp"
             experiment_name = self._generate_unique_experiment_name(given_name, self.db.get_all_experiment_names())
+
+            # Clear all tables except experiments table before creating new experiment
+            # This ensures a clean slate for the new experiment
+            self.db.reset_all_tables(experiments_table=False)
 
             # write new experiment details to database
             experiment_id = self.db.create_experiment(
