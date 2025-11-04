@@ -3,9 +3,9 @@
 
 <a href="https://rapidfire.ai">
     <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/RapidFire-logo-for-dark-theme.svg">
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/RapidFire-logo-for-light-theme.svg">
-        <img alt="RapidFire AI" src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/RapidFire-logo-for-light-theme.svg">
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/RapidFire-logo-for-dark-theme.svg">
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/RapidFire-logo-for-light-theme.svg">
+        <img alt="RapidFire AI" src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/RapidFire-logo-for-light-theme.svg">
     </picture>
 </a>
 
@@ -24,7 +24,7 @@ Delivers 16-24x higher throughput without extra resources.
 
 RapidFire AI is a new experiment execution framework that transforms your AI customization experimentation from slow, sequential processes into rapid, intelligent workflows with hyperparallelized execution, dynamic real-time experiment control, and automatic system optimization.
 
-![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/rf-usage-both.png)
+![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/rf-usage-both.png)
 
 RapidFire AI's adaptive execution engine allows interruptible, shard-based scheduling so you can compare many configurations concurrently, even on a single GPU (for self-hosted models) or a CPU-only machine (for closed model APIs) with dynamic real-time control over runs.
 
@@ -43,7 +43,7 @@ For additional context, see the overview: [RapidFire AI Overview](https://oss-do
 - [NVIDIA GPU using the 7.x or 8.x Compute Capability](https://developer.nvidia.com/cuda-gpus)
 - [NVIDIA CUDA Toolkit 11.8+](https://developer.nvidia.com/cuda-toolkit-archive)
 - [Python 3.12.x](https://www.python.org/downloads/)
-- [PyTorch 2.7.1+](https://pytorch.org/get-started/previous-versions/) with corresponding forward compatible prebuilt CUDA binaries
+- [PyTorch 2.7.0+](https://pytorch.org/get-started/previous-versions/) with corresponding forward compatible prebuilt CUDA binaries
 
 ### Install and Get Started
 
@@ -80,7 +80,7 @@ rapidfireai init --evals
 #   rapidfireai start --colab
 # For standalone run:
 
-# For Fine-tuning/Post-Training only: Start dashboard metrics server
+# For Fine-tuning/Post-Training only: Start dashboard metrics server - ONLY
 rapidfireai start
 # It should print about 50 lines, including the following:
 # ...
@@ -139,13 +139,24 @@ Built-in procedures for searching over configuration knob combinations, includin
 
 ```text
 rapidfireai/
-├── automl/          # Search and AutoML algorithms for knob tuning
-├── backend/         # Core backend components (controller, scheduler, worker)
-├── db/              # Database interface and SQLite operations
-├── dispatcher/      # Flask-based web API for UI communication
-├── frontend/        # Frontend components (dashboard, IC Ops implementation)
-├── ml/              # ML training utilities and trainer classes
-├── utils/           # Utility functions and helper modules
+├── fit
+    ├── automl/          # Search and AutoML algorithms for knob tuning
+    ├── backend/         # Core backend components (controller, scheduler, worker)
+    ├── db/              # Database interface and SQLite operations
+    ├── dispatcher/      # Flask-based web API for UI communication
+    ├── frontend/        # Frontend components (dashboard, IC Ops implementation)
+    ├── ml/              # ML training utilities and trainer classes
+    └── utils/           # Utility functions and helper modules
+├── evals
+    ├── actors/
+    ├── automl/
+    ├── data/
+    ├── db/             # Database interface and SQLite operations
+    ├── dispatcher/
+    ├── metrics/
+    ├── rag/
+    ├── scheduling/
+    └── utils/           # Utility functions and helper modules
 └── experiment.py    # Main experiment lifecycle management
 ```
 
