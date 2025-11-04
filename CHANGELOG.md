@@ -13,6 +13,11 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.12.2]
+### Fixed
+- Image locations in tuorial notebooks
+
+
 ## [v0.12.1]
 ### Added
 - Initial open source release of RapidFire AI RAG for RAG inference and context engineering experimentation
