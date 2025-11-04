@@ -1,0 +1,47 @@
+# Core ML/AI Framework
+torch==2.5.1
+torchvision
+torchaudio
+transformers
+datasets==3.6.0
+sentence-transformers
+
+# Distributed Computing
+ray
+
+# LLM Inference
+vllm==0.7.2
+flash-attn
+flashinfer-python
+
+# OpenAI API
+openai
+tiktoken
+
+# LangChain Ecosystem
+langchain
+langchain-core
+langchain-community
+langchain-openai
+langchain-huggingface
+
+# Vector Search
+faiss-gpu
+
+# Statistical Analysis
+scipy
+
+# Data Manipulation & Display
+pandas
+
+# REST API (Dispatcher)
+flask
+flask-cors
+waitress
+
+# Notebook
+ipykernel
+ipywidgets
+tensorboard
+
+jq

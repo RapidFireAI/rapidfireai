@@ -1,0 +1,2781 @@
+Last month Brad read thrice 6 books for a total of 3*6 = <<3*6=18>>18 books
+This month Williams read twice 8 books for a total of 2*8 = <<2*8=16>>16 books
+Across the 2 months Brad has read 18+8 = <<18+8=26>>26 books
+Across the 2 months William has read 6+16 = <<6+16=22>>22 books
+Brad has read 26-22 = <<26-22=4>>4 more books
+#### 4
+
+The total ratio representing fuel consumption and distance traveled is 4+7=<<4+7=11>>11
+If 4/11, which is the fraction representing fuel consumption, represents 22 gallons of gas, then 7/11 representing distance covered represents 7/11 * 44 * 11/4=<<7/11*44*11/4=77>>77 miles.
+#### 77
+
+Before the typhoon, their farm had a total of 50 trees + 30 trees = <<50+30=80>>80 trees.
+If there was 1 more than Mahogany than Narra tree that fell, then this means there were 2 Narra trees and 2 + 1 = 3 Mahogany trees that fell during the typhoon.
+So, Bea's mom planted 2 trees x 2 = <<2*2=4>>4 Narra trees.
+She also planted 3 trees x 3 = <<3*3=9>>9 Mahogany trees.
+So, her mom planted 4 trees + 9 trees = <<4+9=13>>13 more trees.
+After the typhoon, they only had 80 trees - 5 trees = <<80-5=75>>75 trees left.
+Therefore, there are 75 trees + 13 trees = <<75+13=88>>88 trees now.
+#### 88
+
+Half the mural is yellow, so the other half took 12 / 2 = <<12/2=6>>6 pints of paint.
+The mural has equal amounts of the other three colors, so it used 6 / 3 = <<6/3=2>>2 pints of red paint.
+#### 2
+
+When the hidden tadpoles come out, Finn sees 11 + 6 = <<11+6=17>>17 tadpoles swimming.
+After some of them hide under a rock, he now sees 17 - 2 = <<17-2=15>>15 tadpoles swimming.
+#### 15
+
+He travels 1450-100=<<1450-100=1350>>1350 feet vertically
+So he travels 1350*2=<<1350*2=2700>>2700 feet horizontally
+#### 2700
+
+He needs to buy enough tokens for 240 games because 4 x 60 = <<4*60=240>>240
+He needs to buy 480 tokens because 2 x 240 = <<2*240=480>>480
+He needs to spend 160 because 480 / 30 = 16
+#### 16
+
+The total width of the five windows is 35 x 5 = <<35*5=175>>175 inches.
+Luke needs to buy 175 x 2 = <<175*2=350>>350 inches of fabric.
+#### 350
+
+First find the total time Billy spends on laundry: 2 loads * 9 minutes/load = <<2*9=18>>18 minutes
+Then find the total time Anna spends sweeping: 3 minutes/room * 10 rooms = <<3*10=30>>30 minutes
+Then find how much longer Anna has already worked than Billy: 30 minutes - 18 minutes = <<30-18=12>>12 minutes
+Then divide the difference in work time by the time to wash one dish to find the number of dishes Billy has to wash to work the same amount of time as Anna: 12 minutes / 2 minutes/dish = <<12/2=6>>6 dishes
+#### 6
+
+When Joe added 20% more data points to the dataset, the data points in the dataset increased by 20/100*200 = <<20/100*200=40>>40 data points.
+The total number of data points increased to 200+40 = <<200+40=240>>240
+If he reduced the data points by 1/4 of the total data points, the data points reduced by 1/4*240 =60
+The total number of data points left in the dataset after Joe reduced the data points by 1/4 of the total data points is 240-60= <<240-60=180>>180
+#### 180
+
+From 8:00 to 11:00, Mckenna spends 11:00-8:00 = 3 hours at work
+When she joins the developers in the conference room for the meeting, she spends an additional 13:00-11:00 = 2 hours at work.
+So far, she has spent 3+2 = <<3+2=5>>5 hours at work.
+When she works for an additional 2 hours before heading home, her total work hours become 5+2 = <<5+2=7>>7 hours
+#### 7
+
+Eggs in cheesecakes = 8 * 9 = <<8*9=72>>72
+Eggs in chocolate cake = 5 * 3 = <<5*3=15>>15
+72 - 15 = <<72-15=57>>57
+Nine cheesecakes need 57 more eggs than 5 chocolate cakes.
+#### 57
+
+She made 52 bracelets but gave 8 away so she had 50-8 = <<52-8=44>>44 bracelets left.
+She sold 44 bracelets at $0.25 each for a total of 44 * .25 = $<<44*.25=11.00>>11.00
+She made $11.00 but she spent $3.00 on the supplies. So her profit would be 11-3 = $<<11-3=8.00>>8.00
+#### 8
+
+There are 34 kids signed up – 22 we know are girls = 12 are girls and boys.
+We can divide the 12 girls and boys / 2 = <<12/2=6>>6 boys are competing and 6 girls are competing.
+That means there are 6 + 22 = <<6+22=28>>28 girls competing.
+#### 28
+
+The second friend pressed on the doorbell 1/4 times more than Jerome's first friend, a total of 1/4*20=<<1/4*20=5>>5 times.
+Jerome's second friend pressed on the doorbell 20+5=<<20+5=25>>25
+The first two friends pressed on the doorbell 25+20=<<25+20=45>>45 times altogether before Jerome could open the door.
+Jerome's third friend pressed on the doorbell 60+10=<<60+10=70>>70 times before Jerome could open the door.
+Altogether, Jerome's third and fourth friends pressed on the doorbell 70+60=<<70+60=130>>130 times before Jerome could open.
+The number of doorbell rings that Jerome's friend made before Jerome could open the door is 130+45=<<130+45=175>>175 times.
+#### 175
+
+Let W be the number of episodes he watched on Wednesday.
+After Monday, he had 7 - 1 = <<7-1=6>>6 hours of TV left.
+After Tuesday, he had 6 - 1 = <<6-1=5>>5 hours of TV left.
+After Thursday, he had 5 - 1 - 1/2 = 3 1/2 hours of TV left.
+After Friday, he had 3 1/2 - 2 = 1 1/2 hours of TV left.
+Each 30-minute episode is 1/2 hour.
+Thus, W = 1 1/2 / 1/2 = 3 episodes.
+#### 3
+
+The rate of the loan is 15%, which means Mike needs to give the bank an additional 20000 * 15/100 = $<<20000*15/100=3000>>3000.
+So the car will cost him 35000 + 3000 = $<<35000+3000=38000>>38000.
+#### 38000
+
+The total number of female hippos is 5/7*35=<<5/7*35=25>>25
+If each new hippo gives birth to 5 new baby hippos, the total number of baby hippos will be 5*25=<<5*25=125>>125
+The population of hippos after 125 new ones are born is 125+35=<<125+35=160>>160
+There are ten more newborn elephants than baby hippos, meaning there are 125+10=135 new baby elephants.
+The population of elephants is 135+20=<<135+20=155>>155
+Altogether, there are 155+160=<<155+160=315>>315 animals
+#### 315
+
+Running the length of a football field 2000 meters in 2 hours is a speed of 2000/2=<<2000/2=1000>>1000 meters per hour.
+At the same speed, Amanda will run the length of a 10000-meter track in 10000/1000 = <<10000/1000=10>>10 hours
+#### 10
+
+The total cost for roses is 20*5 = $<<20*5=100>>100
+Nadia bought 3/4*20 = <<3/4*20=15>>15 lilies.
+Each lily costs 5*2 = $<<5*2=10>>10
+She used 10*15 = $<<10*15=150>>150 in total to buy lilies.
+To buy all the flowers, Nadia used 150+100 = $<<150+100=250>>250
+#### 250
+
+If the tree's 10 branches have 40 sub-branches each, the total number of sub-branches on the tree is 10*40 = <<10*40=400>>400
+Since each sub-branch has 60 leaves, the tree has 60*400 = <<60*400=24000>>24000 leaves.
+If there are four trees on the farm with the same number of leaves, they all have 24000*4 = <<24000*4=96000>>96000 leaves.
+#### 96000
+
+Amanda sells 4 tickets to 5 friends so she sells 4 * 5 = <<4*5=20>>20 tickets on her first day
+On her second day, she sells 32 tickets for a total of 20 + 32 = <<32+20=52>>52 Tickets so far
+Having 80 tickets as the goal, she needs to sell 80 - 52 = <<80-52=28>>28 Tickets on her last day
+#### 28
+
+Her errands include a 30 min commute and 30 min grocery shopping, 10 min for dry cleaning and 20 min to grab the dog for a total of 30+30+10+20 = <<30+30+10+20=90>>90 minutes
+Her errands took 90 minutes and she has another 90 minutes of cooking for a total of 90+90 = <<90+90=180>>180 minutes of chores/errands
+60 minutes are in 1 hour and she has 180 minutes of work so that's 180/60 = <<180/60=3>>3 hours
+She is off of work at 4:00 pm and has 3 hours of errands/chores so she won't be able to eat until 4+3 = 7:00 pm
+#### 7
+
+Let x be the number of berries Steve started with
+x+4=32-7
+x+4=25
+x=<<21=21>>21 berries
+#### 21
+
+To finish an audiobook 30 hours long, listening to 2 hours of each audiobook a day, Fernanda took 30 hours / 2 hours/day =<<30/2=15>>15 days to finish one audiobook.
+If she purchased 6 audiobooks, the total number of days she will take to finish all the audiobooks is 6 audiobooks * 15 days/audiobook = <<6*15=90>>90 days
+#### 90
+
+He has 15 months to save $3,000.00 so that’s 3000/15 = $<<3000/15=200.00>>200.00 a month
+He gets paid twice a month so he needs to save 200/2 = $<<200/2=100.00>>100.00 from each paycheck
+#### 100
+
+In 3 years, the sum of their present ages will be added by 3 (from Allen) + 3 (from her mother) = <<3+3=6>>6.
+So, the sum of their present ages is 41 - 6 = <<41-6=35>>35.
+Let x be the present age of Allen's mother and x - 25 be the present age of Allen.
+So the equation using the sum of their present ages is x + x - 25 = 35.
+By combining like terms, the equation becomes 2x = 60.
+Hence, Allen's mother is x = 60/2 = <<60/2=30>>30 years old now.
+#### 30
+
+The pen is half the price of the pencil, so it's 8 * 0.5 = $<<8*0.5=4>>4.
+So both the pen and the pencil cost Maria 8 + 4 = $<<8+4=12>>12.
+#### 12
+
+They both finished reading a total of 34 + 32 = <<34+32=66>>66 books.
+Therefore, they still have to read a total of 89 – 66 = <<89-66=23>>23 books.
+#### 23
+
+There are 63 * 2 = <<63*2=126>>126 women.
+The men are 2 * 126 = <<2*126=252>>252 men.
+The total number of people are 126 + 252 = <<126+252=378>>378 people.
+#### 378
+
+Let x represent the number of stamps for AJ
+KJ:x/2 stamps
+CJ:5+2(x/2)=5+x
+Total:x+(x/2)+5+x=930
+(5/2)x+5=930
+(5/2)x=925
+x=925(2/5)=370 stamps
+#### 370
+
+First find the total cost of the toppings: 10 toppings * $0.50/topping = $<<10*0.5=5.00>>5.00
+Then add that amount to the cost of the ice cream: $5.00 + $2.00 = $<<5+2=7.00>>7.00
+#### 7
+
+In the matrix, there are seven fewer noodles than pirates, meaning there are 45-7=<<45-7=38>>38 noodles.
+The number of noodles and pirates in the matrix is 38+45=<<38+45=83>>83
+#### 83
+
+300 x 5/100 = <<300*5/100=15>>15 senior students got a full merit scholarship.
+300 x 10/100 = <<300*10/100=30>>30 senior students got a half merit scholarship.
+So, a total of 15 + 30 = <<15+30=45>>45 students got scholarships.
+Therefore, 300 - 45 = <<300-45=255>>255 senior students did not get any scholarships.
+#### 255
+
+Dave can ride the merry-go-round for 10 minutes and Chuck can ride 5 times longer than Dave so he can ride for 10*5 = <<10*5=50>>50 minutes
+Erica can stay on 30% longer than Chuck who can ride for 50 minutes so that's an extra .30*50 = <<30*.01*50=15>>15 minutes
+Chuck can ride for 50 minutes and Erica can ride an extra 15 minutes for a total of 50+15 = <<50+15=65>>65 minutes
+#### 65
+
+When Mr. Sylas puts an equal number of the cows he bought into the stalls, each stall gets 40/10 = <<40/10=4>>4 new cows.
+Each of the stalls gets four cows, meaning a total of 8*4 = <<8*4=32>>32 cows are placed into eight of the stalls.
+Since each stall had 20 cows before Mr. Sylas added four into each of the stalls, the total number of cows in eight of the stalls was 8*20= <<8*20=160>>160 cows.
+There are 160+32 = <<160+32=192>>192 cows in eight stalls after Mr. Sylas adds four into each of the stalls.
+#### 192
+
+We don't know Yasmin's number of children yet, but let's represent it as Y.
+If John has twice the number of children Yasmin has, then John has 2*Y = 2Y kids
+If Gabriel has 6 grandkids between John's and Yasmin's children, then we can represent this as 6 = 2Y + Y
+If we solve the latest equation then we learn that 6=3Y
+Given that Y represents how many kids Yasmin has, then solving for Y we know that Y=6/3 or Y=2 kids
+#### 2
+
+There are 5*20 = <<5*20=100>>100 tanks in the yard.
+Altogether, there are 100+20 = <<100+20=120>>120 trucks and tanks in the yard.
+#### 140
+
+If Dana can skip at half the speed she can run, then she can run at 3*2=<<3*2=6>>6 miles per hour.
+And since she can run at a speed that is 4 times faster than she can walk, this means she can walk at 6/4=1.5 miles per hour.
+If two-thirds of the time is spent walking, then she walks for 6*(2/3)=<<6*(2/3)=4>>4 hours.
+If one-third of the time is spent running, then she runs for 6-4=<<6-4=2>>2 hours.
+Thus, she runs for 2 hours at 6 miles per hour, or 2*6=<<2*6=12>>12 miles.
+She walks for 4 hours at 1.5 miles per hour, or 4*1.5=<<4*1.5=6>>6 miles.
+Thus, altogether, she travels 12+6=<<12+6=18>>18 miles.
+#### 18
+
+The 2nd competitor ate twice the amount of the 1st competitor's 12 hot dogs So he ate 2*12 = <<2*12=24>>24 hot dogs
+The 3rd competitor ate 25% less than the 2nd's 24 hot dogs, which is 24/4 = 6 hot dogs
+If the 2nd competitor ate 24 hot dogs, and the 3rd ate 25% less than that, then the 3rd competitor ate 24 - 6 = <<24-6=18>>18 hot dogs
+#### 18
+
+Sarah uses 1+0.5=<<1+0.5=1.5>>1.5 ounces of hair care products daily.
+Two weeks is 2*7=<<2*7=14>>14 days.
+In 14 days, Sarah will use 14*1.5=<<14*1.5=21>>21 ounces of hair care products.
+#### 21
+
+If the company was producing 7000 toilet paper per day, when it ramped up its toilet paper production three times per day, it produced 3*7000 = 21000 more per day.
+The total toilet production by the company increased to 7000+21000 = <<7000+21000=28000>>28000
+In March, with 31 days, the company produced a total of 28000*31 = <<28000*31=868000>>868000 toilet papers
+#### 868000
+
+Jade needs a total of 210 photos / 7 photos/batch = <<210/7=30>>30 batches to upload all her photos.
+Each day she uploads 6 batches, so she will need 30 ÷ 6 = <<30/6=5>>5 days in total to upload all the photos.
+#### 5
+
+40 people - 7 people = <<40-7=33>>33 people are wearing stripes.
+The number of people wearing horizontal stripes is 4 horizontal stripes/checkered shirt x 7 checkered shirts = <<4*7=28>>28 horizontal stripes
+The number of people wearing vertical stripes is 33 total stripes - 28 horizontal stripes = <<33-28=5>>5 vertical stripes
+#### 5
+
+Let X be my age now.
+In ten years, I'll be X+<<+10=10>>10 years old.
+In ten years, my brother will be (X+10)*1/2 years old.
+In ten years, (X+10) + (X+10)*1/2 = 45.
+So (X+10)*3/2 = 45.
+X+10 = 45 * 2/3 = 30.
+X = 30 - 10 = <<30-10=20>>20 years old.
+#### 20
+
+Five people borrowed 5 people * 2 books/person = <<5*2=10>>10 books on the first day.
+After the second day, the total number of borrowed books increased to 10 books + 20 books = <<10+20=30>>30 books.
+The total number of books on the shelf after the second day is 100 books - 30 books = <<100-30=70>>70 books
+#### 70
+
+The number of students who wish to go on the skiing trip is 2 * 4000 students = <<2*4000=8000>>8000 students.
+The total number of students is 4000 students + 8000 students = <<4000+8000=12000>>12000 students.
+#### 12000
+
+1000 * 1/2 = <<1000*1/2=500>>500 students were taken on a trip to the nearby beach.
+So 1000 - 500 = <<1000-500=500>>500 students were not taken to the beach.
+Thus, 1/2 * 500 = <<500*1/2=250>>250 students who were not taken to the beach were sent home.
+Thus, 500 - 250 = <<500-250=250>>250 students are still in school.
+#### 250
+
+The number of people that receive interviews is 100 * 0.30 = <<100*0.30=30>>30 people
+The number of people that receive a job offer is 30 * 0.20 = <<30*0.20=6>>6 people
+The number of people that accept the position is 6 / 3 = <<6/3=2>>2 people
+#### 2
+
+Zendaya takes 1/3 * 6 hours = <<1/3*6=2>>2 hours longer to complete the marathon.
+To complete the marathon, Zendaya takes 6 hours + 2 hours = <<6+2=8>>8 hours
+The combined time the two take to complete the marathon is 8 hours + 6 hours = <<8+6=14>>14 hours
+The average number of hours Casey and Zendaya take to complete the marathon is 14 hours / 2 people = <<14/2=7>>7 hours/person.
+#### 7
+
+The age difference between Beth and her sister is 18 - 5 = <<18-5=13>>13 years.
+Beth must be 13 x 2 = <<13*2=26>>26 to be twice her sister's age.
+Beth will be twice her sister's age in 26 - 18 = <<26-18=8>>8 years.
+#### 8
+
+In the first 4 hours, the milk tanker got 4 hours * 2880 gallons/hour = <<4*2880=11520>>11,520 gallons
+Thus, the storage tank was left with 30,000 gallons - 11,520 gallons = <<30000-11520=18480>>18,480 gallons.
+For the next 7 hrs, the workers added 1,500 gallons/hour * 7 hours = <<1500*7=10500>>10,500 gallons
+The total therefore is 18,480 gallons + 10,500 gallons = <<18480+10500=28980>>28,980 gallons
+#### 28,980
+
+Lara can bake 5 x 6 = <<5*6=30>>30 cookies in one tray.
+So, Lara is baking a total of 30 x 4 = <<30*4=120>>120 cookies.
+#### 120
+
+Theo buys business suits for 6 suits * $100/suit = $<<6*100=600>>600.
+Theo buys suitcases for 3 suitcases * $50/suitcase = $<<3*50=150>>150.
+Theo buys a flight ticket that costs $700 + 5 * $100 = $<<700+5*100=1200>>1200.
+Theo can spend $6000 - $600 - $150 - $1200 - $2000 = $<<6000-600-150-1200-2000=2050>>2050 on gifts for his friends.
+#### 2050
+
+There are 15 x 3/5 = <<15*3/5=9>>9 liters of water from the 15 liters pineapple drink.
+After 1 liter of orange drink was spilled, there were 10 - 1 = <<10-1=9>>9 liters of orange drink left.
+Out of the 9 liters, 9 x 2/3 = <<9*2/3=6>>6 liters are water.
+Thus, there are a total of 9 + 6 = <<9+6=15>>15 liters of water out of the 24 liters.
+#### 15
+
+The patch is 16*20=<<16*20=320>>320 square feet
+So he needs 320/4=<<320/4=80>>80 patches
+The first 10 patches cost 10*10=$<<10*10=100>>100
+He gets a discount on the next 80-10=<<80-10=70>>70 patches
+They each cost 10/2=$<<10/2=5>>5
+So in total they cost 70*5=$<<70*5=350>>350
+That means in total he paid 100+350=$<<100+350=450>>450
+#### 450
+
+Marianne is 20 - 8 = <<20-8=12>>12 years older than Bella.
+Bella will turn 18 in 18 - 8 = <<18-8=10>>10 years.
+So, Marianne will be 20 + 10 = <<20+10=30>>30 years old then.
+#### 30
+
+The discount Maria got was 40/100 * 15 = $<<40/100*15=6>>6.
+That means the price for her ticket was 15 - 6 = $<<15-6=9>>9.
+#### 9
+
+Let the number of years after which Agnes will be twice as old as Jane be x
+After x years, 25+x = 2(6+x)
+Solving the equation by expanding and collecting like terms gives: x-2x = 12-25
+Further solving gives: -x = -13
+Multiplying both sides by -1 gives x = 13
+#### 13
+
+Let D = Donovan's time in minutes
+Betsy = D + <<+18=18>>18
+2D + 18 = 98
+2D = 80
+D = <<40=40>>40
+Betsy = 40 + 18 = <<40+18=58>>58 minutes
+Betsy's part took 58 minutes.
+#### 58
+
+The annual interest is 2000 * 8/100 = $<<2000*8/100=160>>160.
+Interest for two and a half years is 160 * 2.5 = $<<160*2.5=400>>400.
+So, Adam's father will have 2000 + 400 = $<<2000+400=2400>>2400 after 2 and a half years.
+#### 2400
+
+At the end of Monday, there are 336 - 124 = <<336-124=212>>212 books left.
+At the end of Tuesday, there are 212 + 22 = <<212+22=234>>234 books.
+#### 234
+
+She gets 2 ounces of wax from a 20 ounce candle because 20 x .1 = <<20*.1=2>>2
+She gets 10 ounces total from these candles because 5 x 2 = <<5*2=10>>10
+She gets .5 ounces of wax from each five ounce candle because 5 x .1 = <<5*.1=.5>>.5
+She gets 1.5 ounces total from these candles because 5 x .5 = <<5*.5=2.5>>2.5
+She gets .1 ounces from each one ounce candle because 1 x .1 = <<1*.1=.1>>.1
+She gets 2.5 ounces from these candles because 25 x .1 = <<25*.1=2.5>>2.5
+She gets 15 ounces total because 10 + 2.5 + 2.5 = <<10+2.5+2.5=15>>15
+She can make 3 candles because 15 / 5 = <<15/5=3>>3
+#### 3
+
+The cars that exited do not need to be included so there were 30 original cars – 5 cars that exited = <<30-5=25>>25 cars that drove through the traffic jam.
+Most of the cars exited in the final 15 minutes so in the first 15 minutes, there must have been 25 total cars – 20 cars that drove through in the final 15 minutes = 5 cars that drove through the traffic jam.
+#### 5
+
+If the number of nephews Alden had 50 years ago is half the number of nephews he has now, Alden has 50*2 = <<50*2=100>>100 nephews.
+Vihaan has 60 more nephews than Alden, meaning currently Vihaan has 100+60 = <<100+60=160>>160 nephews.
+Altogether, the two have 160+100 = <<160+100=260>>260 nephews.
+#### 260
+
+The second stick is 3 x 2 = <<3*2=6>>6 centimeters long.
+The third stick is 6 - 1 = <<6-1=5>>5 centimeters long.
+Thus, Jazel's sticks are 3 + 6 + 5 = <<3+6+5=14>>14 centimeters long when they are put together.
+#### 14
+
+First, we find out how much in sales the stand makes each hour by multiplying the number of hot dogs sold by the sales price, finding that 2*10=<<2*10=20>>20 dollars in sales each hour.
+Then we divide the sales goal for the day by the sales per hour, finding that the stand needs to be open for 200/20= <<200/20=10>>10 hours to hit its sales goal.
+#### 10
+
+10 feet by 10 feet central area is 10*10=<<10*10=100>>100 square feet of space.
+6 feet by 4 feet hallway is 4*6-24 square feet of space.
+Combined, the two areas where she replaced flooring contain 100+24=<<100+24=124>>124 square feet of space.
+#### 124
+
+She puts $100.00 into her 401k from every paycheck and she gets 26 paychecks so that’s 100*26 = $<<100*26=2600.00>>2,600.00
+Her company matches her $100.00 by 6% so they contribute 100*.06 = $<<100*.06=6.00>>6.00 every paycheck
+Over a year, the company contributes $6.00 to her 401k with every paycheck so they contribute 6*26 = $<<6*26=156.00>>156.00
+Holly puts $2,600.00 into her 401k annually and her company contributes $156.00 annually so she has 2600+156 = $<<2600+156=2756>>2,756 in her 401k
+#### 2756
+
+In the first month, the song will have 60,000 * 2 = <<60000*2=120000>>120,000 listens.
+In the second month, the song will have 120000 * 2 = <<120000*2=240000>>240,000 listens.
+In the third month, the song will have 240000 * 2 = <<240000*2=480000>>480,000 listens.
+By the end of the year Jordan's song will have a total of 60,000 + 120,000 + 240,000 + 480,000 = <<60000+120000+240000+480000=900000>>900,000 listens.
+#### 900000
+
+Since 6 women are 20% of the total number of women working there, that means there are 6*5= <<6*5=30>>30 women working there in total.
+Since there are an even number of women and men working in the office, that means there are 30*2= <<30*2=60>>60 people working there in total, since there are 2 sexes.
+#### 60
+
+First find the total number of cloves needed to repel the vampires: 30 vampires * 3 cloves / 2 vampires = <<30*3/2=45>>45 cloves
+Then find the total number of cloves needed to repel the wights: 12 wights * 3 cloves / 3 wights = <<12*3/3=12>>12 cloves
+Then find the total number of cloves needed to repel the vampire bats: 40 vampire bats * 3 cloves / 8 vampire bats = <<40*3/8=15>>15 cloves
+Then add up these three amounts to find the total number of cloves needed: 45 cloves + 12 cloves + 15 cloves = <<45+12+15=72>>72 cloves
+#### 72
+
+First find the monthly late fee for the first bill: $200 * 10% = $<<200*10*.01=20>>20
+Then multiply that by the number of months the bill is overdue: $20/month * 2 months = $<<20*2=40>>40
+Then find the total late fee for the second bill the same way: $50/month * 6 months = $<<50*6=300>>300
+Then find the third bill's second late fee: 2 * $40 = $<<2*40=80>>80
+Then add all the bill amounts and late fees to find the total cost: $40 + $200 + $300 + $130 + $40 + $80 + $444 = $<<40+200+300+130+40+80+444=1234>>1234
+#### 1234
+
+The total number of apples delivered was: 180 apples x 12 crates = <<180*12=2160>>2160 apples
+So, the number of remaining apples after throwing away the rotten ones was: 2160 apples – 160 apples = <<2160-160=2000>>2000 apples
+And now, we can find the total number of boxes of apples by dividing the remaining number of apples by the number of apples per box: 2000 apples / 20 apples/box = <<2000/20=100>>100 boxes of apples.
+#### 100
+
+Each cycle pays 5*$1.2=$<<5*1.2=6>>6
+That means he earns $6*30=$<<6*30=180>>180 a day
+So he makes $180*7=$<<180*7=1260>>1260 a week
+#### 1260
+
+Joan is 20 + 5 = <<20+5=25>>25 years old.
+Mary is 25 – 2 = <<25-2=23>>23 years old.
+Therefore, the sum of their ages is 20 + 25 + 23 = <<20+25+23=68>>68.
+#### 68
+
+Aiguo = <<20=20>>20 shells
+Vail = 20 - 5 = <<20-5=15>>15 shells
+Stefan = 15 + 16 = <<15+16=31>>31 shells
+Total = 20 + 15 + 31 = <<20+15+31=66>>66
+The 3 children had 66 seashells altogether.
+#### 66
+
+He needs 12/6=<<12/6=2>>2 rungs per foot
+So he needs 50*2=<<50*2=100>>100 rungs
+Each rung is 18/12=<<18/12=1.5>>1.5 feet
+So he needs 1.5*100=<<1.5*100=150>>150 feet
+#### 150
+
+13 were yellow and white, and 14 red and white, for a total of 13+14=<<13+14=27>>27 flowers containing the color white.
+17 were red and yellow, and 14 were red and white, for a total of 17+14=<<17+14=31>>31 flowers containing the color red.
+Thus, there were 31-27=<<31-27=4>>4 more flowers that contained the color red than the color white.
+#### 4
+
+Corveus lacks 6 - 4 = <<6-4=2>>2 hours of sleep every day.
+Therefore, Corveus' total hours of lack of sleep every week is 2 x 7 = <<2*7=14>>14.
+#### 14
+
+On the first day, they started off doing one round of 30 minutes.
+The team did ten more rounds on day one which took 10*30 = <<10*30=300>>300 minutes.
+The total time they took circumnavigating the land on the first day is 300+30 = <<300+30=330>>330 minutes.
+On the second day, they did 15 rounds, which took 30 minutes each, giving 15*30 = <<15*30=450>>450 minutes.
+The total number of rounds took 330+450 = <<330+450=780>>780 minutes.
+#### 780
+
+1 hour is 60 minutes so we know that 2 hours to cool the cake is the same as 2*60 so <<2*60=120>>120 min
+It will take Jordan 20 min to make the batter, 30 to bake, 120 to cool and 10 to frost so the cake will take 20 +30 +120 +10 = <<20+30+120+10=180>>180 minutes total
+Jordan needs to convert 180 minutes to hours so 180/60 = <<180/60=3>>3 hours
+If the cake needs to be finished by 5:00 pm and it will take 3 hours total to make then 5-3 = <<5-3=2>>2:00 pm is the latest she can start making the cake
+#### 2
+
+15 gallons = 120 pints
+120/5 = <<120/5=24>>24 pints per container
+(1/4)24 = 6 pints
+Josey needed 6 pints of gas for her lawnmower.
+#### 6
+
+In the bedroom, there are 1 + 1 = <<1+1=2>>2 people in the house (Charlie and Susan).
+Sarah and four friends then entered, a total of 4+1 = <<4+1=5>>5 people.
+Together with Charlie and Susan, there are now 5+2 = <<5+2=7>>7 people in the bedroom.
+Since there are 8 more people in the living room, the total number of people in the house is 8 + 7 = <<8+7=15>>15
+#### 15
+
+The first flower shop needs 20 x 4 = <<20*4=80>>80 roses every month.
+The second flower shop needs 15 x 4= <<15*4=60>>60 roses every month.
+The third flower shop needs 30 x 4 = <<30*4=120>>120 roses every month.
+So the total number of roses that all the flower shop needs every month is 120 + 80 + 60 = <<120+80+60=260>>260.
+The total roses Ford grows every month is 40 x 4 = <<40*4=160>>160
+Therefore, the total number of roses he lacks is 260 - 160 = <<260-160=100>>100 to supply all the flower shops every month.
+#### 100
+
+On Tuesday, Adam bought 3 * 15 apples = <<3*15=45>>45 apples.
+On Wednesday, Adam bought 4 * 45 apples = <<4*45=180>>180 apples.
+Adam bought 15 apples + 45 apples + 180 apples = <<15+45+180=240>>240 apples on the three days.
+#### 240
+
+349 - 108 = 241 and 241 - 153 = 88
+There are 88 pieces of candy left in the bowl.
+#### 88
+
+The number of yellow blocks is 18 blocks + 7 blocks = <<18+7=25>>25 blocks.
+The number of blue blocks is 18 blocks + 14 blocks = <<18+14=32>>32 blocks.
+The total number of red, yellow, and blue blocks is 18 blocks + 25 blocks + 32 blocks = <<18+25+32=75>>75 blocks.
+#### 75
+
+His parents live 70*2=<<70*2=140>>140 miles away
+So he drives 140*2=<<140*2=280>>280 miles a round trip
+280*2 = <<280*2=560>>560 miles a month
+#### 560
+
+First quadruple the price of the wallet: $22 * 4 = $<<22*4=88>>88
+Then subtract $3 to find the cost of the purse: $88 - $3 = $<<88-3=85>>85
+Then add the price of the wallet and purse to find the total cost: $85 + $22 = $<<85+22=107>>107
+#### 107
+
+The MRI cost 250*3=$<<250*3=750>>750
+So between the two things he pays 250+750=$<<250+750=1000>>1000
+Insurance covered 1000*.8=$<<1000*.8=800>>800
+So he had to pay 1000-800=$<<1000-800=200>>200
+#### 200
+
+They made 13 + 16 = <<13+16=29>>29 mini cupcakes altogether.
+They made 10 + 12 = <<10+12=22>>22 pop tarts altogether.
+They also made 8 + 14 = <<8+14=22>>22 blueberry pies altogether.
+Therefore they made a total of 29 + 22 + 22 = <<29+22+22=73>>73 pastries altogether.
+#### 73
+
+First find the total number of puppies: 8 puppies + 12 puppies = <<8+12=20>>20 puppies
+Then find the total number of puppies with spots: 3 puppies + 4 puppies = <<3+4=7>>7 puppies
+Then divide the number of spotted puppies by the total number of puppies and multiply by 100% to find the percentage of puppies with spots: 7 puppies / 20 puppies * 100% = 35%
+#### 35
+
+Mr. Connell harvested 60 x 3 = <<60*3=180>>180 peaches.
+The difference between the number of the two fruits is 180 - 60 = <<180-60=120>>120
+#### 120
+
+Kathryn picked 8+2=<<8+2=10>>10 pints.
+Ben picked 10-3=<<10-3=7>>7 pints.
+The total is 8+10+7=<<8+10+7=25>>25 pints
+#### 25
+
+First, find the number of dog nails by multiplying the number of dogs by the number of nails on each leg and the number of legs on each dog: 4 dogs * 4 legs per dog * 4 nails per leg = <<4*4*4=64>>64 nails.
+Then do the same for parrots, ignoring the one parrot's extra toe for now: 8 parrots * 2 legs per parrot * 3 nails per leg = <<8*2*3=48>>48 nails
+Now add one to the previous number because one parrot has an extra toe: 48 + 1 = <<48+1=49>>49 nails.
+Now add the number of nails from the parrots and the dog: 49 nails + 64 nails = <<49+64=113>>113 nails.
+#### 113
+
+Jamie and Oliver will spend $24 x 2 = $<<24*2=48>>48 for the plane ticket.
+They will spend $12 x 2 = $<<12*2=24>>24 for staying in the hotel per day.
+So, the total amount they will spend on the hotel for a 3-day stay is $24 x 3 = $<<24*3=72>>72.
+Therefore, the total amount they will spend on their vacation is $72 + $48 = $<<72+48=120>>120.
+#### 120
+
+Lyra only paid $480 for the pair of shoes which is only 100% - 20% = 80% of the original price.
+So let x be the original price.
+Then 0.8x = $480
+Thus x = $480 / 0.8 = $<<480/0.8=600>>600
+#### 600
+
+First calculate Nancy's monthly portion of the car insurance by multiplying the total cost by 40%: .4 * $80 = $<<.4*80=32>>32
+Then multiply the monthly cost by 12 to find the annual cost: $32 * 12 = $<<32*12=384>>384
+#### 384
+
+Combining Tuesday and Monday, Ali sold 4 + 8 = <<4+8=12>>12 flowers.
+On Friday, he sold 2 * 4 = <<2*4=8>>8 flowers.
+Altogether, Ali sold 12 + 8 = <<12+8=20>>20 flowers.
+#### 20
+
+The first route will take 20 hours because 1,500 / 75 = <<1500/75=20>>20
+The second route will take 30 hours because 750 / 25 = <<750/25=30>>30
+The fastest route takes 20 hours because 20 < 30
+#### 20
+
+Together, they picked 30*3=<<30*3=90>>90.
+There are 40+28=<<40+28=68>>68 accounted for.
+Then Layla picked 90-68=<<90-68=22>>22.
+#### 22
+
+The candy cost 20-11=$<<20-11=9>>9
+So he pays 9/3=$<<9/3=3>>3 per candy
+#### 3
+
+Kael brought 5 x 2 = <<5*2=10>>10 apples.
+And he also brought 8 / 2 = <<8/2=4>>4 oranges.
+Therefore, Kael and Morisette brought 5 + 10 + 8 + 4 = <<5+10+8+4=27>>27 fruits in total.
+#### 27
+
+He spend $1.5 on soda because 2 - .5 = <<2-.5=1.5>>1.5
+He bought 6 ounces of soda because 1.5 / .25 = <<6=6>>6
+#### 6
+
+Both Polly and Peter played 30 / 2 =<<30/2=15>>15 moves each one
+With an average of 28 seconds per move, Polly's moves lasted a total of 15 * 28 = <<15*28=420>>420 seconds.
+With an average of 40 seconds per move, Peter's moves lasted a total of 15*40=<<15*40=600>>600 seconds.
+In total, the match lasted 420 + 600 = <<420+600=1020>>1020 seconds.
+In minutes, the match lasted 1020 / 60 = <<1020/60=17>>17 minutes
+#### 17
+
+June had 76 stickers and was given 25 from her grandparents so she had 76 + 25 = <<76+25=101>>101 stickers
+Bonnie had 63 stickers and was given 25 from her grandparents so she had 63 + 25 = <<63+25=88>>88 stickers
+June had 101 stickers and Bonnie had 88 stickers so together, they had 101 + 88 = <<101+88=189>>189 stickers
+#### 189
+
+First find the area of one side of a roof: 20 feet * 40 feet = <<20*40=800>>800 square feet
+Then multiply that number by 2 to find the total area of both sides of the roof: 800 square feet/side * 2 sides = 1600 square feet
+Then multiply that number by the number of roofs to find the total area of all the roofs: 1600 square feet/roof * 3 roofs = 4800 square feet
+Then multiply the total area of the roofs by the number of shingles needed per square foot to find the total number of shingles needed: 4800 square feet * 8 singles/square foot = <<4800*8=38400>>38400 shingles
+#### 38400
+
+Nurse Missy has 12*(1/3)=<<12*(1/3)=4>>4 special needs patients.
+She has 12-4=<<12-4=8>>8 standard care patients.
+Special needs patients take 20% longer to serve, which means serving takes 1.2*5=6 minutes per patient.
+To serve dinner to all of her standard care patients, it will take 5*8=<<5*8=40>>40 minutes.
+To serve dinner to all of her special needs patients, it will take 6*4=<<6*4=24>>24 minutes.
+In total, it will take 40+24=<<40+24=64>>64 minutes to serve dinner to all of her patients.
+#### 64
+
+He needs to buy 5 oranges because 400 / 80 = <<400/80=5>>5
+These will cost $6 because 5 x 1.2 = <<5*1.2=6>>6
+He will have $4 left because 10 - 6 = <<10-6=4>>4
+#### 4
+
+The land cost 30*20=$<<30*20=600>>600
+The cows cost 20*1000=$<<20*1000=20000>>20,000
+The chickens added another 100*5=$<<100*5=500>>500
+The installation of the solar panels cost 6*100=$<<6*100=600>>600
+So the total cost of everything was 600+120000+20000+500+600+6000=$<<600+120000+20000+500+600+6000=147700>>147,700
+#### 147700
+
+When Jonah ran for 2 hours, burning 30 calories every hour, he burnt a total of 2*30=<<2*30=60>>60 calories.
+If he had run for five hours, losing 30 calories every hour, Jonah would have burnt 5*30=<<5*30=150>>150 calories.
+The difference in the number of calories Jonah would have burnt if he ran for five hours instead of 2 hours is 150-60=<<150-60=90>>90 calories.
+#### 90
+
+Billy took some candies and got more from his father for a total of 6+8 = <<6+8=14>>14 candies
+Caleb has a total of 11+11 = <<11+11=22>>22 candies
+Their father gave out 8+11 = <<8+11=19>>19 candies from a pack of 36
+He gave the rest which is 36-19 = <<36-19=17>>17 candies to Andy
+Andy has a total of 9+17 = <<9+17=26>>26 candies
+Andy has 26-22 = <<26-22=4>>4 more candies than Caleb
+#### 4
+
+Shay is 6 + 13 = <<6+13=19>>19 years old.
+James is 19 + 5 = <<19+5=24>>24 years old.
+Thomas will be 24 in 24 - 6 = <<24-6=18>>18 years.
+James will be 24 + 18 = <<24+18=42>>42 years old.
+#### 42
+
+If the shopkeeper bought 150 packets of milk, each packet containing 250ml of milk, all the packets had a total of 250*150 =<<150*250=37500>>37500ml
+Since one ounce equal 30 ml, the total amount of milk that the shopkeeper bought in oz is 37500/30=<<37500/30=1250>>1250 oz of milk
+#### 1250
+
+The chips each have 60/10 = <<60/10=6>>6 calories
+That means the cheezits have 6/3 = <<6/3=2>>2 calories more than each chip
+So they have 6 + 2 = <<6+2=8>>8 calories each
+That means they have 6 * 8 = <<6*8=48>>48 total calories
+So in total, he ate 60 + 48 = <<60+48=108>>108 calories
+#### 108
+
+Trash:400/2=<<400/2=200>>200
+400-200=<<400-200=200>>200 remaining
+Work:200(.40)=80
+200-80=<<200-80=120>>120 remaining
+#### 120
+
+The short show has 24*.5=<<24*.5=12>>12 hours of TV
+The long show is 12*1=<<12*1=12>>12 hours
+So in total he watches 12+12=<<12+12=24>>24 hours
+#### 24
+
+There is 1 gilled mushroom for every 1 + 9 = <<1+9=10>>10 mushrooms.
+Thus, there were 30 / 10 = <<30/10=3>>3 gilled mushrooms on the fallen log’s side.
+#### 3
+
+Let H be the number of hoodies Fiona owns.
+Casey owns H + 2 hoodies.
+Together, they own H + H + 2 = 2H + 2 = 8 hoodies.
+Thus, 2H = 8 - 2 = 6 hoodies.
+Therefore, Fiona owns H = 6 / 2 = <<6/2=3>>3 hoodies.
+#### 3
+
+Each screen shows movies all day, which means each screen shows 8 hours/day / 2 hours per movie = <<8/2=4>>4 movies/day.
+So in total, the movie theater shows 6 screens * 4 movies/day = <<6*4=24>>24 movies.
+#### 24
+
+Annie traveled 5 + 7 = <<5+7=12>>12 blocks to the coffee shop.
+Her round trip would take 12 x 2 = <<12*2=24>>24 blocks.
+#### 24
+
+Kiley takes 48/4=<<48/4=12>>12 crayons
+48-12=<<48-12=36>>36 crayons remain
+Joe takes 36/2=<<36/2=18>>18 crayons
+36-18=<<36-18=18>>18 crayons left
+#### 18
+
+The first train took 5 hours because 200 / 40 = <<200/40=5>>5
+The second train took 3 hours because because 240 / 80 = <<240/80=3>>3
+The total time was 8 hours because 5 + 3 = <<5+3=8>>8
+The average time was 4 hours because 8 / 2 = <<8/2=4>>4
+#### 4
+
+Maggie sells 2 subscriptions to a neighbor and twice that amount to another neighbor so she sells 2*2 = <<2*2=4>>4 subscriptions to the other neighbor
+In total, Maggie sells 4+1+2+4 = <<4+1+2+4=11>>11 subscriptions
+She earns $5.00 per subscription she sells so she earns 5*11 = $<<5*11=55.00>>55.00
+#### 55
+
+The third and fourth day contributed 6+18=<<6+18=24>>24 inches to the depth of the snowdrift.
+Therefore, the size of the snowdrift after half was melted on the second day, but before the snowfall on the third and fourth day, was 34-24=<<34-24=10>>10 inches.
+If the size of the drift on the second day, after half of the snow had melted, was 10 inches, then the depth of the original drift created on day 1 was 2*10=20 inches deep.
+#### 20
+
+He picked 80 peppers because 7 + 12 + 14 + 12 + 5 + 18 + 12 = <<7+12+14+12+5+18+12=80>>80
+80% of the peppers are not hot because 100 - 20 = <<100-20=80>>80
+He picked 64 non-hot peppers because 80 x .8 = <<80*.8=64>>64
+#### 64
+
+There are 8 x 3 = <<8*3=24>>24 indoor chairs.
+There are 12 x 3 = <<12*3=36>>36 outdoor chairs.
+In total there are 24 + 36 = <<24+36=60>>60 chairs
+#### 60
+
+The total speed of all five coasters is 295 because 59 x 5 = <<295=295>>295
+The final coaster went 40 miles per hour because 295 - 50 - 62 - 73 - 70 = <<295-50-62-73-70=40>>40
+#### 40
+
+If the total number of jelly beans is 4500, there must be 1500 blue jelly beans
+4500/3= <<4500/3=1500>>1500
+1500/100= <<1500/100=15>>15 jelly beans (1% of blue jelly beans)
+1500+15= <<1500+15=1515>>1515 Green Jelly beans
+1500-15= <<1500-15=1485>>1485 Red Jelly beans
+1515-1485= <<1515-1485=30>>30 jelly beans difference between red and green
+#### 30
+
+Mary needs 6*1= <<6*1=6>>6 folders.
+Mary needs 6*3= <<6*3=18>>18 pencils.
+Mary needs 18/6= <<18/6=3>>3 erasers.
+Mary spends 6*6= $<<6*6=36>>36 on folders.
+Mary spends 18*2= $<<18*2=36>>36 on pencils.
+Mary spends 3*1= $<<3*1=3>>3 on erasers.
+Mary spends 36+36+3= $<<36+36+3=75>>75 on all the supplies except the paints.
+Mary spends 80-75= $<<80-75=5>>5 on the paint set.
+#### 5
+
+Susan picked 3 times as much as 36 which is 3*36 = <<3*36=108>>108 apples
+She gave out half which is 108*(1/2) = <<108*(1/2)=54>>54 apples
+She now has 108-54 = <<108-54=54>>54 apples
+Frank sold a third of 36 which is 36*(1/3) = <<36*(1/3)=12>>12 apples
+Frank now has 36-12 = <<36-12=24>>24 apples
+Altogether they now have 54+24 = <<54+24=78>>78 apples
+#### 78
+
+30 x 5/6 = <<30*5/6=25>>25 nuts were eaten.
+Thus, 30 - 25 = <<30-25=5>>5 nuts were left.
+#### 5
+
+The volume of the slab is 100*100*.5=<<100*100*.5=5000>>5000 cubic feet
+So it weighs 5000*150=<<5000*150=750000>>750000 pounds
+That means the cost is 750000*$0.02=$<<750000*0.02=15000>>15,000 per house
+So the total cost for all 3 houses is $15000*3=$<<15000*3=45000>>45,000
+#### 45000
+
+We must first convert minutes to hours, so 30 minutes * (1 hour/60 minutes) = <<30*(1/60)=0.5>>0.5 hours
+The number of miles Greg travels on his trip home is 0.5 hours * 20 mph = <<0.5*20=10>>10 miles
+The total miles Greg travels is 10 + 30 = <<10+30=40>>40 miles
+#### 40
+
+Let z be the number of zoology books and b be the number of botany books. We know that z + b = 80 and b = 4z.
+Substituting the second equation into the first equation, we get z + 4z = 80
+Combining like terms, we get 5z = 80
+Dividing both sides by 5, we get z = 16
+#### 16
+
+48 children took 4 each for a total of 48*4 = <<48*4=192>>192 sweets
+If there is 1/3 left then 192 is 1-(1/3) = 2/3 of the original amount (The whole packet minus 1 third)
+Therefore 192 is 2/3 of the original amount: (2/3)* original amount = 192
+Multiplying both sides of the equation by (3/2) gives: original amount = 192*(3/2) = <<192*3/2=288>>288
+#### 288
+
+Jaydee can type his research paper in 4560/38 = <<4560/38=120>>120 minutes.
+Since there are 60 minutes in an hour, he can finish it in 120/60 = <<120/60=2>>2 hours.
+#### 2
+
+The cost to get the cats ready is 2*50=$<<2*50=100>>100
+The cost to get adult dogs ready is 3*100=$<<3*100=300>>300
+The cost to get puppies ready is 2*150=$<<2*150=300>>300
+The total cost is 300+300+100=$<<300+300+100=700>>700
+#### 700
+
+Connie spent 10 tickets on earbuds + 15 tickets on glow bracelets = <<10+15=25>>25 tickets.
+Since Connie spends half of her tickets on a stuffed koala bear, that means the 25 tickets she spent on earbuds and glow bracelets is the other half, so she spent 25 tickets on the stuffed koala bear.
+In all, Connie spent 25 tickets on earbuds and glow bracelets + 25 tickets on a stuffed koala bear = <<25+25=50>>50 tickets.
+#### 50
+
+At the meeting, 200-100=<<200-100=100>>100 people decided to have a snack.
+20 new people came in to snack and the area had 100+20=<<100+20=120>>120 of them eating.
+120/2=<<120/2=60>>60 people got full and left.
+10 more new people came to join in the snacking so 60+10=<<10+60=70>>70 people were eating.
+After 30 people left, 70-30=<<70-30=40>>40 people who were eating remained.
+In the end, only 40/2=<<40/2=20>>20 kept eating.
+#### 20
+
+Maria's deduction for tax is 2000 x 20% = $<<2000*20*.01=400>>400.
+Her deduction for insurance is 2000 x 5% = $<<2000*5*.01=100>>100.
+Maria's total deductions is $400 + $100 = $<<400+100=500>>500.
+After the deductions, Maria has only $2000 - $500 = $<<2000-500=1500>>1500 left from her salary.
+Then, Maria pays $1500/4 = $<<1500/4=375>>375 for the utility bills.
+So, Maria has $1500 - $375 = $<<1500-375=1125>>1125 after the deductions and utility bills payment.
+#### 1125
+
+There are 144/12 = <<144/12=12>>12 sets of 12 cans that the family collected.
+So, the family would receive $0.50 x 12 = $<<0.50*12=6>>6 for the cans.
+There are 20/5 = <<20/5=4>>4 sets of 5 kilograms of newspapers that the family collected.
+So, the family would receive $1.50 x 4 = $<<1.50*4=6>>6 for the newspapers.
+Therefore, the family would receive a total of $6 + $6 = $<<6+6=12>>12.
+#### 12
+
+Heidi has 12+5 = <<12+5=17>>17 nail polishes.
+Karen has 12-4 = <<12-4=8>>8 nail polishes.
+Heidi and Karen have 17+8 = <<17+8=25>>25 nail polishes together.
+#### 25
+
+Each minute last 60 seconds, so that means for the fries to be fully cooked Bill needs to cook them for 5*60=<<5*60=300>>300 seconds
+Since Bill had the fries in the oven for 45 seconds so far, that means they need to stay in the oven for another 300-45= <<300-45=255>>255 seconds.
+#### 255
+
+Jaxon has <<15=15>>15 toys
+Gabriel has twice Jaxon's, Gabriel got 2*15 = <<2*15=30>>30 toys.
+Jerry got 8 more toys than Gabriel, which is 30 +8 = <<30+8=38>>38 toys
+Jaxon's toys plus Gabriel's toys plus Jerry's toys is 15+30+38 = <<15+30+38=83>>83 toys
+#### 83
+
+You save $5 per chair with the 25% off sale.
+On sale chairs cost $15 each because 20 - 5 = <<20-5=15>>15
+You bought 3 chairs above the 5 required before the extra savings starts because 8 - 5 = <<8-5=3>>3
+You save an extra $5 on these chairs because 15 x (1/3) = <<15*(1/3)=5>>5
+The first five chairs cost $75 in total because 5 x 15 = <<5*15=75>>75
+The final three chairs cost $30 in total because 3 x 10 = <<3*10=30>>30
+In total they cost $105 because 75 + 30 = <<75+30=105>>105
+#### 105
+
+He got a 60*.4=$<<60*.4=24>>24 discount
+So he paid 60-24=$<<60-24=36>>36 for the shirts
+That means he paid 36/3=$<<36/3=12>>12 per shirt
+#### 12
+
+On the second day, Penn made $10 + $4 = $<<10+4=14>>14.
+On the 3rd day, she made $14 + $4 = $<<14+4=18>>18.
+On the 4th day , she made $18 + $4 = $22.
+On the 5th day, she made $22 + $4 = $<<22+4=26>>26.
+After 5 days, Penn made a total of $10 + $14 + $18 + $22 + $26 = $<<10+14+18+22+26=90>>90.
+#### 90
+
+The perimeter of a square is found by 4*side, which means the square paper has a perimeter of 4*20 = <<4*20=80>>80
+Since the perimeter of the square is 20 cm shorter than the height of the computer screen, the height of the computer screen is 20+80 = <<20+80=100>>100cm.
+#### 100
+
+There were 123 students – 3 single attendees = <<123-3=120>>120 students in couples.
+120 students / 2 in a couple = <<120/2=60>>60 couples.
+#### 60
+
+Wearing the high-tech shoes, Candace can hike 6 mph * 2 = <<6*2=12>>12 mph for the first two hours.
+Then she gets one blister, so her speed drops to 12 mph - 2 mph = <<12-2=10>>10 mph for the next two hours of the hike.
+After that time Candace gets another blister, but 2 hours + 2 hours = <<4=4>>4 hours, so the hike is over and we don't care about her speed anymore.
+Candace spends an equal amount of time walking at 12 mph and 10 mph, so we can average the two speeds to find an overall speed of (12 mph + 10 mph)/2 = <<(12+10)/2=11>>11 mph.
+#### 11
+
+The total percentage of students who said they like chess or basketball is 10% + 40% = 50%.
+So, 250 x 50/100 = <<250*50/100=125>>125 students like chess or basketball.
+#### 125
+
+At the beginning, Jacob had 8 fish
+Alex had 7 * 8 = <<7*8=56>>56 fish
+After knocking the bucket over, Alex was left with 56 - 23 = <<56-23=33>>33 fish left.
+The final amount caught by Jacob to beat Alex by 1 fish is 33 +1 = <<33+1=34>>34 fish.
+Then Jacob needs to catch 34 - 8 = <<34-8=26>>26 fish more.
+#### 26
+
+Before going to bed, Rachel did a total of 5 × 12 = <<5*12=60>>60 problems.
+In total Rachel did 60 + 16 = <<60+16=76>>76 maths problems.
+#### 76
+
+Marta bought five textbooks on sale, for a total of 5 * 10 = $<<5*10=50>>50.
+Three textbooks from the bookstore had a cost of 3 * 40 = $<<3*40=120>>120.
+That means that Marta spent in total 50 + 40 + 120 = $<<50+40+120=210>>210 on textbooks.
+#### 210
+
+Paisley ran <<4=4>>4 miles.
+Reggie ran 5 * 4 miles = <<5*4=20>>20 miles
+Lynn ran 3 miles less than Reggie = 20 - 3 = 17 miles
+Lynn ran <<17=17>>17 miles.
+#### 17
+
+Two aeroplanes require 240 legos/airplane x 2 airplanes = <<240*2=480>>480 legos.
+Julian needs 480 legos - 400 legos = <<480-400=80>>80 more legos
+#### 80
+
+He started off with 150 channels and they took 20 away and added 12 so he has 150-20+12 = <<150-20+12=142>>142 channels
+He called and asked to reduce his 142 channels by 10 channels and added 8 sports channels so he now has 142-10+8 = <<142-10+8=140>>140 channels
+He ordered the wrong sports package and the new one adds an additional 7 channels for a total of 140+7 = <<140+7=147>>147 channels
+#### 147
+
+This week, Amanda added 6 notebooks - 2 notebooks = <<6-2=4>>4 notebooks.
+Now, Amanda has 10 notebooks + 4 notebooks = <<10+4=14>>14 notebooks.
+#### 14
+
+Half of much as ProcGen's maximum reward is 240/2=<<240/2=120>>120 reward
+90% of CoinRun's maximum reward is 120*.9=<<120*.9=108>>108 reward
+#### 108
+
+From Monday to Wednesday, there are 3 * 2 = <<3*2=6>>6 hours of work.
+During this time the driver drove 6 * 12 = <<6*12=72>>72 kilometers.
+On Thursday and Friday, there are 2 * 2 = <<2*2=4>>4 hours of work in total.
+During this time the driver drove 4 * 9 = <<4*9=36>>36 kilometers.
+So in total, the driver traveled 72 + 36 = <<72+36=108>>108 kilometers during these five days.
+#### 108
+
+Patricia had 30 - 24 = <<30-24=6>>6 roses left after she gave 24 roses to her mother.
+Therefore, she has 6 + 15 = <<6+15=21>>21 roses now.
+#### 21
+
+Miriam works 5 hours per day, so in 6 days, she works 5 * 6 = <<5*6=30>>30 hours.
+Miriam can take care of 60 / 5 = <<60/5=12>>12 flowers per hour.
+In 6 days of work, Miriam can take care of 30 * 12 = <<30*12=360>>360 flowers.
+#### 360
+
+Before throwing the cookies, Alice and Bob baked 74 + 7 = <<74+7=81>>81 cookies.
+After throwing the cookies, they baked 5 + 36 = <<5+36=41>>41 cookies.
+In total, they baked 81 + 41 = <<81+41=122>>122 cookies
+They threw 122 - 93 = <<122-93=29>>29 cookies on the floor.
+#### 29
+
+Elsa had 40 marbles - 3 - 5 = <<40-3-5=32>>32 marbles.
+Elsa then gained 12 marbles + 32 = <<12+32=44>>44 marbles.
+At dinner Elsa received 2 * 5 marbles from Susie = <<2*5=10>>10 marbles.
+In total Elsa had 44 marbles + 10 = <<44+10=54>>54 marbles.
+#### 54
+
+Kayla bought 12 chocolate bars / 2 = <<12/2=6>>6 chocolate bars.
+She also bought 18 soda cans / 2 = <<18/2=9>>9 soda cans.
+The total number of chocolate bars and soda cans Kayla bought is 6 chocolate bars + 9 soda cans = <<6+9=15>>15 items
+#### 15
+
+He did 5 races in the lake because 10 / 2 = <<10/2=5>>5
+He did 5 races in the ocean because 10 / 2 = <<10/2=5>>5
+He raced 15 miles in the lake because 5 x 3 = <<5*3=15>>15
+His lake races took 6 hours because 15 / 2.5 = <<15/2.5=6>>6
+He raced 15 miles in the ocean because 5 x 3 = <<5*3=15>>15
+His ocean races took 5 hours because 15 / 3 = <<15/3=5>>5
+He spent 11 hours racing because 5 + 6 = <<5+6=11>>11
+#### 11
+
+A pair of mittens takes 1 hour per mitten * 2 mittens = <<1*2=2>>2 hours.
+A pair of socks takes 1.5 hours per sock * 2 socks = <<1.5*2=3>>3 hours.
+So a complete outfit for each child takes 2 hours per hat + 3 hours per scarf + 2 hours per pair of mittens + 3 hours per pair of socks + 6 hours per sweater = <<2+3+2+3+6=16>>16 hours per outfit.
+So to knit winter outfits for all three of her grandchildren, Martha will take 3 outfits * 16 hours per outfit = <<3*16=48>>48 hours.
+#### 48
+
+They see 27 total birds because 9 +11 + 7 = <<9+11+7=27>>27
+They see an average of 9 birds each because 27 / 3 = <<27/3=9>>9
+#### 9
+
+Chocolate ice cream can be made at 100 quarts / 2 hours = <<100/2=50>>50 quarts per hour.
+Vanilla ice cream can be made at 50 quarts / 4 hours = <<50/4=12.5>>12.5 quarts per hour.
+In 48 hours there would be 48 * 50 quarts = <<48*50=2400>>2400 quarts of chocolate ice cream.
+In 48 hours there would be 48 * 12.5 quarts = <<48*12.5=600>>600 quarts of vanilla ice cream.
+Combined there would be 2400 chocolate + 600 vanilla = <<2400+600=3000>>3000 quarts of ice cream.
+#### 3000
+
+The dolphins are fed 4/2 = <<4/2=2>>2 buckets of fish each day.
+The sea animals are fed 4 x 5 = <<4*5=20>>20 buckets of fish each day.
+So, the Mystic Aquarium needs 4 + 2 + 20 = <<4+2+20=26>>26 buckets of fish each day.
+Thus in a week, it needs 26 x 7 = <<26*7=182>>182 buckets of fish.
+Therefore, 546 buckets of fish will last for 546/182 = <<546/182=3>>3 weeks.
+#### 3
+
+In one party, the total amount of money collected from the football players is $40*60= $<<40*60=2400>>2400
+If eight such parties are done in a year, the total amount of money collected from the parties is $2400*8 = $<<2400*8=19200>>19200
+#### 19200
+
+Sophia gave 100 * 1/5 =<<100*1/5=20>>20 $ to Jack.
+Jack now has 100 + 20 = <<100+20=120>>120$
+#### 120
+
+There are 4 + 7 = <<4+7=11>>11 dahlias in the vase.
+In total there are 4 + 11 = <<4+11=15>>15 flowers in the vase.
+#### 15
+
+In the first part, Micheal did 5 * 25 = <<5*25=125>>125 kilometers every week.
+He did that for four weeks, which means he made during that time 125 * 4 = <<125*4=500>>500 kilometers.
+After that, he made 2 * 60 = <<2*60=120>>120 kilometers a week.
+And Micheal did that for three weeks, so he rode 120 * 3 = <<120*3=360>>360 kilometers during that time.
+In total Micheal did 500 + 360 = <<500+360=860>>860 kilometers.
+#### 860
+
+The total amount of money that Florence received is 3*300 = $<<3*300=900>>900, three times as much money as Rene received.
+Maria gave Isha half the amount of money that Florence received, which is $900/2 = $<<900/2=450>>450
+Maria gave her friends $450+$900+$300 = $<<450+900+300=1650>>1650
+#### 1650
+
+If Kim is currently 10 years old, she will be 10+2 =<<10+2=12>>12 years old in two years.
+In two years, Sandy will be three times as old as Kim, meaning Sandy will be 3*12 = <<3*12=36>>36 years old.
+Currently, Sandy is 36-2 = <<36-2=34>>34 years old.
+If Sandy's monthly phone bill expense is equal to ten times her age now, she pays 10*34 =$<<10*34=340>>340 in phone bill expense
+#### 340
+
+Becky is four times younger than Eddie, which means she is 92 / 4 = <<92/4=23>>23 years old.
+Her mother is two times older than she, so it means Irene is 23 * 2 = <<23*2=46>>46 years old.
+#### 46
+
+Since a month has four weeks, the tree will increase its height by 2 feet for 4*4=16 weeks after four months of growing.
+Since the tree grows at 2 feet per week, after 16 weeks, the tree would have increased its height by 2*16=<<2*16=32>>32 feet.
+If the tree is currently 10 feet tall, its height after four months will be 10+32=<<10+32=42>>42 feet.
+#### 42
+
+The cost of 15 cones of ice cream was 15 × $5 = $<<15*5=75>>75.
+The cost of the 5 cups of pudding was 5 × $2 = $<<5*2=10>>10.
+Jane spent $75 - $10 = $<<75-10=65>>65 more on ice cream than on pudding.
+#### 65
+
+First find how many cherries Jerry can pick in one hour: 300 cherries / 2 hours = <<300/2=150>>150 cherries/hour
+Then multiply the number of quarts of syrup by the number of cherries per quart to find the total number of quarts Jerry needs: 500 cherries/quart * 9 quarts = 4500 cherries
+Then divide the total number of cherries by the number of cherries he picks per hour to find the number of hours the cherry-picking takes: 4500 cherries / 150 cherries/hour = <<4500/150=30>>30 hours
+Then add the time it takes him to make the syrup to find the total time: 30 hours + 3 hours = <<30+3=33>>33 hours
+#### 33
+
+Each steak knife set has 4 steak knives and Elizabeth bought 2 sets so there are 4*2 = <<4*2=8>>8 steak knives in total
+Each steak knife set costs $80.00 and she bought 2 sets so she spent $80*2 = $<<80*2=160.00>>160.00
+Both sets cost $160.00 and there are 8 knives in total so each knife costs 160/8 = $<<160/8=20.00>>20.00 each
+#### 20
+
+Each basket contains an average of 25 fruits so the 5 baskets in all contain 25*5 = <<25*5=125>>125 fruits
+The number of apples, mangoes, peaches and pears is 15+30+20+25 = <<15+30+20+25=90>>90
+The remaining fruits are bananas and they are 125-90 = <<125-90=35>>35 in number
+#### 35
+
+When he gave Rodney 2/5 of the bunnies, he gave away 2/5*30 = <<2/5*30=12>>12 bunnies.
+He remained with 30-12 = <<30-12=18>>18 bunnies.
+When the bunnies gave birth to two kittens each, the total number of kittens born is 18*2 = <<18*2=36>>36.
+In total, Marlon now has 36+18 = <<36+18=54>>54 bunnies
+#### 54
+
+The first client will pay Baylor 1/2*$4000=$<<4000/2=2000>>2000.
+The second client will pay Baylor 2/5 times more money than the first client, a total of 2/5*$2000 = $<<2/5*2000=800>>800
+The total amount of money the second client will pay Baylor once the job is done is $2000+$800 = $<<2000+800=2800>>2800
+The total amount of money the first and the second client will pay Baylor after their work is finished is $2800+$2000 = $<<2800+2000=4800>>4800
+The third client will pay him twice the amount of money the first and second clients pay him together, a total of 2*$4800 = $9600
+Together, the three clients will pay Baylor $9600+$4800 = $14400 once he finishes their jobs.
+In his dashboard, Baylor will have $14400+$4000 = $<<14400+4000=18400>>18400
+#### 18400
+
+Before sending the chairs and baby chairs to the carpenter the restaurant had 170 + 23 = <<170+23=193>>193 chairs.
+They sent 20 + 13 = <<20+13=33>>33 chairs to the carpenter.
+Now, they have 193 - 33 = <<193-33=160>>160 chairs left.
+#### 160
+
+Red:14 crayons
+Blue:5+14=<<5+14=19>>19 crayons
+Yellow:19(2)-6=32 crayons
+#### 32
+
+Each bag makes a profit of 8-4=$<<8-4=4>>4
+So he makes a total profit of 30*4=$<<30*4=120>>120
+#### 120
+
+At 5 cents a minute, calling his father cost Freddy 5* 45 = <<5*45=225>>225 cents.
+At 25 cents a minute, calling his brother cost Freddy 25 * 31 = <<25*31=775>>775 cents.
+Adding the cost of calling his father and brother, we find that Freddy paid a total of 225 + 775 = <<225+775=1000>>1000 cents.
+Since each dollar has 100 cents, Freddy paid 1000 / 100 = <<1000/100=10>>10 dollars
+#### 10
+
+A milk tea shop sold 50 x 2/5 = <<50*2/5=20>>20 cups of winter melon-flavored milk tea.
+They sold 50 x 3/10 = <<50*3/10=15>>15 cups of Okinawa-flavored milk tea.
+So they sold a total of 20 + 15 = <<20+15=35>>35 cups of winter melon and Okinawa flavors milk tea.
+Therefore, they sold 50 - 35 = <<50-35=15>>15 cups of chocolate-flavored milk tea.
+#### 15
+
+In the first half of the year, the company constructed 3/5*2000 = <<3/5*2000=1200>>1200 units.
+The number of units remaining to be built after the company built 1200 units in the first half of the year is 2000-1200 = <<2000-1200=800>>800
+By October, the company built an additional 300 units, thus remaining with 800-300 = <<800-300=500>>500 units to be built.
+#### 500
+
+The zebra sleeps for 4 + 2 = <<4+2=6>>6 hours.
+During one week, the cougar sleeps 4 * 7 = <<4*7=28>>28 hours.
+And the zebra sleeps 6 * 7 = <<6*7=42>>42 hours.
+Both animals sleep for 28 + 42 = <<28+42=70>>70 hours during one week.
+#### 70
+
+He got 5*12=<<5*12=60>>60 roses
+So the cost was 6*60=$<<6*60=360>>360
+So he has to pay 360*.8=$<<360*.8=288>>288
+#### 288
+
+Abigail collected 2*48 = <<2*48=96>>96 cookies.
+There are 48/4 = <<48/4=12>>12 cookies in a quarter of a box.
+Grayson collected 12*3 = <<12*3=36>>36 cookies.
+Olivia collected 48*3 = <<48*3=144>>144 cookies.
+In total they collected 96+36+144 = <<96+36+144=276>>276 cookies.
+#### 276
+
+Margaret finished all of her laps in 10 minutes * 60 seconds = <<10*60=600>>600 seconds.
+Billy’s first 5 laps took 2 minutes * 60 seconds = <<2*60=120>>120 seconds.
+His next 3 laps took 4 minutes * 60 seconds = <<4*60=240>>240 seconds.
+His ninth lap took 1 minute * 60 seconds = <<1*60=60>>60 seconds.
+So his first 9 laps took 120 + 240 + 60 = <<120+240+60=420>>420 seconds.
+Billy finished swimming his laps before Margaret so all of his laps took a total of 600 – 30 = <<600-30=570>>570 seconds.
+This means that it took 570 seconds in total swimming time – 420 seconds in time spent swimming the first 9 laps = 150 seconds for Billy to swim his final lap.
+#### 150
+
+A snake's head is one-tenth its length, which is 1/10*10 = <<1/10*10=1>>1 foot.
+Since the snake's head is 1 foot, the rest of its body is 10-1 = <<10-1=9>>9 feet long.
+#### 9
+
+The baseball glove was originally $30 and he agreed to take 20% off so 30*.20 = $<<30*.20=6.00>>6.00 off
+If you take the price of the glove and subtract the discount then $30-$6 = $<<30-6=24.00>>24.00
+He sold 2 pair of shoes for $10 each so 2*$10 = $<<2*10=20.00>>20.00
+He got $25 for the cards, $10 for the bat, $24.00 for the glove and $20 for the shoes so he made $25+$10+$24+$20 = $<<25+10+24+20=79.00>>79.00
+#### 79
+
+If the son is going to be eight years old after a year from now, then currently, he is 8-1 = <<8-1=7>>7
+Since the father's age is five times that of the son, currently he is 5*7 = <<5*7=35>>35 years old.
+#### 35
+
+Athena spent 3 x $3 = $<<3*3=9>>9 on sandwiches.
+She spent 2 x $2.5 = $<<2*2.5=5>>5 on fruits drinks.
+Therefore, Athena spent $9+$5 = $<<9+5=14>>14 in all.
+#### 14
+
+If 15% is known to be $42, then 5% can be found by dividing $42 ÷ 3 = $<<42/3=14>>14.
+So 20% is $14 + $42 = $56.
+#### 56
+
+If your dog is 10 years old then in his first year of life he lived 1*15 = 15 human years
+In his second year of life, he lived 1*9 = <<1*9=9>>9 human years
+We need to calculate his remaining years or 10-2 = <<10-2=8>>8 years of dog life into human years
+If 1 year of dog life after the 2 years equates to 5 human years, then 8 years of dog life equals 8*5 = <<8*5=40>>40 human years
+In total, your dog has lived 15 + 9 + 40 = <<15+9+40=64>>64 human years
+#### 64
+
+There are 110 questions in total because 70 + 40 = <<70+40=110>>110
+She needs to get 77 of these right because 110 x .7 = <<110*.7=77>>77
+She got 42 questions right on the first test because 70 x .6 = <<70*.6=42>>42
+She needs to get 35 questions right on the second test because 77 - 42 = <<77-42=35>>35
+#### 35
+
+He got it for 9-5=<<9-5=4>>4 hours
+He pays for 4-1=<<4-1=3>>3 hours
+The first hour cost 1*15=$<<1*15=15>>15
+The other 3-1=2 hours are more expensive
+They cost 15*2=$<<15*2=30>>30 per hour
+So those 2 hours cost 2*30=$<<2*30=60>>60
+So he pays 60+15=$<<60+15=75>>75 per hours
+#### 75
+
+On Tuesday, Oliver worked out for 4 - 2 = <<4-2=2>>2 hours.
+On Wednesday he decided to work out twice as much as on Monday, so for 2 * 4 = <<2*4=8>>8 hours.
+On Thursday, at home, Oliver trained twice as much as on Tuesday, so for 2 * 2 = <<2*2=4>>4 hours.
+In total Oliver trained for 4 + 2 + 8 + 4 = <<4+2+8+4=18>>18 hours.
+#### 18
+
+If the TV's original price was $500, at the auction, its price increased by 2/5*$500 = $<<2/5*500=200>>200
+The total price at which the TV was sold at the auction is $500+$200 = $<<500+200=700>>700
+The price of the phone also increased at the action, a 40% increase which is 40/100*$400 = $<<40/100*400=160>>160
+The total price that the phone was sold for after the auction is $400+$160 = $<<400+160=560>>560
+In total, the TV and the phone sold for $700+$560 = $<<700+560=1260>>1260 at the auction
+#### 1260
+
+To buy regular food items individually, they cost $5 + $3 + $3 = $<<5+3+3=11>>11.
+To buy kids food items individually, they cost $3 + $2 + $2 = $<<3+2+2=7>>7.
+If you buy the special burger meal, you save $11 - $9.50 = $<<11-9.5=1.50>>1.50.
+If you buy the kid's meal, you save $7 - $5 = $<<7-5=2>>2.
+Mr. Parker buys 4 special burger meals, bringing his discount to 4 x $1.50 = $<<4*1.50=6>>6.
+He buys 2 kid's meals, bringing his discount to 2 x $2 = $<<2*2=4>>4.
+The total savings for Mr. Parker is $6 + $4 = $<<6+4=10>>10.
+#### 10
+
+Tom served on Monday to 8 * 10 = <<8*10=80>>80 clients.
+So Tom earned 20/100 * 80 = <<20/100*80=16>>16 bonus points.
+#### 16
+
+For 6 lemons, Tom will pay 6 * 2 = $<<6*2=12>>12.
+For 3 papayas, he will pay 3 * 1 = $<<3*1=3>>3
+For 2 mangos, he will pay 2 * 4 = $<<2*4=8>>8.
+In total, the cost of the fruits before discount is 12 + 4 + 8 = $<<12+4+8=24>>24.
+The total number of fruits is 6 + 4 + 2 = <<6+4+2=12>>12 fruits.
+For 12 fruits, Tom gets a discount of 12 / 4 = $<<12/4=3>>3.
+Subtracting the discount offered by the store, Tom will pay 24 - 3 = $<<24-3=21>>21.
+#### 21
+
+She has enough supplies to make 3 * 12 = <<3*12=36>>36 cups of lemonade.
+She sells all of the lemonade for 36 * $1 = $<<36*1=36>>36.
+Her total profit for selling the lemonade is $36 - $18 = $<<36-18=18>>18.
+It will take Millie 36 / 4 = <<36/4=9>>9 hours of work to sell all of the lemonade.
+Her hourly profit is $18 / 9 hours = $<<18/9=2>>2 per hour.
+#### 2
+
+The books will cost $40 because 8 x 5 = <<8*5=40>>40
+He needs to save up $27 because 40 - 13 = <<40-13=27>>27
+#### 27
+
+Deshaun read 19,200 pages because 60 x 320 = <<60*320=19200>>19,200
+The person closest to him read 14, 400 pages because 19,200 x .75 = <<14400=14400>>14,400
+They read 180 pages a day because 14, 400 / 80 = <<14400/80=180>>180
+#### 180
+
+Boys make up 100% - 60% = 40% of the total number of students.
+The total number of students at the school is 300 / (40/100) = <<300/(40/100)=750>>750 students.
+Since 60% of the students are female, there are (60/100) * 750 = <<60/100*750=450>>450 female students.
+#### 450
+
+Maila read 12 x 2 = <<12*2=24>>24 pages today.
+So she was able to read a total of 12 + 24 = <<12+24=36>>36 pages since yesterday.
+There are 120 - 36 = <<120-36=84>>84 pages left to be read.
+Since she wants to read half of the remaining pages tomorrow, then she should read 84/2 = <<84/2=42>>42 pages.
+#### 42
+
+Jessa had 7 + 3 = <<7+3=10>>10 bills before she gave 3 to Geric.
+Kyla had 10 - 2 = <<10-2=8>>8 bills.
+So, Geric had 8 x 2 = <<8*2=16>>16 bills.
+#### 16
+
+Sam has half the number of Chris: 6/2=<<6/2=3>>3 teslas
+Elon has 10 more than Sam: 10+3=<<10+3=13>>13 teslas
+#### 13
+
+There are 12 + 12 = <<12+12=24>>24 students in Miss Albert's class.
+12 x 1/3 = <<12*1/3=4>>4 girls are on varsity.
+12 x 1/4 = <<12*1/4=3>>3 boys are on varsity.
+A total of 4 + 3 = <<4+3=7>>7 students in Miss Albert's class are on varsity.
+Therefore, 24 - 7 = <<24-7=17>>17 students are not on varsity.
+#### 17
+
+For 6 months of the year he cuts his yard 15 days per month so he cuts his yard 6*15 = <<6*15=90>>90 times
+For the remaining 6 months of the year, he cuts his yard three times a month so he cuts his yard 6*3 = <<6*3=18>>18 times
+He cuts his yard 90 times for part of the year and 18 times for the rest of the year for a total of 90+18 = <<90+18=108>>108 times
+There are 12 months in a year and he cuts his yard 108 times so he averages 108/12 = <<108/12=9>>9 times per month
+#### 9
+
+We have 56 + 40 = <<56+40=96>>96 animals other than goats.
+So, we have 200 – 96 = <<200-96=104>>104 goats
+#### 104
+
+First multiply the number of times Gary does laundry per week by the number of weeks per year to find how many times he does it in a year: 2 loads/week * 52 weeks/year = <<2*52=104>>104 loads/year
+Then find how much each load of laundry costs: 20 gallons/load * $0.15/gallon = $<<20*0.15=3.00>>3.00/load
+Then multiply the cost of each load by the number of loads to find the total cost: $3.00/load * 104 loads = $<<3*104=312>>312
+#### 312
+
+First, let's calculate the price of the BMX bike which is half of the price of one MTB, so it's 500 * 0.5 = $<<500*0.5=250>>250.
+Half of the sold bikes were Trekking bikes, which means 300 * 0.5 = <<300*0.5=150>>150 bikes.
+15% of the sold bikes were BMX bikes, which means 300 * 15/100 = <<300*15/100=45>>45 bikes.
+The remaining bicycles sold were of the MTB type and there were 300 - 150 - 45 = <<300-150-45=105>>105 bikes of this type sold.
+That means Marcel earned 150 * 450 = $<<150*450=67500>>67500 from Trekking bikes.
+He also earned 45 * 250 = $<<45*250=11250>>11250 from BMX bikes.
+MTB bikes got him 105 * 500 = $<<105*500=52500>>52500
+In total Marcel earned 67500 + 11250 + 52500 = $<<67500+11250+52500=131250>>131250 during that month.
+#### 131250
+
+The mother plant produces 2 baby plants 2 times a year so it produces 2*2 = <<2*2=4>>4 plants a year
+It produces 4 plants a year so after 4 years it will produce 4*4 = <<4*4=16>>16 baby plants
+#### 16
+
+The carton had 12 - 5 = <<12-5=7>>7 eggs with one yolk.
+It had 5 eggs with double yolks, which added * 2 = <<5*2=10>>10 yolks.
+Thus, there were 7 + 10 = <<7+10=17>>17 yolks in the whole carton.
+#### 17
+
+Originally, the houses are 7300+5200=<<7300+5200=12500>>12500 sq. ft. in total.
+The smaller house will be expanded by 16000-12500=<<16000-12500=3500>>3500 sq. ft.
+#### 3500
+
+The canvases cost $40.00 and she spent half that amount on paint so she spent 40/2 = $<<40/2=20.00>>20.00 on paint
+She spent $40.00 on canvases, $20.00 on paint and $15.00 on an easel so she spent 40+20+15 = $<<40+20+15=75.00>>75.00
+She spent $90.00 total and her other purchases totaled $75.00 so she spent 90-75 = $<<90-75=15.00>>15.00 on paint brushes
+#### 15
+
+If Mr. Jones has 6 shirts for every pair of pants, and he has 40 pants, the total number of shirts he has is 6*40 =<<6*40=240>>240
+The total number of pieces of clothes he owns is 240+40 = <<240+40=280>>280
+#### 280
+
+Alyssa and Abigail collected a total of 30 + 43 = <<30+43=73>>73 empty cans as of today.
+So, they still need to collect 100 - 73 = <<100-73=27>>27 more empty cans.
+#### 27
+
+Troy bakes 2 x 16 = <<2*16=32>>32 brownie pieces.
+75% of one pan is 16 x 0.75 = <<16*0.75=12>>12 pieces.
+Guests eat 16 + 12 = <<16+12=28>>28 pieces.
+This many guests eat the brownies ala mode 28 - 4 = <<28-4=24>>24.
+This many scoops are eaten by the guests 24 x 2 = <<24*2=48>>48.
+The guests eat this many tubs 48 / 8 = <<48/8=6>>6 tubs.
+#### 6
+
+Reggie has lost 10 marbles because 100 - 90 = <<100-90=10>>10
+Since each game was worth 10 marbles, Reggie has lost 1 game
+#### 1
+
+First find the total number of liters a mosquito sucks in one feeding: 20 drops / 5000 drops/liter = <<20/5000=.004>>.004 L/feeding
+Then divide the lethal amount of blood by the amount of blood one mosquito can drain: 3 L / .004 L/feeding = <<3/.004=750>>750 feedings
+#### 750
+
+Polly circled the one-quarter mile track 12 times in 0.5 hours at a speed of 12/0.5=24 circuits of the track per hour.
+24/4 = <<24/4=6>>6 miles per hour
+Gerald traveled at a speed half of what Polly traveled for an average speed of 6/2=<<6/2=3>>3 miles per hour.
+#### 3
+
+It takes 10 minutes to wash 4 windows and he has 64 windows so that breaks down to 64/4 = 16 units
+It takes 10 minutes to wash a unit of windows and he has 16 units so 10*16 = <<10*16=160>>160 minutes
+#### 160
+
+The nuts are $25.00 and he has a $5.00 coupon, so the nuts are on sale for $25-$5 = $<<25-5=20.00>>20.00
+He eats 1 oz of nuts every evening and the bag has 40 oz of nuts, so it has 40/1 = <<40/1=40>>40 1 oz servings
+The nuts cost $20.00 and there are 40 servings per bag, so his snack is $20/40 = $<<20/40=0.50>>0.50 per serving
+#### 50
+
+They'll need to make an estimated 0.5 * 53 = <<0.5*53=26.5>>26.5 omelets for small children.
+They'll need to make an estimated 1 * 35 = <<1*35=35>>35 omelets for older children.
+They'll need to make an estimated 2 * 75 = <<2*75=150>>150 omelets for the adults.
+And they'll need to make an estimated 1.5 * 37 = <<1.5*37=55.5>>55.5 omelets for the seniors.
+Along with the 25 extra omelets they'll make as a buffer, they will need enough eggs for 26.5 + 35 + 150 + 55.5 + 25 = <<26.5+35+150+55.5+25=292>>292 omelets.
+So they will need 2 * 292 = <<2*292=584>>584 eggs.
+#### 584
+
+Let x represent the number of quarters John has
+Nickels: x-6
+Dimes: x+3
+Total:x+x-6+x+3=63
+3x-3=63
+3x=66
+x=<<22=22>>22 quarters
+#### 22
+
+First find the total number of clarinet and trumpet players: 6 players + 9 players = <<6+9=15>>15 players
+Then find the total weight of the trumpets and clarinets: 15 players * 5 pounds/player = <<15*5=75>>75 pounds
+Then find the total weight of the trombones: 8 players * 10 pounds/player = <<8*10=80>>80 pounds
+Then find the total weight of the tubas: 3 players * 20 pounds/player = <<3*20=60>>60 pounds
+Then find the total weight of the drummers: 2 drummers * 15 pounds/player = <<2*15=30>>30 pounds
+Then add the weight of each type of instrument to find the total weight: 75 pounds + 80 pounds + 60 pounds + 30 pounds = <<75+80+60+30=245>>245 pounds
+#### 245
+
+If Rayden bought three times as many ducks as Lily, then he has 3*20 = <<3*20=60>>60 ducks
+He has 60-20 = <<60-20=40>>40 more ducks than Lily has.
+Rayden also bought 4*10 = <<4*10=40>>40 geese, four times the geese that Lily bought.
+He has 40-10= <<40-10=30>>30 more ducks than Lily.
+Altogether, Rayden has 30+40 = <<30+40=70>>70 more ducks and geese than Lily.
+#### 70
+
+During the first three games Clayton scored 10 points + 14 + 6 = <<10+14+6=30>>30 points.
+The average for Clayton's first three games is 30 points / 3 = <<30/3=10>>10 points per game.
+For the first four games, Clayton scored 30 points + 10 points = <<30+10=40>>40 points.
+#### 40
+
+Each of John’s classes has a capacity of 120 * 1/8 = <<120*1/8=15>>15 students.
+Combined, both his classes have a capacity of 15 * 2= <<15*2=30>>30 students.
+Combined, both schools have a capacity of 120+30=<<120+30=150>>150 students
+#### 150
+
+Benjamin counts 17 + 20 + 23 = <<17+20+23=60>>60 billboards total on the way to Los Angeles.
+Benjamin saw those billboards over 3 hours, so the average number of billboards per hour they saw 60 / 3 = <<60/3=20>>20 billboards per hour.
+#### 20
+
+The price increase raised the price by 1.6*.25=$<<1.6*.25=.4>>.4
+So each pound of apples cost 1.6+.4=$2
+2*4=<<2*4=8>>8 pounds of apples are bought
+So the apples cost 8*2=$<<8*2=16>>16
+#### 16
+
+If she invited 20 friends, then the number of friends who came with one more person is 1/2*20 = <<20*1/2=10>>10.
+If the 10 friends came with 10 more people, the total number of guests becomes 20+10 = 30 guests.
+If you add Ashley, the total number of people in the party is 30+1 = <<30+1=31>>31 people
+#### 31
+
+Each part is 30/6 = <<30/6=5>>5 meters long.
+Since Liam used 4 parts, then he used 5 x 4 = <<4*5=20>>20 meters of the ribbon.
+So, 30 - 20 = <<30-20=10>>10 meters of ribbon is not used.
+#### 10
+
+Five lollipops cost $0.4 x 5 = $<<0.4*5=2>>2.
+So four candies cost $3.20 - $2 = $1.20.
+Thus, each candy costs $1.20/4 = $<<1.20/4=0.30>>0.30.
+Ten lollipops cost $0.4 x 10 = $<<0.4*10=4>>4.
+Ten candies cost $0.30 x 10 = $<<0.30*10=3>>3.
+Hence, 10 lollipops and 10 candies will cost $4 + $3 = $7.
+#### 7
+
+When Zaid spend 1/4 of his salary on rent, he parts with 1/4*$6000 = $<<1/4*6000=1500>>1500
+Car fuel costs him 1/3*$6000 = $<<6000*1/3=2000>>2000
+Total expenses amount to $2000+$1500 = $<<2000+1500=3500>>3500
+The total amount of money he remains with is $6000-$3500 = $<<6000-3500=2500>>2500
+He donates half of the remaining amount, which is 1/2*$2500 = $<<1/2*2500=1250>>1250
+The total amount of money given to his wife and daughter is $200+$700 = $<<200+700=900>>900
+After the amount that he gave the wife and daughter, the total amount remaining is $1250-$900 = $<<1250-900=350>>350
+#### 350
+
+The room is 8*7=<<8*7=56>>56 square feet
+So the new carpet cost 56*1.25=$<<56*1.25=70>>70
+So the total cost was 50+70=$<<50+70=120>>120
+#### 120
+
+Santana has 1 + 1 + 2 = <<1+1+2=4>>4 brothers with birthdays in the second half of the year.
+She has 7 brothers - 4 brothers = <<7-4=3>>3 brothers with birthdays in the first half of the year.
+Altogether, she has to buy 4 + 7 = <<4+7=11>>11 presents in the second half of the year.
+Therefore, she has to buy 11 - 3 = <<11-3=8>>8 more presents in the second half of the year.
+#### 8
+
+Chandler has sold 3 rolls + 4 rolls + 3 rolls = <<3+4+3=10>>10 rolls.
+Chandler still needs to sell 12 rolls – 10 rolls = <<12-10=2>>2 rolls.
+#### 2
+
+The total cost for the peaches was 400* $0.40 =$<<400*0.4=160>>160
+The total count of 10 dollar purchases Kataleya received a discount on was $160/$10 = 16
+If each purchase had a $2 discount, the total discount she received is 16*$2 = $<<16*2=32>>32
+She purchased the peaches at $160-$32 = $<<160-32=128>>128
+#### 128
+
+The second shirt is 15-6=<<15-6=9>>9 dollars.
+Both shirts cost 15+9=<<15+9=24>>24 dollars.
+#### 24
+
+If Melina is three times as old as Alma, and she is 60, Alma is 60/3 = <<60/3=20>>20 years old.
+The sum of their ages is 60+20 = <<60+20=80>>80 years.
+Since the sum of Alma and Melina's age is twice the total number of points Alma scored in a test, Alma's score in the test was 80/2 = <<80/2=40>>40 points.
+#### 40
+
+Rachel spent 1/4*200 = $<<200*1/4=50>>50 on lunch.
+Rachel spent 1/2*200 = $<<200*1/2=100>>100 on a DVD.
+Rachel has 200-50-100 = $<<200-50-100=50>>50 left.
+#### 50
+
+Kenneth has 7 x 3 = <<7*3=21>>21 fish in his aquarium.
+Matthias has 21 - 15 = <<21-15=6>>6 fish in his aquarium.
+In total, the boys have 7 + 21 + 6 = <<7+21+6=34>>34 fish.
+#### 34
+
+Since, three years from now, Tabitha will have 8 different colors in her hair, this year she has 8 - 3 = <<8-3=5>>5 colors in her hair.
+Since she had 2 colors in her hair at the age of 15, she has added 5-2=3 colors since she was 15 years old.
+Since she ads one color per year, 3 added colors = <<3=3>>3 added years
+Thus, currently, she is 15+3=<<15+3=18>>18 years old.
+#### 18
+
+They collected 15 x 2 = <<15*2=30>>30 blankets on the first day.
+Freddie and his team collected 30 x 3 = <<30*3=90>>90 blankets on the second day.
+They collected a total of 90 + 22+30 = <<90+22+30=142>>142 for three days.
+#### 142
+
+Algebra:140(.40)=56 problems
+Linear:56/2=<<56/2=28>>28 problems
+#### 28
+
+The amount spent on mango juice is 94 - 54 = <<94-54=40>>40 dollars
+Dividing the 40 dollars by the cost of a glass of mango juice gives us 40/5 = <<40/5=8>>8 people
+Since a glass of pineapple juice goes for $6, the number that ordered is 54/6 = <<54/6=9>>9 people
+Adding both numbers gives a total of 8 + 9 =<<8+9=17>>17 people
+#### 17
+
+Austin has 60/3=<<60/3=20>>20 markers
+Alia has 20*2=<<20*2=40>>40 markers
+#### 40
+
+Hana sold 4/7 of her collection for $28, so 1/7 of her collection represents: 28/4 = $<<28/4=7>>7.
+And as a result, the entire collection represents: 7 * 7 = $<<7*7=49>>49.
+#### 49
+
+Let H be the number of hours it takes Cordelia to bleach her hair.
+A dye treatment takes twice as long, so it takes 2H.
+Thus, bleaching and dying will take H + 2H = 3H = 9 hours.
+Therefore, it will take Cordelia H = 9 / 3 = <<9/3=3>>3 hours to bleach her hair.
+#### 3
+
+Mandy has a total of $20 x 3 = $<<20*3=60>>60.
+So, she will have $60/$10 = <<60/10=6>>6 $10 bills.
+Manny has a total of $50 x 2 = $<<50*2=100>>100.
+So, he will have $100/$10 = <<100/10=10>>10 $10 bills.
+Hence, Manny has 10 - 6 = <<10-6=4>>4 more $10 bills than Mandy.
+#### 4
+
+Every third shopper buys a package of candied yams, so the store will need 375 / 3 = <<375/3=125>>125 packages.
+At 25 packages per bulk box, the store will need 125 / 25 = <<125/25=5>>5 bulk boxes of candied yams.
+#### 5
+
+He was skipping rope for 10*60=<<10*60=600>>600 seconds
+So he got 600*3=<<600*3=1800>>1800 skips
+#### 1800
+
+After one year he earns $200 in interest because 1,000 x .2 = <<1000*.2=200>>200
+After one year it has $1,200 in the account because 1,000 + 200 = <<1000+200=1200>>1,200
+He takes out $600 because 1,200 / 2 = <<1200/2=600>>600
+After this it has $600 in it because 1,200 - 600 = <<1200-600=600>>600
+She earns $90 in interest because 600 x .15 = <<600*.15=90>>90
+The account now has $690 because 600 + 90 = <<600+90=690>>690
+#### 690
+
+He saw 25 total vehicles because 12 plus 13 equals <<12+13=25>>25.
+He saw 100 wheels because 25 times 4 equals <<25*4=100>>100.
+#### 100
+
+The 2 skirts cost $13 x 2 = $<<13*2=26>>26.
+The 3 blouses cost $6 x 3 = $<<6*3=18>>18.
+The total cost for 2 skirts and 3 blouses is $26 + $18 = $<<26+18=44>>44.
+Jane received $100 - $44 = $<<100-44=56>>56 change.
+#### 56
+
+First find the number of days between March 1st and April 19th: 31 days + 19 days = <<31+19=50>>50 days
+Then subtract the percentage of time Billy takes off from 100% to find the percentage of time he works: 100% - 20% = 80%
+Then multiply that number by 80% to find the number of days Billy works: 50 days * 80% = <<50*80*.01=40>>40 days
+Then find how many people Billy can help per day: 2 people/hour * 3 hours/day = <<2*3=6>>6 people/day
+Then multiply the number of people he helps per day by the number of days he works to find the total number of people he helps: 6 people/day * 40 days = <<6*40=240>>240 people
+#### 240
+
+The ticket price increase is $102 - $85 = $<<102-85=17>>17
+So there is 17/85 x 100% = 20% increase of price.
+#### 20
+
+If Charlize was 20 minutes late, each of her friends was 20+10 = <<20+10=30>>30 minutes late.
+The total time for which Charlize's friends were late was 4*30= <<4*30=120>>120 minutes.
+Together with Charlize, the three friends were 120+20 = <<120+20=140>>140 minutes late.
+#### 140
+
+Happy has to take 40/100 * 15 = <<40/100*15=6>>6 more cups of water than she takes currently to reach the recommended water intake levels by her doctor.
+In total, she is supposed to drink 6+15 = <<6+15=21>>21 cups of water every week.
+#### 21
+
+First find the total number of antacids Nancy takes after eating Indian food per week: 3 antacids/day * 3 days/week = <<3*3=9>>9 antacids/week
+Then find the total number of antacids Nancy takes after eating Mexican food per week: 2 antacids/day * 2 days/week = <<2*2=4>>4 antacids/week
+Then find the number of days she doesn't eat Indian food or Mexican food: 7 days/week - 3 days/week - 2 days/week = 2 days/week
+Then find the total number of antacids Nancy takes per week: 9 antacids/week + 4 antacids/week + 2 antacids/week = <<9+4+2=15>>15 antacids/week
+Then multiply her weekly antacid consumption by the number of weeks per month to find her monthly consumption: 15 antacids/week * 4 week/month = <<15*4=60>>60 antacids/month
+#### 60
+
+He uses 1 tablespoon of lime juice per drink so over 30 days that's 1*30 = <<1*30=30>>30 tablespoons of lime juice
+He can get 2 tablespoons of lime juice per lime and he will use 30 tablespoons of lime juice so he will need 30/2 = 15 limes
+The limes are 3 for $1.00 and he needs 15 limes so that's 15/3 = $5.00
+#### 5
+
+The Heat won 5 more games than the Bulls so they won 70 + 5 = <<5+70=75>>75 games.
+The total games won together is 70+75 = <<70+75=145>>145 games.
+#### 145
+
+Alex gives his friends a total of 5 friends * 20 meters of silk = <<5*20=100>>100 meters of silk.
+This means he has 600 – 100 = <<600-100=500>>500 meters of silk left in storage.
+He can therefore make 500 meters of silk / 5 meters of silk per dress = <<500/5=100>>100 dresses.
+#### 100
+
+There are 60 x 1/6 = <<60*1/6=10>>10 blue chips.
+There are 10 + 34 = <<10+34=44>>44 chips that are not green.
+Thus, 60 - 44 = <<60-44=16>>16 chips are green.
+#### 16
+
+Jamie needed 12/6 = <<12/6=2>>2 rungs per foot of the tree to save the first cat.
+To climb a 20-foot tree, Jamie needs 20*2 = <<20*2=40>>40 rungs
+#### 40
+
+Let a be the amount of time Maryann spends doing accounting and c be the amount of time she spends calling clients: We know that a + c = 560 and a = 7c.
+Substituting the second equation into the first equation, we get 7c + c = 560
+Combining like terms, we get 8c = 560
+Dividing both sides by 8, we get c = 70
+#### 70
+
+Zoe ate 12 strawberries x 4 calories each = <<12*4=48>>48 calories.
+Zoe ate 6 ounces of yogurt x 17 calories per ounce = <<6*17=102>>102 calories.
+Zoe at a total of 48 calories + 102 calories = <<48+102=150>>150 calories.
+#### 150
+
+Edith has already organized 60 files / 2 = <<60/2=30>>30 files in the morning.
+She has files left to organize so she must still have 30 + 15 = <<30+15=45>>45 files in the office.
+This means there are 60 total files – 45 organized files = <<60-45=15>>15 missing files.
+#### 15
+
+If Lizette's average on the 3 quizzes is 94, then the sum of her scores in the 3 quizzes is 94 x 3 = <<94*3=282>>282.
+This means that the sum of her scores in the first 2 quizzes is 282 - 92 = <<282-92=190>>190.
+Thus, her average for the first 2 quizzes is 190/2 = <<190/2=95>>95.
+#### 95
+
+For the fourth-grade classes, Jessa needs 3 classes * 30 cupcakes/class = <<3*30=90>>90 cupcakes
+Adding the cupcakes for the P.E. class 50, she needs to make a total of 90 cupcakes + 50 cupcakes = <<90+50=140>>140 cupcakes
+#### 140
+
+Let X be the age of Cooper. So Dante is X*2 years old and Maria is X*2 + 1 year old.
+The sum of Cooper’s, Dante’s, and Maria’s ages is X + (X*2) + (X*2 + 1) = 31.
+Combining like terms, we get X*5 + 1 = 31.
+Subtracting one from both sides, we get X*5 = 30.
+Dividing both sides by 5, we get X = 6 years old.
+#### 6
+
+Out of the 20 students, 20 x 1/4 = <<20*1/4=5>>5 students stayed in the classroom.
+While 20 - 5 = <<20-5=15>>15 students went to the playground.
+Out of these 15 students, 15 x 1/3 = <<15*1/3=5>>5 are boys.
+Therefore, 15 - 5 = <<15-5=10>>10 girl students from this class are in the playground.
+#### 10
+
+Canada equals 1.5 United States
+Russia equals 2 United States because 1.5 x (1 + 1/3) = <<2=2>>2
+#### 2
+
+Ella earned $33 / 3 hours of dog walking = $<<33/3=11>>11 per hour.
+So for 12 hours of dog walking, Ella would earn $11 x 12 = $<<12*11=132>>132.
+#### 132
+
+On Monday Adam had 6 * 30 = <<6*30=180>>180 minutes of lessons, which is 3 hours.
+On Wednesday Adam spent twice as much time at school as on Tuesday, so he spent 2 * 3 = <<2*3=6>>6 hours at school.
+This means that during these three days Adam spent at school 3 + 3 + 6 = <<3+3+6=12>>12 hours.
+#### 12
+
+Quinn will read 2 books per week for 10 weeks so 2*10=<<2*10=20>>20 books
+If he reads 5 books, he gets a free donut. So if he reads 20/5 = 4 free donuts
+#### 4
+
+Joseph has 100 * 0.80 = <<100*0.80=80>>80 less boxes than Stan.
+Joseph has a total of 100 - 80 = <<100-80=20>>20 boxes.
+Jules has 20 + 5 = <<20+5=25>>25 boxes.
+John has 25 * 0.20 = <<25*0.20=5>>5 more boxes than Jules.
+John has a total of 25 + 5 = <<25+5=30>>30 boxes
+#### 30
+
+After paying off the cost of ingredients, Andrew has $400 - $100 = $<<400-100=300>>300
+Since half of the money goes to the homeless shelter, the shelter receives $300 / 2 = $<<300/2=150>>150
+After contributing some of his own money, Andrew donates $150 + $10 = $<<150+10=160>>160 to the shelter.
+#### 160
+
+Each dog consumes 250 grams x 2 = <<250*2=500>>500 grams of dog food each day.
+So, 4 dogs consume 500 grams x 4 = <<500*4=2000>>2000 grams of dog food each day.
+Since there are 1000 grams in 1 kilogram, then the 4 dogs can consume 2000/1000 = <<2000/1000=2>>2 kilograms of dog food each day.
+Aunt Gemma bought a total of 50 kilograms x 2 = <<50*2=100>>100 kilograms of dog food.
+Hence, it will last 100 kilograms/2 kilograms = <<100/2=50>>50 days.
+#### 50
+
+Every day, Sanya can wash 7 x 2 = <<7*2=14>>14 bath towels.
+To wash all the towels, she will need 98 / 14 = <<98/14=7>>7 days.
+#### 7
+
+Since there are 60 minutes in 1 hour, then Lisa walks for 1 x 60 = <<60=60>>60 minutes every day.
+For 60 minutes, Lisa walks 60 x 10 = <<60*10=600>>600 meters.
+Thus, she walks for 600 x 2 = <<600*2=1200>>1200 meters in two days.
+#### 1200
+
+Olivia had 72 pictures / 8 albums = <<72/8=9>>9 picture per album.
+Olivia had 3 selfie albums * 9 pictures = <<3*9=27>>27 pictures.
+Olivia had 2 portrait albums * 9 pictures = <<2*9=18>>18 pictures.
+The total of portraits and selfies for Olivia is 27 + 18 = <<27+18=45>>45 pictures.
+#### 45
+
+If the number of candles in the bedroom is twice the number in the living room, there are 20/2 = <<20/2=10>>10 candles in the living room.
+When Donovan brings in 20 more candles, the total number of candles becomes 10+20+20 = <<10+20+20=50>>50
+#### 50
+
+The first shirt has no (0%) discount off the regular price ($10), therefore your discount is = 0% * $10 = $<<0*.01*10=0>>0
+The second shirt has a 50% discount off the regular price ($10), therefore your discount is = 50% * $10 = $<<50*.01*10=5>>5
+The third shirt has a 60% discount of the regular price ($10), therefore your discount is = 60% * $10 = $<<60*.01*10=6>>6
+Therefore in total, you save $0 on the first shirt, $5 on the second one and $6 on the third one = 0+5+6 = $<<0+5+6=11>>11
+#### 11
+
+She needs to apply sunscreen 8 times because 16 / 2 = <<16/2=8>>8
+She will use 24 ounces of sunscreen because 3 x 8 = <<3*8=24>>24
+This will take 2 bottles because 24 / 12 = <<24/12=2>>2
+This will cost $7 because 2 x 3.5 = <<2*3.5=7>>7
+#### 7
+
+If 50 students came from Know It All High School, then Karen High, which had 3/5 times as many students as Know It All High School, had 3/5*50 = 30 students at the fair.
+The total number of students from Know It All and Karen high schools is 50+30 = <<50+30=80>>80 students.
+If Novel Corona had twice the combined number of students from Know It All and Karen high schools, then it had 2*80 = <<2*80=160>>160 students at the competition.
+The total number of students at the competition is 80+160 = <<80+160=240>>240
+#### 240
+
+Michael has used a total of 30 matchstick houses * 10 matchsticks per matchstick house = <<30*10=300>>300 matchsticks.
+As he only used half of his collection for crafting, he must have originally had 300 matchsticks * 2 = <<300*2=600>>600 matchsticks.
+#### 600
+
+She had 2 inches cut because 10-8=<<10-8=2>>2
+It cost $60 for the cut because 2 x 30 =<<2*30=60>>60
+It cost $100 total because 40+60=<<40+60=100>>100
+#### 100
+
+They watch 4 / 2 = <<4/2=2>>2 movies every Sunday.
+They watch a total of 4 + 2 = <<4+2=6>>6 movies every weekend.
+Therefore, they can watch 6 x 4 = <<6*4=24>>24 movies in four weeks.
+#### 24
+
+Each of the long puzzles took 3*10=<<3*10=30>>30 minutes to solve
+So he spent 30*2=<<30*2=60>>60 minutes solving them
+That means he spent 60+10=<<60+10=70>>70 minutes solving puzzles
+#### 70
+
+The 19 students will divide equally the remaining $90 - $14 = $76.
+So, each student will contribute $76 / 19 students = $<<76/19=4>>4/student.
+#### 4
+
+Nadine has 20/2 = <<20/2=10>>10 red pebbles.
+Thus, she has 20 + 10 = <<20+10=30>>30 pebbles.
+#### 30
+
+Adam’s bookshelf has 4 shelves that fit 20 books each, which is 4 * 20=<<4*20=80>>80 books in total to fill the bookshelf
+Adam ended the day with a full bookcase of 80 books in the bookcase and 2 books left over, 80 + 2= <<80+2=82>>82 books total.
+If Adam started the day with 56 books and ended the day with 82 books then Adam bought 82 - 56= <<82-56=26>>26 books bought on his shopping trip.
+#### 26
+
+One week has 7 days.
+The number of computers produced in 1 week is 1500 * 7 = <<1500*7=10500>>10500 computers.
+The total amount earned selling 1 week of production is 10500 * 150 = $<<10500*150=1575000>>1575000.
+#### 1,575,000
+
+Jasmine's shortest book is 1/4 * 396 pages = <<1/4*396=99>>99 pages long.
+The middle book is 3 * 99 pages = <<3*99=297>>297 pages long.
+#### 297
+
+First find the total number of inches from the 4-inch heels: 3 women * 4 inches/woman = <<3*4=12>>12 inches
+Then find the total number of inches from the 2-inch heels: 3 women * 2 inches/woman = <<3*2=6>>6 inches
+Then add the total number of inches from each group of heels to find the overall total: 12 inches + 6 inches = <<12+6=18>>18 inches
+Then find the total number of women at the party: 3 women + 3 women = <<3+3=6>>6 women
+Then divide the total number of heel inches by the number of women to find the average heel height per woman: 18 inches / 6 women = <<18/6=3>>3 inches / woman
+#### 3
+
+Mr. Valentino has twice as many ducks as chicken on his farm, which means there are 2*200 = <<2*200=400>>400 ducks on the farm.
+The number of turkeys is three times as many as the number of ducks on Mr. Valentino's farm, a total of 3*400 = <<3*400=1200>>1200 turkeys.
+In total, Mr. Valentino has 1200+400 = <<1200+400=1600>>1600 ducks and turkeys on his farm.
+If you add the number of chickens on the farm, the number of birds on the farm becomes 1600+200 = <<1600+200=1800>>1800 birds.
+#### 1800
+
+He spent 2*2=<<2*2=4>>4 years learning to climb
+He spends 5*7=<<5*7=35>>35 months climbing all 7 mountains
+After a 13 month break, he starts diving so that is 35+13=<<35+13=48>>48 months
+That means it is 48/12=<<48/12=4>>4 years
+So in total it all took 2+4+4+2=<<2+4+4+2=12>>12 years
+#### 12
+
+Let c be the number of cucumbers and t the number of tomatoes.
+The total is the sum of the number of cucumbers and that of tomatoes, which is c + t = 280 piece of vegetables
+Since there are thrice as many tomatoes as cucumbers, this means c =t/3
+Therefore 3*c = t.
+The sum will therefore be c + 3*c = 280 pieces of vegetables
+This means that 4*c = 280 vegetables
+Therefore c = 280/4 = <<280/4=70>>70 cucumbers.
+#### 70
+
+Lara gave 15 + 6 = <<15+6=21>>21 stems of flowers to her grandma.
+She gave away 21 + 15 = <<21+15=36>>36 stems of flowers.
+Therefore, Lara put 52 - 36 = <<52-36=16>>16 stems of flowers in the vase.
+#### 16
+
+The first number is 33/3=<<33/3=11>>11.
+The second number is 11*2=<<11*2=22>>22.
+#### 22
+
+Since Ryan composes twice as many problems as Bill's total of 20, this means Ryan composes 20*2=<<20*2=40>>40 problems
+Frank composes 3 times as many as Ryan does, so this means Frank composes 40*3=<<40*3=120>>120 problems.
+Since Frank needs to submit 4 types of problems in equal proportion out of his total, this means he needs to make 120/4= <<120/4=30>>30 problems of each type.
+#### 30
+
+In the three quarters we have figures for, the store made a total of $1500 + $3000 + $2000 = $<<1500+3000+2000=6500>>6,500.
+Subtracting this from their annual profit shows that they made $8000 – $6500 = $<<8000-6500=1500>>1,500 profit in the second quarter.
+#### 1500
+
+His car depreciated 18000-6000=$<<18000-6000=12000>>12000
+So he made a profit of 30000-12000=$<<30000-12000=18000>>18000
+#### 18000
+
+The total number of shirts in the donation box is <<4=4>>4.
+The total number of pants in the donation box is 4 x 2 = <<4*2=8>>8.
+The total number of shorts in the donation box is 8 / 2 = <<8/2=4>>4.
+The total number of clothes donated is 4 + 8 + 4 = <<4+8+4=16>>16 pieces.
+#### 16
+
+Five notebooks cost $5 x 1.50 = $<<5*1.50=7.50>>7.50
+Two pens cost 2 x $0.25 = $<<2*0.25=0.50>>0.50.
+The total cost is $7.50 + $0.50 + $12 + $10 =$<<7.5+0.5+12+10=30>>30.
+Thus, total discount is 10/100 x $30 = $<<10/100*30=3>>3.
+Therefore, Daniel has to spend $30 - $3 = $<<30-3=27>>27 on all the items he wants to buy.
+#### 27
+
+First find how many hours of runoff the sewers can handle: 240,000 / 1000 gallons/hour = <<240000/1000=240>>240 hours
+Then divide that time by the number of hours per day to find how many days of rain the sewers can handle: 240 hours / 24 hours/day = <<240/24=10>>10 days
+#### 10
+
+Half of 318 is <<318/2=159>>159
+159 + 18 = <<159+18=177>>177 stairs
+318 + 177 = <<318+177=495>>495
+Together they climbed 495 stairs yesterday.
+#### 495
+
+The bed cost 75*10=$<<75*10=750>>750
+So everything cost 750+75=$<<750+75=825>>825
+He gets 825*.2=$<<825*.2=165>>165 off
+So that means he pays 825-165=$<<825-165=660>>660
+#### 660
+
+Merry's brother takes care of 10 + 3 = <<10+3=13>>13 lambs.
+So, together Merry and her brother have 10 + 13 = <<10+13=23>>23 lambs.
+#### 23
+
+He gets 10-2=<<10-2=8>>8 new trees a year
+After 10 years he has 8*10=<<8*10=80>>80 new trees
+So he had 80+50=<<80+50=130>>130 trees
+He lost 130*.3=<<130*.3=39>>39 trees
+That means he had 130-39=<<130-39=91>>91 trees
+#### 91
+
+Kim got 2 candy bars a week for 16 weeks so she got 2*16 = <<2*16=32>>32 candy bars
+She would only eat 1 candy bar every 4 weeks so in 16 weeks she only ate 16/4 = <<16/4=4>>4 candy bars
+She saved 32 candy bars and only ate 4 so she still has 32-4 = <<32-4=28>>28 candy bars
+#### 28
+
+If 3 of Teairra's shirts are plaid, 5-3=2 shirts are not plaid.
+Also, 5 of Teairra's pants are purple, meaning 24-5=<<24-5=19>>19 pants are not purple
+The number of shirts and pants that Teairra has which are neither plaid nor purple is 19+2=<<19+2=21>>21
+#### 21
+
+Susie earned $10 x 3 = $<<10*3=30>>30 per day.
+Last week, she earned a total of $30 x 7 = $<<30*7=210>>210.
+She spent $210 x 3/10 = $<<210*3/10=63>>63 on make-up.
+While she spent $210 x 2/5 = $<<210*2/5=84>>84 on her skincare products.
+Thus, she spent a total of $63 + $84 = $<<63+84=147>>147 from her earnings.
+Therefore, Susie is left with $210 - $147 = $<<210-147=63>>63 from her earnings last week.
+#### 63
+
+First, divide the number of red tulips by the number of red tulips per row: 36 / 6 = <<36/6=6>>6 rows.
+Next, divide the number of blue tulips by the number of blue tulips per row: 24 / 8 = <<24/8=3>>3 rows.
+Now add the number of rows of each color to find the total: 6 + 3 = <<6+3=9>>9 rows.
+#### 9
+
+He bought 1+2+1=<<1+2+1=4>>4 phones
+2 of the phones cost 600 so their cost is 2*600=$<<2*600=1200>>1200
+The other two phones cost 600/2=$<<600/2=300>>300
+So they cost 300*2=$<<300*2=600>>600
+So the total cost is 1200+600=$<<1200+600=1800>>1800
+#### 1800
+
+When Katherine is 2 dozen years old, she will be 2*12=<<2*12=24>>24 years old.
+If Mel is three years younger than Katherine, then when Katherine is 24 years old, Mel will be 24-3=<<24-3=21>>21 years old.
+#### 21
+
+First find the total number of legos on the bottom layer: 7 legos * 7 legos = <<7*7=49>>49 legos
+Then find the number of legos per side on the next layer: 7 legos - 1 lego = <<7-1=6>>6 legos
+Then find the total number of legos on the second level: 6 legos * 6 legos = <<6*6=36>>36 legos
+Then find the number of legos per side on the top level: 6 legos - 1 lego = <<6-1=5>>5 legos
+Then find the total number of legos on the top level: 5 legos * 5 legos = <<5*5=25>>25 legos
+Then add the number of legos on each level to find the total number of legos: 49 legos + 36 legos + 25 legos = <<49+36+25=110>>110 legos
+#### 110
+
+Beth has $105 - $35 = $<<105-35=70>>70.
+Jan has $70 + $10 = $<<70+10=80>>80.
+So, Beth and Jan have $70 + $80 = $<<70+80=150>>150 altogether.
+#### 150
+
+He’s inviting 15 guests and will need 2 pounds per person so he will need 15*2 = <<15*2=30>>30 pounds of ice
+Ice is sold in 10-pound bags and he needs 30 pounds so he will need 30/10 = <<30/10=3>>3 bags of ice
+Each bag is $3.00 and he needs 3 bags so they will cost 3*3 = $<<3*3=9.00>>9.00
+#### 9
+
+Julie's daily earnings are $5 x 8 = $<<5*8=40>>40.
+Her weekly earnings are $40 x 6 = $<<40*6=240>>240.
+Her monthly earnings are $240 x 4 = $<<240*4=960>>960.
+Since she was not able to work for a day, her salary will be $960 - $40 = $<<960-40=920>>920.
+#### 920
+
+In February, with 28 days, the political and weather publishing news website produced a total of 28*20=<<28*20=560>>560 articles.
+The sister company publishing business news had 10*28=<<10*28=280>>280 articles in February.
+In total, the two companies published 280+560=<<280+560=840>>840 articles.
+#### 840
+
+To buy 14 balloons, Harry should buy one pack of 10, and 14 - 10 = <<14-10=4>>4 separate balloons.
+The price of 4 balloons is 4 * 0.5 = $<<4*0.5=2>>2.
+In total, the pack and separate balloons would cost Harry in total 3 + 2 = $<<3+2=5>>5.
+#### 5
+
+To travel from New Orleans to New York, Sue took 3/4 * 24 hours = <<3/4*24=18>>18 hours.
+If she stayed in New York for 16 hours, Sue's total time to travel from New Orleans to San Francisco is: 18 hours from New Orleans to New York + 16 hours in New York + 24 hours from New York to San Francisco = <<18+16+24=58>>58 hours.
+#### 58
+
+Removing the surplus hairspray shows the salon needs 33 total cans of hairspray – 5 surplus cans of hairspray = <<33-5=28>>28 cans of hairspray for each customer.
+Each customer needs 1 can of hairspray for styling + 1 can of hairspray to take home = <<1+1=2>>2 cans of hairspray.
+So the salon has a total of 28 cans of hairspray / 2 cans of hairspray per customer = <<28/2=14>>14 customers.
+#### 14
+
+The park is 2,000,000 square feet because 1000*2000 =<<1000*2000=2000000>>2,000,000.
+Thus, there are 100,000 trees in the park because 2,000,000/20 = <<2000000/20=100000>>100,000.
+#### 100,000
+
+Each week, they watch 1 Monday + 2 Wednesday episodes = <<1+2=3>>3 episodes a week.
+If you take 201 total episodes / 3 episodes each week = <<201/3=67>>67 weeks to watch The Office series.
+#### 67
+
+16 jars are exactly twice the number of clay pots made by the craftsman, meaning there are 16/2=<<16/2=8>>8 clay pots
+If each jar has 5 marbles, the total number of marbles in the jars is 5*16=<<5*16=80>>80
+Each of the clay pots also has 3*5=<<3*5=15>>15 marbles.
+The total number of marbles in the 8 clay pots is 15*8=<<15*8=120>>120
+There are a total of 120+80=<<120+80=200>>200 marbles.
+#### 200
+
+60 x 3/4 = <<60*3/4=45>>45 females are married which means there are also 45 married males.
+If 1/4 of the men are married, which represents 45 men, then 4*45=<<4*45=180>>180 is the total number of men who attended the party.
+Thus, there are a total of 60 women and 180 men, or a total of 60+180=<<60+180=240>>240 people at the party.
+#### 240
+
+Max’s has a total of 68+5 = <<68+5=73>>73 cookies.
+Cookie Monster’s total amount of cookies is 73-12 = <<73-12=61>>61.
+Summer’s total cookie amount is 73+23 = <<73+23=96>>96.
+Total amount of cookies 68+73+61+96 = <<68+73+61+96=298>>298.
+#### 298
+
+He needs to earn $150 more dollars because 500 - 200 - 150 = <<500-200-150=150>>150
+He needs to sell 20 games because 150 / 7.5 = <<150/7.5=20>>20
+#### 20
+
+The zoo has 8 x 3 = <<8*3=24>>24 snakes.
+It has 24 x 2 = <<24*2=48>>48 monkeys.
+The number of parrots and snakes added up is 8 + 24 = <<8+24=32>>32
+There are 32/2 = <<32/2=16>>16 elephants.
+There are 16 - 3 = <<16-3=13>>13 zebras.
+The difference between zebras and monkeys is 48 - 13 = <<48-13=35>>35
+#### 35
+
+The amount that the couple would cover for the hospital bill is $128/2 = $<<128/2=64>>64.
+The couple's total expenses (salary and hospital bill) is $160 + $64 = $<<160+64=224>>224.
+So each of them should give $224/2 = $<<224/2=112>>112 in total.
+Since the husband paid the entire half of the hospital bill already ($64), he still needs to pay $112 - $64 = $<<48=48>>48.
+#### 48
+
+Louise has 20 red pencils * 2 = <<20*2=40>>40 blue pencils.
+She therefore has 20 red pencils + 40 blue pencils = <<20+40=60>>60 green pencils.
+In total, she has 20 red pencils + 40 blue pencils + 60 green pencils + 40 yellow pencils = <<20+40+60+40=160>>160 pencils.
+As each box holds 20 pencils, she needs 160 pencils / 20 pencils/box = <<160/20=8>>8 boxes.
+#### 8
+
+Lucille weeded half the grass, so she pulled 32 / 2 = <<32/2=16>>16 weeds around the fruit frees.
+She pulled 11 + 14 + 16 = <<11+14+16=41>>41 weeds before her break.
+From that, she earned 41 * 6 = <<41*6=246>>246 cents.
+After buying her soda, Lucille has 246 - 99 = <<246-99=147>>147 cents left.
+#### 147
+
+When Tucker buys the tissue boxes, he has a total of 160 x 3 = <<160*3=480>>480 tissues.
+When he is sick with the flu and uses some of the tissues, he has 480 - 210 = <<480-210=270>>270 tissues left.
+#### 270
+
+The second and third side each take 2*5=<<2*5=10>>10 minutes
+So they take 10*2=<<10*2=20>>20 minutes together
+The last 2 sides take 5/2=<<5/2=2.5>>2.5 minutes
+So they take 2.5*2=<<2.5*2=5>>5 minutes
+So the total time is 5+20+5=<<5+20+5=30>>30 minutes
+#### 30
+
+At 7 days a week, it takes Bert 2 * 7 = <<2*7=14>>14 days of daily crossword puzzles to use up a pencil.
+Since Bert does one puzzle a day, each crossword puzzle has 1050 / 14 = <<1050/14=75>>75 words.
+#### 75
+
+Farrah ordered 4 boxes from Amazon containing 20 matchboxes each, a total of 4*20=<<4*20=80>>80 matchboxes.
+If each matchbox has 300 sticks, the total number of match sticks that Farah bought is 300*80 = <<300*80=24000>>24000
+#### 24000
+
+Four less than a dozen is 12-4=<<12-4=8>>8.
+The three fireflies were joined by four less than a dozen more fireflies, for a total of 3+8=<<3+8=11>>11 fireflies.
+Two flew away, leaving 11-2=<<11-2=9>>9 fireflies remaining.
+#### 9
+
+Jackson deleted all his old emails so now he only has the new ones left, which he first gets 15 + 5 of = <<15+5=20>>20 emails.
+Then Jackson receives 10 more emails to add to the other 20 new ones, 10 + 20 = <<10+20=30>>30 new emails.
+#### 30
+
+First find how much money Bill makes every week by multiplying his hourly rate by the number of hours he works each week: $25/hour * 30 hours/week = $<<25*30=750>>750/week
+Then multiply that number by the number of weeks per month to find his monthly earnings: $750/week * 4 weeks/month = $<<750*4=3000>>3,000/month
+Then multiply his monthly earnings by the number of months in a year to find his annual income: $3,000/month * 12 months/year = $<<3000*12=36000>>36,000/year.
+This income means Bill gets a 50% monthly healthcare subsidy from the government. Multiply the cost of the premium by 50% to find the monthly cost Bill pays: $500/month * .5 = $<<500*.5=250>>250/month
+Finally, multiply Bill's monthly cost by the number of months in a year to find his annual cost: $250/month * 12 months/year = $<<250*12=3000>>3,000/year
+#### 3000
+
+Loraine made 12 / 2 = <<12/2=6>>6 small animals.
+She made 6 / 3 = <<6/3=2>>2 large animals.
+She used 2 * 4 = <<2*4=8>>8 sticks of wax on large animals.
+Therefore, Loraine used 12 + 8 = <<12+8=20>>20 sticks of wax for all the animals.
+#### 20
+
+First find the total time Missy spends watching reality shows: 5 shows * 28 minutes/show = <<5*28=140>>140 minutes
+Then add that amount to the time she spends watching the cartoon: 140 minutes + 10 minutes = <<140+10=150>>150 minutes
+#### 150
+
+Each pie needs 3 pounds of fruit so for 5 Peach pies, 3*5=<<3*5=15>>15 pounds of fruit
+3 pounds of fruit for 4 apple pies is 3*4 = <<3*4=12>>12 pounds
+3 pounds of fruit for 3 blueberry pies is 3*3 = <<3*3=9>>9 pounds
+He needs 12 pounds of apples and 9 pounds of blueberries so 12+9 = <<12+9=21>>21
+21 pounds of fruit at $1.00 per pound is 21*1 = $<<21*1=21.00>>21.00
+15 pounds of peaches will cost $2.00 per pound so 15*2 = $<<15*2=30>>30
+The apple and blueberries will cost $21.00 and the peaches will cost $30 so 21+30 = $<<21+30=51>>51
+#### 51
+
+Since Elodie has 30 rats, Hunter has 30 rats - 10 rats = <<30-10=20>>20 rats.
+Together, Elodie and Hunter have 20 rats + 30 rats = <<20+30=50>>50 rats.
+Kenia has three times as many rats as Hunter and Elodie have together, which is 3 * 50 rats = <<3*50=150>>150 rats
+Together, the three have 150 rats + 50 rats = <<150+50=200>>200 rats.
+#### 200
+
+He played for 2*12=<<2*12=24>>24 minutes
+He gets 2*2=<<2*2=4>>4 points per minute from the two-point shots
+So he scores 4+3=<<4+3=7>>7 points per minute
+There are 24/4=<<24/4=6>>6 intervals
+So he scores 7*6=<<7*6=42>>42 points
+#### 42
+
+Cal has 56*2 = <<56*2=112>>112 marbles.
+Carl has 4*56 = <<4*56=224>>224 marbles.
+Carl and Cal have 112+224 = <<112+224=336>>336 marbles combined.
+#### 336
+
+Antonov was left with 60 - 20 = <<60-20=40>>40 pieces of candy.
+Therefore, he still has 40 / 20 = <<40/20=2>>2 packs of candy.
+#### 2
+
+First, find the total amount of stuffing in one Rottweiler bed and one chihuahua bed: 2 pounds + 8 pounds = <<2+8=10>>10 pounds
+Then divide the total stuffing amount by 2 to find the average stuffing amount: 10 pounds / 2 = <<10/2=5>>5 pounds
+Then find the amount of stuffing in 4 chihuahua beds: 2 pounds/bed * 4 beds = <<2*4=8>>8 pounds
+Then find the amount of stuffing in 3 collie beds: 5 pounds/bed * 3 beds = <<5*3=15>>15 pounds
+Then add the two amounts of stuffing to find the total amount of stuffing needed: 8 pounds + 15 pounds = <<8+15=23>>23 pounds
+#### 23
+
+30 minutes is 30/60=<<30/60=0.5>>0.5 hours.
+Two 30-minute rest stops take 0.5*2-1 hour.
+If she takes two rest stops per each half of the journey, then she takes 2*1=<<2*1=2>>2 hours in rest time.
+With a load, at her top speed, she can travel 143 miles in 143/11=<<143/11=13>>13 hours.
+Without a load, at her top speed, she can travel 143 miles in 143/13=<<143/13=11>>11 hours.
+Thus, the round trip will take 13+11+2=<<13+11+2=26>>26 hours.
+#### 26
+
+The total ratio of goats and sheep on the farm is 5+7 = <<5+7=12>>12
+The fraction that represents goats from the total ratio is 5/12, and since there are 360 goats and sheep on the farm, the number of goats is 5/12*360= <<5/12*360=150>>150
+The number of sheep on Mr. Mathews's farm is 360-150 = <<360-150=210>>210.
+Mr. Mathews sold 1/2*150 = <<1/2*150=75>>75 goats.
+If each goat went for $40, the total amount of money Mr. Mathews made from the sale of his goats is 75*$40 = $<<75*40=3000>>3000
+He also sold 2/3*210 = <<2/3*210=140>>140 of the total sheep on his farm.
+The income from the sale of the sheep is 140*$30=$<<140*30=4200>>4200
+From the sale of goats and sheep, Mr. Mathews made $4200+$3000 = $8600
+#### 7200
+
+Let m be the number of mugs
+8+4*m=40
+4*m=40-8=32
+4m=<<32=32>>32
+m=<<8=8>>8
+#### 8
+
+Catriona has 8 + 4 = <<8+4=12>>12 angelfish.
+She also has 12 x 2 = <<12*2=24>>24 guppies.
+Thus, she has 8 + 12 + 24 = <<8+12+24=44>>44 fish in her aquarium.
+#### 44
+
+He works 8*5=<<8*5=40>>40 hours
+So he made 20*40=<<20*40=800>>800 widgets
+#### 800
+
+He already has a total of 22 + 24 = <<22+24=46>>46 paper plates.
+Therefore, Max needs 65 - 46 = <<65-46=19>>19 more paper plates.
+#### 19
+
+26/2=<<26/2=13>>13 of the purses are genuine.
+24/4=<<24/4=6>>6 of the handbags are fake.
+24-6=<<24-6=18>>18 of the handbags are genuine.
+There are 13+18=<<13+18=31>>31 genuine purses and handbags
+#### 31
+
+The fixer used 30/100*400 = <<30/100*400=120>>120 nails to fix the kitchen.
+The number of nails remaining in the container after he fixes the kitchen is 400-120 = <<400-120=280>>280
+He also uses 70/100*280 = <<70/100*280=196>>196 of the nails remaining in the container to fix the fence.
+The total number of nails which the fixer hasn't used is 280-196 = <<280-196=84>>84
+#### 84
+
+If two pizzas will be delivered at two of the stops, the total number of stops will be 12-2=<<12-2=10>>10 stops.
+If there are 10 stops in 40 minutes, then the delivery person needs to average 40/10=<<40/10=4>>4 minutes per stop.
+#### 4
+
+The total shopping cost is $4.2 + $9.45 + $1.35 = $<<4.2+9.45+1.35=15>>15.
+The cashier gives back $20 - 1$5 = $<<20-15=5>>5.
+#### 5
+
+Kirsty has 0.45 × 30 = $<<0.45*30=13.50>>13.50 to spare to buy her models.
+She can only buy 13.50 ÷ 0.50 = <<13.50/0.50=27>>27 models as the price of each individual model has increased.
+#### 27
+
+Kris has 12/4 = <<12/4=3>>3 turtles.
+Trey has 3*5 = <<3*5=15>>15 turtles.
+Altogether they have 12+3+15 = <<12+3+15=30>>30 turtles.
+#### 30
+
+Mr. Smith bought 86 markers - 32 markers = <<86-32=54>>54 markers.
+Mr. Smith bought 54 markers ÷ 9 markers/box = <<54/9=6>>6 new boxes.
+#### 6
+
+He catches 2 fish every day for 30 days so he catches 2*30 = <<2*30=60>>60 fish
+Each fish yields 2 fillets so he has 2*60 = <<2*60=120>>120 fish fillets
+#### 120
+
+The lawyer worked 50*2=<<50*2=100>>100 hours out of court
+So he worked 100+50=<<100+50=150>>150 hours total
+That means the hourly time cost 150*100=$<<150*100=15000>>15000
+Adding the upfront cost it was 15000+1000=$<<15000+1000=16000>>16000
+His brother paid half so he paid 16000/2=$<<16000/2=8000>>8000
+#### 8000
+
+There are 30*2 = <<30*2=60>>60 pieces of ham put on the pizza.
+There are 30+12 = <<30+12=42>>42 pieces of sausage put on the pizza.
+There are 30/6 = <<30/6=5>>5 pieces of pepperoni on each pizza slice.
+There are 60/6 = <<60/6=10>>10 pieces of ham on each pizza slice.
+There are 42/6 = <<42/6=7>>7 pieces of sausage on each pizza slice.
+There are 5+10+7 = <<5+10+7=22>>22 pieces altogether on each slice of pizza.
+#### 22
+
+She bought 2 pounds of hamburger meat at $3.50 per pound so 2*3.50 = $<<2*3.50=7.00>>7.00
+The tomato weighed 1.5 pounds and cost $2.00 per pound so 1.5*2 = $<<1.5*2=3.00>>3.00
+When you add up all her items she spent 7+1.50+1+3+2.50=$<<7+1.50+1+3+2.50=15.00>>15.00
+Her items added up to $15.00 and she had a $1.00 coupon off pickles so 15-1 = $<<15-1=14.00>>14.00
+She paid with a $20.00 bill so 20-14 = $<<20-14=6.00>>6.00 in change
+#### 6
+
+The pumpkin patch sold 96 / 3 = <<96/3=32>>32 pumpkins.
+They have 83 - 32 = <<83-32=51>>51 pumpkins left.
+Thus, the pumpkin patch will produce 51 / 3 = <<51/3=17>>17 cans of pie filling.
+#### 17
+
+Over the past five years, the sum of the temperatures was 90+90+90+79+71=<<90+90+90+79+71=420>>420
+To find the average temperature you divide the total temperature (420) by 5, so 420/5 = <<420/5=84>>84 degrees
+#### 84
+
+The pebble's total splash width is 1.5 meters because 6 times 1/4 equals <<6*1/4=1.5>>1.5.
+The rock's total splash width is 1.5 meters because 3 times 1/2 equals <<3*1/2=1.5>>1.5.
+The boulder's total splash width is 4 because 2 times 2 equals four.
+The total splash width for all the rocks is 7 because 1.5 plus 1.5 plus 4 equals 7.
+#### 7
+
+If 40 pounds of food was donated to the food bank in the first week, the second week, which had twice the amount of food donated as the first week, had 2*40 = 80 pounds of food.
+The total amount of food donated to the food bank after the second week is 40+80 = <<40+80=120>>120 pounds.
+In the third week, she gave to the homeless 70/100*120 = <<70/100*120=84>>84 pounds of food.
+The total amount of food remaining in the food bank after she gave out 70% to the homeless is 120-84 = <<120-84=36>>36 pounds of food.
+#### 36
+
+The dress was $50 and 30% off so 50*.30 = $<<50*.30=15>>15 discount price
+The dress cost $50 minus $15 (30% off discount) so 50-15 = $<<50-15=35>>35
+#### 35
+
+There are 8 total dice because 4 plus 4 equals 8
+There are 48 sides because 8 times six equals <<8*6=48>>48
+#### 48
+
+The lighthouse blinks 255 / 5 = <<255/5=51>>51 times per minute.
+It takes 459 / 51 = <<459/51=9>>9 minutes for the lighthouse to blink 459 times.
+#### 9
+
+She orders 2 quiches for $15.00 each so they cost 2*15 = $<<2*15=30.00>>30.00
+She orders 6 croissants at $3.00 each so they cost 6*2.5 = $<<6*3=18.00>>18.00
+She orders 6 biscuits at $2.00 each so they cost 6*2 = $<<6*2=12.00>>12.00
+Her advance order is 30+18+12 = $<<30+18+12=60.00>>60.00
+Her advance order is over $50.00 so she can get 10% off so .10*60 = $6.00
+Her order is $60.00 and she gets $6.00 off so her advanced order will cost 60-6=$<<60-6=54.00>>54.00
+#### 54
+
+Caleb picked 20 - 5 = <<20-5=15>>15 apples.
+Suraya picked 12 + 15 = <<12+15=27>>27 apples.
+Suraya picked 27 - 20 = <<27-20=7>>7 apples more than Kayla
+#### 7
+
+Bailey gave 2 + 2 = <<2+2=4>>4 bands.
+So Bailey had 8 + 4 = <<8+4=12>>12 bands in the beginning.
+Justine had 12 + 10 = <<12+10=22>>22 bands in the beginning.
+Thus, Ylona had 22 + 2 = <<22+2=24>>24 bands in the beginning.
+#### 24
+
+Micah drank 1.5 x 3 = <<1.5*3=4.5>>4.5 liters in the afternoon.
+She drank a total of 1.5 + 4.5 = <<1.5+4.5=6>>6 liters of water.
+#### 6
+
+Mike received 3 oranges.
+Matt received twice as many apples as Mike received oranges, so he got 3 * 2 = <<3*2=6>>6 apples.
+Mark received 6 + 3 = <<6+3=9>>9 bananas.
+So in total, all children received 3 + 6 + 9 = <<3+6+9=18>>18 fruits.
+#### 18
+
+On the third day, 1/7*280 = <<1/7*280=40>>40 students called in sick.
+If the number of students absent on the second day was twice the number on the third day, then 2*40 = <<2*40=80>>80 students didn't show up for the class on the second day.
+The total number of students present in the class on the second day was 280-80= <<280-80=200>>200.
+If 40 fewer students showed up for the class on the first day than on the second day, then 200-40 = <<200-40=160>>160 students showed up for the class on the first day.
+The number of students absent on the first day is 280-160 = <<280-160=120>>120
+In the three days, the total number of absentees is 120+80+40 = <<120+80+40=240>>240
+#### 240
+
+They need 1600 square feet / 400 square feet/gallon = <<1600/400=4>>4 gallons of paint for their walls.
+Since they will do a second coating, then they would need 4 gallons x 2 = <<4*2=8>>8 gallons in all.
+Eight gallons of paint will cost $45/gallon x 8 gallons = $<<45*8=360>>360.
+Thus, Jason and Jeremy will each contribute $360/2 = $<<360/2=180>>180.
+#### 180
+
+Population of Port Perry is 900*7 = <<900*7=6300>>6,300
+Population of Lazy Harbor is 6,300-800 = <<6300-800=5500>>5,500
+Combined population is 6,300+5,500 = <<6300+5500=11800>>11,800
+#### 11,800
+
+Celia has budgeted $100 a week for 4 weeks for food, $100 x 4 = $<<100*4=400>>400 worth of food for the month.
+She has one monthly cost of $1500 for her rent + $30 for video streaming services + $50 for her cell phone = $<<1500+30+50=1580>>1580 of single monthly costs.
+Celia wants to set aside 10% of the $400 + $1580 = $<<400+1580=1980>>1980 for her savings account.
+10% of her savings account is .10 x 1980 = $<<.10*1980=198>>198 to add to her savings account.
+#### 198
+
+There were 10 eggs but 5 of them were used so, there are 10 - 5 = <<10-5=5>>5 eggs.
+Then the two chickens laid 2 * 3 = <<2*3=6>>6 eggs in total.
+Thus, the family has 5 + 6 = <<5+6=11>>11 eggs now.
+#### 11
+
+15 bottles of cola is a cost of 15 * 3 = $<<15*3=45>>45.
+12 bottles of juice make up to 12 * 1.5 = $<<12*1.5=18>>18.
+As each of the 25 sold water bottles was $1, the shop made a total of 45 + 18 + 25 = $<<45+18+25=88>>88.
+#### 88
+
+If the regular box has 100 pods and the special one has 20% more, then the new box has 100 * 20% = 20 more pods
+If the new one has 20 more pods than the regular one, the new box has a total of 20+100 = <<20+100=120>>120 pods
+If the cost of the regular box ($12) is the same as the new box, then the new box also costs $12
+If the new box has 120 pods and the price for the box is $12, then each pod costs $12/120 = $<<12/120=0.10>>0.10
+If 1 pod costs $0.10 and is used in 1 cycle, then each cycle costs = $<<1*0.10=0.10>>0.10
+If 1 cycle costs $0.10, then for $1 I could run $1/$0.1 = 10 cycles
+#### 10
+
+A rectangle has 2 long sides and Robert wants them to be 15 feet long so 2*15 = <<2*15=30>>30 feet long
+A rectangle has 2 short sides and Robert wants them to be 10 feet wide so 2*10= <<2*10=20>>20 feet wide
+Together, he will need 30 feet and 20 feet of fencing so 30+20 = <<30+20=50>>50 feet of fencing
+He needs 2 wooden slats per 1 foot of fencing and he is building 50 feet of fencing so he needs 50*2 = <<2*50=100>>100 wooden slats
+#### 100
+
+She trades 27 small stickers because 30 x .9 = <<27=27>>27
+She gets 9 large buttons for these because 27 / 3 = <<27/3=9>>9
+She trades 20 large stickers for large buttons because 40 x .5 = 20
+She gets 20 large buttons for these because 20 / 1 = <<20/1=20>>20
+She trades 50% of her large stickers for small buttons because 100 - 50 = <<100-50=50>>50
+She trades 20 large stickers for small buttons because 40 x .5 = 20
+She gets 60 small buttons because 20 x 3 = <<20*3=60>>60
+She has 89 buttons at the end because 9 + 20 + 60 = <<9+20+60=89>>89
+#### 89
+
+Vanessa ran twice as far as Aaron, so Aaron ran 4 / 2 = <<4/2=2>>2 miles.
+Aaron took 16 minutes, so he ran each mile in 16 / 2 = <<16/2=8>>8 minutes.
+Vanessa takes twice as long to run a mile, so she took 8 * 2 = <<8*2=16>>16 minutes for each mile.
+She ran 4 miles, so she took 4 * 16 = <<4*16=64>>64 minutes to complete her part of the race.
+#### 64
+
+Both cakes use 8 egg whites so she would typically use 2*8 = <<8*2=16>>16 egg whites
+2 tablespoons of aquafaba is equivalent to 1 egg white and she needs 16 egg whites to that's 2*16 = <<2*16=32>>32 tablespoons of aquafaba
+#### 32
+
+The pool is 10*6*20=<<10*6*20=1200>>1200 cubic feet
+That means it is 25*1200=<<25*1200=30000>>30000 liters
+So it cost 3*30,000=$<<3*30000=90000>>90,000
+#### 90000
+
+He plays video games for 4/2=<<4/2=2>>2 hours a day
+He watches TV for 4*7=<<4*7=28>>28 hours a week
+He plays video games for 3*2=<<3*2=6>>6 hours
+So in total he spends 6+28=<<6+28=34>>34 hours on those activities
+#### 34
+
+Kaiden collects 158 cans his first week and 259 cans during the second week. 158 + 259 = <<158+259=417>>417 cans of soup
+Kaiden wants to collect a total of 500 cans, so he still needs 500 - 417 = <<500-417=83>>83 cans of soup
+#### 83
+
+Farmer Smith has 2*200+100=<<2*200+100=500>>500 acres.
+The total is 200+500=<<200+500=700>>700.
+#### 700
+
+If Kimiko is 26 years old, Kayla, who is half her age, is 26/2 = <<26/2=13>>13 years old.
+Sine the minimum driving age is 18, Kayla will have to wait for 18-13 = <<18-13=5>>5 more years to start driving.
+#### 5
+
+Let X be the age of the older friend.
+The younger friend is X-2 years old.
+So, the age of both is X + (X-2) = 74.
+X + X = 74 + 2.
+2 * X = 76.
+Then, the older friend is X = <<38=38>>38 years old.
+#### 38
+
+First add up the numbers of the three kinds of mutant frog: 5 frogs + 2 frogs + 2 frogs = <<5+2+2=9>>9 frogs
+Then add that number to the number of normal frogs to find the total number of frogs: 9 frogs + 18 frogs = <<9+18=27>>27 frogs
+Finally, divide the number of mutant frogs by the total number of frogs and multiply by 100% to find the percentage of frogs that are mutants: 9 frogs / 27 frogs * 100% = 33.333...%, which rounds to 33%
+#### 33
+
+Randy has 20 – 12 = <<20-12=8>>8 years until he is 20.
+He must practice 10,000 hours / 8 years = <<10000/8=1250>>1,250 hours a year to become an expert.
+There are 52 weeks in a year – 2 weeks of vacation Randy plans to take = <<52-2=50>>50 weeks of practice for Randy.
+Randy will practice Monday – Friday, which is 5 days a week, so 50 weeks x 5 days = <<50*5=250>>250 days of practice each year.
+Randy will need to practice 1250 hours / 250 days = <<1250/250=5>>5 hours each day.
+#### 5
+
+Goldie did pet-sitting for a total of 20 + 30 = <<20+30=50>>50 hours.
+So, she earned a total of $5 x 50 = $<<5*50=250>>250.
+#### 250
+
+First find how many MB are left to download: 880 MB - 310 MB = <<880-310=570>>570 MB
+Then divide that number by the download speed to find the download time: 570 MB / 3 MB/minute = <<570/3=190>>190 minutes
+#### 190
+
+The second tomato plant bore 8 + 4 = <<8+4=12>>12 fruit.
+The first two plants bore 8 + 12 = <<8+12=20>>20 fruit combined.
+Each of the other two plants bore 20 x 3 = <<20*3=60>>60 fruit.
+Mabel has 8 + 12 + 60 + 60 = <<8+12+60+60=140>>140 tomatoes
+#### 140
+
+Cops that served a year pay $85 * 0.2 = $<<85*0.2=17>>17 less.
+Cops that served a year pay $85 - $17 = $<<85-17=68>>68.
+Cops that served at least 3 years get a $68 * 0.25 = $<<68*0.25=17>>17 discount.
+Cops that served at least 3 years pay $68 - $17 = $<<68-17=51>>51 for shoes.
+#### 51
+
+The train ride takes Andrew 2*10 = <<2*10=20>>20 hours.
+Together, the subway ride and the train ride take Andrew 10+20 = <<10+20=30>>30 hours.
+With an additional bike ride of 8 hours to reach the Bronx, Andrew takes 30+8 = <<30+8=38>>38 hours to travel from Manhattan to the Bronx.
+#### 38
+
+If there were 5000 new cases on the first week, the total for the second week is 1/2 * 5000 cases = <<5000*1/2=2500>>2500 cases.
+The total number of new coronavirus cases in the three weeks is 2500 cases + 5000 cases + 2000 cases = <<2500+5000+2000=9500>>9500 cases.
+#### 9500
+
+Hillary needs to read for 1 hour which equals 60 minutes.
+Hillary has read for a total of 16 minutes + 28 = <<16+28=44>>44 minutes so far.
+Hillary will need to read for 60 minutes - 44 = <<60-44=16>>16 minutes on Sunday.
+#### 16
+
+He buys the silver for 1.5*$20=$<<1.5*20=30>>30
+He bought 1.5*2=<<1.5*2=3>>3 ounces of gold
+The gold is worth %20*50=$<<20*50=1000>>1000 per ounce
+So he buys 3*$1000=$<<3*1000=3000>>3000 on gold
+So he spent $30+$3000=$<<30+3000=3030>>3030 on everything
+#### 3030
+
+The first value drop of the lawnmower was 25/100 * 100 = $<<25/100*100=25>>25.
+So the lawnmower was worth 100 - 25 = $<<100-25=75>>75.
+Over the next year, the value dropped another 20%, which is 20/100 * 75 = $<<20/100*75=15>>15.
+So after all this time, Ben's lawnmower is worth 75 - 15 = $<<75-15=60>>60.
+#### 60
+
+Working together at the same time, the rate at which the two would be able to load compost would be 75+10=<<75+10=85>>85 pounds/minute.
+At 85 pounds/minute, the 2550 pounds could be loaded in 2550/85=<<2550/85=30>>30 minutes.
+#### 30
+
+Twice the speed of the bald eagle is 100*2=<<100*2=200>>200 miles per hour.
+Let "x" be the time in seconds it takes the peregrine falcon to travel to the ground.
+Thus, based on the ratio of their speeds, the following expression is given: x=30*(100/200).
+Thus, x=15 seconds.
+#### 15
+
+Let x be the age of John. Paul’s age is x + 10
+Peter’s age is x + (x + 10) = 2x + 10
+We have (2x + 10) + (x + 1) + x = 100
+Combining like terms, we get 4x + 20 = 100
+Subtracting 20 from both sides and dividing by 4, we get x = 80/4 = 20 years old.
+John is 20 years old, Paul is 20 + 10 = 30 years old, and Peter is 2 * 20 + 10 = 50 years old.
+#### 50
+
+The two heavy washes will use 20 * 2 = <<20*2=40>>40 gallons of water.
+The three regular washes will use 10 * 3 = <<10*3=30>>30 gallons of water.
+The light wash will use 2 * 1 = <<2*1=2>>2 gallons of water.
+The two bleached loads will use an extra 2 * 2 = <<2*2=4>>4 gallons of water.
+In all, 40 + 30 + 2 + 4 = <<40+30+2+4=76>>76 gallons of water will be needed.
+#### 76
+
+The first winner will receive 2400 / 3 = $<<2400/3=800>>800.
+There will be 2400 - 800 = $<<2400-800=1600>>1600 left.
+The other winners will receive 1600 / 10 = $<<1600/10=160>>160 each.
+#### 160
+
+If James only missed one question in all five rounds of five questions, he correctly answered 5 * 5 - 1 = <<5*5-1=24>>24 questions
+Before the bonus, James earned 24 correct answers * 2 points/answer = <<24*2=48>>48 points.
+Since missing one question would only disqualify him from receiving a bonus in one round, he would earn a bonus for 5-1=<<5-1=4>>4 rounds.
+He should expect a bonus of 4 rounds* 4 points/round= <<4*4=16>>16 points.
+Including his bonus, James scored a total of 48 + 16 = <<48+16=64>>64 points.
+#### 66
+
+There were 800 x 20/100 = <<800*20/100=160>>160 parents who agreed to the tuition fee increase.
+So, there were 800 - 160 = <<800-160=640>>640 parents who disagreed.
+#### 640
+
+On the second race he won $11 because 1+ 5 x 2 = <<1+5*2=11>>11
+On the third race he lost $15 because 10 x 1.5 = <<10*1.5=15>>15
+He lost a total of $20 on the first and third races because 15 + 5 = <<15+5=20>>20
+
+He lost $9 that day because 11 - 20 = <<11-20=-9>>-9
+He lost an average of $3 per race because 9 / 3 = <<9/3=3>>3
+#### 3
+
+If the ratio of boys to girls in the math class is 5:8, the total ratio of the number of boys and girls in the math class is 5+8 = <<5+8=13>>13.
+The fraction that represents the number of boys in the class is 5/13, and since there are 260 students in the class, the number of boys in the class is 5/13*260 = <<5/13*260=100>>100.
+The number of girls in the class is 260-100 = <<260-100=160>>160.
+#### 160
+
+Teddy did 1/2 * 500 pieces = <<500/2=250>>250 pieces.
+Teddy completed 250 pieces + 500 pieces = <<250+500=750>>750 pieces.
+#### 750
+
+Since the second layer is twice as big as the first, then it requires 2* 2 = <<2*2=4>>4 cups of sugar.
+Since the third layer is three times bigger than the second, then it requires 4 * 3 = <<3*4=12>>12 cups of sugar.
+#### 12
+
+The total cost of two pairs of socks is $9.50 x 2 = $<<9.5*2=19>>19.
+The total cost of the socks and the shoes is $19 + $92 = $<<19+92=111>>111.
+Jack need $111 - $40 = $<<111-40=71>>71 more.
+#### 71
+
+The number of Greek yogurt packs that had expired is 40/100*80 = <<40/100*80=32>>32
+If each pack of Greek yogurt was sold at $12, for the 32 packs of greek yogurt that he returned, Bob was refunded $12*32 = $<<12*32=384>>384
+#### 384
+
+Let X be the money Jason had at first.
+Jason spent 1/4*X + 10 on books.
+Jason spent 2/5*[X - (1/4*X + 10)] + 8 on some DVDs.
+Jason has X - (1/4*X + 10) - {2/5*[X - (1/4*X + 10)] + 8} = $130 left.
+X - 1/4*X - 10 - 2/5*X + 1/10*X + 4 - 8 = $130.
+9/20*X - 14 = $130.
+X = $<<320=320>>320.
+#### 320
+
+The total movie is 600 seconds long because 130 + 145 + 85 + 60 + 180 = <<130+145+85+60+180=600>>600
+The total movie is 10 minutes long because 600 / 60 = <<600/60=10>>10
+On average each player gets 2 minutes because 10 / 5 = <<10/5=2>>2
+#### 2
+
+The Ferris wheel will be open for 7:00 - 1:00 = 6 hours.
+In one hour the wheel can ride 60 minutes / 20 minutes = <<60/20=3>>3 times the number of riders.
+The total per hour riders is 3 * 70 people = <<3*70=210>>210 people.
+If the ride is open 6 hours * 210 people = <<6*210=1260>>1260 people can ride.
+#### 1260
+
+The second time Greg’s alarm went off, it rang three times as long as the first, so it rang 3 * 4 = <<3*4=12>>12 times the second time.
+The third time it went off, it rang half as long as the second, so it rang 12 / 2 = <<12/2=6>>6 times the third time.
+In all, Greg’s alarm rang 4 + 12 + 6 = <<4+12+6=22>>22 times.
+#### 22
+
+If Sophie was given 20 oranges every day for thirty days, she had taken 20*30 = <<20*30=600>>600 oranges to school.
+Similarly, in the thirty days, Hannah had taken 40*30 = <<40*30=1200>>1200 grapes to school.
+In the thirty days, Hannah and Sophie took 1200+600 = <<1200+600=1800>>1800 fruits to school.
+#### 1800
+
+To gain entry into the strawberry fields, Sally, Jenny and Moses paid a total of 4 * 3 = <<4*3=12>>12 dollars
+This means that before Miguel applied the $12 discount, the cost was 128 + 12 = <<128+12=140>>140 dollars
+We get the weight by dividing the cost by the price of strawberries per pound, 140/20 = <<140/20=7>>7 pounds
+#### 7
+
+Jose can earn $3 x 8 = $<<3*8=24>>24 per day for kids.
+He charges $3 x 2 = $<<3*2=6>>6 per adult.
+So, he can earn $6 x 10 = $<<6*10=60>>60 per day for adults.
+Jose earns $60 + $24 = $<<60+24=84>>84 per day for kids and adults.
+Therefore, he can earn $84 x 7 = $<<84*7=588>>588 per week.
+#### 588
+
+The remainder of Sabina’s tuition bill comes to $30,000 - $10,000 = $<<30000-10000=20000>>20,000.
+The grant will cover $20,000 * 0.40 = $<<20000*0.40=8000>>8,000 of her tuition.
+That means that Sabina will need to apply for a loan of $20,000 - $8,000 = $<<20000-8000=12000>>12,000 to pay for the rest of her tuition.
+#### 12000
+
+Katherine's junior takes 1/4*20 = <<1/4*20=5>>5 more hours to build a similar website as Katherine.
+The total number of hours Katherine's junior takes to build a website is 20+5 = <<20+5=25>>25 hours.
+If Katherine gave her junior 30 websites to build, her junior spent 30*25 = <<30*25=750>>750 hours on building the 30 websites.
+#### 750
+
+There were an average of 40 + 50 = <<40+50=90>>90 apples.
+And, there were 30 + 40 = <<30+40=70>>70 oranges.
+Thus, Wendy gained 90 x $1.50 = $<<90*1.5=135>>135 for selling apples.
+And, she gained an additional 70 x $1 = $<<70*1=70>>70 for selling oranges.
+Therefore, her total sales for the day is $135 + 70 = $<<135+70=205>>205.
+#### 205
+
+Angela has 8 more marbles than Allison who has 28 so Angela has 8+28 = <<8+28=36>>36 marbles
+Albert has three times as many marbles as Angela who has 36 so Albert has 3*36 = <<3*36=108>>108 marbles
+Albert and Allison together have 108+28 = <<108+28=136>>136 marbles
+#### 136
+
+The school has 60 students because 3 x 20 = <<3*20=60>>60
+The school has 30 girls because 60 x .5 = <<60*.5=30>>30
+The third class has 3 girls because 30 - 15 - 12 = <<30-15-12=3>>3
+The third class has 17 boys because 20 - 3 = <<20-3=17>>17
+#### 17
+
+Her friend gave her 24 outfits and she received twice as many at the baby shower so she received 2*24 = 48 baby outfits
+Her friend gave her 24 outfits, she received 48 at the baby shower and her mom gave her another 15 for a total of 24+48+15 = <<24+48+15=87>>87 baby outfits
+#### 87
+
+On the second day, he planted 2 * 200 seedlings = <<2*200=400>>400 seedlings.
+The total number of seedlings Remi planted on the two days is 400 seedlings + 200 seedlings = <<400+200=600>>600 seedlings.
+If the total number of seedlings transferred from the nursery was 1200 after the second day, Remi's father planted 1200 seedlings - 600 seedlings = <<1200-600=600>>600 seedlings.
+#### 600
+
+The chickens had 7*2=<<7*2=14>>14 legs.
+The sheep had 5*4=<<5*4=20>>20 legs.
+There were 14+20=<<14+20=34>>34 legs.
+#### 34
+
+He got 30*25=<<30*25=750>>750 planks
+So he can make 750/15=<<750/15=50>>50 tables
+That means he makes 50*300=$<<50*300=15000>>15000
+So his profit was 15000-3000=$<<15000-3000=12000>>12000
+#### 12000
+
+The volume of the container is 6*6*15=<<6*6*15=540>>540 cubic inches
+That means it can fit 540/.15=<<540/.15=3600>>3600 jelly beans
+With 80% packing efficiency, you can fit 3600*.8=<<3600*.8=2880>>2880 jelly beans in there
+So that means he guesses 2880*.3=<<2880*.3=864>>864 are red
+So his guess is off by 900-864=<<900-864=36>>36
+#### 36
+
+Michael’s watermelon weighs 8 pounds and Clay’s weighs 3 times that so it weighs 8*3 = <<8*3=24>>24 pounds
+John’s watermelon is half the size of Clay’s 24-pound watermelon so it weighs 24/2 = <<24/2=12>>12 pounds
+#### 12
+
+Let x be the number of animals in the Rain Forest exhibit
+3x-5=16
+3x=21
+x=<<7=7>>7
+#### 7
+
+If Zack's classroom had 22 students when he was absent, then the total students in his class are 22+1 = <<22+1=23>>23
+If Tina's classroom has as many students as Maura's then T=M
+If Zack's classroom has half the amount of total students between Tina and Maura's classrooms then 23 = 1/2* (T+M )
+23 = 1/2*(T+M)
+We know from above that T=M, therefore 23 = (1/2) * (M+M) or 23 = (1/2)*2M
+23 = M
+Because T = M, then T is also T=23.
+Between the three classes then we have a total of T+M+Z or 23+23+23=<<23+23+23=69>>69
+#### 69
+
+The second cat meowed twice as frequently as the three meows per minute from the first cat, for a total of 2*3=<<2*3=6>>6 meows per minute.
+The third cat meowed at one-third the frequency of the second cat, for a total of 6/3=<<6/3=2>>2 meows per minute.
+Thus, combined, the three cats meow 3+6+2=<<3+6+2=11>>11 times per minute.
+In five minutes, the three cats meow 5*11=<<5*11=55>>55 times.
+#### 55
+
+3 * (16 * 5) = <<3*(16*5)=240>>240 square feet
+2 * (8 * 4) = <<2*(8*4)=64>>64 square feet
+240 + 64 = <<240+64=304>>304 square feet
+The gardens have a total of 304 square feet.
+#### 304
+
+If each candle is 8 ounces of beeswax and 1 ounce of coconut oil, then each candle weighs 8+1=<<8+1=9>>9 ounces.
+Three less than 10 candles is 10-3=<<10-3=7>>7 candles.
+Thus, 7 candles, each weighing 9 ounces, will have a combined weight of 7*9=<<7*9=63>>63 ounces.
+#### 63
+
+When Jennifer is 30 years old in ten years, her sister Jordana will be 3*30=90 years old.
+She's currently 10 years younger, so she's 90 - 10 = 80 years old
+#### 80
+
+Sara worked 40 * 2 = <<40*2=80>>80 hours over two weeks.
+She earned 11.50 * 80 = $<<11.50*80=920>>920
+After buying new tires, she had $920 - 410 = $<<920-410=510>>510 left.
+#### 510
+
+He ordered 2 pizzas, each cut into 12 slices so that’s 2*12 = <<2*12=24>>24 slices
+Stephen ate 25% of the pizza so he ate .25*24 = <<25*.01*24=6>>6 slices
+That leaves 24-6 = <<24-6=18>>18 slices
+18 slices are left and Pete eats 50% of 18 slices so he eats 18*.50 = <<18*50*.01=9>>9 slices
+If there were 18 slices and Pete ate 9 slices then there are 18-9 = <<18-9=9>>9 slices left over
+#### 9
+
+Jackson used 20 x 1/4 = <<20*1/4=5>>5 kilograms of meat to make meatballs.
+He had 20 - 5 = <<20-5=15>>15 kilograms of meat left.
+So 15 - 3 = <<15-3=12>>12 kilograms of meat are left.
+#### 12
+
+Each dose is 375*2=<<375*2=750>>750 mg
+He takes it 24/6=<<24/6=4>>4 times
+So he takes 750*4=<<750*4=3000>>3000 mg a day
+#### 3000
+
+All together, Brenda and her friends make a group of 1 + 9 = <<1+9=10>>10 people
+If they each want to eat 2 pizza slices, there should be 10 * 2 = <<10*2=20>>20 slices.
+Since a pizza has 4 slices, they will have to order 20/4 = <<20/4=5>>5 pizzas.
+#### 5
+
+First find how long Mark spends on parking and walking each day: 5 minutes + 3 minutes = <<5+3=8>>8 minutes
+Then multiply that number by his number of workdays to find the total walking and parking time: 8 minutes/day * 5 days/week = <<8*5=40>>40 minutes/week
+Then multiply the number of long-wait days by the time of each long wait: 2 days/week * 30 minutes/day = <<2*30=60>>60 minutes/week
+Then multiply the number of short-wait days by the time of each short wait: 3 days/week * 10 minutes/day = <<3*10=30>>30 minutes/week
+Then add the length of time Mark spends on each activity to find the total time spent: 30 minutes/week + 60 minutes/week + 40 minutes/week = <<30+60+40=130>>130 minutes/week
+#### 130
+
+Let x be the number of students in the Period 8 gym class.
+2x-5=11
+2x=16
+x=<<8=8>>8
+#### 8
+
+First figure out how much water all the pigs need: 8 pigs * 3 gallons/pig = <<8*3=24>>24 gallons
+Then figure out how much water one horse needs by multiplying a pig's needs by 2: 3 gallons * 2 = <<3*2=6>>6 gallons
+Now find how much water all the horses need: 10 horses * 6 gallons/horse = <<10*6=60>>60 gallons
+Finally, add up all the animals' water needs: 24 gallons + 60 gallons + 30 gallons = <<24+60+30=114>>114 gallons
+#### 114
+
+2 heads of lettuce at $1 apiece is 2*$1=$<<2*1=2>>2.
+4 tomatoes at $0.50 apiece is 4*$0.5=$<<4*0.5=2>>2.
+Thus, each customer purchases $2+$2=$<<2+2=4>>4 in lettuce and tomatoes per month.
+Therefore, if 500 customers per month spend $4 on lettuce and tomatoes, then the store will receive $4*500=$<<4*500=2000>>2000 per month on sales of lettuce and tomatoes.
+#### 2000
+
+Gab scored 20 x 2 = <<20*2=40>>40 points.
+Cher scored 40 x 2 = <<40*2=80>>80 points.
+Their team scored 20 + 40 + 80 = <<20+40+80=140>>140 points.
+Therefore, they scored 140 - 85 = <<140-85=55>>55 more points than their opponent.
+#### 55
+
+For 6 months, Shara was able to return $10 x 6 = $<<10*6=60>>60 to her brother.
+Since she already returned half of the money, then this means she currently owes her brother $<<60=60>>60.
+Four months from now, she will be able to pay an additional $10 x 4 = $<<10*4=40>>40.
+Thus, she will still owe her brother $60 - $40 = $<<60-40=20>>20 four months from now.
+#### 20
+
+First find the number of seeds that land in water: 300 seeds * 1/3 = <<300*1/3=100>>100 seeds
+Then find the number of seeds that are eaten: 300 seeds * 1/6 = <<300*1/6=50>>50 seeds
+Subtract the number of seeds that are destroyed to find the number that sprout: 300 seeds - 100 seeds - 50 seeds = <<300-100-50=150>>150 seeds
+Then divide that number by 2 to find the number of sprouts that survive: 150 seeds / 2 = <<150/2=75>>75 seeds
+#### 75
+
+Bob has worked 40 hours/week x 2 weeks = <<40*2=80>>80 regular hours
+Bob got paid 80 hours x $5/hour = $<<80*5=400>>400 for his regular hours
+Bob worked 44 hours - 40 hours = <<44-40=4>>4 hours of overtime in the first week
+Bob worked 48 hours - 40 hours = <<48-40=8>>8 hours of overtime in the second week
+In total Bob worker 8 hours + 4 hours =<<8+4=12>>12 hours of overtime.
+Bob got paid $6/hour x 12 hours = $<<6*12=72>>72 for overtime
+In 2 weeks Bob earned $400 + $72 = $<<400+72=472>>472
+#### 472
+
+First find the number of blue spools: 15 spools + 45 spools = <<15+45=60>>60 spools
+Then find the total number of spools: 40 spools + 50 spools + 60 spools = <<40+50+60=150>>150 spools
+Then divide the number of blue spools by the total number of spools and multiply by 100% to express the answer as a percentage: 60 spools / 150 spools * 100% = 40%
+#### 40
+
+5 less than 23 scoops of mashed potatoes is 23-5=<<23-5=18>>18 scoops of mashed potatoes.
+3 less than 6 potatoes is 6-3=<<6-3=3>>3 potatoes.
+1 less than 3 scoops of mashed potatoes is 3-1=<<3-1=2>>2 scoops of mashed potatoes.
+Thus, if Gomer ate 18 scoops of mashed potatoes, and it takes 3 potatoes to make 2 scoops of mashed potatoes, then Gomer ate 18*(3/2)=<<18*(3/2)=27>>27 potatoes.
+#### 27
+
+Davante has 14 friends because 2 times 7 equals <<2*7=14>>14
+Davante has 11 friends who are boys because 14-3 equals <<11=11>>11
+#### 11
+
+When four boats carried away 5 cats each, the total number of cats that left the rock is 4*5 = <<4*5=20>>20 cats.
+The number of cats remaining on the rock became 50-20 = <<50-20=30>>30.
+Later 3/5 of the remaining cats left the rock and ran after a mouse, a total of 3/5*30 = <<3/5*30=18>>18 cats.
+The number of cats that remained on the rock is 30-18 = <<30-18=12>>12 cats
+#### 12
+
+25-3=<<25-3=22>>22 students
+24-4=<<24-4=20>>20 students
+She had 22+20=<<22+20=42>>42 students
+#### 42
+
+On the first bounce, it will reach a height of 96 / 2 = <<96/2=48>>48 feet.
+On the second bounce, it will reach a height of 48 / 2 = <<48/2=24>>24 feet.
+On the third bounce, it will reach a height of 24 / 2 = <<24/2=12>>12 feet.
+On the fourth bounce, it will reach a height of 12 / 2 = <<12/2=6>>6 feet.
+On the fifth bounce, it will reach a height of 6 / 2 = <<6/2=3>>3 feet.
+#### 3
+
+There are 3 numbers greater than 3 on the dice, so the chances of rolling one of them are 3 / 6 = 50%.
+The chance of rolling one even number is 50%, so the chance of rolling two in a row is 50% * 50% = 25%.
+The difference between these two probabilities is 50% - 25% = 25%.
+#### 25
+
+After inflating the 4 new balloons, she will have 2 red + 4 blue + 4 new = <<2+4+4=10>>10 total balloons
+The probability of selecting red will be (2 red + 2 red newly inflated) / 10 total balloons = 40%
+#### 40
+
+He drinks 12 * 5 = <<12*5=60>>60 ounces of soda a day
+So he drinks 60 + 64 = <<60+64=124>>124 ounces of liquid a day
+So in total he drinks 124 * 7 = <<124*7=868>>868 ounces of liquid a week
+#### 868
+
+His recipe calls for 2 pounds of onions but he wants to double that amount so he needs 2*2 = <<2*2=4>>4 pounds of onions
+Onions are currently on sale for $2.00 a pound so they will cost 4*2 = $8.00
+He needs 2 boxes of stock which are also on sale for $2.00 so they will cost 2*2 = $<<2*2=4.00>>4.00
+The onions are $8.00 and the stock is $4.00 for a total of 8+4 = $<<8+4=12.00>>12.00
+The soup serves 6 people and the total cost is $12.00 so each serving is 12/6 = $<<12/6=2.00>>2.00 a serving
+#### 2
+
+For the first 3 hours, Rosie runs 10 miles per hour, so she runs 10*3=<<10*3=30>>30 miles.
+However, she still has 7-3=<<7-3=4>>4 hours left to room.
+For the next 4 hours, she runs 5 miles per hour, so she runs 5*4=<<5*4=20>>20 miles.
+In total she runs 30+20=<<30+20=50>>50 miles.
+#### 50
+
+Samantha has $100+$25 = $<<100+25=125>>125.
+Daisy has $125+$50 = $<<125+50=175>>175.
+The total amount of money that the three girls have is $175+$125+$100 = $<<175+125+100=400>>400.
+#### 400
+
+Let x be the age of Nina.
+So, Leonard's age is x - 4.
+And Jerome's age is 2x.
+Since the sum of their ages is 36, then the equation is x + x - 4 + 2x = 36.
+By combining like terms, the equation becomes 4x = 40.
+So the value of x which represents the age of Nina is x = 40/4 = <<40/4=10>>10.
+Therefore, Leonard is 10 - 4 = <<10-4=6>>6 years old.
+#### 6
+
+From all the computers, 100% - 40% - 20% = 40% got fixed right away.
+So John was able to fix 40/100 * 20 = <<40/100*20=8>>8 computers.
+#### 8
+
+Peter has read 8 of these books because 20 x .4 = <<20*.4=8>>8
+His brother has read 2 of these books because 20 x .1 = <<20*.1=2>>2
+Peter has read 6 more books than his brother because 8 - 2 = <<6=6>>6
+#### 6
+
+Phil started with 50, and doubled this amount the next year for 50*2=<<50*2=100>>100 coins
+Phil then collected 3 per month the following year, and since there are 12 months in a year that was 3*12=<<3*12=36>>36 coins added
+Phil then collected 1 every third month, and since there are 12 months that means he collected one every 12/3=4 months, for 4 coins added
+Before he lost a quarter of his coins, Phil had 100+36+4 coins, or <<100+36+4=140>>140 coins in total.
+Losing a quarter of 140 coins means Phill lost 140/4=<<140/4=35>>35 coins
+That means Phil had 140-35= <<140-35=105>>105 coins remaining
+#### 105
+
+First we need to know what half of Bills toys are, 60 toys / 2 = <<60/2=30>>30 toys.
+Hash has 9 toys + 30 toys = <<9+30=39>>39 toys.
+Together the boys have 60 toys + 39 toys = <<60+39=99>>99 toys.
+#### 99
+
+If 10 sales professionals each sell 10 cars per month, then they sell a combined 10*10=<<10*10=100>>100 cars per month.
+If the store has 500 cars, then it will take the sales team 500/100=<<500/100=5>>5 months to sell all of the cars.
+#### 5
+
+1 truck uses 3 tanks of 150 liters, so a truck can carry 3 tanks per truck * 150 liters = <<3*150=450>>450 liters per truck.
+The total amount of water the 3 trucks carry is 3 trucks * 450 liters per truck= <<3*450=1350>>1350 liters.
+#### 1350
+
+Three-quarters of oil from the initially full 4000-liter tank would be 4000*(3/4)= <<4000*3/4=3000>>3000 liters
+In addition to the 3000 liters that were already in the large tanker, there are 3000+3000 = <<3000+3000=6000>>6000 liters in it now.
+The tanker would be filled to half capacity by (1/2)*20000 = <<(1/2)*20000=10000>>10000 liters of oil
+There are 10000-6000 = <<10000-6000=4000>>4000 liters left to reach half capacity.
+#### 4000
+
+Jeremy listened to 9 + 5 = <<9+5=14>>14 songs today.
+Thus, he listened to 9 + 14 = <<9+14=23>>23 songs in two days.
+#### 23
+
+First find how many birds get scared away by kids: 36 seagulls / 4 = <<36/4=9>>9 seagulls
+Then subtract that number from the starting total: 36 seagulls - 9 seagulls = <<36-9=27>>27 seagulls
+Then divide that number by 3: 27 seagulls / 3 = <<27/3=9>>9 seagulls
+Then subtract that number from the 27 seagulls to find the final number of seagulls: 27 seagulls - 9 seagulls = <<27-9=18>>18 seagulls
+#### 18
+
+There were 20 private cars * 3 people = <<20*3=60>>60 people.
+There were 12 buses * 35 people = <<12*35=420>>420 people.
+Total inside the church was 60 people + 420 people = <<60+420=480>>480 people.
+#### 480
+
+Drew’s lawn is 22 * 36 = <<22*36=792>>792 square feet.
+He bought enough grass seed to cover 250 * 4 = <<250*4=1000>>1000 square feet.
+Thus, the leftover grass seed can cover 1000 - 792 = <<1000-792=208>>208 square feet.
+#### 208
+
+Larry scored 3 x 3 = <<3*3=9>>9 marks.
+Danny scored 9 + 5 = <<9+5=14>>14 marks.
+The total marks scored by the three students is 3 + 9 + 14 = <<3+9+14=26>>26.
+#### 26
+
+Alice folds 1000 * 0.5 = <<1000*0.5=500>>500 paper cranes by herself.
+This leaves 1000 – 500 = <<1000-500=500>>500 paper cranes left to fold.
+A friend folds a fifth of the remaining amount, so they have folded 500 / 5 = <<500/5=100>>100 paper cranes for her.
+This means there is a total of 1000 – 500 – 100 = <<1000-500-100=400>>400 paper cranes left for Alice to fold.
+#### 400
+
+Dylan's investment was 2/5 * $1200 = $<<2/5*1200=480>>480
+Frances and Skylers' investment was $1200 - $480 = $<<1200-480=720>>720
+Frances invested 2/3 * $720 = $<<2/3*720=480>>480
+Dylan's and Frances's total investments were $480 + $480 = $<<480+480=960>>960
+Skyler invested $1200 - $960 = $<<1200-960=240>>240
+#### 240
+
+First find the total distance of the east-west streets: 18 streets * 2 miles/street = <<18*2=36>>36 miles
+Then find the total distance of the north-south streets: 10 streets * 4 miles/street = <<10*4=40>>40 miles
+Then add the number of miles from each type of street to find the total distance: 36 miles + 40 miles = <<36+40=76>>76 miles
+Then multiply that number by 5 to find the number of miles of cable needed: 76 miles street * 5 miles cable/mile street = <<76*5=380>>380 miles of cable
+Then multiply that number by the cost of one mile of cable to find the total cost: 380 miles * $2000/mile = $<<380*2000=760000>>760,000
+#### 760000
+
+There are twice as many frogs as dogs in the compound, meaning there are 160/2 = <<160/2=80>>80 dogs.
+The total number of frogs and dogs in the compound is 80+160 = <<80+160=240>>240
+The number of cats is less than 20% of the number of dogs, which means there are 20/100*80 = <<20/100*80=16>>16 dogs more than the number of cats.
+Therefore, the number of cats is 80-16 = <<80-16=64>>64 cats
+The total number of animals in the compound is 64 cats +240 dogs and frogs = <<64+240=304>>304 animals.
+#### 304
+
+Trey used 15 sticky strips for 3/5 of the remaining decorations after using nails, so he used 15 * / 3/5 = 25 thumbtacks and sticky strips
+The 25 decorations were 1/3 of the total decorations, so he used 25 / 1/3 = 75 total decorations
+The nails were 2/3 of the decorations, so Trey used 75 decorations * 2/3 = <<2/3*75=50>>50 nails
+#### 50
+
+On one trip, the pickup carries 10 bags * 50 kg/bag = <<10*50=500>>500kg of onions
+After 20 trips, the total weight of onions transported to the store is 20 trips * 500 kg/trip = <<20*500=10000>>10000 kgs
+#### 10000
+
+Half of the 20 customers, which is 1/2*20=10 bought 20 bowls each, receiving 2 for every 10.
+The total number of reward bowls each customer who bought 20 bowls received is 2+2=<<2+2=4>>4
+If 10 customers bought 20 bowls, Howard gave away 4*10=<<4*10=40>>40 bowls as rewards.
+The total number of reward bowls that remained is 70-40=<<70-40=30>>30
+#### 30
+
