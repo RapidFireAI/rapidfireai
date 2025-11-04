@@ -56,6 +56,29 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
     if "pipeline" in pipeline_config:
         pipeline = pipeline_config["pipeline"]
 
+        # Helper function to extract RAG params
+        def extract_rag_params(rag_spec):
+            """Extract RAG parameters from rag_spec similar to controller logic."""
+            if rag_spec is None:
+                return None
+
+            rag_config = {}
+            rag_config["search_type"] = getattr(rag_spec, "search_type", None)
+
+            if hasattr(rag_spec, "search_kwargs") and rag_spec.search_kwargs is not None:
+                rag_config["k"] = rag_spec.search_kwargs.get("k", None)
+
+            if hasattr(rag_spec, "reranker_kwargs") and rag_spec.reranker_kwargs is not None:
+                rag_config["top_n"] = rag_spec.reranker_kwargs.get("top_n", None)
+
+            if hasattr(rag_spec, "text_splitter") and rag_spec.text_splitter is not None:
+                rag_config["chunk_size"] = getattr(rag_spec.text_splitter, "_chunk_size", None)
+                rag_config["chunk_overlap"] = getattr(rag_spec.text_splitter, "_chunk_overlap", None)
+
+            # Only return rag_config if it has at least one non-None value
+            filtered_rag_config = {k: v for k, v in rag_config.items() if v is not None}
+            return filtered_rag_config if filtered_rag_config else None
+
         if isinstance(pipeline, RFvLLMModelConfig):
             json_config["pipeline_type"] = "vllm"
 
@@ -63,12 +86,15 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
             if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
                 json_config["model_config"] = pipeline.model_config
 
-            # Extract sampling_params (convert SamplingParams to dict)
-            if (
-                hasattr(pipeline, "sampling_params")
-                and pipeline.sampling_params is not None
-            ):
-                json_config["sampling_params"] = pipeline.sampling_params_to_dict()
+            # Extract sampling_params from _user_params (original dict, not SamplingParams object)
+            if hasattr(pipeline, "_user_params") and "sampling_params" in pipeline._user_params:
+                json_config["sampling_params"] = pipeline._user_params["sampling_params"]
+
+            # Extract RAG params if present
+            if hasattr(pipeline, "rag") and pipeline.rag is not None:
+                rag_config = extract_rag_params(pipeline.rag)
+                if rag_config:
+                    json_config["rag_config"] = rag_config
 
         elif isinstance(pipeline, RFOpenAIAPIModelConfig):
             json_config["pipeline_type"] = "openai"
@@ -84,6 +110,13 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
             if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
                 json_config["model_config"] = pipeline.model_config
 
+            # Extract sampling_params using sampling_params_to_dict (extracts from model_config)
+            if (
+                hasattr(pipeline, "sampling_params")
+                and pipeline.sampling_params is not None
+            ):
+                json_config["sampling_params"] = pipeline.sampling_params_to_dict()
+
             # Extract rate limiting params
             if hasattr(pipeline, "rpm_limit") and pipeline.rpm_limit is not None:
                 json_config["rpm_limit"] = pipeline.rpm_limit
@@ -94,6 +127,12 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
                 and pipeline.max_completion_tokens is not None
             ):
                 json_config["max_completion_tokens"] = pipeline.max_completion_tokens
+
+            # Extract RAG params if present
+            if hasattr(pipeline, "rag") and pipeline.rag is not None:
+                rag_config = extract_rag_params(pipeline.rag)
+                if rag_config:
+                    json_config["rag_config"] = rag_config
 
     # Validate JSON serializability
     try:
