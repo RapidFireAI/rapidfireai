@@ -205,7 +205,7 @@ update_constants_tsx_file() {
 
 # Get the project root directory (parent of setup/fit/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Change to project root directory
 echo "Project root: $PROJECT_ROOT"
