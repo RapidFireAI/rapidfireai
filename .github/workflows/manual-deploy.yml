@@ -140,7 +140,7 @@ jobs:
 
       - name: Build frontend
         run: |
-          cd rapidfireai/frontend
+          cd rapidfireai/fit/frontend
           node ./yarn/releases/yarn-4.9.1.cjs build
 
       - name: Install Python dependencies
