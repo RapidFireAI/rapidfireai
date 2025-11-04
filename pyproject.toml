@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rapidfireai"
-version = "0.11.1"
+version = "0.12.1"
 authors = [
     {name = "RapidFire AI Inc.", email = "support@rapidfire.ai"},
 ]
-description = "RapidFire AI: Rapid Experimentation Engine for Customizing LLMs"
+description = "RapidFire AI: Rapid experimentation for easier, faster, and more impactful AI customization. Built for agentic RAG, context engineering, fine-tuning, and post-training of LLMs and other DL models. "
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
-keywords = ["ai", "rapidfire", "rapidfireai", "llm", "deep-learning", "artificial-intelligence", "machine-learning", "mlflow", "experiment-tracking"]
+keywords = ["ai", "rapidfire", "rapidfireai", "llm", "deep-learning", "artificial-intelligence", "machine-learning", "mlflow", "experiment-tracking", "fine-tuning", "post-training", "rag", "context-engineering"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -26,10 +26,64 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
-    "pandas>=2.0.0,<2.3.0",  # Colab compatibility (2.2.2) and cudf constraint
-    "psutil>=5.9.0",
-    "torch>=2.8.0",
-    "transformers>=4.55.2",
+    # fit and evals dependencies
+    # Core ML/AI Framework
+    "torch==2.5.1",
+    "torchvision==0.20.1",
+    "torchaudio==2.5.1",
+    "datasets==3.6.0",
+    "sentence-transformers==5.1.0",
+    "gpustat==1.1.1",
+
+    # Distributed Computing
+    "ray==2.44.1",
+
+    # LLM Inference
+    "transformers==4.56.1",
+
+    # OpenAI API
+    "openai==1.106.1",
+    "tiktoken==0.11.0",
+
+    # LangChain Ecosystem
+    "langchain",
+    "langchain-classic",
+    "langchain-core",
+    "langchain-community",
+    "langchain-openai",
+    "langchain-huggingface",
+
+    # Vector Search
+    "faiss-gpu-cu12==1.12.0",
+
+    # Statistical Analysis
+    "scipy==1.16.1",
+
+    # Data Manipulation & Display
+    # "pandas>=2.0.0,<2.3.0",  # Colab compatibility (2.2.2) and cudf constraint
+    "pandas==2.3.2",
+    "pyarrow==21.0.0",
+    "numpy==1.26.4",
+    "unstructured==0.18.15",
+
+    # REST API (Dispatcher)
+    "flask>=3.1.1",
+    "flask-cors>=6.0.1",
+    "waitress>=3.0.2",
+
+    # Notebook
+    "ipykernel==6.30.1",
+    # "ipykernel",
+    "ipywidgets>=7.3.4,<9.0.0",  # Support both v7 (Colab) and v8 (Jupyter)
+    "tensorboard>=2.11.0",
+
+    # JSON Query Tool
+    "jq==1.10.0",
+
+    # Other
+    "psutil==7.0.0",
+    "tqdm==4.67.1",
+    "typing-extensions>=4.0.0",
     "peft>=0.17.0",
     "trl==0.21.0",
     "bitsandbytes>=0.47.0",
@@ -40,33 +94,60 @@ dependencies = [
     "dill>=0.3.8",
     "mlflow>=3.2.0",
     "pytest>=8.4.1",
-    "flask>=3.1.1",
-    "flask-cors>=6.0.1",
     "requests>=2.32.0",  # Relaxed for Colab (2.32.4)
     "loguru>=0.7.3",
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
     "jupyter>=1.1.1",
-    "ipywidgets>=7.3.4,<9.0.0",  # Support both v7 (Colab) and v8 (Jupyter)
     "uv>=0.8.14",
-    "tensorboard>=2.11.0",
+
+    # Colab compatibility
+    # # Core ML/AI Framework
+    # "sentence-transformers==5.1.0",
+
+    # # Distributed Computing
+    # "ray==2.44.1",
+
+    # # LLM Inference
+    # "transformers==4.56.1",
+
+    # # OpenAI API
+    # "openai==1.106.1",
+    # "tiktoken==0.11.0",
+
+    # # LangChain Ecosystem
+    # "langchain",
+    # "langchain-classic",
+    # "langchain-core",
+    # "langchain-community",
+    # "langchain-openai",
+    # "langchain-huggingface",
+
+    # # Vector Search
+    # "faiss-gpu-cu12==1.12.0",
+
+    # # Statistical Analysis
+
+    # # Data Manipulation & Display
+    # "unstructured==0.18.15",
+
+    # # REST API (Dispatcher)
+    # "flask>=3.1.1",
+    # "flask-cors>=6.0.1",
+    # "waitress>=3.0.2",
+
+    # # Notebook
+
+    # # JSON Query Tool
+    # "jq==1.10.0",
+
+    # # Other
+
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=6.0",
-    "pytest-cov>=2.0",
-    "pytest-mock>=3.10.0",
-    "black>=21.0",
-    "flake8>=3.8",
-    "mypy>=0.800",
-    "pre-commit>=2.0",
 ]
 full = [
-    "torch>=1.9.0",
-    "transformers>=4.20.0",
-    "peft>=0.3.0",
-    "trl==0.21.0",
-    "bitsandbytes>=0.39.0",
 ]
 
 [project.urls]
@@ -84,17 +165,29 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 rapidfireai = [
-    "start.sh",
-    "dispatcher/*.py",
-    "frontend/build/**/*",
-    "frontend/server.py",
-    "frontend/proxy_middleware.py",
-    "ml/*.py",
-    "automl/*.py",
-    "backend/*.py",
-    "db/*.py",
-    "db/*.sql",
-    "utils/*.py",
+    "fit/dispatcher/*.py",
+    "fit/frontend/build/**/*",
+    "fit/frontend/server.py",
+    "fit/frontend/proxy_middleware.py",
+    "fit/ml/*.py",
+    "fit/automl/*.py",
+    "fit/backend/*.py",
+    "fit/db/*.py",
+    "fit/db/*.sql",
+    "fit/utils/*.py",
+    "evals/actors/*.py",
+    "evals/automl/*.py",
+    "evals/data/*.py",
+    "evals/db/*.py",
+    "evals/db/*.sql",
+    "evals/dispatcher/*.py",
+    "evals/metrics/*.py",
+    "evals/rag/*.py",
+    "evals/scheduling/*.py",
+    "evals/utils/*.py",
+    "evals/*.py",
+    "../setup/fit/start.sh",
+    "../setup/fit/start_dev.sh",
     "../tutorial_notebooks/**/*",
 ]
 
@@ -140,3 +233,7 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 120
+targer-version = "py312"

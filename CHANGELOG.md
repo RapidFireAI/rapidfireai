@@ -13,6 +13,20 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.12.1]
+### Added
+- Initial open source release of RapidFire AI RAG for RAG inference and context engineering experimentation
+- Expanded Experiment API to add `run_evals` method
+- Added evals folder under rapidfireai with new controller, scheduler, workers, automl, etc. for RAG pipelines
+- Added 3 new tutorial notebooks for RAG and context engineering experiments: FiQA, GSM8K, and SciFact
+- Added evals-specific additional setup and requirements
+
+### Changes
+- Refactored rapidfireai folder to move sft/rft workflows under fit subfolder
+- Refactored tutorial_notebooks folder to move notebooks to evals vs. fit subfolders
+- Refactored setup folder to for specific additional requirements and comands for evals vs. fit
+- README updated to reflect support for RAG/context engineering workflows and evals installation
+
 ## [v0.11.1]
 ### Added
 - Support for Google Colab

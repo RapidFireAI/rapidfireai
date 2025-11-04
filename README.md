@@ -1,11 +1,11 @@
 
 <div align="center">
 
-<a href="https://rapidfire.ai"> 
+<a href="https://rapidfire.ai">
     <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/RapidFire-logo-for-dark-theme.svg">
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/RapidFire-logo-for-light-theme.svg">
-        <img alt="RapidFire AI" src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/RapidFire-logo-for-light-theme.svg">
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/RapidFire-logo-for-dark-theme.svg">
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/RapidFire-logo-for-light-theme.svg">
+        <img alt="RapidFire AI" src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/RapidFire-logo-for-light-theme.svg">
     </picture>
 </a>
 
@@ -16,21 +16,23 @@
 
 # RapidFire AI
 
-Rapid experimentation for easier, faster, and more impactful fine-tuning and post-training for LLMs and other DL models — delivering 16–24× higher throughput without extra GPUs.
+Rapid experimentation for easier, faster, and more impactful AI customization. 
+Built for agentic RAG, context engineering, fine-tuning, and post-training of LLMs and other DL models. 
+Delivers 16-24x higher throughput without extra resources.
 
 ## Overview
 
-RapidFire AI is a new experiment execution framework that transforms your LLM customization experimentation from slow, sequential processes into rapid, intelligent workflows with hyperparallelized training, dynamic real-time experiment control, and automatic multi-GPU system orchestration.
+RapidFire AI is a new experiment execution framework that transforms your AI customization experimentation from slow, sequential processes into rapid, intelligent workflows with hyperparallelized execution, dynamic real-time experiment control, and automatic system optimization.
 
-![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/images/Workflow-transparent-2-01.png)
+![Usage workflow of RapidFire AI](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/rf-usage-both.png)
 
-RapidFire AI’s adaptive execution engine enables interruptible, chunk-based scheduling so you can compare many configurations concurrently—even on a single GPU—with dynamic real-time control over runs.
+RapidFire AI's adaptive execution engine allows interruptible, shard-based scheduling so you can compare many configurations concurrently, even on a single GPU (for self-hosted models) or a CPU-only machine (for closed model APIs) with dynamic real-time control over runs.
 
-- **Hyperparallelized Execution**: Higher throughput, simultaneous, data chunk-at-a-time training to show side-by-side differences.
-- **Interactive control (IC Ops)**: Stop, Resume, Clone-Modify, and optionally warm start runs in real-time from the dashboard.
-- **Automatic Optimization**: Intelligent single and multi-GPU orchestration to optimze utilization with minimal overhead.
+- **Hyperparallelized Execution**: Higher throughput, simultaneous, data shard-at-a-time execution to show side-by-side differences.
+- **Interactive Control (IC Ops)**: Stop, Resume, Clone-Modify, and optionally warm start runs in real-time from the dashboard.
+- **Automatic Optimization**: Intelligent single and multi-GPU orchestration to optimize utilization with minimal overhead for self-hosted models; intelligent token spend and rate limit apportioning for closed model APIs.
 
-![Chunk-based concurrent execution (1 GPU)](https://oss-docs.rapidfire.ai/en/latest/_images/gantt-1gpu.png)
+![Shard-based concurrent execution (1 GPU)](https://oss-docs.rapidfire.ai/en/latest/_images/gantt-1gpu.png)
 
 For additional context, see the overview: [RapidFire AI Overview](https://oss-docs.rapidfire.ai/en/latest/overview.html)
 
@@ -41,7 +43,7 @@ For additional context, see the overview: [RapidFire AI Overview](https://oss-do
 - [NVIDIA GPU using the 7.x or 8.x Compute Capability](https://developer.nvidia.com/cuda-gpus)
 - [NVIDIA CUDA Toolkit 11.8+](https://developer.nvidia.com/cuda-toolkit-archive)
 - [Python 3.12.x](https://www.python.org/downloads/)
-- [PyTorch 2.7.1+](https://pytorch.org/get-started/previous-versions/) with corresponding forward compatible prebuilt CUDA binaries
+- [PyTorch 2.7.0+](https://pytorch.org/get-started/previous-versions/) with corresponding forward compatible prebuilt CUDA binaries
 
 ### Install and Get Started
 
@@ -57,7 +59,7 @@ pip install rapidfireai
 
 rapidfireai --version
 # Verify it prints the following:
-# RapidFire AI 0.11.1
+# RapidFire AI 0.12.1
 
 # Replace YOUR_TOKEN with your actual Hugging Face token
 # https://huggingface.co/docs/hub/en/security-tokens
@@ -66,8 +68,11 @@ hf auth login --token YOUR_TOKEN
 # Due to current issue: https://github.com/huggingface/xet-core/issues/527
 pip uninstall -y hf-xet
 
-# Install specific dependencies and initialize rapidfireai
+# For Fine-tuning/Post-Training: Install specific dependencies and initialize rapidfireai
 rapidfireai init
+[OR]
+# For RAG/Context Engineering Evals: Install specific dependencies and initialize rapidfireai for SFT/RFT
+rapidfireai init --evals
 
 # Start the rapidfireai server
 # For Google Colab run:
@@ -75,6 +80,7 @@ rapidfireai init
 #   rapidfireai start --colab
 # For standalone run:
 
+# For Fine-tuning/Post-Training only: Start dashboard metrics server - ONLY
 rapidfireai start
 # It should print about 50 lines, including the following:
 # ...
@@ -118,7 +124,7 @@ First-of-its-kind dynamic real-time control over runs in flight. Can be invoked 
 
 - Stop active runs; puts them in a dormant state
 - Resume stopped runs; makes them active again
-- Clone and modify existing runs, with or without warm starting from parent’s weights
+- Clone and modify existing runs, with or without warm starting from parent's weights
 - Delete unwanted or failed runs
 
 ### Multi-GPU Support
@@ -133,14 +139,25 @@ Built-in procedures for searching over configuration knob combinations, includin
 
 ```text
 rapidfireai/
-├── automl/          # Search and AutoML algorithms for knob tuning
-├── backend/         # Core backend components (controller, scheduler, worker)
-├── db/              # Database interface and SQLite operations
-├── dispatcher/      # Flask-based web API for UI communication
-├── frontend/         # Frontend components (dashboard, IC Ops implementation)
-├── ml/              # ML training utilities and trainer classes
-├── utils/           # Utility functions and helper modules
-└── experiment.py    # Main experiment lifecycle management
+├── fit
+    ├── automl/          # Search and AutoML algorithms for knob tuning
+    ├── backend/         # Core backend components (controller, scheduler, worker)
+    ├── db/              # Database interface and SQLite operations
+    ├── dispatcher/      # Flask-based web API for UI communication
+    ├── frontend/        # Frontend components (dashboard, IC Ops implementation)
+    ├── ml/              # ML training utilities and trainer classes
+    └── utils/           # Utility functions and helper modules
+├── evals
+    ├── actors/          # Ray-based workers for doc and query processing  
+    ├── automl/          # Search and AutoML algorithms for knob tuning
+    ├── data/            # Data sharding and handling
+    ├── db/              # Database interface and SQLite operations
+    ├── dispatcher/      # Flask-based web API for UI communication
+    ├── metrics/         # Online aggregation logic and metrics handling
+    ├── rag/             # Stages of RAG pipeline
+    ├── scheduling/      # Fair scheduler for multi-config resource sharing
+    └── utils/           # Utility functions and helper modules
+└── experiment.py        # Main experiment lifecycle management
 ```
 
 ## Architecture
@@ -150,7 +167,7 @@ RapidFire AI adopts a microservices-inspired loosely coupled distributed archite
 - **Dispatcher**: Web API layer for UI communication
 - **Database**: SQLite for state persistence
 - **Controller**: Central orchestrator running in user process
-- **Workers**: GPU-based training processes
+- **Workers**: GPU-based training processes (for SFT/RFT) or Ray-based Actors for doc and query processing (for RAG/context engineering)
 - **Dashboard**: Experiment tracking and visualization dashboard
 
 This design enables efficient resource utilization while providing a seamless user experience for AI experimentation.
@@ -159,27 +176,49 @@ This design enables efficient resource utilization while providing a seamless us
 
 ### Dispatcher
 
-The dispatcher provides a REST API interface for the web UI. It can be run via Flask as a single app or via Gunicorn to have it load balanced. Handles interactive control features and displays the current state of the runs in the experiment.
+The dispatcher provides a REST API interface for the web UI. 
+It can be run via Flask as a single app or via Gunicorn to have it load balanced. 
+Handles interactive control features and displays the current state of the runs in the experiment.
 
 ### Database
 
-Uses SQLite for persistent storage of metadata of experiments, runs, and artifacts. The Controller also uses it to talk with Workers on scheduling state. A clean asynchronous interface for all DB operations, including experiment lifecycle management and run tracking.
+Uses SQLite for persistent storage of metadata of experiments, runs, and artifacts. 
+The Controller also uses it to talk with Workers on scheduling state. 
+A clean asynchronous interface for all DB operations, including experiment lifecycle management and run tracking.
 
 ### Controller
 
-Runs as part of the user’s console or Notebook process. Orchestrates the entire training lifecycle including model creation, worker management, and scheduling. The `run_fit` logic handles sample preprocessing, model creation for given knob configurations, worker initialization, and continuous monitoring of training progress across distributed workers.
+Runs as part of the user’s console or Notebook process. 
+Orchestrates the entire training lifecycle including model creation, worker management, and scheduling, 
+as well as the entire RAG/context engineering pipeline for evals. 
+The `run_fit` logic handles sample preprocessing, model creation for given knob configurations, 
+worker initialization, and continuous monitoring of training progress across distributed workers. 
+The `run_evals` logic handles data chunking, embedding, retrieval, reranking, context construction, and 
+generation for inference evals.
 
 ### Worker
 
-Handles the actual model training and inference on the GPUs. Workers poll the Database for tasks, load dataset chunks, and execute training runs with checkpointing and progress reporting. Currently expects any given model for given batch size to fit on a single GPU.
+Handles the actual model training and inference on the GPUs for `run_fit` and the data preprocessing and 
+RAG inference evals for `run_evals`. 
+Workers poll the Database for tasks, load dataset shards, and execute config-specific tasks: 
+training runs with checkpointing (for SFT/RFT) and doc processing followed by query processing with 
+online aggregation (for RAG/context eng. evals). Both also handle progress reporting.
+Currently expects any given model for given batch size to fit on a single GPU (for self-hosted models).
+Likewise, currently expects OpenAI API key provided to have sufficient balance for given evals workload.
 
 ### Experiment
 
-Manages the complete experiment lifecycle, including creation, naming conventions, and cleanup. Experiments are automatically named with unique suffixes if conflicts exist, and all experiment metadata is tracked in the Database. An experiment's running tasks are automatically cancelled when the process ends abruptly.
+Manages the complete experiment lifecycle, including creation, naming conventions, and cleanup. 
+Experiments are automatically named with unique suffixes if conflicts exist, 
+and all experiment metadata is tracked in the Database. 
+An experiment's running tasks are automatically cancelled when the process ends abruptly.
 
 ### Dashboard
 
-A fork of MLflow that enables full tracking and visualization of all experiments and runs. It features a new panel for Interactive Control Ops that can be performed on any active runs.
+A fork of MLflow that enables full tracking and visualization of all experiments and runs for `run_fit`. 
+It features a new panel for Interactive Control Ops that can be performed on any active runs.
+For `run_evals` the metrics are displayed in an auot-updated table on the notebook itself, 
+while IC Ops panel also appears on the notebook itself.
 
 ## Developing with RapidFire AI
 
