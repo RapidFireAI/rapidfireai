@@ -148,16 +148,16 @@ rapidfireai/
     ├── ml/              # ML training utilities and trainer classes
     └── utils/           # Utility functions and helper modules
 ├── evals
-    ├── actors/
-    ├── automl/
-    ├── data/
-    ├── db/             # Database interface and SQLite operations
-    ├── dispatcher/
-    ├── metrics/
-    ├── rag/
-    ├── scheduling/
+    ├── actors/          # Ray-based workers for doc and query processing  
+    ├── automl/          # Search and AutoML algorithms for knob tuning
+    ├── data/            # Data sharding and handling
+    ├── db/              # Database interface and SQLite operations
+    ├── dispatcher/      # Flask-based web API for UI communication
+    ├── metrics/         # Online aggregation logic and metrics handling
+    ├── rag/             # Stages of RAG pipeline
+    ├── scheduling/      # Fair scheduler for multi-config resource sharing
     └── utils/           # Utility functions and helper modules
-└── experiment.py    # Main experiment lifecycle management
+└── experiment.py        # Main experiment lifecycle management
 ```
 
 ## Architecture
@@ -167,7 +167,7 @@ RapidFire AI adopts a microservices-inspired loosely coupled distributed archite
 - **Dispatcher**: Web API layer for UI communication
 - **Database**: SQLite for state persistence
 - **Controller**: Central orchestrator running in user process
-- **Workers**: GPU-based training processes
+- **Workers**: GPU-based training processes (for SFT/RFT) or Ray-based Actors for doc and query processing (for RAG/context engineering)
 - **Dashboard**: Experiment tracking and visualization dashboard
 
 This design enables efficient resource utilization while providing a seamless user experience for AI experimentation.
@@ -176,27 +176,49 @@ This design enables efficient resource utilization while providing a seamless us
 
 ### Dispatcher
 
-The dispatcher provides a REST API interface for the web UI. It can be run via Flask as a single app or via Gunicorn to have it load balanced. Handles interactive control features and displays the current state of the runs in the experiment.
+The dispatcher provides a REST API interface for the web UI. 
+It can be run via Flask as a single app or via Gunicorn to have it load balanced. 
+Handles interactive control features and displays the current state of the runs in the experiment.
 
 ### Database
 
-Uses SQLite for persistent storage of metadata of experiments, runs, and artifacts. The Controller also uses it to talk with Workers on scheduling state. A clean asynchronous interface for all DB operations, including experiment lifecycle management and run tracking.
+Uses SQLite for persistent storage of metadata of experiments, runs, and artifacts. 
+The Controller also uses it to talk with Workers on scheduling state. 
+A clean asynchronous interface for all DB operations, including experiment lifecycle management and run tracking.
 
 ### Controller
 
-Runs as part of the user’s console or Notebook process. Orchestrates the entire training lifecycle including model creation, worker management, and scheduling, as well as the entire RAG/context engineering pipeline for evals. The `run_fit` logic handles sample preprocessing, model creation for given knob configurations, worker initialization, and continuous monitoring of training progress across distributed workers. The `run_evals` logic handles data chunking, embedding, retrieval, reranking, context construction, and generation for inference evals.
+Runs as part of the user’s console or Notebook process. 
+Orchestrates the entire training lifecycle including model creation, worker management, and scheduling, 
+as well as the entire RAG/context engineering pipeline for evals. 
+The `run_fit` logic handles sample preprocessing, model creation for given knob configurations, 
+worker initialization, and continuous monitoring of training progress across distributed workers. 
+The `run_evals` logic handles data chunking, embedding, retrieval, reranking, context construction, and 
+generation for inference evals.
 
 ### Worker
 
-Handles the actual model training and inference on the GPUs for `run_fit` and the data preprocessing and inference evals for `run_evals`. Workers poll the Database for tasks, load dataset shards, and execute training runs with checkpointing and progress reporting. Currently expects any given model for given batch size to fit on a single GPU.
+Handles the actual model training and inference on the GPUs for `run_fit` and the data preprocessing and 
+RAG inference evals for `run_evals`. 
+Workers poll the Database for tasks, load dataset shards, and execute config-specific tasks: 
+training runs with checkpointing (for SFT/RFT) and doc processing followed by query processing with 
+online aggregation (for RAG/context eng. evals). Both also handle progress reporting.
+Currently expects any given model for given batch size to fit on a single GPU (for self-hosted models).
+Likewise, currently expects OpenAI API key provided to have sufficient balance for given evals workload.
 
 ### Experiment
 
-Manages the complete experiment lifecycle, including creation, naming conventions, and cleanup. Experiments are automatically named with unique suffixes if conflicts exist, and all experiment metadata is tracked in the Database. An experiment's running tasks are automatically cancelled when the process ends abruptly.
+Manages the complete experiment lifecycle, including creation, naming conventions, and cleanup. 
+Experiments are automatically named with unique suffixes if conflicts exist, 
+and all experiment metadata is tracked in the Database. 
+An experiment's running tasks are automatically cancelled when the process ends abruptly.
 
 ### Dashboard
 
-A fork of MLflow that enables full tracking and visualization of all experiments and runs. It features a new panel for Interactive Control Ops that can be performed on any active runs.
+A fork of MLflow that enables full tracking and visualization of all experiments and runs for `run_fit`. 
+It features a new panel for Interactive Control Ops that can be performed on any active runs.
+For `run_evals` the metrics are displayed in an auot-updated table on the notebook itself, 
+while IC Ops panel also appears on the notebook itself.
 
 ## Developing with RapidFire AI
 
