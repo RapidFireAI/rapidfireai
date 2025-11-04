@@ -359,7 +359,7 @@ if ! is_github_actions; then
 
     print_success "🎉 Version $NEW_VERSION has been bumped!"
     print_info "Update CHANGELOG.md with all information from PRs since last release, and push up the changes."
-    print_info "To deploy to PyPI, create tag, create release notes, and create a release"
+    print_info "To deploy to PyPI, merge with main,create tag, create release notes, and create a release"
 else
     print_success "🎉 Version bump script completed successfully!"
     echo ""
