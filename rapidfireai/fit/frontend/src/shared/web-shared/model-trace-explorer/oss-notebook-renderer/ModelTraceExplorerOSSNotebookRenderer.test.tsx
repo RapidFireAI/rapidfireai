@@ -23,7 +23,7 @@ describe('ModelTraceExplorerOSSNotebookRenderer', () => {
     Object.defineProperty(window, 'location', {
       configurable: true,
       writable: true,
-      value: new URL('http://localhost:5000/?trace_id=1&experiment_id=1'),
+      value: new URL('http://localhost:8851/?trace_id=1&experiment_id=1'),
     });
 
     jest.mocked(getTraceArtifact).mockResolvedValue(MOCK_TRACE);

@@ -12,7 +12,7 @@ from rapidfireai.fit.utils.constants import LOG_FILENAME, ControllerTask, Dispat
 from rapidfireai.fit.utils.exceptions import DispatcherException
 from rapidfireai.fit.utils.logging import RFLogger
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:3000", "http://localhost"]
+CORS_ALLOWED_ORIGINS = ["http://localhost:8853", "http://localhost"]
 
 
 class Dispatcher:

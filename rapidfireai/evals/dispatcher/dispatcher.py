@@ -17,7 +17,7 @@ from waitress import serve
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.utils.constants import ICOperation
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:3000", "http://localhost"]
+CORS_ALLOWED_ORIGINS = ["http://localhost:8853", "http://localhost"]
 
 
 class Dispatcher:
@@ -484,7 +484,7 @@ class Dispatcher:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
-def run_dispatcher(host: str = "127.0.0.1", port: int = 5001) -> None:
+def run_dispatcher(host: str = "127.0.0.1", port: int = 8851) -> None:
     """
     Run the dispatcher server.
 
@@ -492,7 +492,7 @@ def run_dispatcher(host: str = "127.0.0.1", port: int = 5001) -> None:
 
     Args:
         host: Host to bind to (default: 127.0.0.1)
-        port: Port to bind to (default: 5001)
+        port: Port to bind to (default: 8851)
     """
     try:
         dispatcher = Dispatcher()
@@ -540,7 +540,7 @@ def _cleanup_old_dispatcher(port: int, logger=None) -> None:
         pass  # lsof might not be available
 
 
-def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 5001, logger=None) -> threading.Thread | None:
+def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=None) -> threading.Thread | None:
     """
     Start the dispatcher REST API server in a background daemon thread.
 
@@ -550,7 +550,7 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 5001, logger=No
 
     Args:
         host: Host to bind to (default: 127.0.0.1, localhost only)
-        port: Port to bind to (default: 5001)
+        port: Port to bind to (default: 8851)
         logger: Optional logger instance for logging (if None, uses print)
 
     Returns:

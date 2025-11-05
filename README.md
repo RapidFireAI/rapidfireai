@@ -85,7 +85,7 @@ rapidfireai start
 # It should print about 50 lines, including the following:
 # ...
 # RapidFire Frontend is ready
-# Open your browser and navigate to: http://0.0.0.0:3000
+# Open your browser and navigate to: http://0.0.0.0:8853
 # ...
 # Press Ctrl+C to stop all services
 
@@ -103,9 +103,9 @@ rapidfireai doctor
 If you encounter port conflicts, you can kill existing processes:
 
 ```bash
-lsof -t -i:5002 | xargs kill -9  # mlflow
-lsof -t -i:8081 | xargs kill -9  # dispatcher
-lsof -t -i:3000 | xargs kill -9  # frontend server
+lsof -t -i:8852 | xargs kill -9  # mlflow
+lsof -t -i:8851 | xargs kill -9  # dispatcher
+lsof -t -i:8853| xargs kill -9  # frontend server
 ```
 
 ## Documentation
@@ -282,12 +282,12 @@ chmod +x ./rapidfireai/start_dev.sh
 # head to settings in Cursor/VSCode and search for venv and add the path - $HOME/rapidfireai/.venv
 # we cannot run a Jupyter notebook directly since there are restrictions on Jupyter being able to create child processes
 
-# VSCode can port-forward localhost:3000 where the rf-frontend server will be running
+# VSCode can port-forward localhost:8853 where the rf-frontend server will be running
 
 # for port clash issues -
-lsof -t -i:8081 | xargs kill -9 # dispatcher
-lsof -t -i:5002 | xargs kill -9 # mlflow
-lsof -t -i:3000 | xargs kill -9 # frontend
+lsof -t -i:8851 | xargs kill -9 # dispatcher
+lsof -t -i:8852 | xargs kill -9 # mlflow
+lsof -t -i:8853 | xargs kill -9 # frontend
 ```
 
 ## Community & Governance

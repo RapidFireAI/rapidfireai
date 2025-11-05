@@ -96,9 +96,9 @@ git push origin test0.10.2
 
 ```bash
 # Kill services on specific ports if conflicts occur
-lsof -t -i:8081 | xargs kill -9  # dispatcher
-lsof -t -i:5002 | xargs kill -9  # mlflow
-lsof -t -i:3000 | xargs kill -9  # frontend
+lsof -t -i:8851 | xargs kill -9  # dispatcher
+lsof -t -i:8852 | xargs kill -9  # mlflow
+lsof -t -i:8853| xargs kill -9  # frontend
 ```
 
 ## Architecture
@@ -217,7 +217,7 @@ RapidFire wraps MLflow for experiment tracking:
 - Runs tracked with metrics, parameters, artifacts
 - Checkpoints saved as MLflow artifacts
 - UI extends MLflow with IC Ops panel
-- Access MLflow directly at `http://localhost:5002`
+- Access MLflow directly at `http://localhost:8852`
 
 ## Development Notes
 
@@ -232,7 +232,7 @@ The frontend is a fork of MLflow. For frontend-specific guidance, see `rapidfire
 To run frontend in development mode with hot reload:
 ```bash
 cd rapidfireai/frontend
-node ./yarn/releases/yarn-4.9.1.cjs start  # Runs on localhost:3000
+node ./yarn/releases/yarn-4.9.1.cjs start  # Runs on localhost:8853
 ```
 
 ### Database Schema
@@ -247,7 +247,7 @@ Defined in `db/*.sql` files. Tables include:
 
 - `RF_EXPERIMENT_PATH`: Base path for experiments (default: `./rapidfire_experiments`)
 - `RF_TUTORIAL_PATH`: Path for tutorial notebooks (default: `./tutorial_notebooks`)
-- `MLFLOW_URL`: MLflow tracking server URL (default: `http://localhost:5002`)
+- `MLFLOW_URL`: MLflow tracking server URL (default: `http://localhost:8852s`)
 - `USE_SHARED_MEMORY`: Enable shared memory for checkpoints (default: True)
 
 ### Logging
@@ -343,9 +343,9 @@ Run `rapidfireai doctor` to diagnose:
 ### Port Conflicts
 
 Common ports:
-- 3000: Frontend dashboard
-- 5002: MLflow tracking server
-- 8081: Dispatcher API
+- 8853: Frontend dashboard
+- 8852: MLflow tracking server
+- 8851: Dispatcher API
 
 Use port killing commands above if conflicts occur.
 

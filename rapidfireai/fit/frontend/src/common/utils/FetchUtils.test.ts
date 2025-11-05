@@ -292,7 +292,7 @@ describe('FetchUtils', () => {
       const okResponse = { ok: true, status: 200, text: () => Promise.resolve('{"dope": "ape"}') };
       // @ts-expect-error TS(2322): Type 'Mock<Promise<{ ok: boolean; status: number; ... Remove this comment to see the full error message
       global.fetch = jest.fn(() => Promise.resolve(okResponse));
-      await expect(fetchEndpoint({ relativeUrl: 'http://localhost:3000' })).resolves.toEqual({
+      await expect(fetchEndpoint({ relativeUrl: 'http://localhost:8853' })).resolves.toEqual({
         dope: 'ape',
       });
     });
@@ -314,7 +314,7 @@ describe('FetchUtils', () => {
         global.fetch = jest.fn(() => Promise.resolve(responses.shift()));
         await expect(
           fetchEndpoint({
-            relativeUrl: 'http://localhost:3000',
+            relativeUrl: 'http://localhost:8853',
             initialDelay: 5,
             retries: 4,
           }),
@@ -333,7 +333,7 @@ describe('FetchUtils', () => {
         global.fetch = jest.fn(() => Promise.resolve(responses.shift()));
         await expect(
           fetchEndpoint({
-            relativeUrl: 'http://localhost:3000',
+            relativeUrl: 'http://localhost:8853',
             initialDelay: 5,
             retries: 2,
           }),
@@ -350,7 +350,7 @@ describe('FetchUtils', () => {
       global.fetch = jest.fn(() => Promise.resolve(permissionDeniedResponse));
       await expect(
         fetchEndpoint({
-          relativeUrl: 'http://localhost:3000',
+          relativeUrl: 'http://localhost:8853',
           initialDelay: 5,
           retries: 2,
         }),
@@ -361,7 +361,7 @@ describe('FetchUtils', () => {
       global.fetch = jest.fn(() => Promise.reject(randomError));
       await expect(
         fetchEndpoint({
-          relativeUrl: 'http://localhost:3000',
+          relativeUrl: 'http://localhost:8853',
           initialDelay: 5,
           retries: 2,
         }),

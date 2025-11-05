@@ -9,7 +9,7 @@ NUM_CPUS_PER_DOC_ACTOR = 2
 
 # Dispatcher Constants
 DISPATCHER_HOST = "127.0.0.1"
-DISPATCHER_PORT = 5001
+DISPATCHER_PORT = 8851
 
 # Rate Limiting Constants
 # Maximum number of retries for rate-limited API calls
@@ -24,7 +24,7 @@ def get_dispatcher_url() -> str:
 
     Returns:
         - In Colab: Uses Colab's kernel proxy URL (e.g., https://xxx-5001-xxx.ngrok-free.app)
-        - In Local: Uses localhost URL (http://127.0.0.1:5001)
+        - In Local: Uses localhost URL (http://127.0.0.1:8851)
     """
     try:
         # Check if running in Google Colab

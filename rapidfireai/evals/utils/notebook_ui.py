@@ -11,7 +11,7 @@ from IPython.display import HTML, display
 class NotebookUI:
     """Notebook UI that works in VS Code"""
 
-    def __init__(self, dispatcher_url: str = "http://127.0.0.1:5001", refresh_rate_seconds: float = 3.0):
+    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0):
         self.dispatcher_url = dispatcher_url.rstrip("/")
         self.widget_id = f"controller_{uuid.uuid4().hex[:8]}"
         self.refresh_rate = refresh_rate_seconds

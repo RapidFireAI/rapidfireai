@@ -210,7 +210,7 @@ module.exports = function () {
           },
         ],
         host: 'localhost',
-        port: 3000,
+        port: 8853,
         open: false,
       }),
       client: {

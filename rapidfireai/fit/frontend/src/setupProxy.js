@@ -2,13 +2,13 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 
 // eslint-disable-next-line
 module.exports = function (app) {
-  // The MLflow Gunicorn server is running on port 5000, so we should redirect server requests
+  // The MLflow Gunicorn server is running on port 8852, so we should redirect server requests
   // (eg /ajax-api) to that port.
   // Exception: If the caller has specified an MLFLOW_PROXY, we instead forward server requests
   // there.
   // eslint-disable-next-line no-undef
-  // const proxyTarget = process.env.MLFLOW_PROXY || 'http://localhost:5000/';
-  const proxyTarget = 'http://localhost:5002/';
+  // const proxyTarget = process.env.MLFLOW_PROXY || 'http://localhost:8852/';
+  const proxyTarget = 'http://localhost:8852/';
   // eslint-disable-next-line no-undef
   const proxyStaticTarget = process.env.MLFLOW_STATIC_PROXY || proxyTarget;
   app.use(
@@ -39,7 +39,7 @@ module.exports = function (app) {
   );
   app.use(
     createProxyMiddleware('/dispatcher', {
-      target: 'http://localhost:8081/',
+      target: 'http://localhost:8851/',
       changeOrigin: true,
     }),
   );

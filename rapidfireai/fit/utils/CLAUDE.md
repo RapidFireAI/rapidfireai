@@ -30,15 +30,15 @@ When using tunnels in Colab, **inter-service communication must use localhost**,
 
 ❌ **Wrong Architecture (creates routing loop)**:
 ```
-Browser → Frontend Tunnel → Frontend:3000 → MLflow Tunnel → MLflow:5002
+Browser → Frontend Tunnel → Frontend:8853 → MLflow Tunnel → MLflow:8852
                                                    ↑
                                                    Fails with 502: Colab → Cloudflare → Colab loop
 ```
 
 ✅ **Correct Architecture**:
 ```
-Browser → Frontend Tunnel → Frontend:3000 → localhost:5002 (direct)
-Browser → MLflow Tunnel → MLflow:5002 (direct access if needed)
+Browser → Frontend Tunnel → Frontend:8853 → localhost:8852 (direct)
+Browser → MLflow Tunnel → MLflow:8852 (direct access if needed)
 ```
 
 **Why this matters**:
@@ -55,7 +55,7 @@ mlflow_url = setup_cloudflare_tunnel(RF_MLFLOW_PORT, "MLflow Tracking UI")
 # DON'T set RF_MLFLOW_URL env var - let frontend use localhost
 # os.environ['RF_MLFLOW_URL'] = mlflow_url  # ❌ Creates routing loop
 
-# Frontend subprocess will use default: http://127.0.0.1:5002/ ✅
+# Frontend subprocess will use default: http://127.0.0.1:8852/ ✅
 ```
 
 **Colab Process Restrictions**:
@@ -73,7 +73,7 @@ See `worker_manager.py` for implementation of these workarounds.
 **Purpose**: Centralized definitions for enums, config values, and system constants
 
 **Key Constants**:
-- `MLFLOW_URL`: Default MLflow tracking server URL (http://localhost:5002)
+- `MLFLOW_URL`: Default MLflow tracking server URL (http://localhost:8852)
 - `USE_SHARED_MEMORY`: Flag to enable shared memory for checkpoints (default: True)
 - `LOG_FILENAME`: Log file naming pattern
 - `DB_PATH`: SQLite database file path
@@ -147,7 +147,7 @@ logger.error("Failed to schedule", run_id=5)
 ```python
 from rapidfireai.utils.mlflow_manager import MLflowManager
 
-mlflow = MLflowManager("http://localhost:5002")
+mlflow = MLflowManager("http://localhost:8852")
 experiment = mlflow.get_experiment("my_experiment")
 run_id = mlflow.create_run(experiment.experiment_id)
 mlflow.log_metric(run_id, "loss", 0.5, step=100)

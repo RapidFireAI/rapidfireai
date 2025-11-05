@@ -1,7 +1,7 @@
 import os
 from enum import Enum
 
-MLFLOW_URL = "http://127.0.0.1:5002"
+MLFLOW_URL = "http://127.0.0.1:8852"
 
 
 # Tracking Backend Configuration
@@ -45,7 +45,7 @@ class DispatcherConfig:
     """Class to manage the dispatcher configuration"""
 
     HOST: str = "127.0.0.1"
-    PORT: int = 8081
+    PORT: int = 8851
 
 
 # Database Constants

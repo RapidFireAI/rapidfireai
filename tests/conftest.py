@@ -78,7 +78,7 @@ def mlflow_logger(mock_mlflow_manager):
     """
     from rapidfireai.utils.metric_logger import MLflowMetricLogger
 
-    logger = MLflowMetricLogger("http://localhost:5002")
+    logger = MLflowMetricLogger("http://localhost:8852")
     logger.mlflow_manager = mock_mlflow_manager
 
     return logger
@@ -107,7 +107,7 @@ def dual_logger(mock_mlflow_manager, temp_tensorboard_dir):
     """
     from rapidfireai.utils.metric_logger import DualMetricLogger
 
-    logger = DualMetricLogger("http://localhost:5002", temp_tensorboard_dir)
+    logger = DualMetricLogger("http://localhost:8852", temp_tensorboard_dir)
     logger.mlflow_logger.mlflow_manager = mock_mlflow_manager
 
     return logger
