@@ -9,7 +9,7 @@ NUM_CPUS_PER_DOC_ACTOR = 2
 
 # Dispatcher Constants
 DISPATCHER_HOST = "127.0.0.1"
-DISPATCHER_PORT = 5000
+DISPATCHER_PORT = 5001
 
 # Rate Limiting Constants
 # Maximum number of retries for rate-limited API calls
