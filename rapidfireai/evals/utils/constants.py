@@ -23,8 +23,8 @@ def get_dispatcher_url() -> str:
     Auto-detect dispatcher URL based on environment.
 
     Returns:
-        - In Colab: Uses Colab's kernel proxy URL (e.g., https://xxx-5000-xxx.ngrok-free.app)
-        - In Local: Uses localhost URL (http://127.0.0.1:5000)
+        - In Colab: Uses Colab's kernel proxy URL (e.g., https://xxx-5001-xxx.ngrok-free.app)
+        - In Local: Uses localhost URL (http://127.0.0.1:5001)
     """
     try:
         # Check if running in Google Colab
@@ -39,6 +39,7 @@ def get_dispatcher_url() -> str:
         # Not in Colab - use localhost
         local_url = f"http://{DISPATCHER_HOST}:{DISPATCHER_PORT}"
         return local_url
+
 
 # TODO: Merge multiple Statuses into a single Status enum
 

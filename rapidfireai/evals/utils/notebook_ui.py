@@ -3,18 +3,15 @@ Notebook UI using VS Code's notebook kernel messaging API.
 This works in VS Code notebooks by using the vscode notebook API instead of Jupyter.
 """
 
-from IPython.display import display, HTML
-import json
-import threading
-import time
-import requests
 import uuid
+
+from IPython.display import HTML, display
 
 
 class NotebookUI:
     """Notebook UI that works in VS Code"""
 
-    def __init__(self, dispatcher_url: str = "http://127.0.0.1:5000", refresh_rate_seconds: float = 3.0):
+    def __init__(self, dispatcher_url: str = "http://127.0.0.1:5001", refresh_rate_seconds: float = 3.0):
         self.dispatcher_url = dispatcher_url.rstrip("/")
         self.widget_id = f"controller_{uuid.uuid4().hex[:8]}"
         self.refresh_rate = refresh_rate_seconds
