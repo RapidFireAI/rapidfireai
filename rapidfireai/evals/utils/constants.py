@@ -23,7 +23,7 @@ def get_dispatcher_url() -> str:
     Auto-detect dispatcher URL based on environment.
 
     Returns:
-        - In Colab: Uses Colab's kernel proxy URL (e.g., https://xxx-5001-xxx.ngrok-free.app)
+        - In Colab: Uses Colab's kernel proxy URL (e.g., https://xxx-8851-xxx.ngrok-free.app)
         - In Local: Uses localhost URL (http://127.0.0.1:8851)
     """
     try:

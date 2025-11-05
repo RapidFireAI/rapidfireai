@@ -23,7 +23,8 @@ describe('ModelTraceExplorerOSSNotebookRenderer', () => {
     Object.defineProperty(window, 'location', {
       configurable: true,
       writable: true,
-      value: new URL('http://localhost:8851/?trace_id=1&experiment_id=1'),
+      // Validated this works in Colab and outside of colab
+      value: new URL('http://localhost:8852/?trace_id=1&experiment_id=1'),
     });
 
     jest.mocked(getTraceArtifact).mockResolvedValue(MOCK_TRACE);

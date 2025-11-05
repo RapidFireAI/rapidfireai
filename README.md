@@ -105,7 +105,7 @@ If you encounter port conflicts, you can kill existing processes:
 ```bash
 lsof -t -i:8852 | xargs kill -9  # mlflow
 lsof -t -i:8851 | xargs kill -9  # dispatcher
-lsof -t -i:8853| xargs kill -9  # frontend server
+lsof -t -i:8853 | xargs kill -9  # frontend server
 ```
 
 ## Documentation

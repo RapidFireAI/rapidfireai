@@ -98,7 +98,7 @@ git push origin test0.10.2
 # Kill services on specific ports if conflicts occur
 lsof -t -i:8851 | xargs kill -9  # dispatcher
 lsof -t -i:8852 | xargs kill -9  # mlflow
-lsof -t -i:8853| xargs kill -9  # frontend
+lsof -t -i:8853 | xargs kill -9  # frontend
 ```
 
 ## Architecture
@@ -247,7 +247,7 @@ Defined in `db/*.sql` files. Tables include:
 
 - `RF_EXPERIMENT_PATH`: Base path for experiments (default: `./rapidfire_experiments`)
 - `RF_TUTORIAL_PATH`: Path for tutorial notebooks (default: `./tutorial_notebooks`)
-- `MLFLOW_URL`: MLflow tracking server URL (default: `http://localhost:8852s`)
+- `MLFLOW_URL`: MLflow tracking server URL (default: `http://localhost:8852`)
 - `USE_SHARED_MEMORY`: Enable shared memory for checkpoints (default: True)
 
 ### Logging
