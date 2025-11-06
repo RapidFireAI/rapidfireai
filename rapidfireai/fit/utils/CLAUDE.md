@@ -92,7 +92,7 @@ See `worker_manager.py` for implementation of these workarounds.
 
 **Usage**:
 ```python
-from rapidfireai.utils.constants import RunStatus, MLFLOW_URL
+from rapidfireai.fit.utils.constants import RunStatus, MLFLOW_URL
 
 if run['status'] == RunStatus.ONGOING.value:
     # ...
@@ -114,7 +114,7 @@ if run['status'] == RunStatus.ONGOING.value:
 
 **Usage**:
 ```python
-from rapidfireai.utils.logging import RFLogger
+from rapidfireai.fit.utils.logging import RFLogger
 
 logger = RFLogger().create_logger("controller")
 logger.info("Starting controller")
@@ -145,7 +145,7 @@ logger.error("Failed to schedule", run_id=5)
 
 **Usage**:
 ```python
-from rapidfireai.utils.mlflow_manager import MLflowManager
+from rapidfireai.fit.utils.mlflow_manager import MLflowManager
 
 mlflow = MLflowManager("http://localhost:8852")
 experiment = mlflow.get_experiment("my_experiment")
@@ -180,7 +180,7 @@ mlflow.log_metric(run_id, "loss", 0.5, step=100)
 
 **Usage**:
 ```python
-from rapidfireai.utils.shm_manager import SharedMemoryManager
+from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 
 shm = SharedMemoryManager(name="controller-shm")
 registry, lock = shm.get_shm_objects()
@@ -216,7 +216,7 @@ with lock:
 
 **Usage**:
 ```python
-from rapidfireai.utils.experiment_utils import ExperimentUtils
+from rapidfireai.fit.utils.experiment_utils import ExperimentUtils
 
 utils = ExperimentUtils()
 exp_id, exp_name, logs = utils.create_experiment("my_exp", "./experiments")
@@ -243,7 +243,7 @@ utils.setup_signal_handlers(worker_processes)
 
 **Usage**:
 ```python
-from rapidfireai.utils.worker_manager import WorkerManager
+from rapidfireai.fit.utils.worker_manager import WorkerManager
 
 manager = WorkerManager(num_workers=4, registry, lock)
 manager.spawn_workers(experiment_id, experiment_name)
@@ -270,7 +270,7 @@ manager.shutdown_workers()
 
 **Usage**:
 ```python
-from rapidfireai.utils.serialize import encode_payload, decode_db_payload
+from rapidfireai.fit.utils.serialize import encode_payload, decode_db_payload
 
 config = {'learning_rate': 1e-5, 'batch_size': 8}
 blob = encode_payload(config)
@@ -301,7 +301,7 @@ config = decode_db_payload(row['config_leaf'])
 
 **Usage**:
 ```python
-from rapidfireai.utils.datapaths import DataPath
+from rapidfireai.fit.utils.datapaths import DataPath
 
 DataPath.initialize("my_experiment", "/path/to/experiments")
 checkpoint_file = DataPath.checkpoint_path(run_id=5, chunk_id=2)
@@ -322,7 +322,7 @@ checkpoint_file = DataPath.checkpoint_path(run_id=5, chunk_id=2)
 
 **Usage**:
 ```python
-from rapidfireai.utils.exceptions import ControllerException
+from rapidfireai.fit.utils.exceptions import ControllerException
 
 if num_gpus == 0:
     raise NoGPUsFoundException("No GPUs found while initializing controller.")
@@ -337,7 +337,7 @@ if num_gpus == 0:
 
 **Usage**:
 ```python
-from rapidfireai.utils.automl_utils import get_runs
+from rapidfireai.fit.utils.automl_utils import get_runs
 
 # Handles both AutoML instances and plain dicts
 if isinstance(param_config, AutoMLAlgorithm):
@@ -363,7 +363,7 @@ else:
 
 **Usage**:
 ```python
-from rapidfireai.utils.trainer_config import TrainerConfig
+from rapidfireai.fit.utils.trainer_config import TrainerConfig
 
 config = TrainerConfig(
     run_id=5,
@@ -383,7 +383,7 @@ trainer = create_trainer_instance(config, shm_manager)
 
 **Usage**:
 ```python
-python -m rapidfireai.utils.ping
+python -m rapidfireai.fit.utils.ping
 # Checks if dispatcher, mlflow, and frontend servers are running
 ```
 
@@ -391,7 +391,7 @@ python -m rapidfireai.utils.ping
 
 ### Logging Setup
 ```python
-from rapidfireai.utils.logging import RFLogger
+from rapidfireai.fit.utils.logging import RFLogger
 
 # In each component:
 logger = RFLogger().create_logger("component_name")
@@ -400,7 +400,7 @@ logger.info("Message")
 
 ### Shared Memory Access
 ```python
-from rapidfireai.utils.shm_manager import SharedMemoryManager
+from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 
 shm = SharedMemoryManager(name="controller-shm")
 registry, lock = shm.get_shm_objects()
@@ -411,7 +411,7 @@ with lock:
 
 ### Exception Handling
 ```python
-from rapidfireai.utils.exceptions import ControllerException
+from rapidfireai.fit.utils.exceptions import ControllerException
 
 try:
     # ... operation ...
@@ -421,7 +421,7 @@ except Exception as e:
 
 ### Path Management
 ```python
-from rapidfireai.utils.datapaths import DataPath
+from rapidfireai.fit.utils.datapaths import DataPath
 
 DataPath.initialize(experiment_name, base_path)
 checkpoint = DataPath.checkpoint_path(run_id, chunk_id)

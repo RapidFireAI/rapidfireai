@@ -112,7 +112,7 @@ class MLflowMetricLogger(MetricLogger):
             tracking_uri: MLflow tracking server URI
         """
         # Lazy import to avoid connection attempts in tensorboard-only mode
-        from rapidfireai.utils.mlflow_manager import MLflowManager
+        from rapidfireai.fit.utils.mlflow_manager import MLflowManager
         self.mlflow_manager = MLflowManager(tracking_uri)
 
     def get_experiment(self, experiment_name: str) -> str:

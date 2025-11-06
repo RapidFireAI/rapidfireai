@@ -31,7 +31,7 @@ def mock_mlflow_manager():
     Returns:
         Mock: Mocked MLflowManager with all required methods
     """
-    from rapidfireai.utils.mlflow_manager import MLflowManager
+    from rapidfireai.fit.utils.mlflow_manager import MLflowManager
 
     mock = Mock(spec=MLflowManager)
     mock.create_run.return_value = "test_run_id"
@@ -76,7 +76,7 @@ def mlflow_logger(mock_mlflow_manager):
     Returns:
         MLflowMetricLogger: Logger with mocked backend
     """
-    from rapidfireai.utils.metric_logger import MLflowMetricLogger
+    from rapidfireai.fit.utils.metric_logger import MLflowMetricLogger
 
     logger = MLflowMetricLogger("http://localhost:8852")
     logger.mlflow_manager = mock_mlflow_manager
@@ -92,7 +92,7 @@ def tensorboard_logger(temp_tensorboard_dir):
     Returns:
         TensorBoardMetricLogger: Logger with temp directory
     """
-    from rapidfireai.utils.metric_logger import TensorBoardMetricLogger
+    from rapidfireai.fit.utils.metric_logger import TensorBoardMetricLogger
 
     return TensorBoardMetricLogger(temp_tensorboard_dir)
 
@@ -105,7 +105,7 @@ def dual_logger(mock_mlflow_manager, temp_tensorboard_dir):
     Returns:
         DualMetricLogger: Logger with both backends
     """
-    from rapidfireai.utils.metric_logger import DualMetricLogger
+    from rapidfireai.fit.utils.metric_logger import DualMetricLogger
 
     logger = DualMetricLogger("http://localhost:8852", temp_tensorboard_dir)
     logger.mlflow_logger.mlflow_manager = mock_mlflow_manager

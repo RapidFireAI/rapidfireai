@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
-from rapidfireai.utils.metric_logger import (
+from rapidfireai.fit.utils.metric_logger import (
     MetricLogger,
     MLflowMetricLogger,
     TensorBoardMetricLogger,
