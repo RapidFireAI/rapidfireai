@@ -93,9 +93,9 @@ jobs:
           fi
           
           # Run bump_version.sh script with new version
-          if [ -f "bump_version.sh" ]; then
-            chmod +x bump_version.sh
-            ./bump_version.sh "$NEW_NUMERIC_VERSION"
+          if [ -f "setup/bump_version.sh" ]; then
+            chmod +x setup/bump_version.sh
+            ./setup/bump_version.sh "$NEW_NUMERIC_VERSION"
             echo "Ran bump_version.sh with version: $NEW_NUMERIC_VERSION"
           else
             echo "Warning: bump_version.sh not found, skipping version bump"
