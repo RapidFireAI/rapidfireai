@@ -141,6 +141,16 @@ dependencies = [
     "jq==1.10.0",
 
     # Other
+    "pandas",
+    "mlflow",
+    "dill",
+    "loguru",
+    "ipykernel",
+    "peft",
+    "trl",
+    "ipywidgets",
+    "bitsandbytes",
+    "sentencepiece",
 
 ]
 
