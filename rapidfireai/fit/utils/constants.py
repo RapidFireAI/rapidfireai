@@ -1,9 +1,6 @@
 import os
 from enum import Enum
 
-MLFLOW_URL = "http://127.0.0.1:8852"
-
-
 # Tracking Backend Configuration
 def get_tracking_backend() -> str:
     """
@@ -45,15 +42,22 @@ class DispatcherConfig:
     """Class to manage the dispatcher configuration"""
 
     HOST: str = "127.0.0.1"
-    PORT: int = 8851
+    PORT: int = int(os.getenv("RF_API_PORT", "8851"))
+    URL: str = f"http://{HOST}:{PORT}"
 
+# MLFlow Constants
+class MLFlowConfig:
+    """Class to manage the MLFlow configuration"""
+
+    HOST: str = "127.0.0.1"
+    PORT: int = int(os.getenv("RF_MLFLOW_PORT", "8852"))
+    URL: str = f"http://{HOST}:{PORT}"
 
 # Database Constants
 class DBConfig:
     """Class to manage the database configuration for SQLite"""
 
     # Use user's home directory for database path
-    import os
 
     DB_PATH: str = os.path.join(
         os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~", "db"))), "rapidfire_fit.db"

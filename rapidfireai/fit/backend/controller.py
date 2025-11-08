@@ -18,7 +18,7 @@ from rapidfireai.fit.backend.scheduler import Scheduler
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.utils.automl_utils import get_flattened_config_leaf, get_runs
 from rapidfireai.fit.utils.constants import (
-    MLFLOW_URL,
+    MLFlowConfig,
     TENSORBOARD_LOG_DIR,
     ControllerTask,
     ExperimentTask,
@@ -84,7 +84,7 @@ class Controller:
 
         self.metric_logger = create_metric_logger(
             backend=get_tracking_backend(),
-            mlflow_tracking_uri=MLFLOW_URL,
+            mlflow_tracking_uri=MLFlowConfig.URL,
             tensorboard_log_dir=tensorboard_log_dir,
         )
         # Get experiment if using MLflow

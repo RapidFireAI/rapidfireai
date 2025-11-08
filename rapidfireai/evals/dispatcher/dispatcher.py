@@ -509,12 +509,12 @@ def run_dispatcher(host: str = "127.0.0.1", port: int = 8851) -> None:
         traceback.print_exc()
 
 
-def _check_port_in_use(port: int) -> bool:
+def _check_port_in_use(host: str,port: int) -> bool:
     """Check if a port is already in use."""
     import socket
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(("127.0.0.1", port)) == 0
+        return s.connect_ex((host, port)) == 0
 
 
 def _cleanup_old_dispatcher(port: int, logger=None) -> None:
@@ -558,7 +558,7 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=No
     """
     try:
         # Check if port is in use
-        if _check_port_in_use(port):
+        if _check_port_in_use(host, port):
             msg = f"Port {port} is already in use. Attempting cleanup..."
             logger.warning(msg)
 
@@ -569,7 +569,7 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=No
             import time
 
             time.sleep(0.5)
-            if _check_port_in_use(port):
+            if _check_port_in_use(host, port):
                 error_msg = f"Port {port} still in use after cleanup. Restart your kernel or system."
                 logger.error(error_msg)
                 return None

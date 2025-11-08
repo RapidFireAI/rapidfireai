@@ -1,5 +1,5 @@
 from enum import Enum
-
+import os
 # Logging Constants
 LOG_FILENAME = "rapidfire.log"
 
@@ -7,15 +7,18 @@ LOG_FILENAME = "rapidfire.log"
 NUM_QUERY_PROCESSING_ACTORS = 4
 NUM_CPUS_PER_DOC_ACTOR = 2
 
-# Dispatcher Constants
-DISPATCHER_HOST = "127.0.0.1"
-DISPATCHER_PORT = 8851
-
 # Rate Limiting Constants
 # Maximum number of retries for rate-limited API calls
 MAX_RATE_LIMIT_RETRIES = 5
 # Base wait time for exponential backoff (seconds)
 RATE_LIMIT_BACKOFF_BASE = 2
+
+class DispatcherConfig:
+    """Class to manage the dispatcher configuration"""
+
+    HOST: str = os.getenv("RF_API_HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("RF_API_PORT", "8851"))
+    URL: str = f"http://{HOST}:{PORT}"
 
 
 def get_dispatcher_url() -> str:
@@ -32,12 +35,12 @@ def get_dispatcher_url() -> str:
         from google.colab.output import eval_js
 
         # Get the Colab proxy URL for the dispatcher port
-        proxy_url = eval_js(f"google.colab.kernel.proxyPort({DISPATCHER_PORT})")
+        proxy_url = eval_js(f"google.colab.kernel.proxyPort({DispatcherConfig.PORT})")
         print(f"🌐 Colab environment detected. Dispatcher URL: {proxy_url}")
         return proxy_url
     except ImportError:
         # Not in Colab - use localhost
-        local_url = f"http://{DISPATCHER_HOST}:{DISPATCHER_PORT}"
+        local_url = DispatcherConfig.URL
         return local_url
 
 
@@ -106,7 +109,6 @@ class DBConfig:
     """Class to manage the database configuration for SQLite"""
 
     # Use user's home directory for database path
-    import os
 
     DB_PATH: str = os.path.join(
         os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~", "db"))), "rapidfire_evals.db"

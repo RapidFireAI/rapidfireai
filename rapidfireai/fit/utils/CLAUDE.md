@@ -73,7 +73,6 @@ See `worker_manager.py` for implementation of these workarounds.
 **Purpose**: Centralized definitions for enums, config values, and system constants
 
 **Key Constants**:
-- `MLFLOW_URL`: Default MLflow tracking server URL (http://localhost:8852)
 - `USE_SHARED_MEMORY`: Flag to enable shared memory for checkpoints (default: True)
 - `LOG_FILENAME`: Log file naming pattern
 - `DB_PATH`: SQLite database file path
@@ -89,10 +88,11 @@ See `worker_manager.py` for implementation of these workarounds.
 
 **Config Classes**:
 - `DispatcherConfig`: Dispatcher server configuration
+- `MLFlowConfig`: MLFlow server configuration
 
 **Usage**:
 ```python
-from rapidfireai.fit.utils.constants import RunStatus, MLFLOW_URL
+from rapidfireai.fit.utils.constants import RunStatus, MLFlowConfig
 
 if run['status'] == RunStatus.ONGOING.value:
     # ...
