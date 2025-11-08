@@ -151,7 +151,7 @@ dependencies = [
     "jq",
 
     # Other
-    "panda>=2.2.2",
+    "pandas>=2.2.2",
     "mlflow",
     "dill>=0.3.8",
     "loguru",
