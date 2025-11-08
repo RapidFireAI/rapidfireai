@@ -15,9 +15,9 @@ from flask_cors import CORS
 from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
-from rapidfireai.evals.utils.constants import ICOperation
+from rapidfireai.evals.utils.constants import ICOperation, DispatcherConfig
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:8853", "http://localhost"]
+CORS_ALLOWED_ORIGINS = ["http://localhost:8853", "http://localhost", DispatcherConfig.URL]
 
 
 class Dispatcher:
