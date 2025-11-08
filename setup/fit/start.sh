@@ -555,18 +555,18 @@ show_status() {
     # Always check api.log
     if [[ -f "$RF_LOG_PATH/api.log" ]]; then
         local size=$(du -h "$RF_LOG_PATH/api.log" | cut -f1)
-        print_status "- api.log: $size"
+        print_status f"- $RF_LOG_PATH/api.log: $size"
     else
-        print_warning "- api.log: not found"
+        print_warning f"- $RF_LOG_PATH/api.log: not found"
     fi
 
     # Only check mlflow.log if MLflow is running
     if [[ "$RF_COLAB_MODE" != "true" ]] || [[ "$RF_TRACKING_BACKEND" != "tensorboard" ]]; then
         if [[ -f "$RF_LOG_PATH/mlflow.log" ]]; then
             local size=$(du -h "$RF_LOG_PATH/mlflow.log" | cut -f1)
-            print_status "- mlflow.log: $size"
+            print_status f"- $RF_LOG_PATH/mlflow.log: $size"
         else
-            print_warning "- mlflow.log: not found"
+            print_warning f"- $RF_LOG_PATH/mlflow.log: not found"
         fi
     fi
 
@@ -574,9 +574,9 @@ show_status() {
     if [[ "$RF_COLAB_MODE" != "true" ]]; then
         if [[ -f "$RF_LOG_PATH/frontend.log" ]]; then
             local size=$(du -h "$RF_LOG_PATH/frontend.log" | cut -f1)
-            print_status "- frontend.log: $size"
+            print_status f"- $RF_LOG_PATH/frontend.log: $size"
         else
-            print_warning "- frontend.log: not found"
+            print_warning f"- $RF_LOG_PATH/frontend.log: not found"
         fi
     fi
 }
