@@ -331,7 +331,6 @@ def install_packages(evals: bool = False):
         packages.append({"package": "torchvision==0.22.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
         packages.append({"package": "torchaudio==2.7.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
         packages.append({"package": "transformers==4.57.1", "extra_args": ["--upgrade"]})
-        pass
 
     ## TODO: re-enable for fit once trl has fix
     if evals and cuda_major == 12:
