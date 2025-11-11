@@ -26,8 +26,8 @@ nohup uv run bash dev/run-dev-server.sh > /tmp/mlflow-dev-server.log 2>&1 &
 tail -f /tmp/mlflow-dev-server.log
 
 # Servers will be available at:
-# - MLflow backend: http://localhost:5000
-# - React frontend: http://localhost:3000 (with hot reload)
+# - MLflow backend: http://localhost:8852
+# - React frontend: http://localhost:8853 (with hot reload)
 ```
 
 This provides fast edit-refresh for UI development - changes to React components will automatically reload in the browser.
@@ -45,7 +45,7 @@ Available scripts:
 
 ```bash
 # Development
-yarn start              # Start dev server (port 3000) with hot reload
+yarn start              # Start dev server (port 8853) with hot reload
 yarn build              # Build production bundle
 
 # Testing
@@ -232,7 +232,7 @@ Example workflow:
 
 1. Make changes to React components
 2. Wait for hot reload (automatic)
-3. Use Playwright to navigate to `http://localhost:3000`
+3. Use Playwright to navigate to `http://localhost:8853`
 4. Take screenshots or interact with the updated UI
 5. Verify the changes work as expected
 

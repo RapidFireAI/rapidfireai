@@ -25,7 +25,7 @@ from rapidfireai.fit.ml.checkpoint_utils import (
 )
 from rapidfireai.fit.ml.trainer import create_trainer_instance
 from rapidfireai.fit.utils.constants import (
-    MLFLOW_URL,
+    MLFlowConfig,
     TENSORBOARD_LOG_DIR,
     USE_SHARED_MEMORY,
     RunStatus,
@@ -87,7 +87,7 @@ class Worker:
         tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.experiments_path / "tensorboard_logs")
         self.metric_logger = create_metric_logger(
             backend=get_tracking_backend(),
-            mlflow_tracking_uri=MLFLOW_URL,
+            mlflow_tracking_uri=MLFlowConfig.URL,
             tensorboard_log_dir=tensorboard_log_dir,
         )
         # Get experiment if using MLflow

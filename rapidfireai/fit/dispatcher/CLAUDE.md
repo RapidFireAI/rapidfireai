@@ -19,7 +19,7 @@ The dispatcher is a Flask-based REST API that provides the communication layer b
 - Manages CORS for local development
 
 **Architecture**:
-- Flask app with CORS enabled for localhost:3000 (frontend dev server)
+- Flask app with CORS enabled for localhost:8853 (frontend dev server)
 - Stateless request handling (reads from database on each request)
 - Returns JSON responses
 - Error handling with try/catch and HTTP status codes
@@ -86,7 +86,7 @@ except Exception as e:
 ```
 
 **CORS Configuration**:
-- Allows origins: localhost:3000, localhost
+- Allows origins: localhost:8853, localhost
 - Required for frontend dev server (separate port from backend)
 - Production: frontend built and served from same origin
 
@@ -95,7 +95,7 @@ except Exception as e:
 
 **Key Settings**:
 - `workers`: Number of worker processes (default: 4)
-- `bind`: Host and port (default: 0.0.0.0:8081)
+- `bind`: Host and port (default: 0.0.0.0:8851)
 - `timeout`: Request timeout (default: 120s)
 - `loglevel`: Log verbosity (default: info)
 
@@ -201,11 +201,11 @@ gunicorn -c rapidfireai/fit/dispatcher/gunicorn.conf.py rapidfireai.fit.dispatch
 Frontend makes HTTP requests to dispatcher:
 ```typescript
 // Example: Get all runs
-const response = await fetch('http://localhost:8081/dispatcher/get-all-runs');
+const response = await fetch('http://localhost:8851/dispatcher/get-all-runs');
 const runs = await response.json();
 
 // Example: Stop run
-await fetch('http://localhost:8081/dispatcher/stop-run', {
+await fetch('http://localhost:8851/dispatcher/stop-run', {
   method: 'POST',
   headers: {'Content-Type': 'application/json'},
   body: JSON.stringify({run_id: 5})
@@ -239,7 +239,7 @@ Asynchronous communication via database (no direct RPC).
 ./rapidfireai/fit/start_dev.sh start
 
 # Or manually
-python -m flask --app rapidfireai.fit.dispatcher.dispatcher:app run --port 8081
+python -m flask --app rapidfireai.fit.dispatcher.dispatcher:app run --port 8851
 ```
 
 **Production** (via start.sh):
@@ -250,13 +250,13 @@ gunicorn -c rapidfireai/fit/dispatcher/gunicorn.conf.py rapidfireai.fit.dispatch
 **Testing**:
 ```bash
 # Health check
-curl http://localhost:8081/dispatcher/health-check
+curl http://localhost:8851/dispatcher/health-check
 
 # Get all runs
-curl http://localhost:8081/dispatcher/get-all-runs
+curl http://localhost:8851/dispatcher/get-all-runs
 
 # Stop run
-curl -X POST http://localhost:8081/dispatcher/stop-run \
+curl -X POST http://localhost:8851/dispatcher/stop-run \
   -H "Content-Type: application/json" \
   -d '{"run_id": 1}'
 ```
@@ -289,7 +289,7 @@ def my_endpoint(self) -> tuple[Response, int]:
 
 3. **Update frontend to call endpoint**:
 ```typescript
-await fetch('http://localhost:8081/dispatcher/my-endpoint', {
+await fetch('http://localhost:8851/dispatcher/my-endpoint', {
   method: 'POST',
   body: JSON.stringify(data)
 });
@@ -308,7 +308,7 @@ tail -f {experiment_path}/logs/dispatcher.log
 
 **Test endpoint directly**:
 ```bash
-curl -X POST http://localhost:8081/dispatcher/stop-run \
+curl -X POST http://localhost:8851/dispatcher/stop-run \
   -H "Content-Type: application/json" \
   -d '{"run_id": 1}' \
   -v

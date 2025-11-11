@@ -22,6 +22,7 @@ jobs:
       actions: read
     outputs:
       new_version: ${{ steps.determine_version.outputs.new_version }}
+      new_numeric_version: ${{ steps.determine_version.outputs.new_numeric_version }}
       new_branch: ${{ steps.determine_version.outputs.new_branch }}
     steps:
       - name: Checkout code
@@ -93,9 +94,9 @@ jobs:
           fi
           
           # Run bump_version.sh script with new version
-          if [ -f "bump_version.sh" ]; then
-            chmod +x bump_version.sh
-            ./bump_version.sh "$NEW_NUMERIC_VERSION"
+          if [ -f "setup/bump_version.sh" ]; then
+            chmod +x setup/bump_version.sh
+            ./setup/bump_version.sh "$NEW_NUMERIC_VERSION"
             echo "Ran bump_version.sh with version: $NEW_NUMERIC_VERSION"
           else
             echo "Warning: bump_version.sh not found, skipping version bump"
@@ -193,3 +194,4 @@ jobs:
         echo "🎉 Successfully published version: ${{ needs.version-and-build.outputs.new_version }}"
         echo "📦 Package available at: https://pypi.org/project/rapidfireai/"
         echo "🌿 Created branch: ${{ needs.version-and-build.outputs.new_branch }}"
+        echo "Access the package at https://pypi.org/project/rapidfireai/${{ needs.version-and-build.outputs.new_numeric_version }}/"

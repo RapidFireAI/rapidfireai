@@ -7,15 +7,16 @@
 set -e  # Exit on any error
 
 # Configuration
-RF_MLFLOW_PORT=${RF_MLFLOW_PORT:=5002}
+RF_MLFLOW_PORT=${RF_MLFLOW_PORT:=8852}
 RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=127.0.0.1}
-RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=3000}
+RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=8853}
 RF_FRONTEND_HOST=${RF_FRONTEND_HOST:=0.0.0.0}
 # API server configuration - these should match DispatcherConfig in constants.py
-RF_API_PORT=${RF_API_PORT:=8081}
+RF_API_PORT=${RF_API_PORT:=8851}
 RF_API_HOST=${RF_API_HOST:=127.0.0.1}
 
 RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
+RF_LOG_PATH="${RF_LOG_PATH:=$HOME/logs}"
 
 # Colab mode configuration
 RF_COLAB_MODE=${RF_COLAB_MODE:=false}
@@ -237,19 +238,19 @@ start_mlflow() {
     fi
 
     # Start MLflow server in background with logging
-    print_status "MLflow logs will be written to: $SCRIPT_DIR/mlflow.log"
+    print_status "MLflow logs will be written to: $RF_LOG_PATH/mlflow.log"
 
     # Use setsid on Linux, nohup on macOS
     if command -v setsid &> /dev/null; then
         setsid mlflow server \
             --host $RF_MLFLOW_HOST \
             --port $RF_MLFLOW_PORT \
-            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > "$SCRIPT_DIR/mlflow.log" 2>&1 &
+            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > "$RF_LOG_PATH/mlflow.log" 2>&1 &
     else
         nohup mlflow server \
             --host $RF_MLFLOW_HOST \
             --port $RF_MLFLOW_PORT \
-            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > "$SCRIPT_DIR/mlflow.log" 2>&1 &
+            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > "$RF_LOG_PATH/mlflow.log" 2>&1 &
     fi
 
     local mlflow_pid=$!
@@ -269,16 +270,16 @@ start_mlflow() {
             print_error "MLflow process is running but not responding. Checking logs:"
         fi
 
-        if [[ -f "$SCRIPT_DIR/mlflow.log" ]]; then
+        if [[ -f "$RF_LOG_PATH/mlflow.log" ]]; then
             echo "=== Last 30 lines of mlflow.log ==="
-            tail -30 "$SCRIPT_DIR/mlflow.log"
+            tail -30 "$RF_LOG_PATH/mlflow.log"
             echo "=== End of logs ==="
             echo ""
 
             # Look for specific error patterns
-            if grep -q "Error\|Exception\|Traceback\|Failed\|ImportError\|ModuleNotFoundError" "$SCRIPT_DIR/mlflow.log"; then
+            if grep -q "Error\|Exception\|Traceback\|Failed\|ImportError\|ModuleNotFoundError" "$RF_LOG_PATH/mlflow.log"; then
                 print_error "Found error messages in logs:"
-                grep -A 5 -B 2 "Error\|Exception\|Traceback\|Failed\|ImportError\|ModuleNotFoundError" "$SCRIPT_DIR/mlflow.log" | head -20
+                grep -A 5 -B 2 "Error\|Exception\|Traceback\|Failed\|ImportError\|ModuleNotFoundError" "$RF_LOG_PATH/mlflow.log" | head -20
             fi
         else
             if [[ "$RF_COLAB_MODE" == "true" ]] && [[ "$RF_TRACKING_BACKEND" == "tensorboard" ]]; then
@@ -337,8 +338,8 @@ start_api_server() {
     cd "$DISPATCHER_DIR"
 
     # Start Gunicorn server in background with logging
-    print_status "API server logs will be written to: $SCRIPT_DIR/api.log"
-    gunicorn -c gunicorn.conf.py > "$SCRIPT_DIR/api.log" 2>&1 &
+    print_status "API server logs will be written to: $RF_LOG_PATH/api.log"
+    gunicorn -c gunicorn.conf.py > "$RF_LOG_PATH/api.log" 2>&1 &
 
     local api_pid=$!
     cd "$SCRIPT_DIR"  # Return to original directory
@@ -359,16 +360,16 @@ start_api_server() {
             print_error "API process is running but not responding. Checking logs:"
         fi
 
-        if [[ -f "$SCRIPT_DIR/api.log" ]]; then
+        if [[ -f "$RF_LOG_PATH/api.log" ]]; then
             echo "=== Last 30 lines of api.log ==="
-            tail -30 "$SCRIPT_DIR/api.log"
+            tail -30 "$RF_LOG_PATH/api.log"
             echo "=== End of logs ==="
             echo ""
 
             # Look for specific error patterns
-            if grep -q "Error\|Exception\|Traceback\|Failed\|ImportError\|ModuleNotFoundError" "$SCRIPT_DIR/api.log"; then
+            if grep -q "Error\|Exception\|Traceback\|Failed\|ImportError\|ModuleNotFoundError" "$RF_LOG_PATH/api.log"; then
                 print_error "Found error messages in logs:"
-                grep -A 5 -B 2 "Error\|Exception\|Traceback\|Failed\|ImportError\|ModuleNotFoundError" "$SCRIPT_DIR/api.log" | head -20
+                grep -A 5 -B 2 "Error\|Exception\|Traceback\|Failed\|ImportError\|ModuleNotFoundError" "$RF_LOG_PATH/api.log" | head -20
             fi
         else
             print_error "No api.log file found"
@@ -428,14 +429,14 @@ start_frontend() {
     print_status "Starting production frontend server with Flask..."
 
     # Start Flask server in background with process group
-    print_status "Frontend logs will be written to: $SCRIPT_DIR/frontend.log"
+    print_status "Frontend logs will be written to: $RF_LOG_PATH/frontend.log"
     cd "$FRONTEND_DIR"
 
     # Use setsid on Linux, nohup on macOS for better process management
     if command -v setsid &> /dev/null; then
-        PORT=$RF_FRONTEND_PORT setsid ${RF_PYTHON_EXECUTABLE} server.py > "$SCRIPT_DIR/frontend.log" 2>&1 &
+        PORT=$RF_FRONTEND_PORT setsid ${RF_PYTHON_EXECUTABLE} server.py > "$RF_LOG_PATH/frontend.log" 2>&1 &
     else
-        PORT=$RF_FRONTEND_PORT nohup ${RF_PYTHON_EXECUTABLE} server.py > "$SCRIPT_DIR/frontend.log" 2>&1 &
+        PORT=$RF_FRONTEND_PORT nohup ${RF_PYTHON_EXECUTABLE} server.py > "$RF_LOG_PATH/frontend.log" 2>&1 &
     fi
 
     local frontend_pid=$!
@@ -452,7 +453,7 @@ start_frontend() {
 
     # Wait for frontend to be ready - check both localhost and 127.0.0.1
     local frontend_ready=false
-    local check_hosts=("localhost" "127.0.0.1")
+    local check_hosts=("localhost" "127.0.0.1" "$RF_FRONTEND_HOST")
 
     for host in "${check_hosts[@]}"; do
         if wait_for_service $host $RF_FRONTEND_PORT "Frontend server" 15; then
@@ -472,16 +473,16 @@ start_frontend() {
             print_error "Frontend process is running but not responding. Checking logs:"
         fi
 
-        if [[ -f "$SCRIPT_DIR/frontend.log" ]]; then
+        if [[ -f "$RF_LOG_PATH/frontend.log" ]]; then
             echo "=== Last 30 lines of frontend.log ==="
-            tail -30 "$SCRIPT_DIR/frontend.log"
+            tail -30 "$RF_LOG_PATH/frontend.log"
             echo "=== End of logs ==="
             echo ""
 
             # Look for specific error patterns
-            if grep -q "Error\|Exception\|Traceback\|Failed" "$SCRIPT_DIR/frontend.log"; then
+            if grep -q "Error\|Exception\|Traceback\|Failed" "$RF_LOG_PATH/frontend.log"; then
                 print_error "Found error messages in logs:"
-                grep -A 5 -B 2 "Error\|Exception\|Traceback\|Failed" "$SCRIPT_DIR/frontend.log" | head -20
+                grep -A 5 -B 2 "Error\|Exception\|Traceback\|Failed" "$RF_LOG_PATH/frontend.log" | head -20
             fi
         else
             print_error "No frontend.log file found"
@@ -552,30 +553,30 @@ show_status() {
     print_status "Log files:"
 
     # Always check api.log
-    if [[ -f "$SCRIPT_DIR/api.log" ]]; then
-        local size=$(du -h "$SCRIPT_DIR/api.log" | cut -f1)
-        print_status "- api.log: $size"
+    if [[ -f "$RF_LOG_PATH/api.log" ]]; then
+        local size=$(du -h "$RF_LOG_PATH/api.log" | cut -f1)
+        print_status "- $RF_LOG_PATH/api.log: $size"
     else
-        print_warning "- api.log: not found"
+        print_warning "- $RF_LOG_PATH/api.log: not found"
     fi
 
     # Only check mlflow.log if MLflow is running
     if [[ "$RF_COLAB_MODE" != "true" ]] || [[ "$RF_TRACKING_BACKEND" != "tensorboard" ]]; then
-        if [[ -f "$SCRIPT_DIR/mlflow.log" ]]; then
-            local size=$(du -h "$SCRIPT_DIR/mlflow.log" | cut -f1)
-            print_status "- mlflow.log: $size"
+        if [[ -f "$RF_LOG_PATH/mlflow.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/mlflow.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/mlflow.log: $size"
         else
-            print_warning "- mlflow.log: not found"
+            print_warning "- $RF_LOG_PATH/mlflow.log: not found"
         fi
     fi
 
     # Only check frontend.log if frontend is running
     if [[ "$RF_COLAB_MODE" != "true" ]]; then
-        if [[ -f "$SCRIPT_DIR/frontend.log" ]]; then
-            local size=$(du -h "$SCRIPT_DIR/frontend.log" | cut -f1)
-            print_status "- frontend.log: $size"
+        if [[ -f "$RF_LOG_PATH/frontend.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/frontend.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/frontend.log: $size"
         else
-            print_warning "- frontend.log: not found"
+            print_warning "- $RF_LOG_PATH/frontend.log: not found"
         fi
     fi
 }
@@ -594,6 +595,11 @@ start_services() {
     # Frontend runs unless Colab mode
     if [[ "$RF_COLAB_MODE" != "true" ]]; then
         ((total_services++))
+    fi
+
+    if [[ ! -d "$RF_LOG_PATH" ]]; then
+        print_status "Creating log directory $RF_LOG_PATH..."
+        mkdir -p "$RF_LOG_PATH"
     fi
 
     print_status "Starting $total_services service(s)..."
@@ -685,11 +691,11 @@ main() {
         # Show summary of all log files for debugging
         print_status "=== Startup Failure Summary ==="
         for log_file in "mlflow.log" "api.log" "frontend.log"; do
-            if [[ -f "$SCRIPT_DIR/$log_file" ]]; then
+            if [[ -f "$RF_LOG_PATH/$log_file" ]]; then
                 echo ""
                 print_status "=== $log_file ==="
-                if [[ -s "$SCRIPT_DIR/$log_file" ]]; then
-                    tail -10 "$SCRIPT_DIR/$log_file"
+                if [[ -s "$RF_LOG_PATH/$log_file" ]]; then
+                    tail -10 "$RF_LOG_PATH/$log_file"
                 else
                     echo "(empty log file)"
                 fi

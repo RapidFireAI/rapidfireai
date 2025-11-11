@@ -11,6 +11,7 @@ from urllib.parse import urlparse, urljoin
 import requests
 from flask import Flask, request, Response, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
+from rapidfireai.fit.utils.constants import DispatcherConfig, MLFlowConfig
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,9 +24,9 @@ class UserProxyManager:
     def __init__(self):
         self.user_proxies = {}
         self.default_proxy = {
-            'main_proxy_target': 'http://127.0.0.1:5002/',
-            'static_proxy_target': 'http://127.0.0.1:5002/',
-            'dispatcher_proxy_target': 'http://127.0.0.1:8081/',
+            'main_proxy_target': MLFlowConfig.URL,
+            'static_proxy_target': MLFlowConfig.URL,
+            'dispatcher_proxy_target': DispatcherConfig.URL,
         }
     
     def get_user_proxy(self, user_id: str) -> Dict[str, str]:

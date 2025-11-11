@@ -15,7 +15,7 @@ from tqdm import tqdm
 from transformers import logging as transformers_logging
 
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.fit.utils.constants import MLFLOW_URL, ExperimentStatus, ExperimentTask, get_tracking_backend
+from rapidfireai.fit.utils.constants import MLFlowConfig, ExperimentStatus, ExperimentTask, get_tracking_backend
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.exceptions import DBException, ExperimentException
 from rapidfireai.fit.utils.logging import RFLogger
@@ -225,7 +225,7 @@ class ExperimentUtils:
 
                 # Also clear context through MLflowManager if available
                 try:
-                    mlflow_manager = MLflowManager(MLFLOW_URL)
+                    mlflow_manager = MLflowManager(MLFlowConfig.URL)
                     mlflow_manager.clear_context()
                 except Exception as e2:
                     print(f"Error clearing MLflow context through MLflowManager: {e2}")
@@ -362,7 +362,7 @@ class ExperimentUtils:
                 from rapidfireai.fit.utils.mlflow_manager import MLflowManager
 
                 try:
-                    mlflow_manager = MLflowManager(MLFLOW_URL)
+                    mlflow_manager = MLflowManager(MLFlowConfig.URL)
                     mlflow_experiment_id = mlflow_manager.create_experiment(experiment_name)
                     mlflow.tracing.disable_notebook_display()
                 except Exception as e:

@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
-from rapidfireai.utils.metric_logger import (
+from rapidfireai.fit.utils.metric_logger import (
     MetricLogger,
     MLflowMetricLogger,
     TensorBoardMetricLogger,
@@ -30,7 +30,7 @@ class TestMetricLoggerFactory:
         """Test creating MLflow logger with valid URI."""
         logger = create_metric_logger(
             backend="mlflow",
-            mlflow_tracking_uri="http://localhost:5002"
+            mlflow_tracking_uri="http://localhost:8852"
         )
 
         assert isinstance(logger, MLflowMetricLogger)
@@ -48,7 +48,7 @@ class TestMetricLoggerFactory:
         """Test creating Dual logger with both parameters."""
         logger = create_metric_logger(
             backend="both",
-            mlflow_tracking_uri="http://localhost:5002",
+            mlflow_tracking_uri="http://localhost:8852",
             tensorboard_log_dir=temp_tensorboard_dir
         )
 
@@ -58,11 +58,11 @@ class TestMetricLoggerFactory:
         """Test that backend name is case-insensitive."""
         logger1 = create_metric_logger(
             backend="MLFLOW",
-            mlflow_tracking_uri="http://localhost:5002"
+            mlflow_tracking_uri="http://localhost:8852"
         )
         logger2 = create_metric_logger(
             backend="MlFlow",
-            mlflow_tracking_uri="http://localhost:5002"
+            mlflow_tracking_uri="http://localhost:8852"
         )
 
         assert isinstance(logger1, MLflowMetricLogger)
@@ -73,7 +73,7 @@ class TestMetricLoggerFactory:
         with pytest.raises(ValueError, match="Invalid backend"):
             create_metric_logger(
                 backend="invalid_backend",
-                mlflow_tracking_uri="http://localhost:5002"
+                mlflow_tracking_uri="http://localhost:8852"
             )
 
     def test_missing_mlflow_uri(self):
@@ -383,7 +383,7 @@ class TestMetricLoggerInterface:
 
     def test_mlflow_logger_conforms_to_interface(self):
         """Test that MLflowMetricLogger conforms to MetricLogger interface."""
-        logger = MLflowMetricLogger("http://localhost:5002")
+        logger = MLflowMetricLogger("http://localhost:8852")
         assert isinstance(logger, MetricLogger)
 
     def test_tensorboard_logger_conforms_to_interface(self, temp_tensorboard_dir):
@@ -393,7 +393,7 @@ class TestMetricLoggerInterface:
 
     def test_dual_logger_conforms_to_interface(self, temp_tensorboard_dir):
         """Test that DualMetricLogger conforms to MetricLogger interface."""
-        logger = DualMetricLogger("http://localhost:5002", temp_tensorboard_dir)
+        logger = DualMetricLogger("http://localhost:8852", temp_tensorboard_dir)
         assert isinstance(logger, MetricLogger)
 
 
