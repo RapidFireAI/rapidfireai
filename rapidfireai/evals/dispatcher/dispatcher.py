@@ -6,19 +6,18 @@ FIXED: Now properly handles CORS preflight (OPTIONS) requests for VS Code/Cursor
 """
 
 import json
+import logging
 import threading
 import traceback
-import logging
-
 
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
-from rapidfireai.evals.utils.constants import ICOperation
+from rapidfireai.evals.utils.constants import ICOperation, DispatcherConfig
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:3000", "http://localhost"]
+CORS_ALLOWED_ORIGINS = ["http://localhost:8853", "http://localhost", DispatcherConfig.URL]
 
 
 class Dispatcher:
@@ -42,14 +41,18 @@ class Dispatcher:
 
         # Enable CORS for local development
         # Dispatcher runs on localhost, safe to allow all origins
-        _ = CORS(self.app,
-             resources={r"/*": {
-                 "origins": "*",
-                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                 "allow_headers": ["Content-Type", "Authorization"],
-                 "expose_headers": ["Content-Type"],
-                 "supports_credentials": False
-             }})
+        _ = CORS(
+            self.app,
+            resources={
+                r"/*": {
+                    "origins": "*",
+                    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                    "allow_headers": ["Content-Type", "Authorization"],
+                    "expose_headers": ["Content-Type"],
+                    "supports_credentials": False,
+                }
+            },
+        )
 
         # Register routes
         self.register_routes()
@@ -63,24 +66,30 @@ class Dispatcher:
         def handle_preflight():
             if request.method == "OPTIONS":
                 response = jsonify({})
-                response.headers.add('Access-Control-Allow-Origin', '*')
-                response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-                response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-                response.headers.add('Access-Control-Max-Age', '3600')
+                response.headers.add("Access-Control-Allow-Origin", "*")
+                response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+                response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
+                response.headers.add("Access-Control-Max-Age", "3600")
                 return response
 
         # Health check
-        self.app.add_url_rule(f"{route_prefix}/health-check", "health_check", self.health_check, methods=["GET", "OPTIONS"])
+        self.app.add_url_rule(
+            f"{route_prefix}/health-check", "health_check", self.health_check, methods=["GET", "OPTIONS"]
+        )
 
         # Interactive control operations
-        self.app.add_url_rule(f"{route_prefix}/stop-pipeline", "stop_pipeline", self.stop_pipeline, methods=["POST", "OPTIONS"])
+        self.app.add_url_rule(
+            f"{route_prefix}/stop-pipeline", "stop_pipeline", self.stop_pipeline, methods=["POST", "OPTIONS"]
+        )
         self.app.add_url_rule(
             f"{route_prefix}/resume-pipeline", "resume_pipeline", self.resume_pipeline, methods=["POST", "OPTIONS"]
         )
         self.app.add_url_rule(
             f"{route_prefix}/delete-pipeline", "delete_pipeline", self.delete_pipeline, methods=["POST", "OPTIONS"]
         )
-        self.app.add_url_rule(f"{route_prefix}/clone-pipeline", "clone_pipeline", self.clone_pipeline, methods=["POST", "OPTIONS"])
+        self.app.add_url_rule(
+            f"{route_prefix}/clone-pipeline", "clone_pipeline", self.clone_pipeline, methods=["POST", "OPTIONS"]
+        )
 
         # Status queries
         self.app.add_url_rule(
@@ -95,7 +104,10 @@ class Dispatcher:
 
         # Pipeline queries (for UI)
         self.app.add_url_rule(
-            f"{route_prefix}/list-all-pipeline-ids", "list_all_pipeline_ids", self.list_all_pipeline_ids, methods=["GET", "OPTIONS"]
+            f"{route_prefix}/list-all-pipeline-ids",
+            "list_all_pipeline_ids",
+            self.list_all_pipeline_ids,
+            methods=["GET", "OPTIONS"],
         )
         self.app.add_url_rule(
             f"{route_prefix}/get-pipeline-config-json/<int:pipeline_id>",
@@ -114,7 +126,7 @@ class Dispatcher:
     def health_check(self) -> tuple[Response, int]:
         """Health check endpoint."""
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({"status": "ok"}), 200
 
         try:
@@ -135,7 +147,7 @@ class Dispatcher:
             ic_id of the created operation
         """
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
@@ -176,7 +188,7 @@ class Dispatcher:
             ic_id of the created operation
         """
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
@@ -217,7 +229,7 @@ class Dispatcher:
             ic_id of the created operation
         """
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
@@ -269,7 +281,7 @@ class Dispatcher:
             ic_id of the created operation
         """
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
@@ -344,7 +356,7 @@ class Dispatcher:
             Operation details including status
         """
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
@@ -365,7 +377,7 @@ class Dispatcher:
             List of all operations
         """
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
@@ -383,7 +395,7 @@ class Dispatcher:
             List of pipelines with only: pipeline_id, status, shards_completed, total_samples_processed
         """
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
@@ -404,7 +416,7 @@ class Dispatcher:
             Pipeline config JSON
         """
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
@@ -427,7 +439,7 @@ class Dispatcher:
             List of all pipelines
         """
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
@@ -450,7 +462,7 @@ class Dispatcher:
             Pipeline details
         """
         # Handle OPTIONS preflight
-        if request.method == 'OPTIONS':
+        if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
@@ -472,7 +484,7 @@ class Dispatcher:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
-def run_dispatcher(host: str = "127.0.0.1", port: int = 5000) -> None:
+def run_dispatcher(host: str = "127.0.0.1", port: int = 8851) -> None:
     """
     Run the dispatcher server.
 
@@ -480,13 +492,13 @@ def run_dispatcher(host: str = "127.0.0.1", port: int = 5000) -> None:
 
     Args:
         host: Host to bind to (default: 127.0.0.1)
-        port: Port to bind to (default: 5000)
+        port: Port to bind to (default: 8851)
     """
     try:
         dispatcher = Dispatcher()
 
         # Suppress Flask/werkzeug request logging
-        log = logging.getLogger('werkzeug')
+        log = logging.getLogger("werkzeug")
         log.setLevel(logging.ERROR)
 
         # Use waitress to serve the Flask app
@@ -497,29 +509,26 @@ def run_dispatcher(host: str = "127.0.0.1", port: int = 5000) -> None:
         traceback.print_exc()
 
 
-def _check_port_in_use(port: int) -> bool:
+def _check_port_in_use(host: str,port: int) -> bool:
     """Check if a port is already in use."""
     import socket
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(('127.0.0.1', port)) == 0
+        return s.connect_ex((host, port)) == 0
 
 
 def _cleanup_old_dispatcher(port: int, logger=None) -> None:
     """Kill any old dispatcher processes using the port."""
     import subprocess
+
     try:
         # Find process using the port
-        result = subprocess.run(
-            ['lsof', '-ti', f':{port}'],
-            capture_output=True,
-            text=True,
-            timeout=2
-        )
+        result = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True, timeout=2)
         if result.returncode == 0 and result.stdout.strip():
-            pids = result.stdout.strip().split('\n')
+            pids = result.stdout.strip().split("\n")
             for pid in pids:
                 try:
-                    subprocess.run(['kill', '-9', pid], timeout=2)
+                    subprocess.run(["kill", "-9", pid], timeout=2)
                     msg = f"Killed old process (PID {pid}) on port {port}"
                     if logger:
                         logger.info(msg)
@@ -531,7 +540,7 @@ def _cleanup_old_dispatcher(port: int, logger=None) -> None:
         pass  # lsof might not be available
 
 
-def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 5000, logger=None) -> threading.Thread | None:
+def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=None) -> threading.Thread | None:
     """
     Start the dispatcher REST API server in a background daemon thread.
 
@@ -541,7 +550,7 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 5000, logger=No
 
     Args:
         host: Host to bind to (default: 127.0.0.1, localhost only)
-        port: Port to bind to (default: 5000)
+        port: Port to bind to (default: 8851)
         logger: Optional logger instance for logging (if None, uses print)
 
     Returns:
@@ -549,7 +558,7 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 5000, logger=No
     """
     try:
         # Check if port is in use
-        if _check_port_in_use(port):
+        if _check_port_in_use(host, port):
             msg = f"Port {port} is already in use. Attempting cleanup..."
             logger.warning(msg)
 
@@ -558,8 +567,9 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 5000, logger=No
 
             # Wait a moment and check again
             import time
+
             time.sleep(0.5)
-            if _check_port_in_use(port):
+            if _check_port_in_use(host, port):
                 error_msg = f"Port {port} still in use after cleanup. Restart your kernel or system."
                 logger.error(error_msg)
                 return None

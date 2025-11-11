@@ -16,7 +16,7 @@ The dispatcher **automatically starts** when you create an `Experiment` object. 
 ```python
 from rapidfireai.evals.experiment import Experiment
 
-# Dispatcher starts automatically on http://127.0.0.1:5000
+# Dispatcher starts automatically on http://127.0.0.1:8851
 experiment = Experiment(experiment_name="my-experiment", num_actors=2)
 
 # Now you can use the dispatcher API for interactive control
@@ -32,11 +32,11 @@ For testing or standalone use:
 ```bash
 python -m rapidfireai.evals.dispatcher.dispatcher
 ```
-Runs on `http://127.0.0.1:5000`
+Runs on `http://127.0.0.1:8851`
 
 ## API Endpoints
 
-Base URL: `http://127.0.0.1:5000/dispatcher`
+Base URL: `http://127.0.0.1:8851/dispatcher`
 
 ### Health Check
 ```bash
@@ -156,20 +156,20 @@ import requests
 
 # Stop a pipeline
 response = requests.post(
-    "http://127.0.0.1:5000/dispatcher/stop-pipeline",
+    "http://127.0.0.1:8851/dispatcher/stop-pipeline",
     json={"pipeline_id": 123}
 )
 ic_id = response.json()["ic_id"]
 
 # Check status
 status = requests.get(
-    f"http://127.0.0.1:5000/dispatcher/operation-status/{ic_id}"
+    f"http://127.0.0.1:8851/dispatcher/operation-status/{ic_id}"
 )
 print(status.json())
 
 # Clone a pipeline
 response = requests.post(
-    "http://127.0.0.1:5000/dispatcher/clone-pipeline",
+    "http://127.0.0.1:8851/dispatcher/clone-pipeline",
     json={
         "context_id": 1,
         "pipeline_name": "cloned_pipeline",

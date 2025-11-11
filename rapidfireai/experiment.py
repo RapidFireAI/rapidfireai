@@ -114,7 +114,7 @@ class Experiment:
         from rapidfireai.evals.db import RFDatabase
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.evals.utils.constants import DISPATCHER_HOST, DISPATCHER_PORT, get_dispatcher_url
+        from rapidfireai.evals.utils.constants import DispatcherConfig, get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
@@ -167,7 +167,7 @@ class Experiment:
         )
 
         # Start dispatcher in background thread for interactive control
-        self.dispatcher_thread = start_dispatcher_thread(host=DISPATCHER_HOST, port=DISPATCHER_PORT, logger=self.logger)
+        self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
 
         # Initialize notebook UI controller
         self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url())
@@ -390,7 +390,7 @@ class Experiment:
         if self.mode != "fit":
             raise ValueError("get_results() is only available in 'fit' mode")
 
-        from rapidfireai.fit.utils.constants import MLFLOW_URL
+        from rapidfireai.fit.utils.constants import MLFlowConfig
 
         ExperimentException = self._ExperimentException
 
@@ -409,7 +409,7 @@ class Experiment:
             # Lazy import - only import when we actually have MLflow runs to fetch
             from rapidfireai.fit.utils.mlflow_manager import MLflowManager
 
-            mlflow_manager = MLflowManager(MLFLOW_URL)
+            mlflow_manager = MLflowManager(MLFlowConfig.URL)
 
             metrics_data = []
 

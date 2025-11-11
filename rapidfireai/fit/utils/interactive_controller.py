@@ -19,7 +19,7 @@ except ImportError as e:
 class InteractiveController:
     """Interactive run controller for notebooks"""
 
-    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8081"):
+    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851"):
         self.dispatcher_url = dispatcher_url.rstrip("/")
         self.run_id: int | None = None
         self.config: dict | None = None
