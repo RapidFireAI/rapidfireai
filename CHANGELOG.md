@@ -13,6 +13,18 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+
+## [v0.12.4]
+*NOTE:* Colab is not working in this release, use 0.11.1 for fine tuning
+### Fixed
+- Fix problems running rapidfireai start
+- Additional filesystem fixes for RAG/FIT split
+
+### Changes
+- Changed default ports for Dispatcher = 8851, MLFlow = 8852, Frontend = 8853
+- New log directory variable RF_LOG_PATH
+- Additional changes to allow customization of ports used
+
 ## [v0.12.3]
 ### Fixed
 - Image locations in tuorial notebooks
