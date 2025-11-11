@@ -327,20 +327,20 @@ def install_packages(evals: bool = False):
     if not evals:
         # Upgrading pytorch to 2.7.0 for fit
         print("Upgrading pytorch to 2.7.0 for fit")
-        packages.append({"package": "torch==2.7.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
-        packages.append({"package": "torchvision==0.22.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
-        packages.append({"package": "torchaudio==2.7.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
-        packages.append({"package": "transformers==4.57.1", "extra_args": ["--upgrade"]})
+        # packages.append({"package": "torch==2.7.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
+        # packages.append({"package": "torchvision==0.22.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
+        # packages.append({"package": "torchaudio==2.7.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
+        # packages.append({"package": "transformers==4.57.1", "extra_args": ["--upgrade"]})
 
     ## TODO: re-enable for fit once trl has fix
     if evals and cuda_major == 12:
         print(f"\n🎯 Detected CUDA {cuda_major}.x")
-        packages.append({"package": "torch==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
-        packages.append({"package": "torchvision==0.20.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
-        packages.append({"package": "torchaudio==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
-        packages.append({"package": "vllm==0.7.2", "extra_args": ["--torch-backend=cu124"]})
-        packages.append({"package": "faiss-gpu-cu12==1.12.0", "extra_args": []})
-        packages.append({"package": "flashinfer-python==0.2.5", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu124/torch2.5/"]})
+        # packages.append({"package": "torch==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
+        # packages.append({"package": "torchvision==0.20.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
+        # packages.append({"package": "torchaudio==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
+        # packages.append({"package": "vllm==0.7.2", "extra_args": ["--torch-backend=cu124"]})
+        # packages.append({"package": "faiss-gpu-cu12==1.12.0", "extra_args": []})
+        # packages.append({"package": "flashinfer-python==0.2.5", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu124/torch2.5/"]})
     # elif cuda_major == 11:
     #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
     #     packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu118"]})
