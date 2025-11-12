@@ -125,7 +125,7 @@ git checkout -b release/vX.Y.Z
 ```
 2. **Run bump_version.sh**: Run `bump_version.sh` with flag as specified above, i.e.
 ```bash
-./setup/bump_version.sh minor
+./setup/bump_version.sh patch
 ```
 3. **Update CHANGELOG.md**: Update `CHANGELOG.md` with all information from PRs since last release
 4. **Push code to GitHub**: Push all changes to GitHub, i.e.

@@ -13,6 +13,14 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.12.5]
+*NOTE:* Colab is not working in this release, use 0.11.1 for fine tuning
+
+### Changes
+- Update colab notebook to point to 0.11.1 release
+- Updated readme
+- Reorganized `tutorial_notebook` folder
+
 
 ## [v0.12.4]
 *NOTE:* Colab is not working in this release, use 0.11.1 for fine tuning
