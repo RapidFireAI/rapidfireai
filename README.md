@@ -102,6 +102,7 @@ jupyter notebook --no-browser --port=8850 --ServerApp.allow_origin='*'
 ssh -L 8850:localhost:8850 username@remote-machine
 ssh -L 8851:localhost:8851 username@remote-machine
 
+# Open the URL provided by the jupyter notebook command above via your browser
 # Open an example notebook from ./tutorial_notebooks/rag-contexteng/ and start experiment
 
 ```
