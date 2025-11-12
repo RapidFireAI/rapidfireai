@@ -34,12 +34,12 @@ rm -rf dist/ *.egg-info/ .eggs/ && python -m build
 rsync -av dist/ user:~/rapidfire
 
 # from directory where dist/ folder is
-pip install rapidfireai-0.12.4-py3-none-any.whl
+pip install rapidfireai-0.12.5-py3-none-any.whl
 
 export PATH="$HOME/.local/bin:$PATH"
 
 rapidfireai --version
-# RapidFire AI 0.12.4
+# RapidFire AI 0.12.5
 
 # install specific dependencies and initialize rapidfire
 rapidfireai init
@@ -125,7 +125,7 @@ git checkout -b release/vX.Y.Z
 ```
 2. **Run bump_version.sh**: Run `bump_version.sh` with flag as specified above, i.e.
 ```bash
-./setup/bump_version.sh minor
+./setup/bump_version.sh patch
 ```
 3. **Update CHANGELOG.md**: Update `CHANGELOG.md` with all information from PRs since last release
 4. **Push code to GitHub**: Push all changes to GitHub, i.e.
