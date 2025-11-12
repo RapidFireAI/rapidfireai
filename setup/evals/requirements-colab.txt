@@ -1,15 +1,15 @@
 # Colab Packages    # # Core ML/AI Framework
-sentence-transformers==5.1.0
+sentence-transformers>=5.1.0
 
 # Distributed Computing
-ray==2.44.1
+ray>=2.44.1
 
 # LLM Inference
-transformers==4.56.1
+transformers>=4.56.1
 
 # OpenAI API
-openai==1.106.1
-tiktoken==0.11.0
+openai>=1.106.1
+tiktoken>=0.11.0
 
 # LangChain Ecosystem
 langchain
@@ -19,13 +19,10 @@ langchain-community
 langchain-openai
 langchain-huggingface
 
-# Vector Search
-faiss-gpu-cu12==1.12.0
-
 # Statistical Analysis
 
 # Data Manipulation & Display
-unstructured==0.18.15
+unstructured>=0.18.15
 
 # REST API (Dispatcher)
 flask>=3.1.1
@@ -35,6 +32,10 @@ waitress>=3.0.2
 # Notebook
 
 # JSON Query Tool
-jq==1.10.0
+jq>=1.10.0
 
 # Other
+requests>=2.32.4
+
+# vllm==0.7.2
+# faiss-gpu-cu12==1.12.0

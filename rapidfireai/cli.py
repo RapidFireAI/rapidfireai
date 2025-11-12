@@ -12,6 +12,7 @@ import site
 import subprocess
 import sys
 from pathlib import Path
+from importlib.resources import files
 
 from .version import __version__
 
@@ -373,11 +374,15 @@ def install_packages(evals: bool = False):
             package = package_info["package"]
             cmd = [sys.executable, "-m", "uv", "pip", "install", package] + package_info["extra_args"]
             print(f"   Installing {package}...")
-            subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
             print(f"✅ Successfully installed {package}")
         except subprocess.CalledProcessError as e:
             print(f"❌ Failed to install {package}")
             print(f"   Error: {e}")
+            if e.stdout:
+                print(f"   Standard output: {e.stdout}")
+            if e.stderr:
+                print(f"   Standard error: {e.stderr}")
             print(f"   You may need to install {package} manually")
     return 0
 

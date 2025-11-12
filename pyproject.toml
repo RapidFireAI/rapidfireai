@@ -167,9 +167,6 @@ colab_evals = [
     "langchain-openai",
     "langchain-huggingface",
 
-    # Vector Search
-    "faiss-gpu-cu12==1.12.0",
-
     # Statistical Analysis
 
     # Data Manipulation & Display
@@ -186,9 +183,10 @@ colab_evals = [
     "jq==1.10.0",
 
     # Other
+    "flashinfer-python==0.2.5",
     "vllm==0.7.2",
     "faiss-gpu-cu12==1.12.0",
-    "flashinfer-python==0.2.5",
+    
 ]
 colab_fit = [
     "pandas>=2.0.0,<2.3.0",  # Colab compatibility (2.2.2) and cudf constraint
@@ -407,6 +405,8 @@ rapidfireai = [
     "evals/*.py",
     "../setup/fit/start.sh",
     "../setup/fit/start_dev.sh",
+    "../setup/fit/requirements-*.txt",
+    "../setup/evals/requirements-*.txt",
     "../tutorial_notebooks/**/*",
 ]
 
