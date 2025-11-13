@@ -75,6 +75,10 @@ class Dispatcher:
         # CRITICAL: Add before_request handler to handle OPTIONS preflight requests globally
         @self.app.before_request
         def handle_preflight():
+            # Log all incoming requests for debugging
+            print(f"📨 Incoming request: {request.method} {request.path} from {request.remote_addr}")
+            print(f"   Headers: {dict(request.headers)}")
+
             if request.method == "OPTIONS":
                 response = jsonify({})
                 response.headers.add("Access-Control-Allow-Origin", "*")

@@ -22,67 +22,6 @@ class NotebookUI:
 
     def _generate_html(self):
         """Generate HTML using fetch API for communication"""
-        # Check if we're in Colab and need to set up proxy
-        is_colab = False
-        try:
-            import google.colab
-            is_colab = True
-        except ImportError:
-            pass
-
-        colab_setup_js = ""
-        if is_colab:
-            # Extract port from dispatcher_url
-            import re
-            port_match = re.search(r':(\d+)', self.dispatcher_url) or re.search(r'(\d+)-', self.dispatcher_url)
-            port = port_match.group(1) if port_match else "8851"
-
-            colab_setup_js = f"""
-                // COLAB PROXY SETUP: Must be called from output context
-                console.log('Setting up Colab proxy for port {port}...');
-                const proxyStatusDiv = document.getElementById('proxy-status');
-                const proxyStatusText = document.getElementById('proxy-status-text');
-
-                try {{
-                    if (typeof google !== 'undefined' && google.colab && google.colab.kernel) {{
-                        // Show proxy status
-                        if (proxyStatusDiv) {{
-                            proxyStatusDiv.style.display = 'block';
-                            proxyStatusText.textContent = 'Setting up...';
-                            proxyStatusText.style.color = 'orange';
-                        }}
-
-                        google.colab.kernel.proxyPort({port}).then(url => {{
-                            console.log('✓ Colab proxy URL:', url);
-                            // Update DISPATCHER_URL with the actual proxy URL
-                            window.RAPIDFIRE_DISPATCHER_URL = url;
-
-                            // Update UI
-                            if (proxyStatusText) {{
-                                proxyStatusText.innerHTML = '<a href="' + url + '/debug" target="_blank" style="color: green;">Ready ✓</a>';
-                            }}
-
-                            // Trigger initial fetch with new URL
-                            setTimeout(() => {{
-                                fetchPipelines();
-                            }}, 1000);
-                        }}).catch(err => {{
-                            console.error('Colab proxy setup failed:', err);
-                            if (proxyStatusText) {{
-                                proxyStatusText.textContent = 'Failed ✗';
-                                proxyStatusText.style.color = 'red';
-                            }}
-                        }});
-                    }}
-                }} catch (e) {{
-                    console.error('Failed to set up Colab proxy:', e);
-                    if (proxyStatusText) {{
-                        proxyStatusText.textContent = 'Error ✗';
-                        proxyStatusText.style.color = 'red';
-                    }}
-                }}
-            """
-
         return f"""
         <div id="{self.widget_id}" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto;">
             <style>
@@ -111,7 +50,6 @@ class NotebookUI:
                     <div><b>Run ID:</b> <span id="pipeline-id-value">N/A</span></div>
                     <div><b>Status:</b> <span id="status-value">Not loaded</span></div>
                     <div><b>Last Update:</b> <span id="last-update">Never</span></div>
-                    <div id="proxy-status" style="display:none;"><b>Proxy:</b> <span id="proxy-status-text">Setting up...</span></div>
                 </div>
 
                 <div id="status-message" class="status-message"></div>
@@ -145,7 +83,7 @@ class NotebookUI:
             <script>
                 (function() {{
                     const WIDGET_ID = '{self.widget_id}';
-                    let DISPATCHER_URL = window.RAPIDFIRE_DISPATCHER_URL || '{self.dispatcher_url}';
+                    const DISPATCHER_URL = '{self.dispatcher_url}';
                     const AUTH_TOKEN = {f"'{self.auth_token}'" if self.auth_token else 'null'};
                     let currentPipelineId = null;
                     let currentConfig = null;
@@ -199,10 +137,6 @@ class NotebookUI:
 
                     async function fetchPipelines() {{
                         try {{
-                            // Update DISPATCHER_URL if Colab proxy has set it
-                            if (window.RAPIDFIRE_DISPATCHER_URL) {{
-                                DISPATCHER_URL = window.RAPIDFIRE_DISPATCHER_URL;
-                            }}
                             console.log('Fetching pipelines from:', DISPATCHER_URL);
                             const pipelines = await xhrRequest(DISPATCHER_URL + '/dispatcher/list-all-pipeline-ids');
                             console.log('Got pipelines:', pipelines.length);
@@ -384,9 +318,6 @@ class NotebookUI:
                         showMessage('Cancelled clone', 'info');
                     }});
 
-                    // Colab proxy setup (must be in output context)
-                    {colab_setup_js}
-
                     // Initial fetch
                     console.log('UI initialized, fetching initial data...');
                     setTimeout(() => {{
@@ -408,4 +339,34 @@ class NotebookUI:
 
     def display(self):
         """Display the UI"""
+        # Special handling for Colab to force proxy registration
+        try:
+            import google.colab
+            from google.colab.output import eval_js
+
+            # Extract port from dispatcher_url
+            import re
+            port_match = re.search(r':(\d+)', self.dispatcher_url) or re.search(r'(\d+)-', self.dispatcher_url)
+            port = port_match.group(1) if port_match else "8851"
+
+            # Force proxy setup by calling from Python (not JavaScript)
+            print(f"🔧 Setting up Colab proxy for port {port}...")
+            proxy_url = eval_js(f"google.colab.kernel.proxyPort({port})")
+            print(f"✓ Proxy URL: {proxy_url}")
+
+            # Display a clickable link to verify proxy
+            display(HTML(f"""
+                <div style="padding: 10px; background: #e7f3ff; border-left: 4px solid #2196F3; margin: 10px 0;">
+                    <strong>🌐 Dispatcher Proxy URL:</strong>
+                    <a href="{proxy_url}/debug" target="_blank">{proxy_url}</a>
+                    <br><small>Click to verify proxy is working</small>
+                </div>
+            """))
+
+            # Update the dispatcher_url to use the proxy
+            self.dispatcher_url = proxy_url
+
+        except ImportError:
+            pass  # Not in Colab
+
         display(HTML(self._generate_html()))
