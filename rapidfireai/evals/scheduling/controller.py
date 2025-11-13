@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+import pandas as pd
 import ray
 
 from rapidfireai.evals.actors.doc_actor import DocProcessingActor
@@ -617,6 +618,47 @@ class Controller:
             progress_display.stop()
         return final_results
 
+    def _convert_results_to_dataframe(
+        self,
+        final_results: dict[int, tuple[dict, dict]],
+        pipeline_id_to_config: dict[int, dict],
+    ) -> pd.DataFrame:
+        """
+        Returns:
+            DataFrame with one row per pipeline configuration
+        """
+        rows = []
+
+        for pipeline_id, (aggregated_results, cumulative_metrics) in final_results.items():
+            pipeline_config = pipeline_id_to_config.get(pipeline_id, {})
+            pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
+
+            row = {
+                "pipeline_id": pipeline_id,
+                "pipeline_name": pipeline_name,
+            }
+
+            for metric_name, metric_data in cumulative_metrics.items():
+                if isinstance(metric_data, dict):
+                    row[metric_name] = metric_data.get("value")
+                    if "lower_bound" in metric_data:
+                        row[f"{metric_name}_lower_bound"] = metric_data.get("lower_bound")
+                    if "upper_bound" in metric_data:
+                        row[f"{metric_name}_upper_bound"] = metric_data.get("upper_bound")
+                    if "margin_of_error" in metric_data:
+                        row[f"{metric_name}_margin_of_error"] = metric_data.get("margin_of_error")
+                else:
+                    row[metric_name] = metric_data
+
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+
+        if not df.empty:
+            df = df.sort_values("pipeline_id").reset_index(drop=True)
+
+        return df
+
     def run_multi_pipeline_inference(
         self,
         experiment_id: int,
@@ -627,7 +669,7 @@ class Controller:
         num_actors: int = None,
         num_gpus: int = None,
         num_cpus: int = None,
-    ) -> dict[int, tuple[dict, dict]]:
+    ) -> pd.DataFrame:
         """
         Run multi-pipeline inference with fair round-robin scheduling.
 
@@ -1188,9 +1230,10 @@ class Controller:
             progress_display,
         )
 
-
         # Cleanup actors
         for actor in query_actors:
             ray.kill(actor)
 
-        return final_results
+        results_df = self._convert_results_to_dataframe(final_results, pipeline_id_to_config)
+
+        return results_df
