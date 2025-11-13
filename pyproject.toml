@@ -147,17 +147,17 @@ dependencies = [
 [project.optional-dependencies]
 colab_evals = [
     # Core ML/AI Framework
-    "sentence-transformers==5.1.0",
+    "sentence-transformers>=5.1.0",
 
     # Distributed Computing
-    "ray==2.44.1",
+    "ray>=2.44.1",
 
     # LLM Inference
-    "transformers==4.56.1",
+    "transformers>=4.56.1",
 
     # OpenAI API
-    "openai==1.106.1",
-    "tiktoken==0.11.0",
+    "openai>=1.106.1",
+    "tiktoken>=0.11.0",
 
     # LangChain Ecosystem
     "langchain",
@@ -170,7 +170,7 @@ colab_evals = [
     # Statistical Analysis
 
     # Data Manipulation & Display
-    "unstructured==0.18.15",
+    "unstructured>=0.18.15",
 
     # REST API (Dispatcher)
     "flask>=3.1.1",
@@ -183,9 +183,9 @@ colab_evals = [
     "jq==1.10.0",
 
     # Other
-    "flashinfer-python==0.2.5",
-    "vllm==0.7.2",
-    "faiss-gpu-cu12==1.12.0",
+    # "flashinfer-python==0.2.5",
+    # "vllm==0.7.2",
+    # "faiss-gpu-cu12==1.12.0",
     
 ]
 colab_fit = [
