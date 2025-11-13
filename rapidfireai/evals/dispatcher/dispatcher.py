@@ -13,6 +13,7 @@ import traceback
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from waitress import serve
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.utils.constants import ICOperation, DispatcherConfig
@@ -38,6 +39,16 @@ class Dispatcher:
 
         # Create Flask app
         self.app: Flask = Flask(__name__)
+
+        # Add ProxyFix middleware to handle Colab proxy headers
+        # This fixes issues when running behind reverse proxies like Colab's kernel proxy
+        self.app.wsgi_app = ProxyFix(
+            self.app.wsgi_app,
+            x_for=1,
+            x_proto=1,
+            x_host=1,
+            x_prefix=1
+        )
 
         # Enable CORS for local development
         # Dispatcher runs on localhost, safe to allow all origins
@@ -71,6 +82,16 @@ class Dispatcher:
                 response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
                 response.headers.add("Access-Control-Max-Age", "3600")
                 return response
+
+        # Root path for Colab proxy verification
+        self.app.add_url_rule(
+            "/", "root", self.root_handler, methods=["GET", "OPTIONS"]
+        )
+
+        # Debug endpoint to check proxy headers
+        self.app.add_url_rule(
+            "/debug", "debug", self.debug_handler, methods=["GET", "OPTIONS"]
+        )
 
         # Health check
         self.app.add_url_rule(
@@ -122,6 +143,51 @@ class Dispatcher:
         self.app.add_url_rule(
             f"{route_prefix}/get-pipeline", "get_pipeline", self.get_pipeline, methods=["POST", "OPTIONS"]
         )
+
+    def root_handler(self) -> tuple[Response, int]:
+        """Root path handler for Colab proxy verification."""
+        # Handle OPTIONS preflight
+        if request.method == "OPTIONS":
+            return jsonify({"status": "ok"}), 200
+
+        try:
+            return jsonify({
+                "status": "ok",
+                "message": "RapidFire Dispatcher API",
+                "version": "1.0",
+                "endpoints": {
+                    "health": "/dispatcher/health-check",
+                    "pipelines": "/dispatcher/list-all-pipeline-ids",
+                    "stop": "/dispatcher/stop-pipeline",
+                    "resume": "/dispatcher/resume-pipeline",
+                    "delete": "/dispatcher/delete-pipeline",
+                    "clone": "/dispatcher/clone-pipeline",
+                    "debug": "/debug"
+                }
+            }), 200
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+    def debug_handler(self) -> tuple[Response, int]:
+        """Debug endpoint to inspect request headers and environment."""
+        # Handle OPTIONS preflight
+        if request.method == "OPTIONS":
+            return jsonify({"status": "ok"}), 200
+
+        try:
+            return jsonify({
+                "status": "ok",
+                "method": request.method,
+                "path": request.path,
+                "url": request.url,
+                "base_url": request.base_url,
+                "headers": dict(request.headers),
+                "remote_addr": request.remote_addr,
+                "scheme": request.scheme,
+                "host": request.host
+            }), 200
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
     def health_check(self) -> tuple[Response, int]:
         """Health check endpoint."""
