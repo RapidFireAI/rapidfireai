@@ -352,16 +352,45 @@ class NotebookUI:
             # Force proxy setup by calling from Python (not JavaScript)
             print(f"🔧 Setting up Colab proxy for port {port}...")
             proxy_url = eval_js(f"google.colab.kernel.proxyPort({port})")
-            print(f"✓ Proxy URL: {proxy_url}")
+            print(f"✓ Proxy URL generated: {proxy_url}")
 
-            # Display a clickable link to verify proxy
-            display(HTML(f"""
-                <div style="padding: 10px; background: #e7f3ff; border-left: 4px solid #2196F3; margin: 10px 0;">
-                    <strong>🌐 Dispatcher Proxy URL:</strong>
-                    <a href="{proxy_url}/debug" target="_blank">{proxy_url}</a>
-                    <br><small>Click to verify proxy is working</small>
-                </div>
-            """))
+            # Test if the proxy is actually working
+            import urllib.request
+            import urllib.error
+
+            print(f"🔍 Testing proxy connectivity...")
+            test_passed = False
+            try:
+                # Test the proxy URL
+                req = urllib.request.Request(f"{proxy_url}/debug", method='GET')
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    if response.status == 200:
+                        print(f"✅ Proxy test PASSED - dispatcher is accessible via proxy")
+                        test_passed = True
+                    else:
+                        print(f"⚠️ Proxy test returned status {response.status}")
+            except urllib.error.URLError as e:
+                print(f"❌ Proxy test FAILED: {e}")
+                print(f"   This means Colab's proxy is not forwarding to the dispatcher")
+            except Exception as e:
+                print(f"❌ Proxy test error: {e}")
+
+            # Display result
+            if test_passed:
+                display(HTML(f"""
+                    <div style="padding: 10px; background: #d4edda; border-left: 4px solid #28a745; margin: 10px 0;">
+                        <strong>✅ Colab Proxy Working:</strong>
+                        <a href="{proxy_url}/debug" target="_blank">{proxy_url}</a>
+                    </div>
+                """))
+            else:
+                display(HTML(f"""
+                    <div style="padding: 10px; background: #f8d7da; border-left: 4px solid #dc3545; margin: 10px 0;">
+                        <strong>❌ Colab Proxy Not Working</strong>
+                        <br>Generated URL: <a href="{proxy_url}/debug" target="_blank">{proxy_url}</a>
+                        <br><small>Proxy is not forwarding requests to dispatcher. Check Colab logs above.</small>
+                    </div>
+                """))
 
             # Update the dispatcher_url to use the proxy
             self.dispatcher_url = proxy_url

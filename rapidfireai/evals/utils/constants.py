@@ -18,7 +18,7 @@ RATE_LIMIT_BACKOFF_BASE = 2
 class DispatcherConfig:
     """Class to manage the dispatcher configuration"""
 
-    HOST: str = os.getenv("RF_API_HOST", "0.0.0.0")
+    HOST: str = os.getenv("RF_API_HOST", "127.0.0.1")
     PORT: int = int(os.getenv("RF_API_PORT", "8851"))
     URL: str = f"http://{HOST}:{PORT}"
 
