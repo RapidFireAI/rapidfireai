@@ -495,26 +495,33 @@ def run_dispatcher(host: str = "127.0.0.1", port: int = 8851) -> None:
         port: Port to bind to (default: 8851)
     """
     try:
+        print(f"🚀 Starting dispatcher server on {host}:{port}...")
         dispatcher = Dispatcher()
+        print(f"✓ Dispatcher initialized successfully")
 
         # Suppress Flask/werkzeug request logging
         log = logging.getLogger("werkzeug")
         log.setLevel(logging.ERROR)
 
+        print(f"✓ Starting waitress server on {host}:{port}...")
         # Use waitress to serve the Flask app
         serve(dispatcher.app, host=host, port=port, threads=6)
     except Exception as e:
         # Catch all exceptions to prevent thread crashes
-        print(f"CRITICAL: Dispatcher crashed: {e}")
+        print(f"❌ CRITICAL: Dispatcher crashed: {e}")
         traceback.print_exc()
 
 
-def _check_port_in_use(host: str,port: int) -> bool:
+def _check_port_in_use(host: str, port: int) -> bool:
     """Check if a port is already in use."""
     import socket
 
+    # Always check localhost, even if binding to 0.0.0.0
+    # (0.0.0.0 is a bind address, not a connect address)
+    check_host = "127.0.0.1" if host == "0.0.0.0" else host
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex((host, port)) == 0
+        return s.connect_ex((check_host, port)) == 0
 
 
 def _cleanup_old_dispatcher(port: int, logger=None) -> None:
@@ -560,7 +567,10 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=No
         # Check if port is in use
         if _check_port_in_use(host, port):
             msg = f"Port {port} is already in use. Attempting cleanup..."
-            logger.warning(msg)
+            if logger:
+                logger.warning(msg)
+            else:
+                print(f"⚠️  {msg}")
 
             # Try to clean up old process
             _cleanup_old_dispatcher(port, logger)
@@ -571,7 +581,10 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=No
             time.sleep(0.5)
             if _check_port_in_use(host, port):
                 error_msg = f"Port {port} still in use after cleanup. Restart your kernel or system."
-                logger.error(error_msg)
+                if logger:
+                    logger.error(error_msg)
+                else:
+                    print(f"❌ {error_msg}")
                 return None
 
         # Create daemon thread (auto-cleanup when main process ends)
@@ -580,13 +593,26 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=No
         )
         dispatcher_thread.start()
 
-        msg = f"Started interactive control dispatcher on http://{host}:{port}"
-        if logger:
-            logger.info(msg)
-            logger.info("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
+        # Give dispatcher time to start up
+        import time
+        time.sleep(1.0)
+
+        # Verify dispatcher started successfully
+        if _check_port_in_use(host, port):
+            msg = f"✓ Started interactive control dispatcher on http://{host}:{port}"
+            if logger:
+                logger.info(msg)
+                logger.info("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
+            else:
+                print(msg)
+                print("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
         else:
-            print(msg)
-            print("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
+            error_msg = f"Dispatcher thread started but port {port} is not listening. Check logs for errors."
+            if logger:
+                logger.error(error_msg)
+            else:
+                print(f"❌ {error_msg}")
+            return None
 
         return dispatcher_thread
 
@@ -595,7 +621,7 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=No
         if logger:
             logger.warning(error_msg)
         else:
-            print(f"WARNING: {error_msg}")
+            print(f"⚠️  WARNING: {error_msg}")
         return None
 
 
