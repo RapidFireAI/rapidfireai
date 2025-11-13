@@ -8,6 +8,7 @@ distributed query processing actors.
 import ray
 
 from rapidfireai.evals.utils.ratelimiter import OpenAIRateLimiter, RequestStatus
+from rapidfireai.evals.utils.logger import RFLogger
 
 
 @ray.remote
@@ -25,6 +26,8 @@ class RateLimiterActor:
         max_completion_tokens: int = 150,
         limit_safety_ratio: float = 0.98,
         minimum_wait_time: float = 3.0,
+        experiment_name: str = "unknown",
+        experiment_path: str = "./rapidfire_experiments",
     ):
         """
         Initialize the centralized rate limiter with per-model rate limits.
@@ -35,12 +38,19 @@ class RateLimiterActor:
             max_completion_tokens: Maximum completion tokens per request
             limit_safety_ratio: Safety margin (default 0.98 = 98% of limit)
             minimum_wait_time: Minimum wait time when rate limited (seconds)
+            experiment_name: Name of the experiment for logging
+            experiment_path: Path to experiment logs/artifacts
         """
+        # Initialize logger
+        logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
+        logger = logging_manager.get_logger("RateLimiterActor")
+
         self.limiter = OpenAIRateLimiter(
             model_rate_limits=model_rate_limits,
             max_completion_tokens=max_completion_tokens,
             limit_safety_ratio=limit_safety_ratio,
             minimum_wait_time=minimum_wait_time,
+            logger=logger,
         )
 
     async def acquire_slot(self, estimated_tokens: int, model_name: str):

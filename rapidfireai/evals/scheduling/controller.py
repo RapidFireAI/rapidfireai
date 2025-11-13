@@ -830,6 +830,8 @@ class Controller:
                 max_completion_tokens=max_max_tokens,
                 limit_safety_ratio=0.90,
                 minimum_wait_time=1.0,
+                experiment_name=self.experiment_name,
+                experiment_path=self.experiment_path,
             )
 
             for pipeline_id in pipeline_to_rate_limiter:
