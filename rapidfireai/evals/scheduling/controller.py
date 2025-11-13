@@ -1188,9 +1188,6 @@ class Controller:
             progress_display,
         )
 
-        # Update experiment status
-        db.set_experiment_status(experiment_id, ExperimentStatus.COMPLETED)
-        self.logger.info(f"Experiment {experiment_id} completed!")
 
         # Cleanup actors
         for actor in query_actors:
