@@ -77,139 +77,157 @@ class QueryProcessingActor:
             engine_class: The inference engine class to instantiate
             engine_kwargs: Kwargs for instantiating the inference engine
             context_generator_ref: RAG components dict (automatically dereferenced by Ray when passed as ObjectRef)
+
+        Raises:
+            RuntimeError: If any error occurs during initialization. The original exception
+                         is converted to RuntimeError to ensure it can be properly serialized by Ray.
         """
-        # Create a hash of the engine configuration to check if we need to reinitialize
-        # For VLLM, only model_config requires reload - sampling_params can vary per request
-        # Use repr() to handle non-serializable objects
-        if engine_class.__name__ == "VLLMInferenceEngine":
-            # Only hash model_config - sampling_params don't require model reload
-            model_config = engine_kwargs.get("model_config", {})
-            config_str = f"{engine_class.__name__}:{repr(sorted(model_config.items()))}"
-        else:
-            # For other engines, hash everything
-            config_str = f"{engine_class.__name__}:{repr(sorted(engine_kwargs.items()))}"
+        try:
+            # Create a hash of the engine configuration to check if we need to reinitialize
+            # For VLLM, only model_config requires reload - sampling_params can vary per request
+            # Use repr() to handle non-serializable objects
+            if engine_class.__name__ == "VLLMInferenceEngine":
+                # Only hash model_config - sampling_params don't require model reload
+                model_config = engine_kwargs.get("model_config", {})
+                config_str = f"{engine_class.__name__}:{repr(sorted(model_config.items()))}"
+            else:
+                # For other engines, hash everything
+                config_str = f"{engine_class.__name__}:{repr(sorted(engine_kwargs.items()))}"
 
-        config_hash = hashlib.md5(config_str.encode()).hexdigest()
+            config_hash = hashlib.md5(config_str.encode()).hexdigest()
 
-        # Only reinitialize if the engine config has changed
-        if self.current_engine_config_hash != config_hash:
-            # Clean up old engine if it exists
-            if self.inference_engine is not None:
-                self.logger.info(f"Cleaning up old inference engine (hash: {self.current_engine_config_hash[:8]})")
-                try:
-                    self.inference_engine.cleanup()
-                except Exception as e:
-                    self.logger.warning(f"Error during engine cleanup: {e}")
+            # Only reinitialize if the engine config has changed
+            if self.current_engine_config_hash != config_hash:
+                # Clean up old engine if it exists
+                if self.inference_engine is not None:
+                    self.logger.info(f"Cleaning up old inference engine (hash: {self.current_engine_config_hash[:8]})")
+                    try:
+                        self.inference_engine.cleanup()
+                    except Exception as e:
+                        self.logger.warning(f"Error during engine cleanup: {e}")
 
-                # Force garbage collection and GPU memory release
-                del self.inference_engine
-                import gc
+                    # Force garbage collection and GPU memory release
+                    del self.inference_engine
+                    import gc
 
-                gc.collect()
+                    gc.collect()
 
-                # For CUDA, explicitly empty cache
-                try:
-                    import torch
+                    # For CUDA, explicitly empty cache
+                    try:
+                        import torch
 
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                        torch.cuda.synchronize()
-                        self.logger.info("GPU memory cache cleared")
-                except ImportError:
-                    pass
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            torch.cuda.synchronize()
+                            self.logger.info("GPU memory cache cleared")
+                    except ImportError:
+                        pass
 
-            self.logger.info(f"Initializing new inference engine (config hash: {config_hash[:8]})")
-            self.inference_engine = engine_class(**engine_kwargs)
-            self.current_engine_config_hash = config_hash
-        else:
-            self.logger.info(f"Reusing existing inference engine (config hash: {config_hash[:8]})")
+                self.logger.info(f"Initializing new inference engine (config hash: {config_hash[:8]})")
+                self.inference_engine = engine_class(**engine_kwargs)
+                self.current_engine_config_hash = config_hash
+            else:
+                self.logger.info(f"Reusing existing inference engine (config hash: {config_hash[:8]})")
 
-        # Recreate RAG spec and prompt manager from shared components (if provided)
-        self.rag_spec = None
-        self.prompt_manager = None
-        if context_generator_ref is not None:
-            # Ray automatically dereferences ObjectRefs passed to remote actors
-            # So we receive the dict directly, not an ObjectRef
+            # Recreate RAG spec and prompt manager from shared components (if provided)
+            self.rag_spec = None
+            self.prompt_manager = None
+            if context_generator_ref is not None:
+                # Ray automatically dereferences ObjectRefs passed to remote actors
+                # So we receive the dict directly, not an ObjectRef
 
-            # Check if RAG components are present (context might only have prompt_manager)
-            has_rag_components = "faiss_index_bytes" in context_generator_ref
+                # Check if RAG components are present (context might only have prompt_manager)
+                has_rag_components = "faiss_index_bytes" in context_generator_ref
 
-            # Recreate RAG spec if RAG components are present
-            if has_rag_components:
-                # NOTE: Keep FAISS on CPU for query actors to avoid GPU memory conflicts
-                # The DocProcessingActor builds the index on GPU (fast), transfers to CPU,
-                # and shares it. Query actors use CPU FAISS which is still fast for retrieval
-                # and avoids memory management issues with multiple actors sharing GPUs.
+                # Recreate RAG spec if RAG components are present
+                if has_rag_components:
+                    # NOTE: Keep FAISS on CPU for query actors to avoid GPU memory conflicts
+                    # The DocProcessingActor builds the index on GPU (fast), transfers to CPU,
+                    # and shares it. Query actors use CPU FAISS which is still fast for retrieval
+                    # and avoids memory management issues with multiple actors sharing GPUs.
 
-                self.logger.info("Using CPU-based FAISS for retrieval (avoids GPU memory conflicts)")
+                    self.logger.info("Using CPU-based FAISS for retrieval (avoids GPU memory conflicts)")
 
-                # Deserialize FAISS index to create an independent copy for this actor
-                # FAISS indices are not thread-safe, so each actor needs its own copy
-                import pickle
-                from langchain_community.vectorstores import FAISS
+                    # Deserialize FAISS index to create an independent copy for this actor
+                    # FAISS indices are not thread-safe, so each actor needs its own copy
+                    import pickle
+                    from langchain_community.vectorstores import FAISS
 
-                self.logger.info("Deserializing FAISS index for this actor...")
-                faiss_index = pickle.loads(context_generator_ref["faiss_index_bytes"])
-                docstore = pickle.loads(context_generator_ref["docstore_bytes"])
-                index_to_docstore_id = pickle.loads(context_generator_ref["index_to_docstore_id_bytes"])
+                    self.logger.info("Deserializing FAISS index for this actor...")
+                    faiss_index = pickle.loads(context_generator_ref["faiss_index_bytes"])
+                    docstore = pickle.loads(context_generator_ref["docstore_bytes"])
+                    index_to_docstore_id = pickle.loads(context_generator_ref["index_to_docstore_id_bytes"])
 
-                # Recreate the embedding function
-                embedding_cls = context_generator_ref["embedding_cls"]
-                embedding_kwargs = context_generator_ref["embedding_kwargs"]
-                embedding_function = embedding_cls(**embedding_kwargs)
-                self.logger.info(f"Recreated embedding function: {embedding_cls.__name__}")
+                    # Recreate the embedding function
+                    embedding_cls = context_generator_ref["embedding_cls"]
+                    embedding_kwargs = context_generator_ref["embedding_kwargs"]
+                    embedding_function = embedding_cls(**embedding_kwargs)
+                    self.logger.info(f"Recreated embedding function: {embedding_cls.__name__}")
 
-                # Create a new FAISS vector store with the deserialized components
-                vector_store = FAISS(
-                    embedding_function=embedding_function,
-                    index=faiss_index,
-                    docstore=docstore,
-                    index_to_docstore_id=index_to_docstore_id
-                )
-                self.logger.info("Created independent FAISS vector store for this actor")
+                    # Create a new FAISS vector store with the deserialized components
+                    vector_store = FAISS(
+                        embedding_function=embedding_function,
+                        index=faiss_index,
+                        docstore=docstore,
+                        index_to_docstore_id=index_to_docstore_id
+                    )
+                    self.logger.info("Created independent FAISS vector store for this actor")
 
-                # Create the retriever
-                search_type = context_generator_ref["search_type"]
-                search_kwargs = context_generator_ref["search_kwargs"]
-                retriever = vector_store.as_retriever(
-                    search_type=search_type,
-                    search_kwargs=search_kwargs
-                )
-                self.logger.info(f"Recreated retriever with search_type={search_type}")
+                    # Create the retriever
+                    search_type = context_generator_ref["search_type"]
+                    search_kwargs = context_generator_ref["search_kwargs"]
+                    retriever = vector_store.as_retriever(
+                        search_type=search_type,
+                        search_kwargs=search_kwargs
+                    )
+                    self.logger.info(f"Recreated retriever with search_type={search_type}")
 
-                # Recreate RAG spec with query-time components
-                # We don't need document_loader or text_splitter for query-time operations,
-                # so we use None/placeholder values
-                self.rag_spec = LangChainRagSpec(
-                    document_loader=None,  # Not needed for query-time
-                    text_splitter=None,  # Not needed for query-time
-                    embedding_cls=embedding_cls,
-                    embedding_kwargs=embedding_kwargs,
-                    retriever=retriever,
-                    vector_store=vector_store,
-                    search_type=search_type,
-                    search_kwargs=search_kwargs,
-                    reranker_cls=context_generator_ref.get("reranker_cls"),
-                    reranker_kwargs=context_generator_ref.get("reranker_kwargs"),
-                    enable_gpu_search=False,  # Query actors always use CPU
-                    document_template=context_generator_ref.get("template"),
-                )
-                # Manually set the embedding and template since we bypassed normal initialization
-                self.rag_spec.embedding = embedding_function
-                self.rag_spec.template = context_generator_ref.get("template")
-                self.logger.info("Recreated RAG spec with retriever and template")
+                    # Recreate RAG spec with query-time components
+                    # We don't need document_loader or text_splitter for query-time operations,
+                    # so we use None/placeholder values
+                    self.rag_spec = LangChainRagSpec(
+                        document_loader=None,  # Not needed for query-time
+                        text_splitter=None,  # Not needed for query-time
+                        embedding_cls=embedding_cls,
+                        embedding_kwargs=embedding_kwargs,
+                        retriever=retriever,
+                        vector_store=vector_store,
+                        search_type=search_type,
+                        search_kwargs=search_kwargs,
+                        reranker_cls=context_generator_ref.get("reranker_cls"),
+                        reranker_kwargs=context_generator_ref.get("reranker_kwargs"),
+                        enable_gpu_search=False,  # Query actors always use CPU
+                        document_template=context_generator_ref.get("template"),
+                    )
+                    # Manually set the embedding and template since we bypassed normal initialization
+                    self.rag_spec.embedding = embedding_function
+                    self.rag_spec.template = context_generator_ref.get("template")
+                    self.logger.info("Recreated RAG spec with retriever and template")
 
-            # Set up PromptManager if provided (reinitialize after deserialization)
-            # This can exist with or without RAG components
-            prompt_manager = context_generator_ref.get("prompt_manager")
-            if prompt_manager:
-                # Check if we need to recreate the embedding and fewshot generator
-                # (they are set to None during pickling to avoid unpicklable locks)
-                if not hasattr(prompt_manager, "fewshot_generator") or prompt_manager.fewshot_generator is None:
-                    # Recreate embedding_function and fewshot_generator
-                    prompt_manager.setup_examples()
-                self.prompt_manager = prompt_manager
-                self.logger.info("Recreated prompt manager")
+                # Set up PromptManager if provided (reinitialize after deserialization)
+                # This can exist with or without RAG components
+                prompt_manager = context_generator_ref.get("prompt_manager")
+                if prompt_manager:
+                    # Check if we need to recreate the embedding and fewshot generator
+                    # (they are set to None during pickling to avoid unpicklable locks)
+                    if not hasattr(prompt_manager, "fewshot_generator") or prompt_manager.fewshot_generator is None:
+                        # Recreate embedding_function and fewshot_generator
+                        prompt_manager.setup_examples()
+                    self.prompt_manager = prompt_manager
+                    self.logger.info("Recreated prompt manager")
+
+        except Exception as e:
+            # Convert any exception to RuntimeError to ensure it can be properly serialized by Ray.
+            error_type = type(e).__name__
+            error_message = str(e)
+
+            # Log the original exception details for debugging
+            self.logger.exception(f"Failed to initialize pipeline: {error_type}: {error_message}")
+
+            # Convert to RuntimeError with descriptive message
+            raise RuntimeError(
+                f"Failed to initialize pipeline: {error_type}: {error_message}"
+            ) from None  # Don't chain to avoid serialization issues
 
     def _has_gpu(self) -> bool:
         """
@@ -279,9 +297,20 @@ class QueryProcessingActor:
                 batch_metrics = {**default_metrics, **compute_metrics_fn(batch_data)}
             return batch_data, batch_metrics
 
-        except Exception:
-            self.logger.exception("Error processing batch in QueryProcessingActor")
-            raise
+        except Exception as e:
+            # Convert any exception to RuntimeError to ensure it can be properly serialized by Ray.
+            # This is especially important for exceptions like APIStatusError from OpenAI that
+            # require specific keyword arguments that can't be pickled.
+            error_type = type(e).__name__
+            error_message = str(e)
+
+            # Log the original exception details for debugging
+            self.logger.exception(f"Error processing batch in QueryProcessingActor: {error_type}: {error_message}")
+
+            # Convert to RuntimeError with descriptive message
+            raise RuntimeError(
+                f"Error processing batch: {error_type}: {error_message}"
+            ) from None  # Don't chain to avoid serialization issues
 
     def cleanup(self):
         """Clean up inference engine resources."""
