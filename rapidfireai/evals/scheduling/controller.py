@@ -635,18 +635,11 @@ class Controller:
 
             row = {
                 "pipeline_id": pipeline_id,
-                "pipeline_name": pipeline_name,
             }
 
             for metric_name, metric_data in cumulative_metrics.items():
                 if isinstance(metric_data, dict):
                     row[metric_name] = metric_data.get("value")
-                    if "lower_bound" in metric_data:
-                        row[f"{metric_name}_lower_bound"] = metric_data.get("lower_bound")
-                    if "upper_bound" in metric_data:
-                        row[f"{metric_name}_upper_bound"] = metric_data.get("upper_bound")
-                    if "margin_of_error" in metric_data:
-                        row[f"{metric_name}_margin_of_error"] = metric_data.get("margin_of_error")
                 else:
                     row[metric_name] = metric_data
 
