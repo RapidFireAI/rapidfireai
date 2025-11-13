@@ -114,7 +114,7 @@ class Experiment:
         from rapidfireai.evals.db import RFDatabase
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.evals.utils.constants import DispatcherConfig, get_dispatcher_url
+        from rapidfireai.evals.utils.constants import DispatcherConfig, get_colab_auth_token, get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
@@ -169,8 +169,8 @@ class Experiment:
         # Start dispatcher in background thread for interactive control
         self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
 
-        # Initialize notebook UI controller
-        self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url())
+        # Initialize notebook UI controller with auth token for Colab
+        self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
 
     def run_fit(
         self,

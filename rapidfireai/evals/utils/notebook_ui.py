@@ -11,13 +11,14 @@ from IPython.display import HTML, display
 class NotebookUI:
     """Notebook UI that works in VS Code"""
 
-    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0):
+    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0, auth_token: str | None = None):
         self.dispatcher_url = dispatcher_url.rstrip("/")
         self.widget_id = f"controller_{uuid.uuid4().hex[:8]}"
         self.refresh_rate = refresh_rate_seconds
         self.is_polling = False
         self.polling_thread = None
         self.pending_actions = []
+        self.auth_token = auth_token
 
     def _generate_html(self):
         """Generate HTML using fetch API for communication"""
@@ -83,6 +84,7 @@ class NotebookUI:
                 (function() {{
                     const WIDGET_ID = '{self.widget_id}';
                     const DISPATCHER_URL = '{self.dispatcher_url}';
+                    const AUTH_TOKEN = {f"'{self.auth_token}'" if self.auth_token else 'null'};
                     let currentPipelineId = null;
                     let currentConfig = null;
                     let currentContextId = null;
@@ -106,7 +108,7 @@ class NotebookUI:
                         cancelCloneBtn: document.getElementById('cancel-clone-btn')
                     }};
 
-                    // Use fetch API with explicit CORS mode
+                    // Use fetch API with explicit CORS mode and optional auth token
                     async function xhrRequest(url, method = 'GET', body = null) {{
                         const options = {{
                             method: method,
@@ -116,6 +118,11 @@ class NotebookUI:
                             mode: 'cors',
                             credentials: 'omit'
                         }};
+
+                        // Add Authorization header if auth token is available (for Colab)
+                        if (AUTH_TOKEN) {{
+                            options.headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+                        }}
 
                         if (body) {{
                             options.body = JSON.stringify(body);

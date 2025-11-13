@@ -13,9 +13,17 @@ from rapidfireai.experiment import Experiment
 # Optional evals imports - gracefully handle missing dependencies
 EVALS_AVAILABLE = False
 EvalsExperiment = None
+get_dispatcher_url = None
+get_dispatcher_headers = None
+get_colab_auth_token = None
 
 try:
     from rapidfireai.evals.experiment import Experiment as EvalsExperiment
+    from rapidfireai.evals.utils import (
+        get_colab_auth_token,
+        get_dispatcher_headers,
+        get_dispatcher_url,
+    )
     EVALS_AVAILABLE = True
 except ImportError:
     # Evals dependencies not available - create helpful placeholder
@@ -46,4 +54,13 @@ def coming_soon():
     return "RapidFire AI package is under development. Stay tuned!"
 
 
-__all__ = ["Experiment", "__version__", "__version_info__", "EvalsExperiment", "EVALS_AVAILABLE"]
+__all__ = [
+    "Experiment",
+    "__version__",
+    "__version_info__",
+    "EvalsExperiment",
+    "EVALS_AVAILABLE",
+    "get_dispatcher_url",
+    "get_dispatcher_headers",
+    "get_colab_auth_token",
+]
