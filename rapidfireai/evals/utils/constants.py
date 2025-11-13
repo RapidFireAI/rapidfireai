@@ -55,9 +55,20 @@ def get_dispatcher_url() -> str:
     if _is_running_in_colab():
         try:
             from google.colab.output import eval_js
+            from IPython.display import display, HTML
 
             # Get the Colab proxy URL for the dispatcher port
             proxy_url = eval_js(f"google.colab.kernel.proxyPort({DispatcherConfig.PORT})")
+
+            # Display the proxy URL in the notebook output to ensure Colab registers it
+            display(HTML(f"""
+                <div style="padding: 10px; background-color: #e7f3ff; border-left: 4px solid #2196F3; margin: 10px 0;">
+                    <strong>🌐 Colab Proxy URL:</strong>
+                    <a href="{proxy_url}/debug" target="_blank">{proxy_url}</a>
+                    <br><small>Dispatcher is accessible at this URL</small>
+                </div>
+            """))
+
             print(f"🌐 Google Colab detected. Dispatcher URL: {proxy_url}")
             return proxy_url
         except Exception as e:
