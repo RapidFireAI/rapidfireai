@@ -1,23 +1,24 @@
-# Colab Packages    # # Core ML/AI Framework
+# Colab Packages
+# Core ML/AI Framework
 sentence-transformers>=5.1.0
 
 # Distributed Computing
-ray>=2.44.1
+ray>=2.51.0
 
 # LLM Inference
 transformers>=4.56.1
 
 # OpenAI API
 openai>=1.106.1
-tiktoken>=0.11.0
+tiktoken>=0.12.0
 
 # LangChain Ecosystem
-langchain
-langchain-classic
-langchain-core
-langchain-community
-langchain-openai
-langchain-huggingface
+langchain>=1.0.5
+langchain-classic>=1.0.0
+langchain-core>=1.0.4
+langchain-community>=0.4.1
+langchain-openai>=1.0.2
+langchain-huggingface>=1.0.0
 
 # Statistical Analysis
 
@@ -35,7 +36,11 @@ waitress>=3.0.2
 jq>=1.10.0
 
 # Other
-requests>=2.32.4
+requests==2.32.5
+uv
+jedi
+vllm
+rf-faiss
 
 # vllm==0.7.2
 # faiss-gpu-cu12==1.12.0
