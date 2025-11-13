@@ -34,6 +34,7 @@ class OpenAIRateLimiter:
         max_completion_tokens: int = 150,
         limit_safety_ratio: float = 0.98,
         minimum_wait_time: float = 3.0,
+        logger=None,
     ):
         """
         Initialize the rate limiter with sliding window tracking and per-model rate limits.
@@ -44,11 +45,17 @@ class OpenAIRateLimiter:
             max_completion_tokens: Maximum completion tokens per request
             limit_safety_ratio: Safety margin as percentage of limits (default 0.98 = 98%)
             minimum_wait_time: Minimum wait time when rate limited (default 3.0 seconds)
+            logger: Optional logger instance for logging rate limit messages
         """
         # Configuration
         self.limit_safety_ratio = limit_safety_ratio
         self.minimum_wait_time = minimum_wait_time
         self.max_completion_tokens = max_completion_tokens
+        self.logger = logger
+
+        # Throttling for rate limit messages (log 1 in 500)
+        self._rate_limit_message_counter = 0
+        self._log_throttle_ratio = 500
 
         # Per-model rate limits
         self.model_rate_limits = model_rate_limits
@@ -220,10 +227,14 @@ class OpenAIRateLimiter:
                     wait_time = max(self.minimum_wait_time, 60 - (time.time() - oldest_timestamp))
                 else:
                     wait_time = self.minimum_wait_time
-                print(
-                    f"RPM limit hit for {model_name} - waiting {wait_time:.1f}s "
-                    f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
-                )
+
+                # Throttled logging: only log 1 in 500 messages
+                self._rate_limit_message_counter += 1
+                if self.logger and (self._rate_limit_message_counter % self._log_throttle_ratio == 0):
+                    self.logger.info(
+                        f"RPM limit hit for {model_name} - waiting {wait_time:.1f}s "
+                        f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
+                    )
                 return False, wait_time, None
 
             # Check if this request would exceed enforced TPM limit for this model
@@ -235,10 +246,14 @@ class OpenAIRateLimiter:
                     wait_time = max(self.minimum_wait_time, 60 - (time.time() - oldest_timestamp))
                 else:
                     wait_time = self.minimum_wait_time
-                print(
-                    f"TPM limit hit for {model_name} - waiting {wait_time:.1f}s "
-                    f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
-                )
+
+                # Throttled logging: only log 1 in 500 messages
+                self._rate_limit_message_counter += 1
+                if self.logger and (self._rate_limit_message_counter % self._log_throttle_ratio == 0):
+                    self.logger.info(
+                        f"TPM limit hit for {model_name} - waiting {wait_time:.1f}s "
+                        f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
+                    )
                 return False, wait_time, None
 
             # Reserve the slot

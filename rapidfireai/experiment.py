@@ -370,10 +370,7 @@ class Experiment:
             self.db.set_experiment_error(self.experiment_id, str(e))
             raise
 
-        self.logger.info("Multi-config experiment completed")
 
-        # Mark experiment as completed
-        self.db.set_experiment_status(self.experiment_id, ExperimentStatus.COMPLETED)
 
         return results
 

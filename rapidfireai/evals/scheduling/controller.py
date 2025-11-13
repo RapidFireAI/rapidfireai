@@ -283,8 +283,31 @@ class Controller:
             # Allocate resources based on GPU needs:
             # - If GPU search enabled: 1 GPU + 2 CPUs
             # - If CPU only: 0 GPUs + 2 CPUs
-            # - If prompt-only: 0 GPUs + 2 CPUs (no GPU needed for prompt_manager)
-            num_gpus_for_actor = 1 if (rag_spec and rag_spec.enable_gpu_search) else 0
+            # - If prompt-only with CUDA device requested: 1 GPU + 2 CPUs
+            # - If prompt-only without CUDA: 0 GPUs + 2 CPUs
+            needs_gpu = False
+            if rag_spec and rag_spec.enable_gpu_search:
+                needs_gpu = True
+            elif rag_spec:
+                # Check if rag_spec embeddings or reranker request CUDA (even if enable_gpu_search=False)
+                if rag_spec.embedding_kwargs:
+                    model_kwargs = rag_spec.embedding_kwargs.get("model_kwargs", {})
+                    device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
+                    if device and str(device).startswith("cuda"):
+                        needs_gpu = True
+                if not needs_gpu and rag_spec.reranker_kwargs:
+                    reranker_model_kwargs = rag_spec.reranker_kwargs.get("model_kwargs", {})
+                    device = reranker_model_kwargs.get("device", "") if isinstance(reranker_model_kwargs, dict) else ""
+                    if device and str(device).startswith("cuda"):
+                        needs_gpu = True
+            elif prompt_manager and prompt_manager.embedding_kwargs:
+                # Check if prompt_manager requests CUDA device
+                model_kwargs = prompt_manager.embedding_kwargs.get("model_kwargs", {})
+                device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
+                if device and str(device).startswith("cuda"):
+                    needs_gpu = True
+
+            num_gpus_for_actor = 1 if needs_gpu else 0
             num_cpus_for_actor = NUM_CPUS_PER_DOC_ACTOR
 
             # Create DocProcessingActor
@@ -807,6 +830,8 @@ class Controller:
                 max_completion_tokens=max_max_tokens,
                 limit_safety_ratio=0.90,
                 minimum_wait_time=1.0,
+                experiment_name=self.experiment_name,
+                experiment_path=self.experiment_path,
             )
 
             for pipeline_id in pipeline_to_rate_limiter:
@@ -1163,9 +1188,6 @@ class Controller:
             progress_display,
         )
 
-        # Update experiment status
-        db.set_experiment_status(experiment_id, ExperimentStatus.COMPLETED)
-        self.logger.info(f"Experiment {experiment_id} completed!")
 
         # Cleanup actors
         for actor in query_actors:
