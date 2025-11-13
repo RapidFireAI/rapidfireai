@@ -59,7 +59,7 @@ pip install rapidfireai
 
 rapidfireai --version
 # Verify it prints the following:
-# RapidFire AI 0.12.4
+# RapidFire AI 0.12.5
 
 # Replace YOUR_TOKEN with your actual Hugging Face token
 # https://huggingface.co/docs/hub/en/security-tokens
@@ -68,20 +68,14 @@ hf auth login --token YOUR_TOKEN
 # Due to current issue: https://github.com/huggingface/xet-core/issues/527
 pip uninstall -y hf-xet
 
+# Depending on whether you want Fine-tuning/Post-Training or RAG/context eng., pick one of the remaining series of commands
+
+
 # For Fine-tuning/Post-Training: Install specific dependencies and initialize rapidfireai
+
 rapidfireai init
-[OR]
-# For RAG/Context Engineering Evals: Install specific dependencies and initialize rapidfireai for SFT/RFT
-rapidfireai init --evals
-
-# Start the rapidfireai server
-# For Google Colab run:
-#   export RF_TRACKING_BACKEND=tensorboard
-#   rapidfireai start --colab
-# For standalone run:
-
-# For Fine-tuning/Post-Training only: Start dashboard metrics server - ONLY
 rapidfireai start
+
 # It should print about 50 lines, including the following:
 # ...
 # RapidFire Frontend is ready
@@ -89,8 +83,31 @@ rapidfireai start
 # ...
 # Press Ctrl+C to stop all services
 
-# Open an example notebook from ./tutorial_notebooks and start experiment
+# Forward this port if you installed rapidfireai on a remote machine
+ssh -L 8853:localhost:8853 username@remote-machine
+
+# Open an example notebook from ./tutorial_notebooks/[fine-tuning | post-training] and start experiment
+
+
+# [OR]
+
+
+# For RAG/Context Engineering Evals: Install specific dependencies and initialize rapidfireai
+rapidfireai init --evals
+
+# For the RAG/context eng. notebooks, only jupyter is supported for now and must be started as follows
+jupyter notebook --no-browser --port=8850 --ServerApp.allow_origin='*'
+
+# Forward these ports if you installed rapidfireai on a remote machine
+ssh -L 8850:localhost:8850 username@remote-machine
+ssh -L 8851:localhost:8851 username@remote-machine
+
+# Open the URL provided by the jupyter notebook command above via your browser
+# Open an example notebook from ./tutorial_notebooks/rag-contexteng/ and start experiment
+
 ```
+
+
 
 ### Troubleshooting
 
