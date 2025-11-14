@@ -354,26 +354,57 @@ class NotebookUI:
             proxy_url = eval_js(f"google.colab.kernel.proxyPort({port})")
             print(f"✓ Proxy URL generated: {proxy_url}")
 
-            # Test if the proxy is actually working
+            # IMPORTANT: Colab's proxy needs time to set up the routing
+            # Also, making a localhost request first can "warm up" the dispatcher
             import urllib.request
             import urllib.error
+            import time
 
-            print(f"🔍 Testing proxy connectivity...")
-            test_passed = False
+            # First, verify dispatcher is running locally
+            print(f"🔍 Step 1: Verifying dispatcher is running locally...")
             try:
-                # Test the proxy URL
-                req = urllib.request.Request(f"{proxy_url}/debug", method='GET')
-                with urllib.request.urlopen(req, timeout=5) as response:
+                req = urllib.request.Request(f"http://localhost:{port}/debug", method='GET')
+                with urllib.request.urlopen(req, timeout=2) as response:
                     if response.status == 200:
-                        print(f"✅ Proxy test PASSED - dispatcher is accessible via proxy")
-                        test_passed = True
+                        print(f"✅ Dispatcher is running on localhost:{port}")
                     else:
-                        print(f"⚠️ Proxy test returned status {response.status}")
-            except urllib.error.URLError as e:
-                print(f"❌ Proxy test FAILED: {e}")
-                print(f"   This means Colab's proxy is not forwarding to the dispatcher")
+                        print(f"⚠️ Dispatcher returned status {response.status}")
             except Exception as e:
-                print(f"❌ Proxy test error: {e}")
+                print(f"❌ Dispatcher not accessible on localhost: {e}")
+                print(f"   Make sure dispatcher is running before calling display()")
+
+            # Wait for Colab to set up proxy routing (this is critical!)
+            print(f"⏳ Step 2: Waiting for Colab proxy infrastructure to initialize (3 seconds)...")
+            time.sleep(3)
+
+            # Now test if the proxy is working (with retries)
+            print(f"🔍 Step 3: Testing proxy connectivity...")
+            test_passed = False
+            max_retries = 3
+
+            for attempt in range(max_retries):
+                try:
+                    req = urllib.request.Request(f"{proxy_url}/debug", method='GET')
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        if response.status == 200:
+                            print(f"✅ Proxy test PASSED on attempt {attempt + 1}")
+                            test_passed = True
+                            break
+                        else:
+                            print(f"⚠️ Attempt {attempt + 1}: Proxy returned status {response.status}")
+                except urllib.error.URLError as e:
+                    print(f"⚠️ Attempt {attempt + 1}: Proxy test failed: {e}")
+                    if attempt < max_retries - 1:
+                        print(f"   Retrying in 2 seconds...")
+                        time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Attempt {attempt + 1}: Error: {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(2)
+
+            if not test_passed:
+                print(f"❌ Proxy test FAILED after {max_retries} attempts")
+                print(f"   This means Colab's proxy is not forwarding to the dispatcher")
 
             # Display result
             if test_passed:

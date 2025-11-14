@@ -341,8 +341,8 @@ class Experiment:
         self.db.set_experiment_resources(self.experiment_id, num_actors, cpus_per_actor, gpus_per_actor)
 
         # Display interactive control panel in notebook
-        # Give dispatcher a moment to start up
-        time.sleep(0.5)
+        # Give dispatcher time to fully start up (critical for Colab proxy)
+        time.sleep(2.0)
         try:
             self.notebook_ui.display()
         except Exception as e:
