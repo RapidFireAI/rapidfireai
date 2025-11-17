@@ -251,12 +251,13 @@ def run_doctor():
             "sentencepiece",
         ]
         lines = pip_output.split("\n")
+        found_packages = []
         for line in lines:
             if any(pkg.lower() in line.lower() for pkg in relevant_packages):
+                found_packages.append(line)
                 print(line)
         print("... (showing only relevant packages)")
-        if len(lines) < 5:
-            # Print a warning message with a yellow dot
+        if len(found_packages) < 5:
             print("⚠️ Not many packages installed, was rapidfireai init run (see installation instructions)?")
     else:
         print(pip_output)
