@@ -1,9 +1,6 @@
 # Non Colab Packages
 # fit and evals dependencies
 # Core ML/AI Framework
-torch==2.5.1
-torchvision==0.20.1
-torchaudio==2.5.1
 datasets==3.6.0
 sentence-transformers==5.1.0
 gpustat==1.1.1
