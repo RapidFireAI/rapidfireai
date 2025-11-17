@@ -222,6 +222,30 @@ def run_doctor():
             "trl",
             "bitsandbytes",
             "nltk",
+            "langchain",
+            "ray",
+            "sentence-transformers",
+            "openai",
+            "tiktoken",
+            "langchain-core",
+            "langchain-community",
+            "langchain-openai",
+            "langchain-huggingface",
+            "langchain-classic",
+            "unstructured",
+            "waitress",
+            "vllm",
+            "rf-faiss",
+            "vllm",
+            "flash-attn",
+            "tensorboard",
+            "numpy",
+            "pandas",
+            "torch",
+            "torchvision",
+            "torchaudio",
+            "scipy",
+            "datasets",
             "evaluate",
             "rouge-score",
             "sentencepiece",
@@ -231,6 +255,9 @@ def run_doctor():
             if any(pkg.lower() in line.lower() for pkg in relevant_packages):
                 print(line)
         print("... (showing only relevant packages)")
+        if len(lines) < 5:
+            # Print a warning message with a yellow dot
+            print("⚠️ Not many packages installed, was rapidfireai init run (see installation instructions)?")
     else:
         print(pip_output)
 
