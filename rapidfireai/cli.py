@@ -488,6 +488,23 @@ def run_init(evals: bool = False):
 
     return 0
 
+def copy_test_notebooks():
+    """Copy the test notebooks to the project."""
+    print("Getting test notebooks...")
+    try:
+        test_path = os.getenv("RF_TEST_PATH", os.path.join(".", "tutorial_notebooks", "tests"))
+        site_packages_path = site.getsitepackages()[0]
+        source_path = os.path.join(site_packages_path, "tests", "notebooks")
+        print(f"Copying test notebooks from {source_path} to {test_path}...")
+        os.makedirs(test_path, exist_ok=True)
+        shutil.copytree(source_path, test_path, dirs_exist_ok=True)
+        print(f"✅ Successfully copied test notebooks to {test_path}")
+    except Exception as e:
+        print(f"❌ Failed to copy test notebooks to {test_path} from {source_path}")
+        print(f"   Error: {e}")
+        print("   You may need to copy test notebooks manually")
+        return 1
+    return 0
 
 def main():
     """Main entry point for the rapidfireai command."""
@@ -539,6 +556,12 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         help="Run in Colab mode (skips frontend, conditionally starts MLflow based on tracking backend)",
     )
 
+    parser.add_argument(
+        "--test-notebooks",
+        action="store_true",
+        help="Copy test notebooks to the tutorial_notebooks directory",
+    )
+
     parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
 
     args = parser.parse_args()
@@ -561,6 +584,9 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     # Handle init command separately
     if args.command == "init":
         return run_init(args.evals)
+
+    if args.test_notebooks:
+        return copy_test_notebooks()
 
     # Run the script with the specified command
     return run_script([args.command])
