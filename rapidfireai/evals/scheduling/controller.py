@@ -505,6 +505,7 @@ class Controller:
         pipeline_results: dict[int, dict],
         db: RFDatabase,
         progress_display=None,
+        pipeline_id_to_info: dict[int, dict] = None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Compute final metrics for each pipeline and update database.
@@ -516,6 +517,7 @@ class Controller:
             pipeline_results: Mapping of pipeline_id to results/metrics dict
             db: Database instance
             progress_display: Optional progress display to update
+            pipeline_id_to_info: Optional mapping of pipeline_id to pipeline info dict
 
         Returns:
             Dict mapping pipeline_id to (aggregated_results, cumulative_metrics)
@@ -571,30 +573,46 @@ class Controller:
                     cumulative_metrics, samples_processed
                 )
 
+            # Add pipeline info to cumulative_metrics (use passed pipeline_id_to_info if available)
+            if pipeline_id_to_info and pipeline_id in pipeline_id_to_info:
+                pipeline_info_dict = pipeline_id_to_info[pipeline_id]
+                for key, value in pipeline_info_dict.items():
+                    cumulative_metrics[key] = {"value": value}
+
+            # Reorder cumulative_metrics: run_id, model_name, hyperparams, Samples Processed, then metrics
+            ordered_metrics = {}
+            
+            ordered_metrics["run_id"] = {"value": pipeline_id}
+            
+            if "model_name" in cumulative_metrics:
+                ordered_metrics["model_name"] = cumulative_metrics["model_name"]
+            
+            hyperparam_keys = ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap", 
+                             "sampling_params", "prompt_manager_k", "model_config"]
+            for key in hyperparam_keys:
+                if key in cumulative_metrics:
+                    ordered_metrics[key] = cumulative_metrics[key]
+            
+            if "Samples Processed" in cumulative_metrics:
+                ordered_metrics["Samples Processed"] = cumulative_metrics["Samples Processed"]
+            
+            excluded_keys = {"run_id", "model_name", "Samples Processed"} | set(hyperparam_keys)
+            for key, value in cumulative_metrics.items():
+                if key not in excluded_keys:
+                    ordered_metrics[key] = value
+
             final_results[pipeline_id] = (
                 pipeline_results[pipeline_id]["results"],
-                cumulative_metrics,
+                ordered_metrics,
             )
 
             # Update pipeline status
             db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
             if progress_display:
                 # Update display with final metrics to ensure all metrics are shown
-                # Add confidence intervals to final metrics if online strategy is available
-                samples_processed = sum(
-                    m.get("value", 0)
-                    for m in pipeline_results[pipeline_id]["metrics"].get("Samples Processed", [{}])
-                )
-                if aggregator.online_strategy and samples_processed > 0:
-                    metrics_with_ci = aggregator.online_strategy.add_confidence_interval_info(
-                        cumulative_metrics, samples_processed
-                    )
-                else:
-                    metrics_with_ci = cumulative_metrics
-
-                # Convert cumulative_metrics format to display format with CI info
+                # Convert ordered_metrics format to display format with CI info
                 display_metrics = {}
-                for metric_name, metric_data in metrics_with_ci.items():
+                for metric_name, metric_data in ordered_metrics.items():
                     if isinstance(metric_data, dict):
                         display_metrics[metric_name] = {
                             "value": metric_data.get("value", 0),
@@ -1179,6 +1197,12 @@ class Controller:
             db.set_pipeline_current_shard(pipeline_id, shard_id)
 
         # PHASE 8: Compute final metrics for each pipeline
+        pipeline_id_to_info = {}
+        for info_dict in pipeline_info:
+            pipeline_id = info_dict["pipeline_id"]
+            info_copy = {k: v for k, v in info_dict.items() if k not in ["pipeline_config", "pipeline_id"]}
+            pipeline_id_to_info[pipeline_id] = info_copy
+        
         final_results = self._compute_final_metrics_for_pipelines(
             pipeline_ids,
             pipeline_id_to_config,
@@ -1186,6 +1210,7 @@ class Controller:
             pipeline_results,
             db,
             progress_display,
+            pipeline_id_to_info,
         )
 
 
