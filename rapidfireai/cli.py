@@ -162,10 +162,11 @@ def get_gpu_info():
         try:
             result = subprocess.run(["nvcc", "--version"], capture_output=True, text=True, check=True)
             # Extract version from output like "Cuda compilation tools, release 11.8, V11.8.89"
-            version_line = result.stdout.split("\n")[0]
-            if "release" in version_line:
-                version = version_line.split("release")[1].split(",")[0].strip()
-                info["nvcc_version"] = version
+            version_lines = result.stdout.split("\n")
+            for line in version_lines:
+                if "release" in line:
+                    info["nvcc_version"] = line.split("release")[1].split(",")[0].strip()
+                    break
             else:
                 info["nvcc_version"] = "unknown"
         except subprocess.CalledProcessError:
@@ -358,9 +359,7 @@ def install_packages(evals: bool = False):
     site_packages = python_info["site_packages"]
     is_colab = os.getenv("COLAB_BACKEND_VERSION")
     setup_directory = None
-    print(f"Site packages: {site_packages}")
     for site_package in site_packages.split(","):
-        print(f"Checking site package: {site_package}")
         if os.path.exists(os.path.join(site_package, "setup", "fit")):
             setup_directory = os.path.join(site_package, "setup")
             break
