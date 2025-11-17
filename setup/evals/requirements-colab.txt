@@ -38,7 +38,7 @@ unstructured>=0.18.15
 # Other
 requests==2.32.5
 # uv
-jedi
+# jedi
 vllm
 rf-faiss
 

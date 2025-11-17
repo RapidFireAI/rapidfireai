@@ -354,6 +354,47 @@ def install_packages(evals: bool = False):
     # Generate CUDA requirements file
     cuda_major = get_cuda_version()
     compute_capability = get_compute_capability()
+    python_info = get_python_info()
+    site_packages = python_info["site_packages"]
+    is_colab = os.getenv("COLAB_BACKEND_VERSION")
+    setup_directory = None
+    for site_package in site_packages:
+        if os.path.exists(os.path.join(site_package, "setup", "fit")):
+            setup_directory = os.path.join(site_package, "setup")
+            break
+    if not setup_directory:
+        print("❌ Setup directory not found, skipping package installation")
+        return 1
+    if is_colab and evals:
+        print("Colab environment detected, installing evals packages")
+        requirements_file = os.path.join(setup_directory, "evals", "requirements-colab.txt")
+    elif is_colab and not evals:
+        print("Colab environment detected, installing fit packages")
+        requirements_file = os.path.join(setup_directory, "fit", "requirements-colab.txt")
+    elif not is_colab and evals:
+        print("Non-Colab environment detected, installing evals packages")
+        requirements_file = os.path.join(setup_directory, "evals", "requirements-local.txt")
+    elif not is_colab and not evals:
+        print("Non-Colab environment detected, installing fit packages")
+        requirements_file = os.path.join(setup_directory, "fit", "requirements-local.txt")
+    else:
+        print("❌ Unknown environment detected, skipping package installation")
+        return 1
+
+    try:
+        print(f"Installing packages from {requirements_file}...")
+        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file]
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to install packages from {requirements_file}")
+        print(f"   Error: {e}")
+        if e.stdout:
+            print(f"   Standard output: {e.stdout}")
+        if e.stderr:
+            print(f"   Standard error: {e.stderr}")
+        print(f"   You may need to install {requirements_file} manually")
+        return 1
+    print(f"✅ Successfully installed packages from {requirements_file}")
 
     if not evals:
         # Upgrading pytorch to 2.7.0 for fit
