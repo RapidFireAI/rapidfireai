@@ -358,7 +358,9 @@ def install_packages(evals: bool = False):
     site_packages = python_info["site_packages"]
     is_colab = os.getenv("COLAB_BACKEND_VERSION")
     setup_directory = None
+    print(f"Site packages: {site_packages}")
     for site_package in site_packages:
+        print(f"Checking site package: {site_package}")
         if os.path.exists(os.path.join(site_package, "setup", "fit")):
             setup_directory = os.path.join(site_package, "setup")
             break
