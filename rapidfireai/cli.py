@@ -238,6 +238,7 @@ def run_doctor():
             "rf-faiss",
             "vllm",
             "flash-attn",
+            "flashinfer-python",
             "tensorboard",
             "numpy",
             "pandas",
