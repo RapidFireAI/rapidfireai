@@ -305,8 +305,8 @@ def run_doctor():
     relevant_vars = ["CUDA_HOME", "CUDA_PATH", "LD_LIBRARY_PATH", "PATH"]
     for var in relevant_vars:
         value = os.environ.get(var, "not set")
-        if value != "not set" and len(value) > 100:
-            value = value[:100] + "..."
+        if value != "not set" and len(value) > 200:
+            value = value[:200] + "..."
         print(f"{var}: {value}")
 
     print("\n✅ Diagnostics complete!")
