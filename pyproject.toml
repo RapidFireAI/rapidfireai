@@ -402,14 +402,12 @@ rapidfireai = [
     "evals/scheduling/*.py",
     "evals/utils/*.py",
     "evals/*.py",
+    "../setup/fit/start.sh",
+    "../setup/fit/start_dev.sh",
+    "../setup/fit/requirements-*.txt",
+    "../setup/evals/requirements-*.txt",
+    "../tutorial_notebooks/**/*",
 
-]
-"*" = [
-    "setup/fit/start.sh",
-    "setup/fit/start_dev.sh",
-    "setup/fit/requirements-*.txt",
-    "setup/evals/requirements-*.txt",
-    "tutorial_notebooks/**/*",
 ]
 
 

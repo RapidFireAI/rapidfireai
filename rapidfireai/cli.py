@@ -203,9 +203,9 @@ def run_doctor():
     print(f"Version: {python_info['version'].split()[0]}")
     print(f"Implementation: {python_info['implementation']}")
     print(f"Executable: {python_info['executable']}")
+    print(f"Site Packages: {python_info['site_packages']}")
     print(f"Conda Environment: {python_info['conda_env']}")
     print(f"Virtual Environment: {python_info['venv']}")
-    print(f"Site Packages: {python_info['site_packages']}")
     # Pip Packages
     print("\n📦 Installed Packages:")
     print("-" * 30)
