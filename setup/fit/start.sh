@@ -19,8 +19,13 @@ RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
 RF_LOG_PATH="${RF_LOG_PATH:=$HOME/logs}"
 
 # Colab mode configuration
-RF_COLAB_MODE=${RF_COLAB_MODE:=false}
-RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=mlflow}
+if [ -z "$COLAB_BACKEND_VERSION" ]; then
+    RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=mlflow}
+    RF_COLAB_MODE=${RF_COLAB_MODE:=false}
+else
+    RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=tensorboard}
+    RF_COLAB_MODE=${RF_COLAB_MODE:=true}
+fi
 
 # Colors for output
 RED='\033[0;31m'

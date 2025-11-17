@@ -523,7 +523,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument(
         "--tracking-backend",
         choices=["mlflow", "tensorboard", "both"],
-        default=os.getenv("RF_TRACKING_BACKEND", "mlflow"),
+        default=os.getenv("RF_TRACKING_BACKEND", "mlflow" if not os.getenv("COLAB_BACKEND_VERSION") else "tensorboard"),
         help="Tracking backend to use for metrics (default: mlflow)",
     )
 
@@ -544,11 +544,14 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     args = parser.parse_args()
 
     # Set environment variables from CLI args
+
     if args.tracking_backend:
         os.environ["RF_TRACKING_BACKEND"] = args.tracking_backend
     if args.tensorboard_log_dir:
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
     if args.colab:
+        os.environ["RF_COLAB_MODE"] = "true"
+    elif os.getenv("COLAB_BACKEND_VERSION"):
         os.environ["RF_COLAB_MODE"] = "true"
 
     # Handle doctor command separately
