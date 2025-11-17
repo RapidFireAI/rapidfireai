@@ -70,6 +70,7 @@ def get_python_info():
         if hasattr(sys, "real_prefix") or (hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix)
         else "no"
     )
+    info["site_packages"] = ", ".join(site.getsitepackages())
 
     return info
 
@@ -204,7 +205,7 @@ def run_doctor():
     print(f"Executable: {python_info['executable']}")
     print(f"Conda Environment: {python_info['conda_env']}")
     print(f"Virtual Environment: {python_info['venv']}")
-
+    print(f"Site Packages: {python_info['site_packages']}")
     # Pip Packages
     print("\n📦 Installed Packages:")
     print("-" * 30)
