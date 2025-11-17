@@ -165,7 +165,7 @@ def get_gpu_info():
             version_lines = result.stdout.split("\n")
             for line in version_lines:
                 if "release" in line:
-                    info["nvcc_version"] = line.split("release")[1].split(",")[0].strip()
+                    info["nvcc_version"] = line.split("release")[1].split(",")[-1].strip()
                     break
             else:
                 info["nvcc_version"] = "unknown"
