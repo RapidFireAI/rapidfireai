@@ -41,6 +41,7 @@ requests==2.32.5
 # jedi
 vllm
 rf-faiss
+fsspec>=2023.1.0,<=2025.3.0
 
 # vllm==0.7.2
 # faiss-gpu-cu12==1.12.0
