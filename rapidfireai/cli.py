@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 from importlib.resources import files
+from rapidfireai.evals.utils.get_ip_address import get_ip_address
+from rapidfireai.evals.constants import DispatcherConfig
 
 from .version import __version__
 
@@ -507,6 +509,67 @@ def copy_test_notebooks():
         return 1
     return 0
 
+def run_jupyter():
+    """ Run the Jupyter notebook server. """
+    from jupyter_server.serverapp import ServerApp
+    import logging
+    import io
+    from contextlib import redirect_stdout, redirect_stderr
+
+    # Suppress all logging
+    logging.getLogger().setLevel(logging.CRITICAL)
+    for name in logging.root.manager.loggerDict:
+        logging.getLogger(name).setLevel(logging.CRITICAL)
+
+    app = ServerApp()
+    app.open_browser = False
+    app.port = int(os.getenv("RF_JUPYTER_PORT", "8850"))
+    app.allow_origin = '*'
+    app.log_level = 'CRITICAL'
+
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+
+    try:
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            app.initialize(argv=['--ServerApp.custom_display_url='])
+        
+        dispatcher_port = DispatcherConfig.PORT
+
+        if os.getenv("TERM_PROGRAM") == "vscode":
+            print(f"VSCode detected, port {app.port} should automatically be forwarded to localhost")
+            print(f"Manually forward port {dispatcher_port} to localhost, using the Ports tab in VSCode/Cursor/etc.")
+        else:
+            os_username = os.getenv("USER", os.getenv("LOGNAME", "username"))
+            print(f"Manually forward port {app.port} to localhost")
+            print(f"Manually forward port {dispatcher_port} to localhost")
+            print(f"For example using ssh:")
+            print(f"ssh -L {app.port}:localhost:{app.port} -L {dispatcher_port}:localhost:{dispatcher_port} {os_username}@{get_ip_address()}")
+        print("After forwarding the ports above, access the Jupyter notebook at:")
+        print(f"http://localhost:{app.port}/tree?token={app.token}")
+        
+        # Don't redirect anything during start - let prompts through
+        app.start()
+        
+    except Exception as e:
+        print("ERROR occurred during Jupyter server startup:", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        
+        stdout_output = stdout_capture.getvalue()
+        stderr_output = stderr_capture.getvalue()
+        
+        if stdout_output:
+            print("   Standard output:", file=sys.stderr)
+            print(stdout_output, file=sys.stderr)
+        
+        if stderr_output:
+            print("   Standard error:", file=sys.stderr)
+            print(stderr_output, file=sys.stderr)
+        
+        print("=" * 60, file=sys.stderr)
+        print(f"Exception: {e}", file=sys.stderr)
+        raise
+
 def main():
     """Main entry point for the rapidfireai command."""
     parser = argparse.ArgumentParser(description="RapidFire AI - Start/stop/manage services", prog="rapidfireai",
@@ -532,7 +595,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         "command",
         nargs="?",
         default="start",
-        choices=["start", "stop", "status", "restart", "setup", "doctor", "init"],
+        choices=["start", "stop", "status", "restart", "setup", "doctor", "init", "jupyter"],
         help="Command to execute (default: start)",
     )
 
@@ -585,6 +648,9 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     # Handle init command separately
     if args.command == "init":
         return run_init(args.evals)
+    
+    if args.command == "jupyter":
+        return run_jupyter()
 
     if args.test_notebooks:
         return copy_test_notebooks()
