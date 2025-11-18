@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from importlib.resources import files
 from rapidfireai.evals.utils.get_ip_address import get_ip_address
-from rapidfireai.evals.constants import DispatcherConfig
+from rapidfireai.evals.utils.constants import DispatcherConfig
 
 from .version import __version__
 
