@@ -23,6 +23,10 @@ class DispatcherConfig:
     URL: str = f"http://{HOST}:{PORT}"
 
 
+def get_ray_port() -> int:
+    """Get the port for the Ray server."""
+    return int(os.getenv("RF_RAY_PORT", "8855"))
+
 def _is_running_in_colab() -> bool:
     """
     Check if code is running in Google Colab (not regular Jupyter).
