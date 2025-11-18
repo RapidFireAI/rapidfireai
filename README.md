@@ -96,11 +96,10 @@ ssh -L 8853:localhost:8853 username@remote-machine
 rapidfireai init --evals
 
 # For the RAG/context eng. notebooks, only jupyter is supported for now and must be started as follows
-jupyter notebook --no-browser --port=8850 --ServerApp.allow_origin='*'
+rapidfireai jupyter
 
 # Forward these ports if you installed rapidfireai on a remote machine
-ssh -L 8850:localhost:8850 username@remote-machine
-ssh -L 8851:localhost:8851 username@remote-machine
+ssh -L 8850:localhost:8850 -L 8851:localhost:8851 username@remote-machine
 
 # Open the URL provided by the jupyter notebook command above via your browser
 # Open an example notebook from ./tutorial_notebooks/rag-contexteng/ and start experiment
@@ -123,6 +122,7 @@ If you encounter port conflicts, you can kill existing processes:
 lsof -t -i:8852 | xargs kill -9  # mlflow
 lsof -t -i:8851 | xargs kill -9  # dispatcher
 lsof -t -i:8853 | xargs kill -9  # frontend server
+lsof -t -i:8850 | xargs kill -9  # jupyter server
 ```
 
 ## Documentation

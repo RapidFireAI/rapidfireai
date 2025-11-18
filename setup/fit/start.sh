@@ -7,6 +7,7 @@
 set -e  # Exit on any error
 
 # Configuration
+RF_JUPYTER_PORT=${RF_JUPYTER_PORT:=8850}
 RF_MLFLOW_PORT=${RF_MLFLOW_PORT:=8852}
 RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=127.0.0.1}
 RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=8853}
@@ -105,7 +106,7 @@ cleanup() {
     print_warning "Shutting down services..."
 
     # Kill processes by port (more reliable for MLflow)
-    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT; do
+    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT $RF_JUPYTER_PORT; do
         local pids=$(lsof -ti :$port 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
             print_status "Killing processes on port $port"
