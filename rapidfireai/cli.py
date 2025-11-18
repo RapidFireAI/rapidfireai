@@ -420,7 +420,8 @@ def install_packages(evals: bool = False):
         # packages.append({"package": "vllm==0.7.2", "extra_args": ["--torch-backend=cu124"]})
         # packages.append({"package": "faiss-gpu-cu12==1.12.0", "extra_args": []})
         # packages.append({"package": "flashinfer-python==0.2.5", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu124/torch2.5/"]})
-        packages.append({"package": "flashinfer-python", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu128"]})
+        packages.append({"package": "flash-attn", "extra_args": ["--no-build-isolation"]})
+        packages.append({"package": "flashinfer-python", "extra_args": []})
         packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu128"]})
     # elif cuda_major == 11:
     #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
