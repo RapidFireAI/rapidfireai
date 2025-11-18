@@ -17,7 +17,7 @@ from waitress import serve
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.utils.constants import ICOperation, DispatcherConfig
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:8853", "http://localhost", DispatcherConfig.URL, "*", "https://*.colab.dev", "https://*.googleusercontent.com"]
+CORS_ALLOWED_ORIGINS = ["http://localhost:8853", "http://localhost", DispatcherConfig.URL, "*", "https://*.colab.dev", "https://*.googleusercontent.com", "https://8851-gpu-t4-s-3vtgwbhvnpcfs-c.asia-southeast1-0.prod.colab.dev", "https://v2d1mfrf4m-496ff2e9c6d22116-0-colab.googleusercontent.com" ]
 
 
 class Dispatcher:
