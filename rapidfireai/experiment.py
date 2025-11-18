@@ -149,12 +149,20 @@ class Experiment:
         for msg in log_messages:
             self.logger.info(msg)
 
-        # Initialize Ray
+        # Initialize Ray with runtime environment for CUDA initialization
+        # This fixes AWS-specific CUDA/cuBLAS initialization issues
         ray.init(
             logging_level=logging.INFO,
             log_to_driver=True,
             configure_logging=True,
             ignore_reinit_error=True,
+            runtime_env={
+                "env_vars": {
+                    # Force CUDA to initialize properly in Ray actors (AWS fix)
+                    "CUDA_LAUNCH_BLOCKING": "0",
+                    "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
+                }
+            },
         )
 
         # Create database reference

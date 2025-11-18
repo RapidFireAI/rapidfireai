@@ -49,6 +49,19 @@ class QueryProcessingActor:
             experiment_path: Path to experiment logs/artifacts
             actor_id: Index of this actor (for logging and identification)
         """
+        # AWS Fix: Initialize CUDA context early to prevent CUBLAS_STATUS_NOT_INITIALIZED
+        # This must happen BEFORE any torch operations (including embedding/LLM model loading)
+        if "CUDA_VISIBLE_DEVICES" in os.environ and os.environ["CUDA_VISIBLE_DEVICES"]:
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    # Force CUDA initialization by performing a simple operation
+                    _ = torch.zeros(1, device='cuda')
+                    torch.cuda.synchronize()
+            except Exception:
+                # Silently continue if CUDA initialization fails (will use CPU)
+                pass
+
         # Initialize logger with actor ID
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
         self.logger = logging_manager.get_logger(f"QueryProcessingActor-{actor_id}")
