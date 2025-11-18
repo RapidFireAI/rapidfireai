@@ -13,6 +13,18 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.12.6]
+*NOTE:* Colab is not working in this release, use 0.11.1 for fine tuning
+
+### Changes
+- Added Gantt charts in images
+- Update documentation links for HuggingFace
+
+### Fixed
+- RAG/Evals notebook issues with rate limit, no CUA GPUs, and unpickle messages
+- Experiment.end() for RAG
+- Datagrame for results
+
 ## [v0.12.5]
 *NOTE:* Colab is not working in this release, use 0.11.1 for fine tuning
 
