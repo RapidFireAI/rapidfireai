@@ -62,16 +62,16 @@ class Dispatcher:
         route_prefix = "/dispatcher"
 
         # CRITICAL: Add before_request handler to handle OPTIONS preflight requests globally
-        @self.app.before_request
-        def handle_preflight():
-            if request.method == "OPTIONS":
-                response = jsonify({})
-                response.headers.add("Access-Control-Allow-Origin", CORS_ALLOWED_ORIGINS)
-                response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-                response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
-                response.headers.add("Access-Control-Allow-Private-Network", "true")
-                response.headers.add("Access-Control-Max-Age", "3600")
-                return response
+        # @self.app.before_request
+        # def handle_preflight():
+        #     if request.method == "OPTIONS":
+        #         response = jsonify({})
+        #         response.headers.add("Access-Control-Allow-Origin", CORS_ALLOWED_ORIGINS)
+        #         response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+        #         response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
+        #         response.headers.add("Access-Control-Allow-Private-Network", "true")
+        #         response.headers.add("Access-Control-Max-Age", "3600")
+        #         return response
 
         # Health check
         self.app.add_url_rule(
