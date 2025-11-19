@@ -511,20 +511,20 @@ def install_packages(evals: bool = False):
             if e.stderr:
                 print(f"   Standard error: {e.stderr}")
             print(f"   You may need to install {package} manually")
-    try:
-        print(f"Installing packages from {requirements_file}...")
-        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file]
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to install packages from {requirements_file}")
-        print(f"   Error: {e}")
-        if e.stdout:
-            print(f"   Standard output: {e.stdout}")
-        if e.stderr:
-            print(f"   Standard error: {e.stderr}")
-        print(f"   You may need to install {requirements_file} manually")
-        return 1
-    print(f"✅ Successfully installed packages from {requirements_file}")
+    # try:
+    #     print(f"Installing packages from {requirements_file}...")
+    #     cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file]
+    #     subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    # except subprocess.CalledProcessError as e:
+    #     print(f"❌ Failed to install packages from {requirements_file}")
+    #     print(f"   Error: {e}")
+    #     if e.stdout:
+    #         print(f"   Standard output: {e.stdout}")
+    #     if e.stderr:
+    #         print(f"   Standard error: {e.stderr}")
+    #     print(f"   You may need to install {requirements_file} manually")
+    #     return 1
+    # print(f"✅ Successfully installed packages from {requirements_file}")
     return 0
 
 
