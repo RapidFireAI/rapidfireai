@@ -384,7 +384,20 @@ def install_packages(evals: bool = False):
         print("❌ Unknown environment detected, skipping package installation")
         return 1
 
-    
+    try:
+        print(f"Installing packages from {requirements_file}...")
+        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file]
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to install packages from {requirements_file}")
+        print(f"   Error: {e}")
+        if e.stdout:
+            print(f"   Standard output: {e.stdout}")
+        if e.stderr:
+            print(f"   Standard error: {e.stderr}")
+        print(f"   You may need to install {requirements_file} manually")
+        return 1
+    print(f"✅ Successfully installed packages from {requirements_file}")
 
     vllm_version = "0.11.1"
     torch_version = "2.5.1"
@@ -426,9 +439,9 @@ def install_packages(evals: bool = False):
             flash_cuda = "cu121"
 
     elif cuda_major==13:
-        torch_version = "2.8.0"
-        torchvision_version = "0.23.0"
-        torchaudio_version = "2.8.0"
+        torch_version = "2.9.0"
+        torchvision_version = "0.24.0"
+        torchaudio_version = "2.9.0"
         torch_cuda = "cu129"
         flash_cuda = "cu129"
     else:
@@ -459,7 +472,7 @@ def install_packages(evals: bool = False):
         packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--torch-backend=auto"]})
+        packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade", "--extra-index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         # packages.append({"package": "faiss-gpu-cu12==1.12.0", "extra_args": []})
         # packages.append({"package": "flashinfer-python==0.2.5", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu124/torch2.5/"]})
         # packages.append({"package": "flash-attn", "extra_args": ["--no-build-isolation"]})
@@ -511,20 +524,6 @@ def install_packages(evals: bool = False):
             if e.stderr:
                 print(f"   Standard error: {e.stderr}")
             print(f"   You may need to install {package} manually")
-    # try:
-    #     print(f"Installing packages from {requirements_file}...")
-    #     cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file]
-    #     subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-    # except subprocess.CalledProcessError as e:
-    #     print(f"❌ Failed to install packages from {requirements_file}")
-    #     print(f"   Error: {e}")
-    #     if e.stdout:
-    #         print(f"   Standard output: {e.stdout}")
-    #     if e.stderr:
-    #         print(f"   Standard error: {e.stderr}")
-    #     print(f"   You may need to install {requirements_file} manually")
-    #     return 1
-    # print(f"✅ Successfully installed packages from {requirements_file}")
     return 0
 
 
