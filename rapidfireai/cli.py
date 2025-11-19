@@ -384,20 +384,7 @@ def install_packages(evals: bool = False):
         print("❌ Unknown environment detected, skipping package installation")
         return 1
 
-    try:
-        print(f"Installing packages from {requirements_file}...")
-        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file]
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to install packages from {requirements_file}")
-        print(f"   Error: {e}")
-        if e.stdout:
-            print(f"   Standard output: {e.stdout}")
-        if e.stderr:
-            print(f"   Standard error: {e.stderr}")
-        print(f"   You may need to install {requirements_file} manually")
-        return 1
-    print(f"✅ Successfully installed packages from {requirements_file}")
+    
 
     vllm_version = "0.11.1"
     torch_version = "2.5.1"
@@ -524,6 +511,20 @@ def install_packages(evals: bool = False):
             if e.stderr:
                 print(f"   Standard error: {e.stderr}")
             print(f"   You may need to install {package} manually")
+    try:
+        print(f"Installing packages from {requirements_file}...")
+        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file]
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to install packages from {requirements_file}")
+        print(f"   Error: {e}")
+        if e.stdout:
+            print(f"   Standard output: {e.stdout}")
+        if e.stderr:
+            print(f"   Standard error: {e.stderr}")
+        print(f"   You may need to install {requirements_file} manually")
+        return 1
+    print(f"✅ Successfully installed packages from {requirements_file}")
     return 0
 
 
