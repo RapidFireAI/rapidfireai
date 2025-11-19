@@ -45,7 +45,7 @@ class Dispatcher:
             self.app,
             resources={
                 r"/*": {
-                    "origins": "*",
+                    "origins": CORS_ALLOWED_ORIGINS,
                     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                     "allow_headers": ["Content-Type", "Authorization"],
                     "expose_headers": ["Content-Type"],
@@ -66,7 +66,7 @@ class Dispatcher:
         def handle_preflight():
             if request.method == "OPTIONS":
                 response = jsonify({})
-                response.headers.add("Access-Control-Allow-Origin", "*")
+                # response.headers.add("Access-Control-Allow-Origin", "*")
                 response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
                 response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
                 response.headers.add("Access-Control-Max-Age", "3600")
