@@ -478,7 +478,7 @@ def install_packages(evals: bool = False):
         # packages.append({"package": "flash-attn", "extra_args": ["--no-build-isolation"]})
         # packages.append({"package": "flashinfer-python", "extra_args": []})
         packages.append({"package": "flashinfer-python", "extra_args": []})
-        packages.append({"package": "flashinfer-cubin", "extra_arpipgs": []})
+        packages.append({"package": "flashinfer-cubin", "extra_args": []})
         if cuda_major + (cuda_minor / 10.0) >= 12.8:
             packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
         
