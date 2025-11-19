@@ -321,13 +321,13 @@ def get_cuda_version():
         result = subprocess.run(["nvcc", "--version"], capture_output=True, text=True, check=True)
         match = re.search(r"release (\d+)\.(\d+)", result.stdout)
         if match:
-            return int(match.group(1))
+            return int(match.group(1)), int(match.group(2))
     except (subprocess.CalledProcessError, FileNotFoundError):
         try:
             result = subprocess.run(["nvidia-smi"], capture_output=True, text=True, check=True)
             match = re.search(r"CUDA Version: (\d+)\.(\d+)", result.stdout)
             if match:
-                return int(match.group(1))
+                return int(match.group(1)), int(match.group(2))
         except (subprocess.CalledProcessError, FileNotFoundError):
             pass
     return None
@@ -355,7 +355,7 @@ def install_packages(evals: bool = False):
     """Install packages for the RapidFire AI project."""
     packages = []
     # Generate CUDA requirements file
-    cuda_major = get_cuda_version()
+    cuda_major, cuda_minor = get_cuda_version()
     compute_capability = get_compute_capability()
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
@@ -399,6 +399,56 @@ def install_packages(evals: bool = False):
         return 1
     print(f"✅ Successfully installed packages from {requirements_file}")
 
+    vllm_version = "0.11.1"
+    torch_version = "2.5.1"
+    torchvision_version = "0.20.1"
+    torchaudio_version = "2.5.1"
+    torch_cuda = "cu121"
+    flash_cuda = "cu121"
+    if cuda_major==12:
+        if cuda_minor>=9:
+            torch_version = "2.8.0"
+            torchvision_version = "0.23.0"
+            torchaudio_version = "2.8.0"
+            torch_cuda = "cu129"
+            flash_cuda = "cu129"
+        elif cuda_minor>=8:
+            torch_version = "2.8.0"
+            torchvision_version = "0.23.0"
+            torchaudio_version = "2.8.0"
+            torch_cuda = "cu128"
+            flash_cuda = "cu128"
+        elif cuda_minor>=6:
+            torch_version = "2.7.0"
+            torchvision_version = "0.23.0"
+            torchaudio_version = "2.8.0"
+            torch_cuda = "cu126"
+            flash_cuda = "cu126"
+        elif cuda_minor>=4:
+            torch_version = "2.8.0"
+            torchvision_version = "0.23.0"
+            torchaudio_version = "2.8.0"
+            torch_cuda = "cu124"
+            flash_cuda = "cu124"
+        else:
+            vllm_version = "0.7.3"
+            torch_version = "2.5.1"
+            torchvision_version = "0.20.1"
+            torchaudio_version = "2.5.1"
+            torch_cuda = "cu121"
+            flash_cuda = "cu121"
+
+    elif cuda_major==13:
+        torch_cuda = "cu130"
+        flash_cuda = "cu130"
+    else:
+        torch_cuda = "cu121"
+        flash_cuda = "cu121"
+
+    # xformers (0.0.29.post2)
+    # datasets(0.3.6.0)
+    # fsspec (2025.3.0)
+
     if not evals:
         pass
         # Upgrading pytorch to 2.7.0 for fit
@@ -408,21 +458,27 @@ def install_packages(evals: bool = False):
         # packages.append({"package": "torchaudio==2.7.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
         # packages.append({"package": "transformers==4.57.1", "extra_args": ["--upgrade"]})
 
+
+    
     ## TODO: re-enable for fit once trl has fix
-    if evals and not is_colab and cuda_major == 12:
+    if evals and not is_colab and cuda_major >= 12:
         print(f"\n🎯 Detected CUDA {cuda_major}.x")
         # packages.append({"package": "torch==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
         # packages.append({"package": "torchvision==0.20.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
         # packages.append({"package": "torchaudio==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
-        packages.append({"package": "torch==2.8.0", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu128"]})
-        packages.append({"package": "torchvision==0.23.0", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu128"]})
-        packages.append({"package": "torchaudio==2.8.0", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu128"]})
-        # packages.append({"package": "vllm==0.7.2", "extra_args": ["--torch-backend=cu124"]})
+        packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--torch-backend=auto"]})
         # packages.append({"package": "faiss-gpu-cu12==1.12.0", "extra_args": []})
         # packages.append({"package": "flashinfer-python==0.2.5", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu124/torch2.5/"]})
         # packages.append({"package": "flash-attn", "extra_args": ["--no-build-isolation"]})
         # packages.append({"package": "flashinfer-python", "extra_args": []})
-        packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu128"]})
+        packages.append({"package": "flashinfer-python", "extra_args": []})
+        packages.append({"package": "flashinfer-cubin", "extra_args": []})
+        if cuda_major + (cuda_minor / 10.0) >= 12.8:
+            packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
+        
     # elif cuda_major == 11:
     #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
     #     packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu118"]})
