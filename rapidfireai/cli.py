@@ -481,6 +481,7 @@ def install_packages(evals: bool = False):
         packages.append({"package": "flashinfer-cubin", "extra_args": []})
         if cuda_major + (cuda_minor / 10.0) >= 12.8:
             packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
+        # packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
         
     # elif cuda_major == 11:
     #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
@@ -493,18 +494,18 @@ def install_packages(evals: bool = False):
     #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
 
         # Determine flash-attn version based on CUDA version
-        if evals and cuda_major < 8:
-            # flash-attn 1.x for CUDA < 8.0
-            print("Installing latest flash-attn 1.x for CUDA < 8.0")
-            packages.append({"package": "flash-attn<2.0", "extra_args": ["--no-build-isolation"]})
-        elif evals and cuda_major == 9:
-            # flash-attn 3.x for CUDA 9.0 specifically
-            print("Installing latest flash-attn 3.x for CUDA 9.0")
-            packages.append({"package": "flash-attn>=3.0,<4.0", "extra_args": ["--no-build-isolation"]})
-        elif evals and cuda_major >= 8:
-            # flash-attn 2.x for CUDA >= 8.0 (but not 9.0)
-            print("Installing flash-attn 2.8.3 for CUDA >= 8.0")
-            packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
+        # if evals and cuda_major < 8:
+        #     # flash-attn 1.x for CUDA < 8.0
+        #     print("Installing latest flash-attn 1.x for CUDA < 8.0")
+        #     packages.append({"package": "flash-attn<2.0", "extra_args": ["--no-build-isolation"]})
+        # elif evals and cuda_major == 9:
+        #     # flash-attn 3.x for CUDA 9.0 specifically
+        #     print("Installing latest flash-attn 3.x for CUDA 9.0")
+        #     packages.append({"package": "flash-attn>=3.0,<4.0", "extra_args": ["--no-build-isolation"]})
+        # elif evals and cuda_major >= 8:
+        #     # flash-attn 2.x for CUDA >= 8.0 (but not 9.0)
+        #     print("Installing flash-attn 2.8.3 for CUDA >= 8.0")
+        #     packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
     # else:
     #     print("\n⚠️  CUDA version not detected.")
     #     print("Skipping flash-attn installation")
