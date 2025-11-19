@@ -439,8 +439,11 @@ def install_packages(evals: bool = False):
             flash_cuda = "cu121"
 
     elif cuda_major==13:
-        torch_cuda = "cu130"
-        flash_cuda = "cu130"
+        torch_version = "2.8.0"
+        torchvision_version = "0.23.0"
+        torchaudio_version = "2.8.0"
+        torch_cuda = "cu129"
+        flash_cuda = "cu129"
     else:
         torch_cuda = "cu121"
         flash_cuda = "cu121"
@@ -475,9 +478,9 @@ def install_packages(evals: bool = False):
         # packages.append({"package": "flash-attn", "extra_args": ["--no-build-isolation"]})
         # packages.append({"package": "flashinfer-python", "extra_args": []})
         packages.append({"package": "flashinfer-python", "extra_args": []})
-        packages.append({"package": "flashinfer-cubin", "extra_args": []})
+        packages.append({"package": "flashinfer-cubin", "extra_arpipgs": []})
         if cuda_major + (cuda_minor / 10.0) >= 12.8:
-            packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
+            packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
         
     # elif cuda_major == 11:
     #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
