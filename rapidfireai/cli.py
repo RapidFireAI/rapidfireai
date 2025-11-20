@@ -193,6 +193,22 @@ def get_gpu_info():
 
     return info
 
+def get_torch_version():
+    """Get torch major, minor, patch version, along with cuda version if installed"""
+    try:
+        result = subprocess.run(["python", "-c", "import torch; print(torch.__version__)"], capture_output=True, text=True, check=True)
+        version = result.stdout.strip()
+        # version maybe like 2.8.0+cu128 or 2.8.0
+        cuda_major = "0"
+        cuda_minor = "0"
+        if "+" in version:
+            cuda_version = version.split("+")[1]
+            cuda_major = cuda_version.split("cu")[1][:-1]
+            cuda_minor = cuda_version.split("cu")[1][-1]
+        major, minor, patch = version.split("+")[0].split(".")
+        return major, minor, patch, cuda_major, cuda_minor
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return ["0","0","0","0","0"]
 
 def run_doctor():
     """Run the doctor command to diagnose system issues."""
@@ -295,6 +311,21 @@ def run_doctor():
 
     print(f"CUDA Installation: {gpu_info['cuda_installation']}")
     print(f"CUDA on PATH: {gpu_info['cuda_on_path']}")
+    # Get torch cuda version
+    major, minor, patch, torch_cuda_major, torch_cuda_minor = get_torch_version()
+    if int(major) > 0:
+        print(f"Torch Verion: {major}.{minor}.{patch}")
+    else:
+        print("⚠️ Torch version not found") 
+    if int(torch_cuda_major) > 0:
+        print(f"Torch CUDA Version: {torch_cuda_major}.{torch_cuda_minor}")
+    else:
+        print("⚠️ Torch CUDA Version: unknown")
+    cublas_dev_packages = get_os_package_installed(f"libcublas-dev-{torch_cuda_major}-{torch_cuda_minor}")
+    if len(cublas_dev_packages) == 0:
+        print(f"❌ OS package libcublas-dev-{torch_cuda_major}-{torch_cuda_minor} is not installed")
+        print(f"   You need to install libcublas-dev-{torch_cuda_major}-{torch_cuda_minor} manually using your OS package manager")
+
 
     # System Information
     print("\n💻 System Information:")
@@ -352,8 +383,8 @@ def get_compute_capability():
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
-def check_os_package_installed(package_name: str):
-    """Check if a package is installed on various Linux distributions."""
+def get_os_package_installed(package_pattern: str):
+    """Get list of installed packages matching a pattern."""
     import distro
     dist_id = distro.id()
     
@@ -361,58 +392,69 @@ def check_os_package_installed(package_name: str):
         if dist_id in ['ubuntu', 'debian']:
             # Use dpkg-query for Debian-based
             result = subprocess.run(
-                ['dpkg-query', '-W', '-f=${Status}', package_name],
+                ['dpkg-query', '-W', '-f=${Package}\n', package_pattern],
                 capture_output=True,
                 text=True,
                 check=False
             )
-            return 'install ok installed' in result.stdout
+            if result.returncode == 0:
+                return [pkg.strip() for pkg in result.stdout.strip().split('\n') if pkg.strip()]
+            return []
             
         elif dist_id in ['rhel', 'centos', 'fedora', 'rocky', 'almalinux']:
             # Use rpm for Red Hat-based
             result = subprocess.run(
-                ['rpm', '-q', package_name],
+                ['rpm', '-qa', package_pattern],
                 capture_output=True,
                 text=True,
                 check=False
             )
-            return result.returncode == 0
+            if result.returncode == 0:
+                return [pkg.strip() for pkg in result.stdout.strip().split('\n') if pkg.strip()]
+            return []
             
         elif dist_id in ['arch', 'manjaro']:
             # Use pacman for Arch-based
             result = subprocess.run(
-                ['pacman', '-Q', package_name],
+                ['pacman', '-Qq'],
                 capture_output=True,
                 text=True,
                 check=False
             )
-            return result.returncode == 0
+            if result.returncode == 0:
+                all_packages = result.stdout.strip().split('\n')
+                # Convert shell glob pattern to regex
+                pattern_regex = package_pattern.replace('*', '.*')
+                return [pkg for pkg in all_packages if re.match(pattern_regex, pkg)]
+            return []
             
         elif dist_id in ['opensuse', 'sles']:
-            # Use zypper for openSUSE
+            # Use rpm for openSUSE
             result = subprocess.run(
-                ['rpm', '-q', package_name],
+                ['rpm', '-qa', package_pattern],
                 capture_output=True,
                 text=True,
                 check=False
             )
-            return result.returncode == 0
+            if result.returncode == 0:
+                return [pkg.strip() for pkg in result.stdout.strip().split('\n') if pkg.strip()]
+            return []
             
         else:
-            # Fallback: try common commands
-            for cmd in [['dpkg-query', '-W', package_name], 
-                       ['rpm', '-q', package_name]]:
+            # Fallback: try dpkg first, then rpm
+            for cmd in [['dpkg-query', '-W', '-f=${Package}\n', package_pattern],
+                       ['rpm', '-qa', package_pattern]]:
                 try:
-                    result = subprocess.run(cmd, capture_output=True, check=False)
-                    if result.returncode == 0:
-                        return True
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                    if result.returncode == 0 and result.stdout.strip():
+                        return [pkg.strip() for pkg in result.stdout.strip().split('\n') if pkg.strip()]
                 except FileNotFoundError:
                     continue
-            return False
+            return []
             
     except Exception as e:
-        print(f"Error checking package: {e}")
-        return False
+        print(f"Error checking packages: {e}")
+        return []
 
 
 def install_packages(evals: bool = False):
@@ -545,9 +587,9 @@ def install_packages(evals: bool = False):
         
         print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
         # Validate that libcublas-dev-cuda_major-cuda_minor is installed
-        if not check_os_package_installed(f"libcublas-dev-{cuda_major}-{cuda_minor}"):
-            print(f"❌ libcublas-dev-{cuda_major}-{cuda_minor} is not installed")
-            print(f"   You need to install libcublas-dev-{cuda_major}-{cuda_minor} manually")
+        if len(get_os_package_installed(f"libcublas-dev-{cuda_major}-{cuda_minor}")) == 0:
+            print(f"❌ OS packagelibcublas-dev-{cuda_major}-{cuda_minor} is not installed")
+            print(f"   You need to install libcublas-dev-{cuda_major}-{cuda_minor} manually using your OS package manager")
         
         # packages.append({"package": "torch==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
         # packages.append({"package": "torchvision==0.20.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
