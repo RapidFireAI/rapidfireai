@@ -15,7 +15,7 @@ from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.interactive_control import InteractiveControlHandler
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.evals.scheduling.scheduler import Scheduler
-from rapidfireai.evals.automl import ModelConfig, RFvLLMModelConfig
+from rapidfireai.automl import ModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import (
     NUM_CPUS_PER_DOC_ACTOR,
     NUM_QUERY_PROCESSING_ACTORS,
@@ -26,8 +26,8 @@ from rapidfireai.evals.utils.constants import (
 )
 from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
-from rapidfireai.evals.automl import RFGridSearch, RFRandomSearch
-from rapidfireai.evals.utils.automl_utils import get_runs
+from rapidfireai.automl import RFGridSearch, RFRandomSearch
+from rapidfireai.automl import get_runs
 
 class Controller:
     """
@@ -806,7 +806,7 @@ class Controller:
         pipeline_to_max_completion_tokens = {}
 
         for pipeline_id, pipeline_config in pipeline_id_to_config.items():
-            from rapidfireai.evals.automl import RFOpenAIAPIModelConfig
+            from rapidfireai.automl import RFOpenAIAPIModelConfig
             pipeline = pipeline_config["pipeline"]
             if hasattr(pipeline, "model_config") and isinstance(pipeline, RFOpenAIAPIModelConfig):
                 has_openai_pipeline = True
