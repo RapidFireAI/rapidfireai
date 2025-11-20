@@ -422,7 +422,7 @@ def install_packages(evals: bool = False):
             torchaudio_version = "2.8.0"
             torch_cuda = "cu128"
             flash_cuda = "cu128"
-            vllm_cuda = "cu128"
+            vllm_cuda = "cu126"
         elif cuda_minor>=6:
             # Supports Torch 2.9.0/1
             torch_version = "2.8.0"
