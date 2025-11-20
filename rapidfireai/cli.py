@@ -404,10 +404,11 @@ def install_packages(evals: bool = False):
     torchvision_version = "0.20.1"
     torchaudio_version = "2.5.1"
     torch_cuda = "cu121"
-    flash_cuda = "cu121"s
+    flash_cuda = "cu121"
     vllm_cuda = "cu126"
     if cuda_major==12:
         if cuda_minor>=9:
+            # Supports Torch 2.8.0
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
             torchaudio_version = "2.8.0"
@@ -415,6 +416,7 @@ def install_packages(evals: bool = False):
             flash_cuda = "cu129"
             vllm_cuda = "cu129"
         elif cuda_minor>=8:
+            # Supports Torch 2.9.0/1
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
             torchaudio_version = "2.8.0"
@@ -422,6 +424,7 @@ def install_packages(evals: bool = False):
             flash_cuda = "cu128"
             vllm_cuda = "cu126"
         elif cuda_minor>=6:
+            # Supports Torch 2.9.0/1
             torch_version = "2.7.0"
             torchvision_version = "0.23.0"
             torchaudio_version = "2.8.0"
@@ -429,6 +432,7 @@ def install_packages(evals: bool = False):
             flash_cuda = "cu126"
             vllm_cuda = "cu126"
         elif cuda_minor>=4:
+            # Supports Torch 2.6.0
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
             torchaudio_version = "2.8.0"
@@ -436,6 +440,7 @@ def install_packages(evals: bool = False):
             flash_cuda = "cu124"
             vllm_cuda = "cu124"
         else:
+            # Supports Torch 2.5.1
             vllm_version = "0.7.3"
             torch_version = "2.5.1"
             torchvision_version = "0.20.1"
@@ -445,6 +450,7 @@ def install_packages(evals: bool = False):
             vllm_cuda = "cu121"
 
     elif cuda_major==13:
+        # Supports Torch 2.9.0
         torch_version = "2.9.0"
         torchvision_version = "0.24.0"
         torchaudio_version = "2.9.0"
