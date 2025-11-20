@@ -425,7 +425,7 @@ def install_packages(evals: bool = False):
             vllm_cuda = "cu126"
         elif cuda_minor>=6:
             # Supports Torch 2.9.0/1
-            torch_version = "2.7.0"
+            torch_version = "2.8.0"
             torchvision_version = "0.23.0"
             torchaudio_version = "2.8.0"
             torch_cuda = "cu126"
@@ -433,9 +433,9 @@ def install_packages(evals: bool = False):
             vllm_cuda = "cu126"
         elif cuda_minor>=4:
             # Supports Torch 2.6.0
-            torch_version = "2.8.0"
-            torchvision_version = "0.23.0"
-            torchaudio_version = "2.8.0"
+            torch_version = "2.6.0"
+            torchvision_version = "0.21.0"
+            torchaudio_version = "2.6.0"
             torch_cuda = "cu124"
             flash_cuda = "cu124"
             vllm_cuda = "cu124"
@@ -450,13 +450,13 @@ def install_packages(evals: bool = False):
             vllm_cuda = "cu121"
 
     elif cuda_major==13:
-        # Supports Torch 2.9.0
-        torch_version = "2.9.0"
-        torchvision_version = "0.24.0"
-        torchaudio_version = "2.9.0"
-        torch_cuda = "cu128"
-        flash_cuda = "cu128"
-        vllm_cuda = "cu126"
+        # Supports Torch 2.9.0/1
+        torch_version = "2.8.0"
+        torchvision_version = "0.23.0"
+        torchaudio_version = "2.8.0"
+        torch_cuda = "cu129"
+        flash_cuda = "cu129"
+        vllm_cuda = "cu129"
     else:
         torch_cuda = "cu121"
         flash_cuda = "cu121"
@@ -494,7 +494,30 @@ def install_packages(evals: bool = False):
         packages.append({"package": "flashinfer-cubin", "extra_args": []})
         if cuda_major + (cuda_minor / 10.0) >= 12.8:
             packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
+        try:
+            cmd = [sys.executable, "-c", "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"]
+            print("   Checking ABI for Torch...")
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            result = subprocess.run([sys.executable, "-c", "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            use_cxx11_abi = result.stdout.strip().upper()
+            print(f"✅ ABI for PyTroch is {use_cxx11_abi}")
+            # https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp312-cp312-linux_x86_64.whl
+            # https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
+            pre_compiled_flash_binary = f"flash_attn-2.8.3+cu12torch{torch_version[:3]}cxx11abi{use_cxx11_abi}-cp312-cp312-linux_x86_64.whl"
+            packages.append({"package": pre_compiled_flash_binary, "extra_args": ["--upgrade"]})
+
         # packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
+        except subprocess.CalledProcessError as e:
+            print("❌ Failed to get ABI value")
+            print(f"   Error: {e}")
+            if e.stdout:
+                print(f"   Standard output: {e.stdout}")
+            if e.stderr:
+                print(f"   Standard error: {e.stderr}")
+            print("   You may need to install flash-attn manually") 
+
+            
+
         
     # elif cuda_major == 11:
     #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
