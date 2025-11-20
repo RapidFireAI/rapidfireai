@@ -399,7 +399,7 @@ def install_packages(evals: bool = False):
         return 1
     print(f"✅ Successfully installed packages from {requirements_file}")
 
-    vllm_version = "0.11.1"
+    vllm_version = "0.10.2"
     torch_version = "2.5.1"
     torchvision_version = "0.20.1"
     torchaudio_version = "2.5.1"
@@ -520,9 +520,9 @@ def install_packages(evals: bool = False):
         #         print(f"   Standard error: {e.stderr}")
         #     print("   You may need to install flash-attn manually") 
         # Install torch, torchvision, and torchaudio again to avoid version conflicts
-        packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        # packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        # packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        # packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             
 
         
