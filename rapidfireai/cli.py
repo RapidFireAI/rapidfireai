@@ -442,8 +442,8 @@ def install_packages(evals: bool = False):
         torch_version = "2.9.0"
         torchvision_version = "0.24.0"
         torchaudio_version = "2.9.0"
-        torch_cuda = "cu129"
-        flash_cuda = "cu129"
+        torch_cuda = "cu128"
+        flash_cuda = "cu128"
     else:
         torch_cuda = "cu121"
         flash_cuda = "cu121"
