@@ -1,5 +1,6 @@
 # Colab Packages
 # Core ML/AI Framework
+torch<=2.8.0
 sentence-transformers>=5.1.0
 
 # Distributed Computing
