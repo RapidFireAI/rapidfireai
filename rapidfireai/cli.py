@@ -243,6 +243,8 @@ def run_doctor():
             "vllm",
             "flash-attn",
             "flashinfer-python",
+            "flashinfer-cubin",
+            "flashinfer-jit-cache",
             "tensorboard",
             "numpy",
             "pandas",
@@ -349,6 +351,68 @@ def get_compute_capability():
             return major + minor / 10.0  # Return as float (e.g., 7.5, 8.0, 8.6)
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
+
+def check_os_package_installed(package_name: str):
+    """Check if a package is installed on various Linux distributions."""
+    import distro
+    dist_id = distro.id()
+    
+    try:
+        if dist_id in ['ubuntu', 'debian']:
+            # Use dpkg-query for Debian-based
+            result = subprocess.run(
+                ['dpkg-query', '-W', '-f=${Status}', package_name],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            return 'install ok installed' in result.stdout
+            
+        elif dist_id in ['rhel', 'centos', 'fedora', 'rocky', 'almalinux']:
+            # Use rpm for Red Hat-based
+            result = subprocess.run(
+                ['rpm', '-q', package_name],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            return result.returncode == 0
+            
+        elif dist_id in ['arch', 'manjaro']:
+            # Use pacman for Arch-based
+            result = subprocess.run(
+                ['pacman', '-Q', package_name],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            return result.returncode == 0
+            
+        elif dist_id in ['opensuse', 'sles']:
+            # Use zypper for openSUSE
+            result = subprocess.run(
+                ['rpm', '-q', package_name],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            return result.returncode == 0
+            
+        else:
+            # Fallback: try common commands
+            for cmd in [['dpkg-query', '-W', package_name], 
+                       ['rpm', '-q', package_name]]:
+                try:
+                    result = subprocess.run(cmd, capture_output=True, check=False)
+                    if result.returncode == 0:
+                        return True
+                except FileNotFoundError:
+                    continue
+            return False
+            
+    except Exception as e:
+        print(f"Error checking package: {e}")
+        return False
 
 
 def install_packages(evals: bool = False):
@@ -478,7 +542,12 @@ def install_packages(evals: bool = False):
     
     ## TODO: re-enable for fit once trl has fix
     if evals and not is_colab and cuda_major >= 12:
+        
         print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
+        # Validate that libcublas-dev-cuda_major-cuda_minor is installed
+        if not check_os_package_installed(f"libcublas-dev-{cuda_major}-{cuda_minor}"):
+            print(f"❌ libcublas-dev-{cuda_major}-{cuda_minor} is not installed")
+            print(f"   You need to install libcublas-dev-{cuda_major}-{cuda_minor} manually")
         
         # packages.append({"package": "torch==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
         # packages.append({"package": "torchvision==0.20.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
