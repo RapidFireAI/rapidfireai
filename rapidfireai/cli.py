@@ -497,27 +497,28 @@ def install_packages(evals: bool = False):
         packages.append({"package": "flashinfer-cubin", "extra_args": []})
         if cuda_major + (cuda_minor / 10.0) >= 12.8:
             packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
-        try:
-            cmd = [sys.executable, "-c", "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"]
-            print("   Checking ABI for Torch...")
-            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-            result = subprocess.run([sys.executable, "-c", "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-            use_cxx11_abi = result.stdout.strip().upper()
-            print(f"✅ ABI for PyTroch is {use_cxx11_abi}")
-            # https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp312-cp312-linux_x86_64.whl
-            # https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
-            pre_compiled_flash_binary = f"https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch{torch_version[:3]}cxx11abi{use_cxx11_abi}-cp312-cp312-linux_x86_64.whl"
-            packages.append({"package": pre_compiled_flash_binary, "extra_args": ["--upgrade"]})
+        # vllm installs flash-attn do not need to install
+        # try:
+        #     cmd = [sys.executable, "-c", "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"]
+        #     print("   Checking ABI for Torch...")
+        #     subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        #     result = subprocess.run([sys.executable, "-c", "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        #     use_cxx11_abi = result.stdout.strip().upper()
+        #     print(f"✅ ABI for PyTroch is {use_cxx11_abi}")
+        #     # https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp312-cp312-linux_x86_64.whl
+        #     # https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
+        #     pre_compiled_flash_binary = f"https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch{torch_version[:3]}cxx11abi{use_cxx11_abi}-cp312-cp312-linux_x86_64.whl"
+        #     packages.append({"package": pre_compiled_flash_binary, "extra_args": ["--upgrade"]})
 
-        # packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
-        except subprocess.CalledProcessError as e:
-            print("❌ Failed to get ABI value")
-            print(f"   Error: {e}")
-            if e.stdout:
-                print(f"   Standard output: {e.stdout}")
-            if e.stderr:
-                print(f"   Standard error: {e.stderr}")
-            print("   You may need to install flash-attn manually") 
+        # # packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
+        # except subprocess.CalledProcessError as e:
+        #     print("❌ Failed to get ABI value")
+        #     print(f"   Error: {e}")
+        #     if e.stdout:
+        #         print(f"   Standard output: {e.stdout}")
+        #     if e.stderr:
+        #         print(f"   Standard error: {e.stderr}")
+        #     print("   You may need to install flash-attn manually") 
         # Install torch, torchvision, and torchaudio again to avoid version conflicts
         packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
