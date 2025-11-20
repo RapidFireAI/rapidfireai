@@ -88,7 +88,7 @@ def get_pip_packages():
 
 def get_gpu_info():
     """Get comprehensive GPU and CUDA information."""
-    info = {}
+    info = {"status": 0}
 
     # Check for nvidia-smi
     nvidia_smi_path = shutil.which("nvidia-smi")
@@ -114,9 +114,11 @@ def get_gpu_info():
                 else:
                     info["driver_version"] = "unknown"
                     info["cuda_runtime"] = "unknown"
+                    info["status"] = 2 if info["status"] < 2 else info["status"]
         except (subprocess.CalledProcessError, ValueError):
             info["driver_version"] = "unknown"
             info["cuda_runtime"] = "unknown"
+            info["status"] = 2 if info["status"] < 2 else info["status"]
 
         # Get GPU count, models, and VRAM
         try:
@@ -149,12 +151,14 @@ def get_gpu_info():
             info["gpu_count"] = 0
             info["gpu_model"] = "unknown"
             info["gpu_memory_gb"] = "unknown"
+            info["status"] = 2 if info["status"] < 2 else info["status"]
     else:
         info["driver_version"] = "N/A"
         info["cuda_runtime"] = "N/A"
         info["gpu_count"] = 0
         info["gpu_model"] = "N/A"
         info["gpu_memory_gb"] = "N/A"
+        info["status"] = 2 if info["status"] < 2 else info["status"]
 
     # Check for nvcc (CUDA compiler)
     nvcc_path = shutil.which("nvcc")
@@ -171,10 +175,13 @@ def get_gpu_info():
                     break
             else:
                 info["nvcc_version"] = "unknown"
+                info["status"] = 2 if info["status"] < 2 else info["status"]
         except subprocess.CalledProcessError:
             info["nvcc_version"] = "unknown"
+            info["status"] = 2 if info["status"] < 2 else info["status"]
     else:
         info["nvcc_version"] = "N/A"
+        info["status"] = 2 if info["status"] < 2 else info["status"]
 
     # Check CUDA installation paths
     cuda_paths = ["/usr/local/cuda", "/opt/cuda", "/usr/cuda", os.path.expanduser("~/cuda")]
@@ -291,6 +298,12 @@ def run_doctor():
     print("\n🚀 GPU & CUDA Information:")
     print("-" * 30)
     gpu_info = get_gpu_info()
+    if gpu_info["status"] == 1:
+        print("⚠️ Some GPU information not found")
+        status = 1 if status == 0 else status
+    elif gpu_info["status"] == 2:
+        print("❌ Some GPU information not found")
+        status = 2 if status < 2 else status
     print(f"nvidia-smi: {gpu_info['nvidia_smi']}")
 
     if gpu_info["nvidia_smi"] == "found":
