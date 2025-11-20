@@ -503,7 +503,7 @@ def install_packages(evals: bool = False):
             print(f"✅ ABI for PyTroch is {use_cxx11_abi}")
             # https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp312-cp312-linux_x86_64.whl
             # https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
-            pre_compiled_flash_binary = f"flash_attn-2.8.3+cu12torch{torch_version[:3]}cxx11abi{use_cxx11_abi}-cp312-cp312-linux_x86_64.whl"
+            pre_compiled_flash_binary = f"https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch{torch_version[:3]}cxx11abi{use_cxx11_abi}-cp312-cp312-linux_x86_64.whl"
             packages.append({"package": pre_compiled_flash_binary, "extra_args": ["--upgrade"]})
 
         # packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
