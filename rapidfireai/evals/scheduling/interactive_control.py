@@ -476,9 +476,9 @@ class InteractiveControlHandler:
                 chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)
                 chunk_overlap = getattr(pipeline.rag.text_splitter, "_chunk_overlap", None)
 
-        # Extract sampling params
+        # Extract sampling params from _user_params (dict, not SamplingParams object)
         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
-            sampling_params = pipeline.sampling_params
+            sampling_params = pipeline._user_params.get("sampling_params", None)
 
         # Extract prompt_manager fields
         if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
