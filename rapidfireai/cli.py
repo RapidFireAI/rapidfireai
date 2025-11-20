@@ -404,7 +404,8 @@ def install_packages(evals: bool = False):
     torchvision_version = "0.20.1"
     torchaudio_version = "2.5.1"
     torch_cuda = "cu121"
-    flash_cuda = "cu121"
+    flash_cuda = "cu121"s
+    vllm_cuda = "cu126"
     if cuda_major==12:
         if cuda_minor>=9:
             torch_version = "2.8.0"
@@ -412,24 +413,28 @@ def install_packages(evals: bool = False):
             torchaudio_version = "2.8.0"
             torch_cuda = "cu129"
             flash_cuda = "cu129"
+            vllm_cuda = "cu129"
         elif cuda_minor>=8:
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
             torchaudio_version = "2.8.0"
             torch_cuda = "cu128"
             flash_cuda = "cu128"
+            vllm_cuda = "cu126"
         elif cuda_minor>=6:
             torch_version = "2.7.0"
             torchvision_version = "0.23.0"
             torchaudio_version = "2.8.0"
             torch_cuda = "cu126"
             flash_cuda = "cu126"
+            vllm_cuda = "cu126"
         elif cuda_minor>=4:
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
             torchaudio_version = "2.8.0"
             torch_cuda = "cu124"
             flash_cuda = "cu124"
+            vllm_cuda = "cu124"
         else:
             vllm_version = "0.7.3"
             torch_version = "2.5.1"
@@ -437,6 +442,7 @@ def install_packages(evals: bool = False):
             torchaudio_version = "2.5.1"
             torch_cuda = "cu121"
             flash_cuda = "cu121"
+            vllm_cuda = "cu121"
 
     elif cuda_major==13:
         torch_version = "2.9.0"
@@ -444,6 +450,7 @@ def install_packages(evals: bool = False):
         torchaudio_version = "2.9.0"
         torch_cuda = "cu128"
         flash_cuda = "cu128"
+        vllm_cuda = "cu126"
     else:
         torch_cuda = "cu121"
         flash_cuda = "cu121"
@@ -472,7 +479,7 @@ def install_packages(evals: bool = False):
         packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade", "--extra-index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade", "--extra-index-url", f"https://download.pytorch.org/whl/{vllm_cuda}"]})
         # packages.append({"package": "faiss-gpu-cu12==1.12.0", "extra_args": []})
         # packages.append({"package": "flashinfer-python==0.2.5", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu124/torch2.5/"]})
         # packages.append({"package": "flash-attn", "extra_args": ["--no-build-isolation"]})
