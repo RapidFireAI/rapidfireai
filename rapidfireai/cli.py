@@ -212,6 +212,7 @@ def get_torch_version():
 
 def run_doctor():
     """Run the doctor command to diagnose system issues."""
+    status = 0
     print("🔍 RapidFire AI System Diagnostics")
     print("=" * 50)
 
@@ -281,6 +282,7 @@ def run_doctor():
                 print(line)
         print("... (showing only relevant packages)")
         if len(found_packages) < 5:
+            status = 1 if status == 0 else status
             print("⚠️ Not many packages installed, was rapidfireai init run (see installation instructions)?")
     else:
         print(pip_output)
@@ -316,13 +318,16 @@ def run_doctor():
     if int(major) > 0:
         print(f"Torch Verion: {major}.{minor}.{patch}")
     else:
+        status = 1 if status == 0 else status
         print("⚠️ Torch version not found") 
     if int(torch_cuda_major) > 0:
         print(f"Torch CUDA Version: {torch_cuda_major}.{torch_cuda_minor}")
     else:
+        status = 1 if status == 0 else status
         print("⚠️ Torch CUDA Version: unknown")
     cublas_dev_packages = get_os_package_installed(f"libcublas-dev-{torch_cuda_major}-{torch_cuda_minor}")
     if len(cublas_dev_packages) == 0:
+        status = 2 if status < 2 else status
         print(f"❌ OS package libcublas-dev-{torch_cuda_major}-{torch_cuda_minor} is not installed")
         print(f"   You need to install libcublas-dev-{torch_cuda_major}-{torch_cuda_minor} manually using your OS package manager")
 
@@ -343,8 +348,14 @@ def run_doctor():
         if value != "not set" and len(value) > 200:
             value = value[:200] + "..."
         print(f"{var}: {value}")
-
-    print("\n✅ Diagnostics complete!")
+    if status == 0:
+        print("\n✅ Diagnostics complete!")
+    elif status == 1:
+        print("\n⚠️ Diagnostics complete with warnings")
+    elif status == 2:
+        print("\n❌ Diagnostics complete with errors")
+    else:
+        print("\n❌ Diagnostics completed with unknown status")
     return 0
 
 
