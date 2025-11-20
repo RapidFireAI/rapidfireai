@@ -120,10 +120,9 @@ class NotebookUI:
                         }};
 
                         // Add Authorization header if auth token is available (for Colab)
-                        // Commented out to avoid triggering CORS preflight (OPTIONS) which Colab proxy blocks
-                        // if (AUTH_TOKEN) {{
-                        //     options.headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
-                        // }}
+                        if (AUTH_TOKEN) {{
+                            options.headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+                        }}
 
                         if (body) {{
                             options.body = JSON.stringify(body);
