@@ -16,7 +16,7 @@ from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
-from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig
+from rapidfireai.evals.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
 from rapidfireai.evals.utils.logger import RFLogger
 
