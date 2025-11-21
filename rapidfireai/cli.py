@@ -776,6 +776,7 @@ def run_jupyter():
     app.log_level = 'CRITICAL'
     app.token = ""
     app.password = ""
+    app.default_url = "/tree"
 
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
