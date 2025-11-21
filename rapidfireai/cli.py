@@ -774,8 +774,8 @@ def run_jupyter():
     app.allow_origin = '*'
     app.websocket_ping_interval = 90000
     app.log_level = 'CRITICAL'
-    app.token = None
-    app.password = None
+    app.token = ""
+    app.password = ""
 
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
