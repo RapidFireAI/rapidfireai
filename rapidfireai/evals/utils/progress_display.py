@@ -259,11 +259,6 @@ class PipelineProgressDisplay:
         rows = []
         for pipeline_info in self.pipelines:
             pid = pipeline_info["pipeline_id"]
-
-            # Skip if pipeline data not found (shouldn't happen, but defensive)
-            if pid not in self.pipeline_data:
-                continue
-
             data = self.pipeline_data[pid]
             metadata = self.pipeline_metadata.get(pid, {})
 
@@ -278,10 +273,10 @@ class PipelineProgressDisplay:
             # Get status
             status = data.get("status", "ONGOING")
 
-            # Start with standard columns (ensure they always exist even if empty)
+            # Start with standard columns
             row = {
                 "Run ID": pid,
-                "Model": data.get("model", "-"),
+                "Model": data["model"],
                 "Status": status,
                 "Progress": progress,
                 "Conf. Interval": str(confidence),
@@ -406,12 +401,6 @@ class PipelineProgressDisplay:
         """Start the live display."""
         df = self._create_dataframe()
         print("\n=== Multi-Config Experiment Progress ===")
-
-        # Configure pandas display options to show all columns
-        pd.set_option('display.max_columns', None)  # Show all columns
-        pd.set_option('display.width', None)  # Auto-detect width
-        pd.set_option('display.max_colwidth', 50)  # Limit column width for readability
-
         # Hide index for cleaner display
         styled_df = df.style.hide(axis="index")
         self.display_handle = display(styled_df, display_id=True)
@@ -421,12 +410,6 @@ class PipelineProgressDisplay:
         if self.display_handle:
             # Final render with completed status
             df = self._create_dataframe()
-
-            # Ensure pandas shows all columns
-            pd.set_option('display.max_columns', None)
-            pd.set_option('display.width', None)
-            pd.set_option('display.max_colwidth', 50)
-
             styled_df = df.style.hide(axis="index")
             self.display_handle.update(styled_df)
 
@@ -434,12 +417,6 @@ class PipelineProgressDisplay:
         """Update the DataFrame display."""
         if self.display_handle:
             df = self._create_dataframe()
-
-            # Ensure pandas shows all columns
-            pd.set_option('display.max_columns', None)
-            pd.set_option('display.width', None)
-            pd.set_option('display.max_colwidth', 50)
-
             styled_df = df.style.hide(axis="index")
             self.display_handle.update(styled_df)
 
