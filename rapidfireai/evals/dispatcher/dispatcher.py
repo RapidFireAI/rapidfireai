@@ -45,7 +45,7 @@ class Dispatcher:
             self.app,
             resources={
                 r"/*": {
-                    "origins": CORS_ALLOWED_ORIGINS,
+                    "origins": "*",
                     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                     "allow_headers": ["Content-Type", "Authorization"],
                     "expose_headers": ["Content-Type"],
