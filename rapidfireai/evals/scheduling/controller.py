@@ -510,6 +510,9 @@ class Controller:
         """
         Compute final metrics for each pipeline and update database.
 
+        Includes pipelines with statuses: COMPLETED, STOPPED, ONGOING (with partial results).
+        Excludes pipelines with statuses: DELETED, FAILED.
+
         Args:
             pipeline_ids: List of pipeline IDs
             pipeline_id_to_config: Mapping of pipeline_id to (name, config)
@@ -520,7 +523,8 @@ class Controller:
             pipeline_id_to_info: Optional mapping of pipeline_id to pipeline info dict
 
         Returns:
-            Dict mapping pipeline_id to (aggregated_results, cumulative_metrics)
+            Dict mapping pipeline_id to (aggregated_results, cumulative_metrics) for
+            COMPLETED, STOPPED, and ONGOING pipelines (excludes DELETED and FAILED)
         """
         self.logger.info("Computing final metrics for all pipelines...")
 
@@ -532,14 +536,12 @@ class Controller:
             # Check pipeline status
             pipeline_status = db.get_pipeline(pipeline_id)["status"]
 
-            # Skip pipelines that didn't complete successfully
-            if pipeline_status != PipelineStatus.COMPLETED.value:
+            # Skip DELETED and FAILED pipelines
+            if pipeline_status in [PipelineStatus.DELETED.value, PipelineStatus.FAILED.value]:
                 if pipeline_status == PipelineStatus.FAILED.value:
                     self.logger.warning(f"Pipeline {pipeline_id} failed, skipping final metrics")
                 else:
-                    self.logger.info(
-                        f"Pipeline {pipeline_id} has status {pipeline_status}, skipping final metrics"
-                    )
+                    self.logger.info(f"Pipeline {pipeline_id} deleted, skipping final metrics")
                 continue
 
             # Skip pipelines with no results (cloned but never processed)
@@ -581,21 +583,21 @@ class Controller:
 
             # Reorder cumulative_metrics: run_id, model_name, hyperparams, Samples Processed, then metrics
             ordered_metrics = {}
-            
+
             ordered_metrics["run_id"] = {"value": pipeline_id}
-            
+
             if "model_name" in cumulative_metrics:
                 ordered_metrics["model_name"] = cumulative_metrics["model_name"]
-            
-            hyperparam_keys = ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap", 
+
+            hyperparam_keys = ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
                              "sampling_params", "prompt_manager_k", "model_config"]
             for key in hyperparam_keys:
                 if key in cumulative_metrics:
                     ordered_metrics[key] = cumulative_metrics[key]
-            
+
             if "Samples Processed" in cumulative_metrics:
                 ordered_metrics["Samples Processed"] = cumulative_metrics["Samples Processed"]
-            
+
             excluded_keys = {"run_id", "model_name", "Samples Processed"} | set(hyperparam_keys)
             for key, value in cumulative_metrics.items():
                 if key not in excluded_keys:
@@ -1202,7 +1204,7 @@ class Controller:
             pipeline_id = info_dict["pipeline_id"]
             info_copy = {k: v for k, v in info_dict.items() if k not in ["pipeline_config", "pipeline_id"]}
             pipeline_id_to_info[pipeline_id] = info_copy
-        
+
         final_results = self._compute_final_metrics_for_pipelines(
             pipeline_ids,
             pipeline_id_to_config,
