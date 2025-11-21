@@ -312,9 +312,9 @@ class InteractiveControlHandler:
 
         # Apply JSON edits on top of parent's configuration
         if pipeline_type.lower() == "vllm":
-            # Get parent's baseline config from _user_params (original dicts, not converted objects)
-            parent_model_config_dict = parent_model_config._user_params.get("model_config", {})
-            parent_sampling_params = parent_model_config._user_params.get("sampling_params", {})
+            # Get parent's baseline config
+            parent_model_config_dict = getattr(parent_model_config, "model_config", {})
+            parent_sampling_params = getattr(parent_model_config, "sampling_params", {})
 
             # Apply edits from JSON (use parent as fallback)
             model_config_dict = edited_json.get("model_config", parent_model_config_dict)
@@ -328,11 +328,11 @@ class InteractiveControlHandler:
             )
 
         elif pipeline_type.lower() == "openai":
-            # Get parent's baseline config from _user_params (original dicts)
-            parent_client_config = parent_model_config._user_params.get("client_config", {})
-            parent_model_config_dict = parent_model_config._user_params.get("model_config", {})
-            parent_rpm = parent_model_config._user_params.get("rpm_limit", 500)
-            parent_tpm = parent_model_config._user_params.get("tpm_limit", 500_000)
+            # Get parent's baseline config
+            parent_client_config = getattr(parent_model_config, "client_config", {})
+            parent_model_config_dict = getattr(parent_model_config, "model_config", {})
+            parent_rpm = getattr(parent_model_config, "rpm_limit", 500)
+            parent_tpm = getattr(parent_model_config, "tpm_limit", 500_000)
 
             # Apply edits from JSON (use parent as fallback)
             client_config = edited_json.get("client_config", parent_client_config)
@@ -476,9 +476,9 @@ class InteractiveControlHandler:
                 chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)
                 chunk_overlap = getattr(pipeline.rag.text_splitter, "_chunk_overlap", None)
 
-        # Extract sampling params from _user_params (dict, not SamplingParams object)
+        # Extract sampling params
         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
-            sampling_params = pipeline._user_params.get("sampling_params", None)
+            sampling_params = pipeline.sampling_params
 
         # Extract prompt_manager fields
         if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:

@@ -299,8 +299,7 @@ class Experiment:
             cpus_per_actor: Number of CPUs per actor (default: auto-detect from Ray cluster)
 
         Returns:
-            Dict mapping run_id to (aggregated_results, cumulative_metrics) tuple.
-            Includes COMPLETED, STOPPED, and ONGOING runs (excludes DELETED and FAILED).
+            Dict mapping run_id to (aggregated_results, cumulative_metrics) tuple
 
         Raises:
             ValueError: If not in evals mode
