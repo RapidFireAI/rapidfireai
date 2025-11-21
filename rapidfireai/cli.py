@@ -797,7 +797,7 @@ def run_jupyter():
             print(f"For example using ssh:")
             print(f"    ssh -L {app.port}:localhost:{app.port} -L {dispatcher_port}:localhost:{dispatcher_port} {os_username}@{get_ip_address()}")
         print("If there is a problem, try running jupyter manually with:")
-        print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.websocket_ping_interval=90000")
+        print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''")
         print("\n\nAfter forwarding the ports above, access the Jupyter notebook at:")
         print(f"http://localhost:{app.port}/tree?token={app.token}")
         
@@ -822,7 +822,7 @@ def run_jupyter():
         print("=" * 60, file=sys.stderr)
         print(f"Exception: {e}", file=sys.stderr)
         print("Try running jupyter manually with:")
-        print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.websocket_ping_interval=90000")
+        print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''")
         raise
 
 def main():
