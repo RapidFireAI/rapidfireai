@@ -4,7 +4,8 @@ torch<=2.8.0
 sentence-transformers>=5.1.0
 
 # Distributed Computing
-ray>=2.51.0
+# ray>=2.51.0
+ray==2.48.0
 
 # LLM Inference
 transformers>=4.56.1

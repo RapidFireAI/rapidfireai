@@ -337,14 +337,6 @@ def run_doctor():
     else:
         status = 1 if status == 0 else status
         print("⚠️ Torch CUDA Version: unknown")
-    cublas_dev_packages = get_os_package_installed("libcublas-dev-*")
-    if len(cublas_dev_packages) == 0:
-        status = 2 if status < 2 else status
-        print(f"❌ OS package libcublas-dev-{torch_cuda_major}-{torch_cuda_minor} is not installed")
-        print(f"   You need to install libcublas-dev-{torch_cuda_major}-{torch_cuda_minor} manually using your OS package manager")
-    else:
-        print(f"OS package libcublas-dev-* is installed: {cublas_dev_packages}")
-
 
     # System Information
     print("\n💻 System Information:")
@@ -611,10 +603,6 @@ def install_packages(evals: bool = False):
     if evals and not is_colab and cuda_major >= 12:
         
         print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
-        # Validate that libcublas-dev-cuda_major-cuda_minor is installed
-        if len(get_os_package_installed(f"libcublas-dev-{cuda_major}-{cuda_minor}")) == 0:
-            print(f"❌ OS packagelibcublas-dev-{cuda_major}-{cuda_minor} is not installed")
-            print(f"   You need to install libcublas-dev-{cuda_major}-{cuda_minor} manually using your OS package manager")
         
         # packages.append({"package": "torch==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
         # packages.append({"package": "torchvision==0.20.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
