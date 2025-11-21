@@ -175,13 +175,12 @@ def get_gpu_info():
                     break
             else:
                 info["nvcc_version"] = "unknown"
-                info["status"] = 2 if info["status"] < 2 else info["status"]
+                info["status"] = 1 if info["status"] < 2 else info["status"]
         except subprocess.CalledProcessError:
             info["nvcc_version"] = "unknown"
             info["status"] = 2 if info["status"] < 2 else info["status"]
     else:
         info["nvcc_version"] = "N/A"
-        info["status"] = 2 if info["status"] < 2 else info["status"]
 
     # Check CUDA installation paths
     cuda_paths = ["/usr/local/cuda", "/opt/cuda", "/usr/cuda", os.path.expanduser("~/cuda")]
@@ -338,11 +337,13 @@ def run_doctor():
     else:
         status = 1 if status == 0 else status
         print("⚠️ Torch CUDA Version: unknown")
-    cublas_dev_packages = get_os_package_installed(f"libcublas-dev-{torch_cuda_major}-{torch_cuda_minor}")
+    cublas_dev_packages = get_os_package_installed("libcublas-dev-*")
     if len(cublas_dev_packages) == 0:
         status = 2 if status < 2 else status
         print(f"❌ OS package libcublas-dev-{torch_cuda_major}-{torch_cuda_minor} is not installed")
         print(f"   You need to install libcublas-dev-{torch_cuda_major}-{torch_cuda_minor} manually using your OS package manager")
+    else:
+        print(f"OS package libcublas-dev-* is installed: {cublas_dev_packages}")
 
 
     # System Information
@@ -633,6 +634,7 @@ def install_packages(evals: bool = False):
         packages.append({"package": "flashinfer-cubin", "extra_args": []})
         if cuda_major + (cuda_minor / 10.0) >= 12.8:
             packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
+        packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0rc3/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
         # vllm installs flash-attn do not need to install
         # try:
         #     cmd = [sys.executable, "-c", "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"]
