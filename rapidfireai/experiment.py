@@ -157,6 +157,8 @@ class Experiment:
             configure_logging=True,
             ignore_reinit_error=True,
             dashboard_port=get_ray_port(),
+            # Disable metrics export to prevent "Failed to establish connection" errors
+            _metrics_export_port=None,
             runtime_env={
                 "env_vars": {
                     # Force CUDA to initialize properly in Ray actors (AWS fix)
