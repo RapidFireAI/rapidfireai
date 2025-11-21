@@ -528,7 +528,6 @@ def install_packages(evals: bool = False):
     torchaudio_version = "2.5.1"
     torch_cuda = "cu121"
     flash_cuda = "cu121"
-    vllm_cuda = "cu126"
     if cuda_major==12:
         if cuda_minor>=9:
             # Supports Torch 2.8.0
@@ -584,19 +583,9 @@ def install_packages(evals: bool = False):
         torch_cuda = "cu121"
         flash_cuda = "cu121"
 
-    # xformers (0.0.29.post2)
-    # datasets(0.3.6.0)
-    # fsspec (2025.3.0)
 
     if not evals:
         pass
-        # Upgrading pytorch to 2.7.0 for fit
-        # print("Upgrading pytorch to 2.7.0 for fit")
-        # packages.append({"package": "torch==2.7.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
-        # packages.append({"package": "torchvision==0.22.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
-        # packages.append({"package": "torchaudio==2.7.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
-        # packages.append({"package": "transformers==4.57.1", "extra_args": ["--upgrade"]})
-
 
     
     ## TODO: re-enable for fit once trl has fix
@@ -604,81 +593,17 @@ def install_packages(evals: bool = False):
         
         print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
         
-        # packages.append({"package": "torch==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
-        # packages.append({"package": "torchvision==0.20.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
-        # packages.append({"package": "torchaudio==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
-        
         packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        # Install vllm before torch to avoid version conflicts
-        # packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade", "--extra-index-url", f"https://download.pytorch.org/whl/{vllm_cuda}"]})
         packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
-        # packages.append({"package": "faiss-gpu-cu12==1.12.0", "extra_args": []})
-        # packages.append({"package": "flashinfer-python==0.2.5", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu124/torch2.5/"]})
-        # packages.append({"package": "flash-attn", "extra_args": ["--no-build-isolation"]})
-        # packages.append({"package": "flashinfer-python", "extra_args": []})
         packages.append({"package": "flashinfer-python", "extra_args": []})
         packages.append({"package": "flashinfer-cubin", "extra_args": []})
         if cuda_major + (cuda_minor / 10.0) >= 12.8:
             packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
-        packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0rc3/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
-        # packages.append({"package": "ray==2.49.2", "extra_args": []})
-        # vllm installs flash-attn do not need to install
-        # try:
-        #     cmd = [sys.executable, "-c", "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"]
-        #     print("   Checking ABI for Torch...")
-        #     subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-        #     result = subprocess.run([sys.executable, "-c", "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-        #     use_cxx11_abi = result.stdout.strip().upper()
-        #     print(f"✅ ABI for PyTroch is {use_cxx11_abi}")
-        #     # https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp312-cp312-linux_x86_64.whl
-        #     # https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
-        #     pre_compiled_flash_binary = f"https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch{torch_version[:3]}cxx11abi{use_cxx11_abi}-cp312-cp312-linux_x86_64.whl"
-        #     packages.append({"package": pre_compiled_flash_binary, "extra_args": ["--upgrade"]})
-
-        # # packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
-        # except subprocess.CalledProcessError as e:
-        #     print("❌ Failed to get ABI value")
-        #     print(f"   Error: {e}")
-        #     if e.stdout:
-        #         print(f"   Standard output: {e.stdout}")
-        #     if e.stderr:
-        #         print(f"   Standard error: {e.stderr}")
-        #     print("   You may need to install flash-attn manually") 
-        # Install torch, torchvision, and torchaudio again to avoid version conflicts
-        # packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        # packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        # packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-            
-
-        
-    # elif cuda_major == 11:
-    #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
-    #     packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu118"]})
-    # else:
-    #     print("\n⚠️  CUDA version not detected or unsupported.")
+        packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
 
     # TODO: re-enable for fit once flash-attn has fix
-    # if cuda_major is not None:
-    #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
-
-        # Determine flash-attn version based on CUDA version
-        # if evals and cuda_major < 8:
-        #     # flash-attn 1.x for CUDA < 8.0
-        #     print("Installing latest flash-attn 1.x for CUDA < 8.0")
-        #     packages.append({"package": "flash-attn<2.0", "extra_args": ["--no-build-isolation"]})
-        # elif evals and cuda_major == 9:
-        #     # flash-attn 3.x for CUDA 9.0 specifically
-        #     print("Installing latest flash-attn 3.x for CUDA 9.0")
-        #     packages.append({"package": "flash-attn>=3.0,<4.0", "extra_args": ["--no-build-isolation"]})
-        # elif evals and cuda_major >= 8:
-        #     # flash-attn 2.x for CUDA >= 8.0 (but not 9.0)
-        #     print("Installing flash-attn 2.8.3 for CUDA >= 8.0")
-        #     packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
-    # else:
-    #     print("\n⚠️  CUDA version not detected.")
-    #     print("Skipping flash-attn installation")
 
     for package_info in packages:
         try:
