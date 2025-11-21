@@ -623,6 +623,7 @@ def install_packages(evals: bool = False):
         if cuda_major + (cuda_minor / 10.0) >= 12.8:
             packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
         packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0rc3/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
+        # packages.append({"package": "ray==2.49.2", "extra_args": []})
         # vllm installs flash-attn do not need to install
         # try:
         #     cmd = [sys.executable, "-c", "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"]
