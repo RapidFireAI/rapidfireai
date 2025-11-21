@@ -3,7 +3,7 @@ import json
 from typing import Any
 
 import dill
-from rapidfireai.automl.model_config import RFvLLMModelConfig, RFOpenAIAPIModelConfig
+from rapidfireai.evals.automl.model_config import RFvLLMModelConfig, RFOpenAIAPIModelConfig
 
 
 def encode_payload(payload: object) -> str:
