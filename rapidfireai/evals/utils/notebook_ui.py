@@ -129,6 +129,8 @@ class NotebookUI:
                 (function() {{
                     const WIDGET_ID = '{self.widget_id}';
                     const DISPATCHER_URL = '{self.dispatcher_url}';
+                    console.log('Dispatcher URL:', DISPATCHER_URL);
+                    console.log('pipelines url:', DISPATCHER_URL + '/dispatcher/list-all-pipeline-ids');
                     const AUTH_TOKEN = {f"'{self.auth_token}'" if self.auth_token else 'null'};
                     let currentPipelineId = null;
                     let currentConfig = null;
@@ -185,6 +187,7 @@ class NotebookUI:
                             console.log('Fetching pipelines using colab callback...');
 
                             const result = await google.colab.kernel.invokeFunction('rf_fetch_pipelines', [], {{}});
+                            console.log('Fetch result:', result);
                             const pipelines = result.data['application/json'].data;
                             console.log('Got pipelines:', pipelines.length);
 
@@ -203,6 +206,7 @@ class NotebookUI:
                             console.log('Fetching config using colab callback for pipeline ID:', pipelineId);
 
                             const result = await google.colab.kernel.invokeFunction('rf_fetch_config', [pipelineId], {{}});
+                            console.log('Fetch config result:', result);
                             const response = result.data['application/json'];
 
                             if (!response.success) {{
