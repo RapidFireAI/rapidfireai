@@ -263,6 +263,7 @@ def run_doctor():
             "waitress",
             "vllm",
             "rf-faiss",
+            "faiss-gpu-cu12",
             "vllm",
             "flash-attn",
             "flashinfer-python",
@@ -601,6 +602,7 @@ def install_packages(evals: bool = False):
         packages.append({"package": "flashinfer-cubin", "extra_args": []})
         if cuda_major + (cuda_minor / 10.0) >= 12.8:
             packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
+        packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
         # packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
 
     # TODO: re-enable for fit once flash-attn has fix
