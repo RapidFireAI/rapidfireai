@@ -346,7 +346,9 @@ class NotebookUI:
                             showMessage(`✓ ${{action}} completed for pipeline ${{currentPipelineId}}`, 'success');
 
                             // Refresh after a short delay
-                            setTimeout(fetchPipelinesColabCallback, 500);
+                            setTimeout(async () => {{
+                                await fetchPipelinesColabCallback();
+                            }}, 500);
 
                         }} catch (error) {{
                             showMessage(`Error: ${{error.message}}`, 'error');
@@ -409,7 +411,9 @@ class NotebookUI:
                             disableCloneMode();
 
                             // Refresh after delay
-                            setTimeout(fetchPipelinesColabCallback, 1000);
+                            setTimeout(async () => {{
+                                await fetchPipelinesColabCallback();
+                            }}, 1000);
 
                         }} catch (error) {{
                             showMessage(`Error cloning: ${{error.message}}`, 'error');
@@ -437,11 +441,13 @@ class NotebookUI:
 
                     // Initial fetch
                     console.log('UI initialized, fetching initial data...');
-                    setTimeout(() => {{
-                        fetchPipelinesColabCallback();
+                    setTimeout(async () => {{
+                        await fetchPipelinesColabCallback();
 
-                        // Start polling
-                        pollingInterval = setInterval(fetchPipelinesColabCallback, {self.refresh_rate * 1000});
+                        // Start polling - wrap async call properly
+                        pollingInterval = setInterval(async () => {{
+                            await fetchPipelinesColabCallback();
+                        }}, {self.refresh_rate * 1000});
                         console.log('Polling started: every {self.refresh_rate}s');
                     }}, 1000);
 
