@@ -39,11 +39,12 @@ class NotebookUI:
         list_pipelines_url = f"{self.dispatcher_url}/dispatcher/list-all-pipeline-ids"
 
         def fetch_pipelines():
-            try:
-                pipelines = db.get_all_pipeline_ids()
-                return {"data": pipelines}
-            except Exception as e:
-                return {"error": str(e)}
+            return [{"pipeline_id":8,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":7,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":6,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":5,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":4,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":3,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":2,"shards_completed":0,"status":"ongoing","total_samples_processed":0},{"pipeline_id":1,"shards_completed":0,"status":"ongoing","total_samples_processed":0}]
+            # try:
+            #     pipelines = db.get_all_pipeline_ids()
+            #     return {"data": pipelines}
+            # except Exception as e:
+            #     return {"error": str(e)}
             
         def fetch_pipelines_request():
             headers = {"Content-Type": "application/json"}
@@ -202,11 +203,11 @@ class NotebookUI:
                         return await response.json();
                     }}
                     
-                    async function fetchPipelinesColabCallback() {{
+                    function fetchPipelinesColabCallback() {{
                         try {{
                             console.log('Fetching pipelines using colab callback via http request...');
 
-                            const result = await google.colab.kernel.invokeFunction('rf_fetch_pipelines_request', [], {{}});
+                            const result = google.colab.kernel.invokeFunction('rf_fetch_pipelines', [], {{}});
                             console.log('Fetch result:', result);
                             const pipelines = result.data['application/json'].data;
                             console.log('Got pipelines:', pipelines.length);
