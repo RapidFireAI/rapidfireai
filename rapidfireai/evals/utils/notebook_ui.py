@@ -5,6 +5,7 @@ This works in VS Code notebooks by using the vscode notebook API instead of Jupy
 
 import uuid
 
+import IPython
 import requests
 from IPython.display import HTML, display
 from rapidfireai.evals.db.rf_db import RFDatabase
@@ -39,35 +40,48 @@ class NotebookUI:
         list_pipelines_url = f"{self.dispatcher_url}/dispatcher/list-all-pipeline-ids"
 
         def fetch_pipelines():
-            return {"data": [{"pipeline_id":8,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":7,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":6,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":5,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":4,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":3,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":2,"shards_completed":0,"status":"ongoing","total_samples_processed":0},{"pipeline_id":1,"shards_completed":0,"status":"ongoing","total_samples_processed":0}]}
+            # Must return IPython.display.JSON for Colab kernel communication
+            pipelines = [
+                {"pipeline_id": 8, "shards_completed": 0, "status": "new", "total_samples_processed": 0},
+                {"pipeline_id": 7, "shards_completed": 0, "status": "new", "total_samples_processed": 0},
+                {"pipeline_id": 6, "shards_completed": 0, "status": "new", "total_samples_processed": 0},
+                {"pipeline_id": 5, "shards_completed": 0, "status": "new", "total_samples_processed": 0},
+                {"pipeline_id": 4, "shards_completed": 0, "status": "new", "total_samples_processed": 0},
+                {"pipeline_id": 3, "shards_completed": 0, "status": "new", "total_samples_processed": 0},
+                {"pipeline_id": 2, "shards_completed": 0, "status": "ongoing", "total_samples_processed": 0},
+                {"pipeline_id": 1, "shards_completed": 0, "status": "ongoing", "total_samples_processed": 0},
+            ]
+            return IPython.display.JSON({"data": pipelines})
             # try:
             #     pipelines = db.get_all_pipeline_ids()
-            #     return {"data": pipelines}
+            #     return IPython.display.JSON({"data": pipelines})
             # except Exception as e:
-            #     return {"error": str(e)}
-            
+            #     return IPython.display.JSON({"error": str(e)})
+
         def fetch_pipelines_request():
+            # Must return IPython.display.JSON for Colab kernel communication
             headers = {"Content-Type": "application/json"}
 
-            # Add Authorization header if auth token is available (for Colab)
             if auth_token:
                 headers["Authorization"] = f"Bearer {auth_token}"
 
             try:
                 response = requests.get(list_pipelines_url, headers=headers, timeout=10)
-                response.raise_for_status()  # Raise HTTPError for bad status codes
-                return response.json()
+                response.raise_for_status()
+                return IPython.display.JSON({"data": response.json()})
             except requests.exceptions.RequestException as e:
-                return {"error": str(e)}
-        
+                return IPython.display.JSON({"error": str(e)})
+
         def fetch_config(pipeline_id):
+            # Must return IPython.display.JSON for Colab kernel communication
             try:
                 config = db.get_pipeline_config_json(pipeline_id)
-                return {"success": True, "data": config}
+                return IPython.display.JSON({"success": True, "data": config})
             except Exception as e:
-                return {"success": False, "error": str(e)}
-        
+                return IPython.display.JSON({"success": False, "error": str(e)})
+
         def perform_action(action_type, pipeline_id):
+            # Must return IPython.display.JSON for Colab kernel communication
             try:
                 if action_type == "stop":
                     db.update_pipeline_status(pipeline_id, "stopped")
@@ -75,9 +89,9 @@ class NotebookUI:
                     db.update_pipeline_status(pipeline_id, "running")
                 elif action_type == "delete":
                     db.delete_pipeline(pipeline_id)
-                return {"success": True}
+                return IPython.display.JSON({"success": True})
             except Exception as e:
-                return {"success": False, "error": str(e)}
+                return IPython.display.JSON({"success": False, "error": str(e)})
         
         output.register_callback("rf_fetch_pipelines", fetch_pipelines)
         output.register_callback("rf_fetch_pipelines_request", fetch_pipelines_request)
@@ -205,11 +219,21 @@ class NotebookUI:
                     
                     async function fetchPipelinesColabCallback() {{
                         try {{
-                            console.log('Fetching pipelines using colab callback via http request...');
+                            console.log('Fetching pipelines using colab callback...');
 
                             const result = await google.colab.kernel.invokeFunction('rf_fetch_pipelines', [], {{}});
                             console.log('Fetch result:', result);
-                            const pipelines = result.data['application/json'];
+
+                            const response = result.data['application/json'];
+                            console.log('Response:', response);
+
+                            if (response.error) {{
+                                console.error('Error from callback:', response.error);
+                                showMessage('Error: ' + response.error, 'error');
+                                return;
+                            }}
+
+                            const pipelines = response.data;
                             console.log('Got pipelines:', pipelines.length);
 
                             updatePipelinesDropdown(pipelines);
