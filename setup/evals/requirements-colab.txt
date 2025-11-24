@@ -40,7 +40,7 @@ requests==2.32.5
 # uv
 # jedi
 vllm
-rf-faiss
+faiss-gpu-cu12
 fsspec>=2023.1.0,<=2025.3.0
 
 # vllm==0.7.2
