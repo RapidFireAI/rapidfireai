@@ -263,6 +263,7 @@ def run_doctor():
             "waitress",
             "vllm",
             "rf-faiss",
+            "rf-faiss-gpu-12-8",
             "faiss-gpu-cu12",
             "vllm",
             "flash-attn",
@@ -539,6 +540,7 @@ def install_packages(evals: bool = False):
             torch_cuda = "cu129"
             flash_cuda = "cu129"
             vllm_cuda = "cu129"
+            vllm_version = "0.11.0"
         elif cuda_minor>=8:
             # Supports Torch 2.9.0/1
             torch_version = "2.8.0"
@@ -547,6 +549,7 @@ def install_packages(evals: bool = False):
             torch_cuda = "cu128"
             flash_cuda = "cu128"
             vllm_cuda = "cu128"
+            vllm_version = "0.11.0"
         elif cuda_minor>=6:
             # Supports Torch 2.9.0/1
             torch_version = "2.8.0"
