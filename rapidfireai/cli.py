@@ -266,6 +266,7 @@ def run_doctor():
             "faiss-gpu-cu12",
             "vllm",
             "flash-attn",
+            "flash_attn",
             "flashinfer-python",
             "flashinfer-cubin",
             "flashinfer-jit-cache",
