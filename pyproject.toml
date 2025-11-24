@@ -43,6 +43,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# TODO: update these dependencies to the correct versions
 colab_evals = [
     # Core ML/AI Framework
     "sentence-transformers>=5.1.0",
