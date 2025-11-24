@@ -6,6 +6,7 @@ This works in VS Code notebooks by using the vscode notebook API instead of Jupy
 import uuid
 
 from IPython.display import HTML, display
+from rapidfireai.evals.db.rf_db import RFDatabase
 
 
 class NotebookUI:
@@ -19,6 +20,50 @@ class NotebookUI:
         self.polling_thread = None
         self.pending_actions = []
         self.auth_token = auth_token
+    
+    def _is_colab(self) -> bool:
+        """Check if running in Google Colab"""
+        try:
+            import google.colab  # type: ignore
+            return True
+        except ImportError:
+            return False
+    
+    def _register_colab_callbacks(self):
+        """Register Colab-specific callbacks"""
+        from google.colab import output
+
+        db = RFDatabase()
+
+        def fetch_pipelines():
+            try:
+                pipelines = db.get_all_pipeline_ids()
+                return {"data": pipelines}
+            except Exception as e:
+                return {"error": str(e)}
+        
+        def fetch_config(pipeline_id):
+            try:
+                config = db.get_pipeline_config_json(pipeline_id)
+                return {"success": True, "data": config}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+        
+        def perform_action(action_type, pipeline_id):
+            try:
+                if action_type == "stop":
+                    db.update_pipeline_status(pipeline_id, "stopped")
+                elif action_type == "resume":
+                    db.update_pipeline_status(pipeline_id, "running")
+                elif action_type == "delete":
+                    db.delete_pipeline(pipeline_id)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+        
+        output.register_callback("rf_fetch_pipelines", fetch_pipelines)
+        output.register_callback("rf_fetch_config", fetch_config)
+        output.register_callback("rf_perform_action", perform_action)
 
     def _generate_html(self):
         """Generate HTML using fetch API for communication"""
@@ -134,6 +179,53 @@ class NotebookUI:
                         }}
                         return await response.json();
                     }}
+                    
+                    async function fetchPipelinesColabCallback() {{
+                        try {{
+                            console.log('Fetching pipelines using colab callback...');
+
+                            const result = await google.colab.kernel.invokeFunction('rf_fetch_pipelines', [], {{}});
+                            const pipelines = result.data['application/json'].data;
+                            console.log('Got pipelines:', pipelines.length);
+
+                            updatePipelinesDropdown(pipelines);
+                            el.lastUpdate.textContent = new Date().toLocaleTimeString();
+
+                        }} catch (error) {{
+                            console.error('Failed to fetch pipelines:', error);
+                            showMessage('Connection error: ' + error.message, 'error');
+                        }}
+                    }}
+
+
+                    async function fetchPipelineConfigColabCallback(pipelineId) {{
+                        try {{
+                            console.log('Fetching config using colab callback for pipeline ID:', pipelineId);
+
+                            const result = await google.colab.kernel.invokeFunction('rf_fetch_config', [pipelineId], {{}});
+                            const response = result.data['application/json'];
+
+                            if (!response.success) {{
+                                console.error('Failed to fetch config:', response.error);
+                                return;
+                            }}
+
+                            const data = response.data;
+                            const config = data.pipeline_config_json || {{}};
+
+                            currentConfig = config;
+                            currentContextId = data.context_id;
+
+                            el.configName.textContent = config.pipeline_name || 'N/A';
+
+                            if (!isCloneMode) {{
+                                el.configText.value = JSON.stringify(config, null, 2);
+                            }}
+
+                        }} catch (error) {{
+                            console.error('Failed to fetch config:', error);
+                        }}
+                    }}
 
                     async function fetchPipelines() {{
                         try {{
@@ -189,7 +281,7 @@ class NotebookUI:
                             }} else {{
                                 selector.value = pipelines[0].pipeline_id;
                                 currentPipelineId = pipelines[0].pipeline_id;
-                                fetchPipelineConfig(currentPipelineId);
+                                fetchPipelineConfigColabCallback(currentPipelineId);
                             }}
 
                             // Update status display
@@ -229,7 +321,7 @@ class NotebookUI:
                             showMessage(`✓ ${{action}} completed for pipeline ${{currentPipelineId}}`, 'success');
 
                             // Refresh after a short delay
-                            setTimeout(fetchPipelines, 500);
+                            setTimeout(fetchPipelinesColabCallback, 500);
 
                         }} catch (error) {{
                             showMessage(`Error: ${{error.message}}`, 'error');
@@ -292,7 +384,7 @@ class NotebookUI:
                             disableCloneMode();
 
                             // Refresh after delay
-                            setTimeout(fetchPipelines, 1000);
+                            setTimeout(fetchPipelinesColabCallback, 1000);
 
                         }} catch (error) {{
                             showMessage(`Error cloning: ${{error.message}}`, 'error');
@@ -303,7 +395,7 @@ class NotebookUI:
                     el.pipelineSelector.addEventListener('change', (e) => {{
                         if (e.target.value) {{
                             currentPipelineId = parseInt(e.target.value);
-                            fetchPipelineConfig(currentPipelineId);
+                            fetchPipelineConfigColabCallback(currentPipelineId);
                         }}
                     }});
 
@@ -321,10 +413,10 @@ class NotebookUI:
                     // Initial fetch
                     console.log('UI initialized, fetching initial data...');
                     setTimeout(() => {{
-                        fetchPipelines();
+                        fetchPipelinesColabCallback();
 
                         // Start polling
-                        pollingInterval = setInterval(fetchPipelines, {self.refresh_rate * 1000});
+                        pollingInterval = setInterval(fetchPipelinesColabCallback, {self.refresh_rate * 1000});
                         console.log('Polling started: every {self.refresh_rate}s');
                     }}, 1000);
 
@@ -339,4 +431,5 @@ class NotebookUI:
 
     def display(self):
         """Display the UI"""
+        self._register_colab_callbacks()
         display(HTML(self._generate_html()))
