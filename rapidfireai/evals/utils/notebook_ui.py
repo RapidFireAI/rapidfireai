@@ -31,8 +31,21 @@ class NotebookUI:
         except ImportError:
             return False
     
-    def _register_colab_callbacks(self):
-        """Register Colab-specific callbacks"""
+    def register_callbacks(self):
+        """
+        Register Colab-specific callbacks for JS-to-Python communication.
+
+        IMPORTANT: Call this method in a separate cell BEFORE calling display().
+        This ensures callbacks are fully registered before JavaScript tries to invoke them.
+
+        Usage:
+            # Cell 1:
+            ui = NotebookUI()
+            ui.register_callbacks()
+
+            # Cell 2:
+            ui.display()
+        """
         from google.colab import output
 
         db = RFDatabase()
@@ -40,6 +53,7 @@ class NotebookUI:
         list_pipelines_url = f"{self.dispatcher_url}/dispatcher/list-all-pipeline-ids"
 
         def fetch_pipelines():
+            print(">>> [Python] fetch_pipelines callback invoked!")
             # Must return IPython.display.JSON for Colab kernel communication
             pipelines = [
                 {"pipeline_id": 8, "shards_completed": 0, "status": "new", "total_samples_processed": 0},
@@ -51,6 +65,7 @@ class NotebookUI:
                 {"pipeline_id": 2, "shards_completed": 0, "status": "ongoing", "total_samples_processed": 0},
                 {"pipeline_id": 1, "shards_completed": 0, "status": "ongoing", "total_samples_processed": 0},
             ]
+            print(f">>> [Python] Returning {len(pipelines)} pipelines")
             return IPython.display.JSON({"data": pipelines})
             # try:
             #     pipelines = db.get_all_pipeline_ids()
@@ -73,14 +88,17 @@ class NotebookUI:
                 return IPython.display.JSON({"error": str(e)})
 
         def fetch_config(pipeline_id):
+            print(f">>> [Python] fetch_config callback invoked for pipeline_id={pipeline_id}")
             # Must return IPython.display.JSON for Colab kernel communication
             try:
                 config = db.get_pipeline_config_json(pipeline_id)
                 return IPython.display.JSON({"success": True, "data": config})
             except Exception as e:
+                print(f">>> [Python] fetch_config error: {e}")
                 return IPython.display.JSON({"success": False, "error": str(e)})
 
         def perform_action(action_type, pipeline_id):
+            print(f">>> [Python] perform_action callback invoked: {action_type} for pipeline_id={pipeline_id}")
             # Must return IPython.display.JSON for Colab kernel communication
             try:
                 if action_type == "stop":
@@ -91,12 +109,14 @@ class NotebookUI:
                     db.delete_pipeline(pipeline_id)
                 return IPython.display.JSON({"success": True})
             except Exception as e:
+                print(f">>> [Python] perform_action error: {e}")
                 return IPython.display.JSON({"success": False, "error": str(e)})
-        
+
         output.register_callback("rf_fetch_pipelines", fetch_pipelines)
         output.register_callback("rf_fetch_pipelines_request", fetch_pipelines_request)
         output.register_callback("rf_fetch_config", fetch_config)
         output.register_callback("rf_perform_action", perform_action)
+        print(">>> [Python] All callbacks registered successfully!")
 
     
 
@@ -219,8 +239,14 @@ class NotebookUI:
                     
                     async function fetchPipelinesColabCallback() {{
                         try {{
-                            console.log('Fetching pipelines using colab callback...');
+                            console.log('=== Colab API Check ===');
+                            console.log('google:', typeof google);
+                            console.log('google.colab:', typeof google?.colab);
+                            console.log('google.colab.kernel:', typeof google?.colab?.kernel);
+                            console.log('invokeFunction:', typeof google?.colab?.kernel?.invokeFunction);
+                            console.log('========================');
 
+                            console.log('Fetching pipelines using colab callback...');
                             const result = await google.colab.kernel.invokeFunction('rf_fetch_pipelines', [], {{}});
                             console.log('Fetch result:', result);
 
@@ -485,6 +511,17 @@ class NotebookUI:
         """
 
     def display(self):
-        """Display the UI"""
-        self._register_colab_callbacks()
+        """
+        Display the UI.
+
+        IMPORTANT: Call register_callbacks() in a separate cell BEFORE calling this method.
+
+        Usage:
+            # Cell 1:
+            ui = NotebookUI()
+            ui.register_callbacks()
+
+            # Cell 2:
+            ui.display()
+        """
         display(HTML(self._generate_html()))

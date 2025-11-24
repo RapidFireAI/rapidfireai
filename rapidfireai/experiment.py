@@ -181,6 +181,13 @@ class Experiment:
         # Initialize notebook UI controller with auth token for Colab
         self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
 
+        # Register Colab callbacks early (before display is called)
+        # This ensures callbacks are registered before JavaScript tries to invoke them
+        try:
+            self.notebook_ui.register_callbacks()
+        except Exception as e:
+            self.logger.warning(f"Failed to register notebook UI callbacks (not running in Colab?): {e}")
+
     def run_fit(
         self,
         param_config: Any,
