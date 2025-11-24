@@ -13,6 +13,8 @@ class NotebookUI:
 
     def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0, auth_token: str | None = None):
         self.dispatcher_url = dispatcher_url.rstrip("/")
+        if self.dispatcher_url in ['http://127.0.0.1:8851', 'http://0.0.0.0:8851']:
+            self.dispatcher_url = f"https://localhost:8851"
         self.widget_id = f"controller_{uuid.uuid4().hex[:8]}"
         self.refresh_rate = refresh_rate_seconds
         self.is_polling = False
@@ -229,7 +231,9 @@ class NotebookUI:
                             showMessage(`✓ ${{action}} completed for pipeline ${{currentPipelineId}}`, 'success');
 
                             // Refresh after a short delay
-                            setTimeout(fetchPipelines, 500);
+                            setTimeout(async () => {{
+                                await fetchPipelines();
+                            }}, 500);
 
                         }} catch (error) {{
                             showMessage(`Error: ${{error.message}}`, 'error');
@@ -292,7 +296,9 @@ class NotebookUI:
                             disableCloneMode();
 
                             // Refresh after delay
-                            setTimeout(fetchPipelines, 1000);
+                            setTimeout(async () => {{
+                                await fetchPipelines();
+                            }}, 1000);
 
                         }} catch (error) {{
                             showMessage(`Error cloning: ${{error.message}}`, 'error');
@@ -320,13 +326,13 @@ class NotebookUI:
 
                     // Initial fetch
                     console.log('UI initialized, fetching initial data...');
-                    setTimeout(() => {{
-                        fetchPipelines();
+                    setTimeout(async () => {{
+                        await fetchPipelines();
 
-                        // Start polling
-                        pollingInterval = setInterval(fetchPipelines, {self.refresh_rate * 1000});
-                        console.log('Polling started: every {self.refresh_rate}s');
-                    }}, 1000);
+                        // Start polling - use HTTP fetch (works even when kernel is busy)
+                        pollingInterval = setInterval(async () => {{
+                            await fetchPipelines();
+                    }}, {self.refresh_rate * 1000});
 
                     // Cleanup on unload
                     window.addEventListener('beforeunload', () => {{
