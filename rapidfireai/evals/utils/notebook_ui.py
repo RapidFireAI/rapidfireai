@@ -440,6 +440,8 @@ class NotebookUI:
                     }});
 
                     // Initial fetch
+                    await fetchPipelinesColabCallback();
+                    
                     console.log('UI initialized, fetching initial data...');
                     setTimeout(async () => {{
                         await fetchPipelinesColabCallback();
