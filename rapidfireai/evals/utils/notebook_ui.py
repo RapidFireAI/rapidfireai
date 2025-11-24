@@ -115,7 +115,7 @@ class NotebookUI:
                                 'Content-Type': 'application/json'
                             }},
                             mode: 'cors',
-                            credentials: 'omit'
+                            credentials: 'include'  // Include cookies for Colab proxy auth
                         }};
 
                         if (body) {{
