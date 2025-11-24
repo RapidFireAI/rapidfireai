@@ -211,7 +211,7 @@ class NotebookUI:
                         cancelCloneBtn: document.getElementById('cancel-clone-btn')
                     }};
 
-                    // Use fetch API with explicit CORS mode and optional auth token
+                    // Use fetch API with credentials for Colab proxy auth
                     async function xhrRequest(url, method = 'GET', body = null) {{
                         const options = {{
                             method: method,
@@ -219,13 +219,8 @@ class NotebookUI:
                                 'Content-Type': 'application/json'
                             }},
                             mode: 'cors',
-                            credentials: 'omit'
+                            credentials: 'include'  // Include cookies for Colab proxy auth
                         }};
-
-                        // Add Authorization header if auth token is available (for Colab)
-                        if (AUTH_TOKEN) {{
-                            options.headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
-                        }}
 
                         if (body) {{
                             options.body = JSON.stringify(body);
