@@ -35,6 +35,8 @@ class NotebookUI:
         from google.colab import output
 
         db = RFDatabase()
+        auth_token = self.auth_token
+        list_pipelines_url = f"{self.dispatcher_url}/dispatcher/list-all-pipeline-ids"
 
         def fetch_pipelines():
             try:
@@ -43,16 +45,15 @@ class NotebookUI:
             except Exception as e:
                 return {"error": str(e)}
             
-        def fetch_pipelines_request(self):
-            url = f"{self.dispatcher_url}/dispatcher/list-all-pipeline-ids"
+        def fetch_pipelines_request():
             headers = {"Content-Type": "application/json"}
 
             # Add Authorization header if auth token is available (for Colab)
-            if self.auth_token:
-                headers["Authorization"] = f"Bearer {self.auth_token}"
+            if auth_token:
+                headers["Authorization"] = f"Bearer {auth_token}"
 
             try:
-                response = requests.get(url, headers=headers, timeout=10)
+                response = requests.get(list_pipelines_url, headers=headers, timeout=10)
                 response.raise_for_status()  # Raise HTTPError for bad status codes
                 return response.json()
             except requests.exceptions.RequestException as e:
