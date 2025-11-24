@@ -35,7 +35,6 @@ unstructured>=0.18.15
 # Notebook
 
 # # JSON Query Tool
-# jq>=1.10.0
 
 # Other
 requests==2.32.5
@@ -46,8 +45,7 @@ datasets
 jupyter
 grpcio
 faiss-gpu-cu12
-# https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0rc3/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl
 # fsspec>=2023.1.0,<=2025.3.0
 
-# vllm==0.7.2
-# faiss-gpu-cu12==1.12.0
+# vllm==0.10.2
+# faiss-gpu-cu12==1.13.0
