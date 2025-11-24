@@ -17,7 +17,7 @@ from waitress import serve
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.utils.constants import ICOperation, DispatcherConfig
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:8853", "http://localhost", DispatcherConfig.URL]
+CORS_ALLOWED_ORIGINS = "*"  # Allow all origins
 
 
 class Dispatcher:
@@ -45,7 +45,7 @@ class Dispatcher:
             self.app,
             resources={
                 r"/*": {
-                    "origins": "*",
+                    "origins": CORS_ALLOWED_ORIGINS,
                     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                     "allow_headers": ["Content-Type", "Authorization"],
                     "expose_headers": ["Content-Type"],
@@ -66,7 +66,7 @@ class Dispatcher:
         def handle_preflight():
             if request.method == "OPTIONS":
                 response = jsonify({})
-                response.headers.add("Access-Control-Allow-Origin", "*")
+                response.headers.add("Access-Control-Allow-Origin", CORS_ALLOWED_ORIGINS)
                 response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
                 response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
                 response.headers.add("Access-Control-Max-Age", "3600")
@@ -484,14 +484,14 @@ class Dispatcher:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
-def run_dispatcher(host: str = "127.0.0.1", port: int = 8851) -> None:
+def run_dispatcher(host: str = "0.0.0.0", port: int = 8851) -> None:
     """
     Run the dispatcher server.
 
     This function is designed to be called in a separate thread from the main experiment.
 
     Args:
-        host: Host to bind to (default: 127.0.0.1)
+        host: Host to bind to (default: 0.0.0.0)
         port: Port to bind to (default: 8851)
     """
     try:
@@ -540,7 +540,7 @@ def _cleanup_old_dispatcher(port: int, logger=None) -> None:
         pass  # lsof might not be available
 
 
-def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=None) -> threading.Thread | None:
+def start_dispatcher_thread(host: str = "0.0.0.0", port: int = 8851, logger=None) -> threading.Thread | None:
     """
     Start the dispatcher REST API server in a background daemon thread.
 
@@ -549,7 +549,7 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=No
     cleans up when the experiment ends.
 
     Args:
-        host: Host to bind to (default: 127.0.0.1, localhost only)
+        host: Host to bind to (default: 0.0.0.0, localhost only)
         port: Port to bind to (default: 8851)
         logger: Optional logger instance for logging (if None, uses print)
 
