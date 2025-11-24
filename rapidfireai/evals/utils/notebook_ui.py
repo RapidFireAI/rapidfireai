@@ -82,7 +82,8 @@ class NotebookUI:
             <script>
                 (function() {{
                     const WIDGET_ID = '{self.widget_id}';
-                    const DISPATCHER_URL = '{self.dispatcher_url}';
+                    // Use https://localhost for Colab proxy (translates to http on kernel)
+                    const DISPATCHER_URL = 'https://localhost:8851';
                     let currentPipelineId = null;
                     let currentConfig = null;
                     let currentContextId = null;
@@ -222,7 +223,9 @@ class NotebookUI:
                             showMessage(`✓ ${{action}} completed for pipeline ${{currentPipelineId}}`, 'success');
 
                             // Refresh after a short delay
-                            setTimeout(fetchPipelines, 500);
+                            setTimeout(async () => {{
+                                await fetchPipelines();
+                            }}, 500);
 
                         }} catch (error) {{
                             showMessage(`Error: ${{error.message}}`, 'error');
@@ -285,7 +288,9 @@ class NotebookUI:
                             disableCloneMode();
 
                             // Refresh after delay
-                            setTimeout(fetchPipelines, 1000);
+                            setTimeout(async () => {{
+                                await fetchPipelines();
+                            }}, 1000);
 
                         }} catch (error) {{
                             showMessage(`Error cloning: ${{error.message}}`, 'error');
@@ -313,11 +318,13 @@ class NotebookUI:
 
                     // Initial fetch
                     console.log('UI initialized, fetching initial data...');
-                    setTimeout(() => {{
-                        fetchPipelines();
+                    setTimeout(async () => {{
+                        await fetchPipelines();
 
-                        // Start polling
-                        pollingInterval = setInterval(fetchPipelines, {self.refresh_rate * 1000});
+                        // Start polling - use HTTP fetch (works even when kernel is busy)
+                        pollingInterval = setInterval(async () => {{
+                            await fetchPipelines();
+                        }}, {self.refresh_rate * 1000});
                         console.log('Polling started: every {self.refresh_rate}s');
                     }}, 1000);
 
