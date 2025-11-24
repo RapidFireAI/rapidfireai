@@ -5,6 +5,7 @@ This works in VS Code notebooks by using the vscode notebook API instead of Jupy
 
 import uuid
 
+import requests
 from IPython.display import HTML, display
 from rapidfireai.evals.db.rf_db import RFDatabase
 
@@ -41,6 +42,21 @@ class NotebookUI:
                 return {"data": pipelines}
             except Exception as e:
                 return {"error": str(e)}
+            
+        def fetch_pipelines_request(self):
+            url = f"{self.dispatcher_url}/dispatcher/list-all-pipeline-ids"
+            headers = {"Content-Type": "application/json"}
+
+            # Add Authorization header if auth token is available (for Colab)
+            if self.auth_token:
+                headers["Authorization"] = f"Bearer {self.auth_token}"
+
+            try:
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()  # Raise HTTPError for bad status codes
+                return response.json()
+            except requests.exceptions.RequestException as e:
+                return {"error": str(e)}
         
         def fetch_config(pipeline_id):
             try:
@@ -62,8 +78,11 @@ class NotebookUI:
                 return {"success": False, "error": str(e)}
         
         output.register_callback("rf_fetch_pipelines", fetch_pipelines)
+        output.register_callback("rf_fetch_pipelines_request", fetch_pipelines_request)
         output.register_callback("rf_fetch_config", fetch_config)
         output.register_callback("rf_perform_action", perform_action)
+
+    
 
     def _generate_html(self):
         """Generate HTML using fetch API for communication"""
@@ -184,9 +203,9 @@ class NotebookUI:
                     
                     async function fetchPipelinesColabCallback() {{
                         try {{
-                            console.log('Fetching pipelines using colab callback...');
+                            console.log('Fetching pipelines using colab callback via http request...');
 
-                            const result = await google.colab.kernel.invokeFunction('rf_fetch_pipelines', [], {{}});
+                            const result = await google.colab.kernel.invokeFunction('rf_fetch_pipelines_request', [], {{}});
                             console.log('Fetch result:', result);
                             const pipelines = result.data['application/json'].data;
                             console.log('Got pipelines:', pipelines.length);
