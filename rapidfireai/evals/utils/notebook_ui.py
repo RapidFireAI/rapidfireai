@@ -183,7 +183,8 @@ class NotebookUI:
             <script>
                 (function() {{
                     const WIDGET_ID = '{self.widget_id}';
-                    const DISPATCHER_URL = '{self.dispatcher_url}';
+                    // Use https://localhost for Colab proxy (translates to http on kernel)
+                    const DISPATCHER_URL = 'https://localhost:8851';
                     console.log('Dispatcher URL:', DISPATCHER_URL);
                     console.log('pipelines url:', DISPATCHER_URL + '/dispatcher/list-all-pipeline-ids');
                     const AUTH_TOKEN = {f"'{self.auth_token}'" if self.auth_token else 'null'};
@@ -356,7 +357,7 @@ class NotebookUI:
                             }} else {{
                                 selector.value = pipelines[0].pipeline_id;
                                 currentPipelineId = pipelines[0].pipeline_id;
-                                fetchPipelineConfigColabCallback(currentPipelineId);
+                                fetchPipelineConfig(currentPipelineId);
                             }}
 
                             // Update status display
@@ -397,7 +398,7 @@ class NotebookUI:
 
                             // Refresh after a short delay
                             setTimeout(async () => {{
-                                await fetchPipelinesColabCallback();
+                                await fetchPipelines();
                             }}, 500);
 
                         }} catch (error) {{
@@ -462,7 +463,7 @@ class NotebookUI:
 
                             // Refresh after delay
                             setTimeout(async () => {{
-                                await fetchPipelinesColabCallback();
+                                await fetchPipelines();
                             }}, 1000);
 
                         }} catch (error) {{
@@ -474,7 +475,7 @@ class NotebookUI:
                     el.pipelineSelector.addEventListener('change', (e) => {{
                         if (e.target.value) {{
                             currentPipelineId = parseInt(e.target.value);
-                            fetchPipelineConfigColabCallback(currentPipelineId);
+                            fetchPipelineConfig(currentPipelineId);
                         }}
                     }});
 
@@ -492,11 +493,11 @@ class NotebookUI:
                     // Initial fetch
                     console.log('UI initialized, fetching initial data...');
                     setTimeout(async () => {{
-                        await fetchPipelinesColabCallback();
+                        await fetchPipelines();
 
-                        // Start polling - wrap async call properly
+                        // Start polling - use HTTP fetch (works even when kernel is busy)
                         pollingInterval = setInterval(async () => {{
-                            await fetchPipelinesColabCallback();
+                            await fetchPipelines();
                         }}, {self.refresh_rate * 1000});
                         console.log('Polling started: every {self.refresh_rate}s');
                     }}, 1000);
