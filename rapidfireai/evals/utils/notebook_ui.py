@@ -39,7 +39,7 @@ class NotebookUI:
         list_pipelines_url = f"{self.dispatcher_url}/dispatcher/list-all-pipeline-ids"
 
         def fetch_pipelines():
-            return [{"pipeline_id":8,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":7,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":6,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":5,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":4,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":3,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":2,"shards_completed":0,"status":"ongoing","total_samples_processed":0},{"pipeline_id":1,"shards_completed":0,"status":"ongoing","total_samples_processed":0}]
+            return {"data": [{"pipeline_id":8,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":7,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":6,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":5,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":4,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":3,"shards_completed":0,"status":"new","total_samples_processed":0},{"pipeline_id":2,"shards_completed":0,"status":"ongoing","total_samples_processed":0},{"pipeline_id":1,"shards_completed":0,"status":"ongoing","total_samples_processed":0}]}
             # try:
             #     pipelines = db.get_all_pipeline_ids()
             #     return {"data": pipelines}
@@ -203,13 +203,13 @@ class NotebookUI:
                         return await response.json();
                     }}
                     
-                    function fetchPipelinesColabCallback() {{
+                    async function fetchPipelinesColabCallback() {{
                         try {{
                             console.log('Fetching pipelines using colab callback via http request...');
 
-                            const result = google.colab.kernel.invokeFunction('rf_fetch_pipelines', [], {{}});
+                            const result = await google.colab.kernel.invokeFunction('rf_fetch_pipelines', [], {{}});
                             console.log('Fetch result:', result);
-                            const pipelines = result.data['application/json'].data;
+                            const pipelines = result.data['application/json'];
                             console.log('Got pipelines:', pipelines.length);
 
                             updatePipelinesDropdown(pipelines);
