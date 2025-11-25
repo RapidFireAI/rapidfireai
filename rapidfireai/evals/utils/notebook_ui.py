@@ -335,7 +335,9 @@ class NotebookUI:
                         // Start polling - use HTTP fetch (works even when kernel is busy)
                         pollingInterval = setInterval(async () => {{
                             await fetchPipelines();
-                    }}, {self.refresh_rate * 1000});
+                        }}, {self.refresh_rate * 1000});
+                        console.log('Polling started: every {self.refresh_rate}s');
+                    }}, 1000);
 
                     // Cleanup on unload
                     window.addEventListener('beforeunload', () => {{
