@@ -331,7 +331,7 @@ def run_doctor():
     # Get torch cuda version
     major, minor, patch, torch_cuda_major, torch_cuda_minor = get_torch_version()
     if int(major) > 0:
-        print(f"Torch Verion: {major}.{minor}.{patch}")
+        print(f"Torch Version: {major}.{minor}.{patch}")
     else:
         status = 1 if status == 0 else status
         print("⚠️ Torch version not found") 
@@ -588,9 +588,14 @@ def install_packages(evals: bool = False):
         torch_cuda = "cu121"
         flash_cuda = "cu121"
 
+    if is_colab:
+        flash_cuda = "cu128"
 
     if not evals:
         pass
+
+    if evals and is_colab:
+        packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
 
     
     ## TODO: re-enable for fit once trl has fix
