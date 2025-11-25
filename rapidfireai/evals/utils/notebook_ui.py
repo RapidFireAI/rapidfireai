@@ -12,7 +12,7 @@ from rapidfireai.evals.utils.constants import _is_running_in_colab, DispatcherCo
 class NotebookUI:
     """Notebook UI that works in VS Code"""
 
-    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0):
+    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0, auth_token: str | None = None):
         if _is_running_in_colab():
             self.dispatcher_url = f"https://localhost:{DispatcherConfig.PORT}"
         else:
@@ -22,6 +22,7 @@ class NotebookUI:
         self.is_polling = False
         self.polling_thread = None
         self.pending_actions = []
+        self.auth_token = auth_token
 
     def _generate_html(self):
         """Generate HTML using fetch API for communication"""
