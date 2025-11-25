@@ -14,11 +14,10 @@ class NotebookUI:
     """Notebook UI that works in VS Code"""
 
     def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0, auth_token: str | None = None):
-        # if _is_running_in_colab():
-        #     self.dispatcher_url = f"https://localhost:{DispatcherConfig.PORT}"
-        # else:
-        #     self.dispatcher_url = dispatcher_url.rstrip("/")
-        self.dispatcher_url = "http://localhost:8851"
+        if _is_running_in_colab():
+            self.dispatcher_url = f"https://localhost:{DispatcherConfig.PORT}"
+        else:
+            self.dispatcher_url = dispatcher_url.rstrip("/")
         self.widget_id = f"controller_{uuid.uuid4().hex[:8]}"
         self.refresh_rate = refresh_rate_seconds
         self.is_polling = False
