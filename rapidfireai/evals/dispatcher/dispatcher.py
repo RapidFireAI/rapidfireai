@@ -17,7 +17,6 @@ from waitress import serve
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.utils.constants import ICOperation, DispatcherConfig
 
-#  CORS_ALLOWED_ORIGINS = ["http://localhost:8853", "http://localhost", DispatcherConfig.URL, "*", "http://*:*"]
 CORS_ALLOWED_ORIGINS = "*" # Allow all origins
 
 class Dispatcher:
@@ -41,15 +40,16 @@ class Dispatcher:
 
         # Enable CORS for local development
         # Dispatcher runs on localhost, safe to allow all origins
+        # supports_credentials=True is required for Colab proxy auth (credentials: 'include' in JS)
         _ = CORS(
             self.app,
             resources={
                 r"/*": {
-                    "origins": "*",
+                    "origins": CORS_ALLOWED_ORIGINS,
                     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                     "allow_headers": ["Content-Type", "Authorization"],
                     "expose_headers": ["Content-Type"],
-                    "supports_credentials": False,
+                    "supports_credentials": True,
                 }
             },
         )
@@ -66,7 +66,7 @@ class Dispatcher:
         def handle_preflight():
             if request.method == "OPTIONS":
                 response = jsonify({})
-                response.headers.add("Access-Control-Allow-Origin", "*")
+                response.headers.add("Access-Control-Allow-Origin", CORS_ALLOWED_ORIGINS)
                 response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
                 response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
                 response.headers.add("Access-Control-Max-Age", "3600")
