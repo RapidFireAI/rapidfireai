@@ -595,7 +595,8 @@ def install_packages(evals: bool = False):
         pass
 
     if evals and is_colab:
-        packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
+        # packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
+        pass
 
     
     ## TODO: re-enable for fit once trl has fix
