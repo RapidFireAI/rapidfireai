@@ -135,9 +135,9 @@ class NotebookUI:
 
                     async function fetchPipelines() {{
                         try {{
-                            console.log('Fetching pipelines...');
+                            # console.log('Fetching pipelines...');
                             const pipelines = await xhrRequest(DISPATCHER_URL + '/dispatcher/list-all-pipeline-ids');
-                            console.log('Got pipelines:', pipelines.length);
+                            # console.log('Got pipelines:', pipelines.length);
 
                             updatePipelinesDropdown(pipelines);
                             el.lastUpdate.textContent = new Date().toLocaleTimeString();
