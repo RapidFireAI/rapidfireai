@@ -4,7 +4,6 @@ This works in VS Code notebooks by using the vscode notebook API instead of Jupy
 """
 
 import uuid
-import os
 
 from IPython.display import HTML, display
 from rapidfireai.evals.utils.constants import _is_running_in_colab, DispatcherConfig
@@ -13,7 +12,7 @@ from rapidfireai.evals.utils.constants import _is_running_in_colab, DispatcherCo
 class NotebookUI:
     """Notebook UI that works in VS Code"""
 
-    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0, auth_token: str | None = None):
+    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0):
         if _is_running_in_colab():
             self.dispatcher_url = f"https://localhost:{DispatcherConfig.PORT}"
         else:
@@ -23,7 +22,6 @@ class NotebookUI:
         self.is_polling = False
         self.polling_thread = None
         self.pending_actions = []
-        self.auth_token = auth_token
 
     def _generate_html(self):
         """Generate HTML using fetch API for communication"""
@@ -89,7 +87,6 @@ class NotebookUI:
                 (function() {{
                     const WIDGET_ID = '{self.widget_id}';
                     const DISPATCHER_URL = '{self.dispatcher_url}';
-                    const AUTH_TOKEN = {f"'{self.auth_token}'" if self.auth_token else 'null'};
                     let currentPipelineId = null;
                     let currentConfig = null;
                     let currentContextId = null;
@@ -123,11 +120,6 @@ class NotebookUI:
                             mode: 'cors',
                             credentials: 'include'  // Include cookies for Colab proxy auth
                         }};
-
-                        // Add Authorization header if auth token is available (for Colab)
-                        if (AUTH_TOKEN) {{
-                            options.headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
-                        }}
 
                         if (body) {{
                             options.body = JSON.stringify(body);
