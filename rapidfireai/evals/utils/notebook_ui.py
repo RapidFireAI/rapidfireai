@@ -4,17 +4,20 @@ This works in VS Code notebooks by using the vscode notebook API instead of Jupy
 """
 
 import uuid
+import os
 
 from IPython.display import HTML, display
+from rapidfireai.evals.utils.constants import _is_running_in_colab, DispatcherConfig
 
 
 class NotebookUI:
     """Notebook UI that works in VS Code"""
 
     def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0, auth_token: str | None = None):
-        self.dispatcher_url = dispatcher_url.rstrip("/")
-        if self.dispatcher_url in ['http://127.0.0.1:8851', 'http://0.0.0.0:8851']:
-            self.dispatcher_url = f"https://localhost:8851"
+        if _is_running_in_colab():
+            self.dispatcher_url = f"https://localhost:{DispatcherConfig.PORT}"
+        else:
+            self.dispatcher_url = dispatcher_url.rstrip("/")
         self.widget_id = f"controller_{uuid.uuid4().hex[:8]}"
         self.refresh_rate = refresh_rate_seconds
         self.is_polling = False
@@ -118,7 +121,7 @@ class NotebookUI:
                                 'Content-Type': 'application/json'
                             }},
                             mode: 'cors',
-                            credentials: 'omit'
+                            credentials: 'include'  // Include cookies for Colab proxy auth
                         }};
 
                         // Add Authorization header if auth token is available (for Colab)
