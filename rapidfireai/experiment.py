@@ -114,7 +114,8 @@ class Experiment:
         from rapidfireai.evals.db import RFDatabase
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.evals.utils.constants import DispatcherConfig, get_colab_auth_token, get_dispatcher_url, get_ray_port
+        from rapidfireai.utils.colab import get_colab_auth_token
+        from rapidfireai.evals.utils.constants import DispatcherConfig, get_dispatcher_url, get_ray_port
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
         from rapidfireai.evals.utils.notebook_ui import NotebookUI

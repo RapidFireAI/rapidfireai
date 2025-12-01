@@ -6,14 +6,15 @@ This works in VS Code notebooks by using the vscode notebook API instead of Jupy
 import uuid
 
 from IPython.display import HTML, display
-from rapidfireai.evals.utils.constants import _is_running_in_colab, DispatcherConfig
+from rapidfireai.evals.utils.constants import  DispatcherConfig
+from rapidfireai.utils.colab import is_running_in_colab
 
 
 class NotebookUI:
     """Notebook UI that works in VS Code"""
 
     def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0, auth_token: str | None = None):
-        if _is_running_in_colab():
+        if is_running_in_colab():
             self.dispatcher_url = f"https://localhost:{DispatcherConfig.PORT}"
         else:
             self.dispatcher_url = dispatcher_url.rstrip("/")

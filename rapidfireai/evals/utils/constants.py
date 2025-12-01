@@ -1,5 +1,6 @@
 import os
 from enum import Enum
+from rapidfireai.utils.colab import is_running_in_colab
 
 # Logging Constants
 LOG_FILENAME = "rapidfire.log"
@@ -27,26 +28,6 @@ def get_ray_port() -> int:
     """Get the port for the Ray server."""
     return int(os.getenv("RF_RAY_PORT", "8855"))
 
-def _is_running_in_colab() -> bool:
-    """
-    Check if code is running in Google Colab (not regular Jupyter).
-
-    Returns:
-        True if in Google Colab, False otherwise (including regular Jupyter notebooks)
-    """
-    try:
-        # Check for google.colab module (only exists in Colab)
-        import google.colab
-
-        # Additional check: verify we can access Colab-specific APIs
-        from google.colab.output import eval_js
-
-        # If both succeed, we're in Colab
-        return True
-    except (ImportError, AttributeError):
-        # Not in Colab (could be Jupyter, local Python, etc.)
-        return False
-
 
 def get_dispatcher_url() -> str:
     """
@@ -56,7 +37,7 @@ def get_dispatcher_url() -> str:
         - In Google Colab: Uses Colab's kernel proxy URL (e.g., https://xxx-8851-xxx.ngrok-free.app)
         - In Jupyter/Local: Uses localhost URL (http://127.0.0.1:8851)
     """
-    if _is_running_in_colab():
+    if is_running_in_colab():
         try:
             from google.colab.output import eval_js
 
@@ -81,7 +62,7 @@ def get_colab_auth_token() -> str | None:
         - In Google Colab: The authorization token string
         - In Jupyter/Local: None
     """
-    if not _is_running_in_colab():
+    if not is_running_in_colab():
         # Not in Colab (regular Jupyter, local, etc.) - no auth needed
         return None
 

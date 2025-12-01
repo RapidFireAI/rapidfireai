@@ -13,6 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 from importlib.resources import files
+from rapidfireai.utils.colab import is_running_in_colab
 from rapidfireai.evals.utils.get_ip_address import get_ip_address
 from rapidfireai.evals.utils.constants import DispatcherConfig
 
@@ -485,7 +486,7 @@ def install_packages(evals: bool = False):
     compute_capability = get_compute_capability()
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
-    is_colab = os.getenv("COLAB_BACKEND_VERSION")
+    is_colab = is_running_in_colab()
     setup_directory = None
     for site_package in site_packages.split(","):
         if os.path.exists(os.path.join(site_package, "setup", "fit")):
