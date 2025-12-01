@@ -20,10 +20,11 @@ RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
 RF_LOG_PATH="${RF_LOG_PATH:=$HOME/logs}"
 
 # Colab mode configuration
-if [ -z "$COLAB_BACKEND_VERSION" ]; then
+if [ -z "${COLAB_GPU+x}" ]; then
     RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=mlflow}
     RF_COLAB_MODE=${RF_COLAB_MODE:=false}
 else
+    echo "Google Colab environment detected"
     RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=tensorboard}
     RF_COLAB_MODE=${RF_COLAB_MODE:=true}
 fi
