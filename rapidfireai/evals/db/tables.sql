@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS pipelines (
     current_shard_id INTEGER DEFAULT 0,  -- Next shard to process
     shards_completed INTEGER DEFAULT 0,  -- Number of shards completed
     total_samples_processed INTEGER DEFAULT 0,
+    mlflow_run_id TEXT,  -- MLflow run ID for this pipeline
     error TEXT DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 

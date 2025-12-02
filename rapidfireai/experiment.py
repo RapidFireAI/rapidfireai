@@ -114,9 +114,10 @@ class Experiment:
         from rapidfireai.evals.db import RFDatabase
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.evals.utils.constants import DispatcherConfig, get_dispatcher_url
+        from rapidfireai.evals.utils.constants import DispatcherConfig, MLFlowConfig, get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
+        from rapidfireai.evals.utils.mlflow_manager import MLflowManager
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
 
         # Store ray reference for later use
@@ -160,10 +161,25 @@ class Experiment:
         # Create database reference
         self.db = RFDatabase()
 
+        # Initialize MLflow
+        try:
+            self.mlflow_manager = MLflowManager(MLFlowConfig.URL)
+            mlflow_experiment_id = self.mlflow_manager.create_experiment(self.experiment_name)
+            self.db.db.execute(
+                "UPDATE experiments SET mlflow_experiment_id = ? WHERE experiment_id = ?",
+                (mlflow_experiment_id, self.experiment_id),
+            )
+            self.db.db.conn.commit()
+            self.logger.info(f"Initialized MLflow experiment: {mlflow_experiment_id}")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize MLflow: {e}. MLflow logging will be disabled.")
+            self.mlflow_manager = None
+
         # Initialize the controller
         self.controller = Controller(
             experiment_name=self.experiment_name,
             experiment_path=self.experiment_path,
+            mlflow_manager=self.mlflow_manager if hasattr(self, "mlflow_manager") else None,
         )
 
         # Start dispatcher in background thread for interactive control
