@@ -153,12 +153,13 @@ class Experiment:
 
         # Initialize Ray with runtime environment for CUDA initialization
         # This fixes AWS-specific CUDA/cuBLAS initialization issues
+        ray_port = get_ray_port()
         ray.init(
             logging_level=logging.INFO,
             log_to_driver=True,
             configure_logging=True,
             ignore_reinit_error=True,
-            dashboard_port=get_ray_port(),
+            dashboard_port=ray_port,
             # Disable metrics export to prevent "Failed to establish connection" errors
             _metrics_export_port=None,
             runtime_env={
@@ -171,6 +172,15 @@ class Experiment:
                 }
             },
         )
+        if is_running_in_colab():
+            try:
+                from google.colab.output import eval_js
+
+                # Get the Colab proxy URL for the dispatcher port
+                proxy_url = eval_js(f"google.colab.kernel.proxyPort({ray_port})")
+                print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
+            except Exception as e:
+                print(f"⚠️ Colab detected but failed to get proxy URL: {e}")
 
         # Create database reference
         self.db = RFDatabase()
