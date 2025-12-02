@@ -824,7 +824,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
     if args.colab:
         os.environ["RF_COLAB_MODE"] = "true"
-    elif is_running_in_colab():
+    elif is_running_in_colab() and os.getenv("RF_COLAB_MODE") is None:
         os.environ["RF_COLAB_MODE"] = "true"
 
     # Handle doctor command separately
