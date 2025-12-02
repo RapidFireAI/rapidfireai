@@ -7,7 +7,7 @@ LOG_FILENAME = "rapidfire.log"
 
 # Actor Constants
 NUM_QUERY_PROCESSING_ACTORS = 4
-NUM_CPUS_PER_DOC_ACTOR = 2 if not is_running_in_colab() else 0.5
+NUM_CPUS_PER_DOC_ACTOR = 2 if not is_running_in_colab() else 1
 
 # Rate Limiting Constants
 # Maximum number of retries for rate-limited API calls

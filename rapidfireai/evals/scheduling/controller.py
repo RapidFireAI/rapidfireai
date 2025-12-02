@@ -310,7 +310,7 @@ class Controller:
             if needs_gpu and not is_running_in_colab():
                 num_gpus_for_actor = 1
             elif needs_gpu and is_running_in_colab():
-                num_gpus_for_actor = 0.25
+                num_gpus_for_actor = 0.5
             else:
                 num_gpus_for_actor = 0
             num_cpus_for_actor = NUM_CPUS_PER_DOC_ACTOR
