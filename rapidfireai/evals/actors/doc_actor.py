@@ -10,6 +10,8 @@ import os
 from typing import Any
 
 import faiss
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import ray
 
 from rapidfireai.evals.rag.prompt_manager import PromptManager

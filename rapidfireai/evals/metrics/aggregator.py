@@ -1,7 +1,8 @@
 from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
-
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import ray
 
 from .online_strategies import (
