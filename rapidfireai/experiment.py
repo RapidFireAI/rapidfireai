@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
+from rapidfireai.utils.colab import is_running_in_colab
 
 
 class Experiment:
@@ -329,9 +330,9 @@ class Experiment:
         available_cpus = self._ray.cluster_resources().get("CPU", 0)
 
         if gpus_per_actor is None:
-            gpus_per_actor = available_gpus
+            gpus_per_actor = available_gpus if not is_running_in_colab() else available_gpus/4
         if cpus_per_actor is None:
-            cpus_per_actor = available_cpus
+            cpus_per_actor = available_cpus if not is_running_in_colab() else available_cpus/4
         if num_actors is None:
             # Default to number of GPUs, or 1 if no GPUs available
             num_actors = int(gpus_per_actor) if gpus_per_actor > 0 else 1
