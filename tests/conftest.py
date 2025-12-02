@@ -92,6 +92,8 @@ def tensorboard_logger(temp_tensorboard_dir):
     Returns:
         TensorBoardMetricLogger: Logger with temp directory
     """
+    import os
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
     from rapidfireai.fit.utils.metric_logger import TensorBoardMetricLogger
 
     return TensorBoardMetricLogger(temp_tensorboard_dir)

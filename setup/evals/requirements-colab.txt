@@ -4,6 +4,7 @@ sentence-transformers>=5.1.0
 
 # Distributed Computing
 ray>=2.51.0
+ray[default]>=2.51.0
 
 # LLM Inference
 transformers>=4.56.1
