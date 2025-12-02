@@ -164,6 +164,8 @@ class Experiment:
                 "env_vars": {
                     # Force CUDA to initialize properly in Ray actors (AWS fix)
                     "CUDA_LAUNCH_BLOCKING": "0",
+                    "CUDA_MODULE_LOADING": "LAZY",
+                    "TF_CPP_MIN_LOG_LEVEL": "3",
                     "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
                 }
             },
