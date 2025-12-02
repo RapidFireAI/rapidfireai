@@ -159,6 +159,8 @@ class Experiment:
             log_to_driver=True,
             configure_logging=True,
             ignore_reinit_error=True,
+            include_dashboard=True,
+            dashboard_host="0.0.0.0",
             dashboard_port=ray_port,
             # Disable metrics export to prevent "Failed to establish connection" errors
             _metrics_export_port=None,
