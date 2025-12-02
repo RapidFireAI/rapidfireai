@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from importlib.resources import files
 from rapidfireai.utils.colab import is_running_in_colab
-from rapidfireai.evals.utils.get_ip_address import get_ip_address
+from rapidfireai.utils.get_ip_address import get_ip_address
 from rapidfireai.evals.utils.constants import DispatcherConfig
 
 from .version import __version__
