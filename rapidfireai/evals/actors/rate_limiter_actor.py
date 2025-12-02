@@ -4,8 +4,6 @@ Ray Actor for centralized OpenAI API rate limiting.
 Provides a single point of coordination for rate limiting across all
 distributed query processing actors.
 """
-import os
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import ray
 
 from rapidfireai.evals.utils.ratelimiter import OpenAIRateLimiter, RequestStatus

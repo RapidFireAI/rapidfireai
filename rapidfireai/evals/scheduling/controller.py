@@ -3,8 +3,6 @@ import json
 import time
 from collections.abc import Callable
 from typing import Any
-import os
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import ray
 
 from rapidfireai.evals.actors.doc_actor import DocProcessingActor

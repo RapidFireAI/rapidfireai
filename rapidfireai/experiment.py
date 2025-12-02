@@ -109,8 +109,6 @@ class Experiment:
     def _init_evals_mode(self) -> None:
         """Initialize evals-specific components."""
         # Import evals-specific modules
-        import os
-        os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
         import ray
 
         from rapidfireai.evals.db import RFDatabase

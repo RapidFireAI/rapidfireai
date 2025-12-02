@@ -105,8 +105,6 @@ class OpenAIInferenceEngine(InferenceEngine):
             max_completion_tokens: Maximum completion tokens per request
         """
         from openai import AsyncOpenAI
-        import os
-        os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
         import ray
 
         if rate_limiter_actor is None:

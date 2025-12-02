@@ -10,8 +10,6 @@ import hashlib
 import os
 from collections.abc import Callable
 from typing import Any
-import os
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import ray
 
 from rapidfireai.evals.actors.inference_engines import InferenceEngine

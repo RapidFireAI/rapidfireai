@@ -32,8 +32,8 @@ dependencies = [
     "waitress>=3.0.2",
 
     # JSON Query Tool
-    "jq==1.10.0",
-    "protobuf==5.29.5",
+    "jq>=1.10.0",
+    # "protobuf==5.29.5",
 
     # Other
     "dill>=0.3.0,<0.3.9",
