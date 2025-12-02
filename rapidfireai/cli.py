@@ -214,8 +214,8 @@ def get_torch_version():
             cuda_minor = cuda_version.split("cu")[1][-1]
         major, minor, patch = version.split("+")[0].split(".")
         return major, minor, patch, cuda_major, cuda_minor
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return ["0","0","0","0","0"]
+    except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
+        return "0","0","0","0","0"
 
 def run_doctor():
     """Run the doctor command to diagnose system issues."""
@@ -384,7 +384,7 @@ def get_cuda_version():
                 return int(match.group(1)), int(match.group(2))
         except (subprocess.CalledProcessError, FileNotFoundError):
             pass
-    return None
+    return 0, 0
 
 
 def get_compute_capability():
