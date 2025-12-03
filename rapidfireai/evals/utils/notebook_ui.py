@@ -6,21 +6,32 @@ This works in VS Code notebooks by using the vscode notebook API instead of Jupy
 import uuid
 
 from IPython.display import HTML, display
+from rapidfireai.utils.constants import  DispatcherConfig
+from rapidfireai.utils.colab import is_running_in_colab
 
 
 class NotebookUI:
     """Notebook UI that works in VS Code"""
 
-    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0):
-        self.dispatcher_url = dispatcher_url.rstrip("/")
+    def __init__(self, dispatcher_url: str = "http://127.0.0.1:8851", refresh_rate_seconds: float = 3.0, auth_token: str | None = None):
+        if is_running_in_colab():
+            self.dispatcher_url = f"https://localhost:{DispatcherConfig.PORT}"
+        else:
+            self.dispatcher_url = dispatcher_url.rstrip("/")
         self.widget_id = f"controller_{uuid.uuid4().hex[:8]}"
         self.refresh_rate = refresh_rate_seconds
         self.is_polling = False
         self.polling_thread = None
         self.pending_actions = []
+        if is_running_in_colab():
+            self.auth_token = auth_token
 
     def _generate_html(self):
         """Generate HTML using fetch API for communication"""
+        if is_running_in_colab():
+            xhr_credentials = "include"
+        else:
+            xhr_credentials = "omit"
         return f"""
         <div id="{self.widget_id}" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto;">
             <style>
@@ -106,7 +117,7 @@ class NotebookUI:
                         cancelCloneBtn: document.getElementById('cancel-clone-btn')
                     }};
 
-                    // Use fetch API with explicit CORS mode
+                    // Use fetch API with explicit CORS mode and optional auth token
                     async function xhrRequest(url, method = 'GET', body = null) {{
                         const options = {{
                             method: method,
@@ -114,7 +125,7 @@ class NotebookUI:
                                 'Content-Type': 'application/json'
                             }},
                             mode: 'cors',
-                            credentials: 'omit'
+                            credentials: '{xhr_credentials}'  // Include cookies for Colab proxy auth
                         }};
 
                         if (body) {{
@@ -222,7 +233,9 @@ class NotebookUI:
                             showMessage(`✓ ${{action}} completed for pipeline ${{currentPipelineId}}`, 'success');
 
                             // Refresh after a short delay
-                            setTimeout(fetchPipelines, 500);
+                            setTimeout(async () => {{
+                                await fetchPipelines();
+                            }}, 500);
 
                         }} catch (error) {{
                             showMessage(`Error: ${{error.message}}`, 'error');
@@ -285,7 +298,9 @@ class NotebookUI:
                             disableCloneMode();
 
                             // Refresh after delay
-                            setTimeout(fetchPipelines, 1000);
+                            setTimeout(async () => {{
+                                await fetchPipelines();
+                            }}, 1000);
 
                         }} catch (error) {{
                             showMessage(`Error cloning: ${{error.message}}`, 'error');
@@ -313,11 +328,13 @@ class NotebookUI:
 
                     // Initial fetch
                     console.log('UI initialized, fetching initial data...');
-                    setTimeout(() => {{
-                        fetchPipelines();
+                    setTimeout(async () => {{
+                        await fetchPipelines();
 
-                        // Start polling
-                        pollingInterval = setInterval(fetchPipelines, {self.refresh_rate * 1000});
+                        // Start polling - use HTTP fetch (works even when kernel is busy)
+                        pollingInterval = setInterval(async () => {{
+                            await fetchPipelines();
+                        }}, {self.refresh_rate * 1000});
                         console.log('Polling started: every {self.refresh_rate}s');
                     }}, 1000);
 

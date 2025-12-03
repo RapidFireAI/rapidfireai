@@ -1,11 +1,14 @@
-from enum import Enum
 import os
+from enum import Enum
+from rapidfireai.utils.colab import is_running_in_colab, get_colab_auth_token
+from rapidfireai.utils.constants import DispatcherConfig
+
 # Logging Constants
 LOG_FILENAME = "rapidfire.log"
 
 # Actor Constants
 NUM_QUERY_PROCESSING_ACTORS = 4
-NUM_CPUS_PER_DOC_ACTOR = 2
+NUM_CPUS_PER_DOC_ACTOR = 2 if not is_running_in_colab() else 1
 
 # Rate Limiting Constants
 # Maximum number of retries for rate-limited API calls
@@ -13,12 +16,10 @@ MAX_RATE_LIMIT_RETRIES = 5
 # Base wait time for exponential backoff (seconds)
 RATE_LIMIT_BACKOFF_BASE = 2
 
-class DispatcherConfig:
-    """Class to manage the dispatcher configuration"""
 
-    HOST: str = os.getenv("RF_API_HOST", "127.0.0.1")
-    PORT: int = int(os.getenv("RF_API_PORT", "8851"))
-    URL: str = f"http://{HOST}:{PORT}"
+def get_ray_port() -> int:
+    """Get the port for the Ray server."""
+    return int(os.getenv("RF_RAY_PORT", "8855"))
 
 
 def get_dispatcher_url() -> str:
@@ -26,22 +27,41 @@ def get_dispatcher_url() -> str:
     Auto-detect dispatcher URL based on environment.
 
     Returns:
-        - In Colab: Uses Colab's kernel proxy URL (e.g., https://xxx-8851-xxx.ngrok-free.app)
-        - In Local: Uses localhost URL (http://127.0.0.1:8851)
+        - In Google Colab: Uses Colab's kernel proxy URL (e.g., https://xxx-8851-xxx.ngrok-free.app)
+        - In Jupyter/Local: Uses localhost URL (http://127.0.0.1:8851)
     """
-    try:
-        # Check if running in Google Colab
-        import google.colab
-        from google.colab.output import eval_js
+    if is_running_in_colab():
+        try:
+            from google.colab.output import eval_js
 
-        # Get the Colab proxy URL for the dispatcher port
-        proxy_url = eval_js(f"google.colab.kernel.proxyPort({DispatcherConfig.PORT})")
-        print(f"🌐 Colab environment detected. Dispatcher URL: {proxy_url}")
-        return proxy_url
-    except ImportError:
-        # Not in Colab - use localhost
-        local_url = DispatcherConfig.URL
-        return local_url
+            # Get the Colab proxy URL for the dispatcher port
+            proxy_url = eval_js(f"google.colab.kernel.proxyPort({DispatcherConfig.PORT})")
+            print(f"🌐 Google Colab detected. Dispatcher URL: {proxy_url}")
+            return proxy_url
+        except Exception as e:
+            print(f"⚠️ Colab detected but failed to get proxy URL: {e}")
+            # Fall back to localhost
+            return DispatcherConfig.URL
+    else:
+        # Running in Jupyter, local Python, or other environment
+        return DispatcherConfig.URL
+
+
+
+def get_dispatcher_headers() -> dict[str, str]:
+    """
+    Get the HTTP headers needed for dispatcher API requests.
+
+    Returns:
+        Dictionary with required headers, including Authorization header in Colab
+    """
+    headers = {"Content-Type": "application/json"}
+
+    auth_token = get_colab_auth_token()
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
+    return headers
 
 
 # TODO: Merge multiple Statuses into a single Status enum

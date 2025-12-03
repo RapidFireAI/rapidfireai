@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
+from rapidfireai.utils.colab import is_running_in_colab
 
 
 class Experiment:
@@ -114,7 +115,9 @@ class Experiment:
         from rapidfireai.evals.db import RFDatabase
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.evals.utils.constants import DispatcherConfig, get_dispatcher_url
+        from rapidfireai.utils.colab import get_colab_auth_token
+        from rapidfireai.utils.constants import DispatcherConfig
+        from rapidfireai.evals.utils.constants import get_dispatcher_url, get_ray_port
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
@@ -149,13 +152,38 @@ class Experiment:
         for msg in log_messages:
             self.logger.info(msg)
 
-        # Initialize Ray
+        # Initialize Ray with runtime environment for CUDA initialization
+        # This fixes AWS-specific CUDA/cuBLAS initialization issues
+        ray_port = get_ray_port()
         ray.init(
             logging_level=logging.INFO,
             log_to_driver=True,
             configure_logging=True,
             ignore_reinit_error=True,
+            include_dashboard=True,
+            dashboard_host="0.0.0.0",
+            dashboard_port=ray_port,
+            # Disable metrics export to prevent "Failed to establish connection" errors
+            _metrics_export_port=None,
+            runtime_env={
+                "env_vars": {
+                    # Force CUDA to initialize properly in Ray actors (AWS fix)
+                    "CUDA_LAUNCH_BLOCKING": "0",
+                    "CUDA_MODULE_LOADING": "LAZY",
+                    "TF_CPP_MIN_LOG_LEVEL": "3",
+                    "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
+                }
+            },
         )
+        if is_running_in_colab():
+            try:
+                from google.colab.output import eval_js
+
+                # Get the Colab proxy URL for the dispatcher port
+                proxy_url = eval_js(f"google.colab.kernel.proxyPort({ray_port})")
+                print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
+            except Exception as e:
+                print(f"⚠️ Colab detected but failed to get proxy URL: {e}")
 
         # Create database reference
         self.db = RFDatabase()
@@ -169,8 +197,8 @@ class Experiment:
         # Start dispatcher in background thread for interactive control
         self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
 
-        # Initialize notebook UI controller
-        self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url())
+        # Initialize notebook UI controller with auth token for Colab
+        self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
 
     def run_fit(
         self,
@@ -207,13 +235,7 @@ class Experiment:
             print("⚠️  Training is already running in background. Please wait for it to complete.")
             return
 
-        # Detect if running in Google Colab
-        try:
-            import google.colab
-
-            in_colab = True
-        except ImportError:
-            in_colab = False
+        in_colab = is_running_in_colab()
 
         if in_colab:
             # Run Controller in background thread to keep kernel responsive
@@ -315,9 +337,9 @@ class Experiment:
         available_cpus = self._ray.cluster_resources().get("CPU", 0)
 
         if gpus_per_actor is None:
-            gpus_per_actor = available_gpus
+            gpus_per_actor = available_gpus if not is_running_in_colab() else available_gpus/2
         if cpus_per_actor is None:
-            cpus_per_actor = available_cpus
+            cpus_per_actor = available_cpus if not is_running_in_colab() else available_cpus/2
         if num_actors is None:
             # Default to number of GPUs, or 1 if no GPUs available
             num_actors = int(gpus_per_actor) if gpus_per_actor > 0 else 1

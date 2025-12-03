@@ -14,10 +14,11 @@ REST API for interactive control of running experiments. Allows dynamic pipeline
 The dispatcher **automatically starts** when you create an `Experiment` object. It runs in a background thread and cleans up automatically when the experiment ends.
 
 ```python
-from rapidfireai.evals.experiment import Experiment
+from rapidfireai import Experiment
 
-# Dispatcher starts automatically on http://127.0.0.1:8851
-experiment = Experiment(experiment_name="my-experiment", num_actors=2)
+# Dispatcher starts automatically on http://127.0.0.1:8851 (local)
+# or via Colab proxy URL (in Google Colab)
+experiment = Experiment(experiment_name="my-experiment", mode="evals")
 
 # Now you can use the dispatcher API for interactive control
 # ...
@@ -25,6 +26,40 @@ experiment = Experiment(experiment_name="my-experiment", num_actors=2)
 # Dispatcher automatically stops when experiment ends
 experiment.end()
 ```
+
+## Environment Support
+
+The dispatcher works in multiple environments:
+- **Local Python** - Uses `http://127.0.0.1:8851`
+- **Jupyter Notebook** - Uses `http://127.0.0.1:8851`
+- **Google Colab** - Automatically uses Colab proxy URL with authentication
+
+### Google Colab
+
+When running in Google Colab, the dispatcher automatically:
+- Detects the Colab environment (not triggered in regular Jupyter notebooks)
+- Uses Colab's proxy URL instead of localhost
+- Adds required authorization headers for proxy authentication
+
+The `NotebookUI` handles this automatically. For manual API requests, use helper functions:
+
+```python
+import requests
+from rapidfireai.evals.utils.constants import get_dispatcher_url, get_dispatcher_headers
+
+# Automatically returns correct URL (Colab proxy or localhost) and headers (with auth if needed)
+dispatcher_url = get_dispatcher_url()
+headers = get_dispatcher_headers()
+
+# Works in Colab, Jupyter, and local environments
+response = requests.get(
+    f"{dispatcher_url}/dispatcher/health-check",
+    headers=headers
+)
+print(response.json())
+```
+
+**Note:** Authorization headers are only included when running in Google Colab, not in regular Jupyter notebooks.
 
 ## Manual Standalone Mode
 
