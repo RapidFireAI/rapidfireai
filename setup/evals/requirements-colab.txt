@@ -1,4 +1,5 @@
 # Colab Packages
+# evals dependencies
 # Core ML/AI Framework
 sentence-transformers>=5.1.0
 
@@ -26,24 +27,11 @@ langchain-huggingface>=1.0.0
 # Data Manipulation & Display
 unstructured>=0.18.15
 
-# # REST API (Dispatcher)
-# flask>=3.1.1
-# flask-cors>=6.0.1
-# waitress>=3.0.2
-
-# Notebook
-
-# # JSON Query Tool
-# jq>=1.10.0
 
 # Other
 requests==2.32.5
-# uv
-# jedi
 vllm
 faiss-gpu-cu12
 fsspec>=2023.1.0,<=2025.3.0
 flashinfer-python>=0.5.3
 flashinfer-cubin>=0.5.3
-# vllm==0.7.2
-# faiss-gpu-cu12==1.12.0
