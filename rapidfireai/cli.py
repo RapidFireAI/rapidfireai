@@ -121,6 +121,8 @@ def get_gpu_info():
             info["cuda_runtime"] = "unknown"
             info["status"] = 2 if info["status"] < 2 else info["status"]
 
+        info["compute_capability"] = get_compute_capability()
+
         # Get GPU count, models, and VRAM
         try:
             result = subprocess.run(
@@ -313,6 +315,7 @@ def run_doctor():
         print(f"Driver Version: {gpu_info['driver_version']}")
         print(f"CUDA Runtime: {gpu_info['cuda_runtime']}")
         print(f"GPU Count: {gpu_info['gpu_count']}")
+        print(f"Compute Capability: {gpu_info['compute_capability']}")
 
         if gpu_info["gpu_count"] > 0:
             if "gpu_details" in gpu_info:
