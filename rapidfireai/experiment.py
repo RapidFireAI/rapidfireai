@@ -234,13 +234,7 @@ class Experiment:
             print("⚠️  Training is already running in background. Please wait for it to complete.")
             return
 
-        # Detect if running in Google Colab
-        try:
-            import google.colab
-
-            in_colab = True
-        except ImportError:
-            in_colab = False
+        in_colab = is_running_in_colab()
 
         if in_colab:
             # Run Controller in background thread to keep kernel responsive
