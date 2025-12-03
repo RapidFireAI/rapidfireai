@@ -489,7 +489,7 @@ def install_packages(evals: bool = False):
     is_colab = is_running_in_colab()
     setup_directory = None
     for site_package in site_packages.split(","):
-        if os.path.exists(os.path.join(site_package, "setup", "fit")):
+        if os.path.exists(os.path.join(site_package.strip(), "setup", "fit")):
             setup_directory = os.path.join(site_package, "setup")
             break
     if not setup_directory:
