@@ -7,6 +7,7 @@
 set -e  # Exit on any error
 
 # Configuration
+RF_JUPYTER_PORT=${RF_JUPYTER_PORT:=8850}
 RF_MLFLOW_PORT=${RF_MLFLOW_PORT:=8852}
 RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=127.0.0.1}
 RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=8853}
@@ -19,8 +20,14 @@ RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
 RF_LOG_PATH="${RF_LOG_PATH:=$HOME/logs}"
 
 # Colab mode configuration
-RF_COLAB_MODE=${RF_COLAB_MODE:=false}
-RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=mlflow}
+if [ -z "${COLAB_GPU+x}" ]; then
+    RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=mlflow}
+    RF_COLAB_MODE=${RF_COLAB_MODE:=false}
+else
+    echo "Google Colab environment detected"
+    RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=tensorboard}
+    RF_COLAB_MODE=${RF_COLAB_MODE:=true}
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -30,7 +37,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # PID file to track processes
-RF_PID_FILE="${RF_PID_FILE:=rapidfire_pids.txt}"
+RF_PID_FILE="${RF_PID_FILE:=$HOME/rapidfire_pids.txt}"
 
 # Directory paths for pip-installed package
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -100,7 +107,7 @@ cleanup() {
     print_warning "Shutting down services..."
 
     # Kill processes by port (more reliable for MLflow)
-    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT; do
+    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT $RF_JUPYTER_PORT; do
         local pids=$(lsof -ti :$port 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
             print_status "Killing processes on port $port"

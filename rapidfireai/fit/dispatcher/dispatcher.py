@@ -8,7 +8,8 @@ from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.fit.utils.constants import LOG_FILENAME, ControllerTask, DispatcherConfig, MLFlowConfig, FrontendConfig
+from rapidfireai.utils.constants import DispatcherConfig
+from rapidfireai.fit.utils.constants import LOG_FILENAME, ControllerTask, MLFlowConfig, FrontendConfig
 from rapidfireai.fit.utils.exceptions import DispatcherException
 from rapidfireai.fit.utils.logging import RFLogger
 

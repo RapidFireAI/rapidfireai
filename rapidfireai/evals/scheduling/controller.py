@@ -3,9 +3,9 @@ import json
 import time
 from collections.abc import Callable
 from typing import Any
-
 import ray
 
+from rapidfireai.utils.colab import is_running_in_colab
 from rapidfireai.evals.actors.doc_actor import DocProcessingActor
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.actors.query_actor import QueryProcessingActor
@@ -307,7 +307,12 @@ class Controller:
                 if device and str(device).startswith("cuda"):
                     needs_gpu = True
 
-            num_gpus_for_actor = 1 if needs_gpu else 0
+            if needs_gpu and not is_running_in_colab():
+                num_gpus_for_actor = 1
+            elif needs_gpu and is_running_in_colab():
+                num_gpus_for_actor = 0.5
+            else:
+                num_gpus_for_actor = 0
             num_cpus_for_actor = NUM_CPUS_PER_DOC_ACTOR
 
             # Create DocProcessingActor

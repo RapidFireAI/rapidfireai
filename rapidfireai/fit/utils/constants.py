@@ -1,5 +1,6 @@
 import os
 from enum import Enum
+from rapidfireai.utils.colab import is_running_in_colab
 
 # Tracking Backend Configuration
 def get_tracking_backend() -> str:
@@ -12,7 +13,7 @@ def get_tracking_backend() -> str:
     Note: This reads from os.environ at runtime to allow setting the env var
     after module import (important for notebook environments like Colab).
     """
-    backend = os.getenv("RF_TRACKING_BACKEND", "mlflow")
+    backend = os.getenv("RF_TRACKING_BACKEND", "mlflow" if not is_running_in_colab() else "tensorboard")
     return backend
 
 
@@ -36,14 +37,6 @@ class LogType(Enum):
     RF_LOG = "rf_log"
     TRAINING_LOG = "training_log"
 
-
-# Dispatcher Constants
-class DispatcherConfig:
-    """Class to manage the dispatcher configuration"""
-
-    HOST: str = os.getenv("RF_API_HOST", "127.0.0.1")
-    PORT: int = int(os.getenv("RF_API_PORT", "8851"))
-    URL: str = f"http://{HOST}:{PORT}"
 
 # MLFlow Constants
 class MLFlowConfig:

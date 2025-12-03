@@ -6,6 +6,7 @@ of embeddings and FAISS indexes. After building, components are placed in
 Ray's object store for sharing across query processing actors.
 """
 
+import os
 from typing import Any
 
 import faiss
@@ -34,6 +35,19 @@ class DocProcessingActor:
             experiment_name: Name of the experiment
             experiment_path: Path to experiment logs/artifacts
         """
+        # AWS Fix: Initialize CUDA context early to prevent CUBLAS_STATUS_NOT_INITIALIZED
+        # This must happen BEFORE any torch operations (including embedding model loading)
+        if "CUDA_VISIBLE_DEVICES" in os.environ and os.environ["CUDA_VISIBLE_DEVICES"]:
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    # Force CUDA initialization by performing a simple operation
+                    _ = torch.zeros(1, device='cuda')
+                    torch.cuda.synchronize()
+            except Exception:
+                # Silently continue if CUDA initialization fails (will use CPU)
+                pass
+
         # Initialize logger
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
         self.logger = logging_manager.get_logger("DocProcessingActor")
