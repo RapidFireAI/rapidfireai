@@ -38,14 +38,6 @@ class LogType(Enum):
     TRAINING_LOG = "training_log"
 
 
-# Dispatcher Constants
-class DispatcherConfig:
-    """Class to manage the dispatcher configuration"""
-
-    HOST: str = os.getenv("RF_API_HOST", "127.0.0.1")
-    PORT: int = int(os.getenv("RF_API_PORT", "8851"))
-    URL: str = f"http://{HOST}:{PORT}"
-
 # MLFlow Constants
 class MLFlowConfig:
     """Class to manage the MLFlow configuration"""

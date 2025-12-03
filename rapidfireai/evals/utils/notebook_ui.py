@@ -6,7 +6,7 @@ This works in VS Code notebooks by using the vscode notebook API instead of Jupy
 import uuid
 
 from IPython.display import HTML, display
-from rapidfireai.evals.utils.constants import  DispatcherConfig
+from rapidfireai.utils.constants import  DispatcherConfig
 from rapidfireai.utils.colab import is_running_in_colab
 
 

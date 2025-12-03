@@ -22,6 +22,7 @@ def is_running_in_colab() -> bool:
         # Not in Colab (could be Jupyter, local Python, etc.)
         return False
 
+
 def get_colab_auth_token() -> str | None:
     """
     Get the Colab authorization token for proxy requests.

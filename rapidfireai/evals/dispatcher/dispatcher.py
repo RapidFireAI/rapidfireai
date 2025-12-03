@@ -15,7 +15,8 @@ from flask_cors import CORS
 from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
-from rapidfireai.evals.utils.constants import ICOperation, DispatcherConfig
+from rapidfireai.utils.constants import DispatcherConfig
+from rapidfireai.evals.utils.constants import ICOperation
 
 CORS_ALLOWED_ORIGINS = "*" # Allow all origins
 

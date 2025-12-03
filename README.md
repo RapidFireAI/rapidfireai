@@ -119,10 +119,11 @@ rapidfireai doctor
 If you encounter port conflicts, you can kill existing processes:
 
 ```bash
-lsof -t -i:8852 | xargs kill -9  # mlflow
-lsof -t -i:8851 | xargs kill -9  # dispatcher
-lsof -t -i:8853 | xargs kill -9  # frontend server
 lsof -t -i:8850 | xargs kill -9  # jupyter server
+lsof -t -i:8851 | xargs kill -9  # dispatcher
+lsof -t -i:8852 | xargs kill -9  # mlflow
+lsof -t -i:8853 | xargs kill -9  # frontend server
+lsof -t -i:8855 | xargs kill -9  # ray dashboard
 ```
 
 ## Documentation
@@ -302,9 +303,11 @@ chmod +x ./rapidfireai/start_dev.sh
 # VSCode can port-forward localhost:8853 where the rf-frontend server will be running
 
 # for port clash issues -
+lsof -t -i:8850 | xargs kill -9 # jupyter server
 lsof -t -i:8851 | xargs kill -9 # dispatcher
 lsof -t -i:8852 | xargs kill -9 # mlflow
 lsof -t -i:8853 | xargs kill -9 # frontend
+lsof -t -i:8855 | xargs kill -9 # ray console
 ```
 
 ## Community & Governance

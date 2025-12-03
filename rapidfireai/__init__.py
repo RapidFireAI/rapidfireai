@@ -11,9 +11,9 @@ __email__ = "support@rapidfire.ai"
 # from rapidfireai.experiment import Experiment
 
 # Optional evals imports - gracefully handle missing dependencies
-get_dispatcher_url = None
-get_dispatcher_headers = None
-get_colab_auth_token = None
+# get_dispatcher_url = None
+# get_dispatcher_headers = None
+# get_colab_auth_token = None
 
 try:
     from rapidfireai.experiment import Experiment
@@ -43,16 +43,11 @@ except ImportError:
     Experiment = _ExperimentPlaceholder
 
 
-def coming_soon():
-    """Placeholder function - full functionality coming soon."""
-    return "RapidFire AI package is under development. Stay tuned!"
-
-
 __all__ = [
     "Experiment",
     "__version__",
     "__version_info__",
-    "get_dispatcher_url",
-    "get_dispatcher_headers",
-    "get_colab_auth_token",
+    # "get_dispatcher_url",
+    # "get_dispatcher_headers",
+    # "get_colab_auth_token",
 ]

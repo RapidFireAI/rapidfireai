@@ -1,6 +1,7 @@
 import os
 from enum import Enum
-from rapidfireai.utils.colab import is_running_in_colab
+from rapidfireai.utils.colab import is_running_in_colab, get_colab_auth_token
+from rapidfireai.utils.constants import DispatcherConfig
 
 # Logging Constants
 LOG_FILENAME = "rapidfire.log"
@@ -14,14 +15,6 @@ NUM_CPUS_PER_DOC_ACTOR = 2 if not is_running_in_colab() else 1
 MAX_RATE_LIMIT_RETRIES = 5
 # Base wait time for exponential backoff (seconds)
 RATE_LIMIT_BACKOFF_BASE = 2
-
-
-class DispatcherConfig:
-    """Class to manage the dispatcher configuration"""
-
-    HOST: str = os.getenv("RF_API_HOST", "127.0.0.1")
-    PORT: int = int(os.getenv("RF_API_PORT", "8851"))
-    URL: str = f"http://{HOST}:{PORT}"
 
 
 def get_ray_port() -> int:
@@ -53,28 +46,6 @@ def get_dispatcher_url() -> str:
         # Running in Jupyter, local Python, or other environment
         return DispatcherConfig.URL
 
-
-def get_colab_auth_token() -> str | None:
-    """
-    Get the Colab authorization token for proxy requests.
-
-    Returns:
-        - In Google Colab: The authorization token string
-        - In Jupyter/Local: None
-    """
-    if not is_running_in_colab():
-        # Not in Colab (regular Jupyter, local, etc.) - no auth needed
-        return None
-
-    try:
-        from google.colab.output import eval_js
-
-        # Get the Colab auth token
-        auth_token = eval_js("google.colab.kernel.accessAllowed")
-        return auth_token
-    except Exception as e:
-        print(f"⚠️ Failed to get Colab auth token: {e}")
-        return None
 
 
 def get_dispatcher_headers() -> dict[str, str]:
