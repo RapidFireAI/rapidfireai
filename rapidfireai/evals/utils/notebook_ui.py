@@ -23,10 +23,15 @@ class NotebookUI:
         self.is_polling = False
         self.polling_thread = None
         self.pending_actions = []
-        self.auth_token = auth_token
+        if is_running_in_colab():
+            self.auth_token = auth_token
 
     def _generate_html(self):
         """Generate HTML using fetch API for communication"""
+        if is_running_in_colab():
+            xhr_credentials = "include"
+        else:
+            xhr_credentials = "omit"
         return f"""
         <div id="{self.widget_id}" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto;">
             <style>
@@ -120,7 +125,7 @@ class NotebookUI:
                                 'Content-Type': 'application/json'
                             }},
                             mode: 'cors',
-                            credentials: 'include'  // Include cookies for Colab proxy auth
+                            credentials: '{xhr_credentials}'  // Include cookies for Colab proxy auth
                         }};
 
                         if (body) {{
