@@ -1,5 +1,6 @@
 """This module contains functions for the dispatcher module."""
 
+import os
 import traceback
 from logging import Logger
 from typing import Any
@@ -8,8 +9,8 @@ from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.utils.constants import DispatcherConfig
-from rapidfireai.fit.utils.constants import LOG_FILENAME, ControllerTask, MLFlowConfig, FrontendConfig
+from rapidfireai.utils.constants import DispatcherConfig, FrontendConfig, MLFlowConfig, RF_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.fit.utils.constants import ControllerTask
 from rapidfireai.fit.utils.exceptions import DispatcherException
 from rapidfireai.fit.utils.logging import RFLogger
 
@@ -336,7 +337,7 @@ class Dispatcher:
             if not experiment_name:
                 experiment_name = self.db.get_running_experiment()["experiment_name"]
 
-            log_file_path = self.db.get_experiments_path(experiment_name) / LOG_FILENAME
+            log_file_path = os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
 
             # Check if the log file exists
             if not log_file_path.exists():
@@ -366,7 +367,7 @@ class Dispatcher:
             if not experiment_name:
                 experiment_name = self.db.get_running_experiment()["experiment_name"]
 
-            log_file_path = self.db.get_experiments_path(experiment_name) / LOG_FILENAME
+            log_file_path = os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
 
             experiment_logs = []
             with open(log_file_path) as f:

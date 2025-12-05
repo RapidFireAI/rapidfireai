@@ -5,7 +5,8 @@ from abc import ABC, abstractmethod
 from loguru import logger
 
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.fit.utils.constants import LOG_FILENAME, TRAINING_LOG_FILENAME, LogType
+from rapidfireai.utils.constants import RF_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.fit.utils.constants import TRAINING_LOG_FILENAME, LogType
 
 
 class BaseRFLogger(ABC):
@@ -70,7 +71,7 @@ class RFLogger(BaseRFLogger):
     """Standard RapidFire logger"""
 
     def get_log_file_path(self, db: RfDb, experiment_name: str):
-        return db.get_experiments_path(experiment_name) / LOG_FILENAME
+        return os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
 
     def get_logger_type(self) -> LogType:
         return LogType.RF_LOG
@@ -80,7 +81,7 @@ class TrainingLogger(BaseRFLogger):
     """Training-specific logger"""
 
     def get_log_file_path(self, db: RfDb, experiment_name: str):
-        return db.get_experiments_path(experiment_name) / TRAINING_LOG_FILENAME
+        return os.path.join(RF_LOG_PATH, experiment_name, TRAINING_LOG_FILENAME)
 
     def get_logger_type(self) -> LogType:
         return LogType.TRAINING_LOG

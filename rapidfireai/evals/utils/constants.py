@@ -1,26 +1,17 @@
 import os
 from enum import Enum
-from rapidfireai.utils.colab import is_running_in_colab, get_colab_auth_token
-from rapidfireai.utils.constants import DispatcherConfig
-
-# Logging Constants
-LOG_FILENAME = "rapidfire.log"
+from rapidfireai.utils.colab import get_colab_auth_token
+from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_DB_PATH
 
 # Actor Constants
 NUM_QUERY_PROCESSING_ACTORS = 4
-NUM_CPUS_PER_DOC_ACTOR = 2 if not is_running_in_colab() else 1
+NUM_CPUS_PER_DOC_ACTOR = 2 if not ColabConfig.ON_COLAB else 1
 
 # Rate Limiting Constants
 # Maximum number of retries for rate-limited API calls
 MAX_RATE_LIMIT_RETRIES = 5
 # Base wait time for exponential backoff (seconds)
 RATE_LIMIT_BACKOFF_BASE = 2
-
-
-def get_ray_port() -> int:
-    """Get the port for the Ray server."""
-    return int(os.getenv("RF_RAY_PORT", "8855"))
-
 
 def get_dispatcher_url() -> str:
     """
@@ -30,7 +21,7 @@ def get_dispatcher_url() -> str:
         - In Google Colab: Uses Colab's kernel proxy URL (e.g., https://xxx-8851-xxx.ngrok-free.app)
         - In Jupyter/Local: Uses localhost URL (http://127.0.0.1:8851)
     """
-    if is_running_in_colab():
+    if ColabConfig.ON_COLAB:
         try:
             from google.colab.output import eval_js
 
@@ -131,7 +122,7 @@ class DBConfig:
     # Use user's home directory for database path
 
     DB_PATH: str = os.path.join(
-        os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~", "db"))), "rapidfire_evals.db"
+        RF_DB_PATH, "rapidfire_evals.db"
     )
 
     # Connection settings

@@ -4,6 +4,7 @@ import os
 import re
 import warnings
 
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.db.rf_db import RFDatabase
 from rapidfireai.evals.utils.constants import ExperimentStatus
 from rapidfireai.evals.utils.logger import RFLogger
@@ -127,7 +128,7 @@ class ExperimentUtils:
 
         # create logger
         experiment_name = current_experiment["experiment_name"]
-        logging_manager = RFLogger(experiment_name=experiment_name, experiment_path="./rapidfire_experiments")
+        logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=RF_EXPERIMENT_PATH)
         logger = logging_manager.get_logger("ExperimentUtils")
 
         # cancel current tasks if any
@@ -161,7 +162,7 @@ class ExperimentUtils:
 
         # create logger
         experiment_name = current_experiment["experiment_name"]
-        logging_manager = RFLogger(experiment_name=experiment_name, experiment_path="./rapidfire_experiments")
+        logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=RF_EXPERIMENT_PATH)
         logger = logging_manager.get_logger("ExperimentUtils")
 
         try:

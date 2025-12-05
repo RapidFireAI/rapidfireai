@@ -14,8 +14,9 @@ from IPython.display import display
 from tqdm import tqdm
 from transformers import logging as transformers_logging
 
+from rapidfireai.utils.constants import MLFlowConfig
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.fit.utils.constants import MLFlowConfig, ExperimentStatus, ExperimentTask, get_tracking_backend
+from rapidfireai.fit.utils.constants import ExperimentStatus, ExperimentTask, get_tracking_backend
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.exceptions import DBException, ExperimentException
 from rapidfireai.fit.utils.logging import RFLogger

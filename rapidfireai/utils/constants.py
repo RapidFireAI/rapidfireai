@@ -2,6 +2,20 @@
 Constants for the RapidFire AI package
 """
 import os
+from rapidfireai.utils.colab import is_running_in_colab
+
+# Logging Constants
+RF_LOG_FILENAME = os.getenv("RF_LOG_FILENAME", "rapidfire.log")
+RF_LOG_PATH = os.getenv("RF_LOG_PATH", os.path.join(os.path.expanduser("~"), "logs"))
+RF_EXPERIMENT_PATH = os.getenv("RF_EXPERIMENT_PATH", os.path.join(".", "rapidfire_experiments"))
+RF_DB_PATH = os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~", "db")))
+RF_TENSORBOARD_LOG_DIR = os.getenv("RF_TENSORBOARD_LOG_DIR", None)
+RF_TRAINING_LOG_FILENAME = os.getenv("RF_TRAINING_LOG_FILENAME", "training.log")
+
+if not os.path.exists(RF_LOG_PATH):
+    print(f"Creating directory: {RF_LOG_PATH}")
+    from pathlib import Path
+    Path(RF_LOG_PATH).mkdir(parents=True, exist_ok=True)
 
 class DispatcherConfig:
     """Class to manage the dispatcher configuration"""
@@ -9,3 +23,43 @@ class DispatcherConfig:
     HOST: str = os.getenv("RF_API_HOST", "127.0.0.1")
     PORT: int = int(os.getenv("RF_API_PORT", "8851"))
     URL: str = f"http://{HOST}:{PORT}"
+
+# Frontend Constants
+class FrontendConfig:
+    """Class to manage the frontend configuration"""
+
+    HOST: str = os.getenv("RF_FRONTEND_HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("RF_FRONTEND_PORT", "8853"))
+    URL: str = f"http://{HOST}:{PORT}"
+
+# MLFlow Constants
+class MLFlowConfig:
+    """Class to manage the MLFlow configuration"""
+
+    HOST: str = os.getenv("RF_MLFLOW_HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("RF_MLFLOW_PORT", "8852"))
+    URL: str = f"http://{HOST}:{PORT}"
+
+# Jupyter Constants
+class JupyterConfig:
+    """Class to manage the Jupyter configuration"""
+
+    HOST: str = os.getenv("RF_JUPYTER_HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("RF_JUPYTER_PORT", "8850"))
+    URL: str = f"http://{HOST}:{PORT}"
+
+# Ray Constants
+class RayConfig:
+    """Class to manage the Ray configuration"""
+
+    HOST: str = os.getenv("RF_RAY_HOST", "0.0.0.0")
+    PORT: int = int(os.getenv("RF_RAY_PORT", "8855"))
+    URL: str = f"http://{HOST}:{PORT}"
+
+# Colab Constants
+class ColabConfig:
+    """Class to manage the Colab configuration"""
+
+    ON_COLAB: bool = is_running_in_colab()
+
+RF_TRACKING_BACKEND = os.getenv("RF_TRACKING_BACKEND", "mlflow" if not ColabConfig.ON_COLAB else "tensorboard")

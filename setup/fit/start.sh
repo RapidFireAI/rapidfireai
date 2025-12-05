@@ -8,6 +8,9 @@ set -e  # Exit on any error
 
 # Configuration
 RF_JUPYTER_PORT=${RF_JUPYTER_PORT:=8850}
+RF_JUPYTER_HOST=${RF_JUPYTER_HOST:=127.0.0.1}
+RF_RAY_PORT=${RF_RAY_PORT:=8855}
+RF_RAY_HOST=${RF_RAY_HOST:=127.0.0.1}
 RF_MLFLOW_PORT=${RF_MLFLOW_PORT:=8852}
 RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=127.0.0.1}
 RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=8853}
@@ -219,7 +222,7 @@ wait_for_service() {
     if command -v nc &> /dev/null; then
         ping_command="$(command -v nc) -z $host $port"
     else
-        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.fit.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
+        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
     fi
     while [ $attempt -le $max_attempts ]; do
         if eval ${ping_command} &>/dev/null; then

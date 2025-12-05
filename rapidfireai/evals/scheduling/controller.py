@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any
 import ray
 
-from rapidfireai.utils.colab import is_running_in_colab
+from rapidfireai.utils.constants import ColabConfig, RF_EXPERIMENT_PATH
 from rapidfireai.evals.actors.doc_actor import DocProcessingActor
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.actors.query_actor import QueryProcessingActor
@@ -40,7 +40,7 @@ class Controller:
     def __init__(
         self,
         experiment_name: str,
-        experiment_path: str,
+        experiment_path: str = RF_EXPERIMENT_PATH,
     ):
         """
         Initialize the controller.
@@ -307,9 +307,9 @@ class Controller:
                 if device and str(device).startswith("cuda"):
                     needs_gpu = True
 
-            if needs_gpu and not is_running_in_colab():
+            if needs_gpu and not ColabConfig.ON_COLAB:
                 num_gpus_for_actor = 1
-            elif needs_gpu and is_running_in_colab():
+            elif needs_gpu and ColabConfig.ON_COLAB:
                 num_gpus_for_actor = 0.5
             else:
                 num_gpus_for_actor = 0

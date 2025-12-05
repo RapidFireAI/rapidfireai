@@ -13,9 +13,9 @@ import subprocess
 import sys
 from pathlib import Path
 from importlib.resources import files
-from rapidfireai.utils.colab import is_running_in_colab
 from rapidfireai.utils.get_ip_address import get_ip_address
-from rapidfireai.utils.constants import DispatcherConfig
+from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabConfig
+from rapidfireai.utils.doctor import get_doctor_info
 
 from .version import __version__
 
@@ -221,154 +221,7 @@ def get_torch_version():
 
 def run_doctor():
     """Run the doctor command to diagnose system issues."""
-    status = 0
-    print("🔍 RapidFire AI System Diagnostics")
-    print("=" * 50)
-
-    # Python Information
-    print("\n🐍 Python Environment:")
-    print("-" * 30)
-    python_info = get_python_info()
-    print(f"Version: {python_info['version'].split()[0]}")
-    print(f"Implementation: {python_info['implementation']}")
-    print(f"Executable: {python_info['executable']}")
-    print(f"Site Packages: {python_info['site_packages']}")
-    print(f"Conda Environment: {python_info['conda_env']}")
-    print(f"Virtual Environment: {python_info['venv']}")
-    # Pip Packages
-    print("\n📦 Installed Packages:")
-    print("-" * 30)
-    pip_output = get_pip_packages()
-    if pip_output != "Failed to get pip packages":
-        # Show only relevant packages
-        relevant_packages = [
-            "rapidfireai",
-            "mlflow",
-            "torch",
-            "transformers",
-            "flask",
-            "gunicorn",
-            "peft",
-            "trl",
-            "bitsandbytes",
-            "nltk",
-            "langchain",
-            "ray",
-            "sentence-transformers",
-            "openai",
-            "tiktoken",
-            "langchain-core",
-            "langchain-community",
-            "langchain-openai",
-            "langchain-huggingface",
-            "langchain-classic",
-            "unstructured",
-            "waitress",
-            "vllm",
-            "rf-faiss",
-            "rf-faiss-gpu-12-8",
-            "faiss-gpu-cu12",
-            "vllm",
-            "flash-attn",
-            "flash_attn",
-            "flashinfer-python",
-            "flashinfer-cubin",
-            "flashinfer-jit-cache",
-            "tensorboard",
-            "numpy",
-            "pandas",
-            "torch",
-            "torchvision",
-            "torchaudio",
-            "scipy",
-            "datasets",
-            "evaluate",
-            "rouge-score",
-            "sentencepiece",
-        ]
-        lines = pip_output.split("\n")
-        found_packages = []
-        for line in lines:
-            if any(pkg.lower() in line.lower() for pkg in relevant_packages):
-                found_packages.append(line)
-                print(line)
-        print("... (showing only relevant packages)")
-        if len(found_packages) < 5:
-            status = 1 if status == 0 else status
-            print("⚠️ Not many packages installed, was rapidfireai init run (see installation instructions)?")
-    else:
-        print(pip_output)
-
-    # GPU Information
-    print("\n🚀 GPU & CUDA Information:")
-    print("-" * 30)
-    gpu_info = get_gpu_info()
-    if gpu_info["status"] == 1:
-        print("⚠️ Some GPU information not found")
-        status = 1 if status == 0 else status
-    elif gpu_info["status"] == 2:
-        print("❌ Some GPU information not found")
-        status = 2 if status < 2 else status
-    print(f"nvidia-smi: {gpu_info['nvidia_smi']}")
-
-    if gpu_info["nvidia_smi"] == "found":
-        print(f"Driver Version: {gpu_info['driver_version']}")
-        print(f"CUDA Runtime: {gpu_info['cuda_runtime']}")
-        print(f"GPU Count: {gpu_info['gpu_count']}")
-        print(f"Compute Capability: {gpu_info['compute_capability']}")
-
-        if gpu_info["gpu_count"] > 0:
-            if "gpu_details" in gpu_info:
-                print("GPU Details:")
-                for i, gpu in enumerate(gpu_info["gpu_details"]):
-                    print(f"  GPU {i}: {gpu['name']} ({gpu['memory_gb']} GB)")
-            else:
-                print(f"GPU Model: {gpu_info['gpu_model']}")
-                print(f"Total VRAM: {gpu_info['gpu_memory_gb']} GB")
-
-    print(f"nvcc: {gpu_info['nvcc']}")
-    if gpu_info["nvcc"] == "found":
-        print(f"nvcc Version: {gpu_info['nvcc_version']}")
-
-    print(f"CUDA Installation: {gpu_info['cuda_installation']}")
-    print(f"CUDA on PATH: {gpu_info['cuda_on_path']}")
-    # Get torch cuda version
-    major, minor, patch, torch_cuda_major, torch_cuda_minor = get_torch_version()
-    if int(major) > 0:
-        print(f"Torch Version: {major}.{minor}.{patch}")
-    else:
-        status = 1 if status == 0 else status
-        print("⚠️ Torch version not found") 
-    if int(torch_cuda_major) > 0:
-        print(f"Torch CUDA Version: {torch_cuda_major}.{torch_cuda_minor}")
-    else:
-        status = 1 if status == 0 else status
-        print("⚠️ Torch CUDA Version: unknown")
-
-    # System Information
-    print("\n💻 System Information:")
-    print("-" * 30)
-    print(f"Platform: {platform.platform()}")
-    print(f"Architecture: {platform.machine()}")
-    print(f"Processor: {platform.processor()}")
-
-    # Environment Variables
-    print("\n🔧 Environment Variables:")
-    print("-" * 30)
-    relevant_vars = ["CUDA_HOME", "CUDA_PATH", "LD_LIBRARY_PATH", "PATH"]
-    for var in relevant_vars:
-        value = os.environ.get(var, "not set")
-        if value != "not set" and len(value) > 200:
-            value = value[:200] + "..."
-        print(f"{var}: {value}")
-    if status == 0:
-        print("\n✅ Diagnostics complete!")
-    elif status == 1:
-        print("\n⚠️ Diagnostics complete with warnings")
-    elif status == 2:
-        print("\n❌ Diagnostics complete with errors")
-    else:
-        print("\n❌ Diagnostics completed with unknown status")
+    get_doctor_info()
     return 0
 
 
@@ -489,7 +342,6 @@ def install_packages(evals: bool = False):
     compute_capability = get_compute_capability()
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
-    is_colab = is_running_in_colab()
     setup_directory = None
     for site_package in site_packages.split(","):
         if os.path.exists(os.path.join(site_package.strip(), "setup", "fit")):
@@ -498,16 +350,16 @@ def install_packages(evals: bool = False):
     if not setup_directory:
         print("❌ Setup directory not found, skipping package installation")
         return 1
-    if is_colab and evals:
+    if ColabConfig.ON_COLAB and evals:
         print("Colab environment detected, installing evals packages")
         requirements_file = os.path.join(setup_directory, "evals", "requirements-colab.txt")
-    elif is_colab and not evals:
+    elif ColabConfig.ON_COLAB and not evals:
         print("Colab environment detected, installing fit packages")
         requirements_file = os.path.join(setup_directory, "fit", "requirements-colab.txt")
-    elif not is_colab and evals:
+    elif not ColabConfig.ON_COLAB and evals:
         print("Non-Colab environment detected, installing evals packages")
         requirements_file = os.path.join(setup_directory, "evals", "requirements-local.txt")
-    elif not is_colab and not evals:
+    elif not ColabConfig.ON_COLAB and not evals:
         print("Non-Colab environment detected, installing fit packages")
         requirements_file = os.path.join(setup_directory, "fit", "requirements-local.txt")
     else:
@@ -592,19 +444,19 @@ def install_packages(evals: bool = False):
         torch_cuda = "cu121"
         flash_cuda = "cu121"
 
-    if is_colab:
+    if ColabConfig.ON_COLAB:
         flash_cuda = "cu128"
 
     if not evals:
         pass
 
-    if evals and is_colab:
+    if evals and ColabConfig.ON_COLAB:
         # packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
         pass
 
     
     ## TODO: re-enable for fit once trl has fix
-    if evals and not is_colab and cuda_major >= 12:
+    if evals and not ColabConfig.ON_COLAB and cuda_major >= 12:
         
         print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
         
@@ -704,7 +556,7 @@ def run_jupyter():
 
     app = ServerApp()
     app.open_browser = False
-    app.port = int(os.getenv("RF_JUPYTER_PORT", "8850"))
+    app.port = JupyterConfig.PORT
     app.allow_origin = '*'
     app.websocket_ping_interval = 90000
     app.log_level = 'CRITICAL'
@@ -793,7 +645,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument(
         "--tracking-backend",
         choices=["mlflow", "tensorboard", "both"],
-        default=os.getenv("RF_TRACKING_BACKEND", "mlflow" if not is_running_in_colab() else "tensorboard"),
+        default=os.getenv("RF_TRACKING_BACKEND", "mlflow" if not ColabConfig.ON_COLAB else "tensorboard"),
         help="Tracking backend to use for metrics (default: mlflow)",
     )
 
@@ -827,7 +679,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
     if args.colab:
         os.environ["RF_COLAB_MODE"] = "true"
-    elif is_running_in_colab() and os.getenv("RF_COLAB_MODE") is None:
+    elif ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
         os.environ["RF_COLAB_MODE"] = "true"
 
     # Handle doctor command separately
