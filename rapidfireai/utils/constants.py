@@ -24,6 +24,9 @@ class DispatcherConfig:
     PORT: int = int(os.getenv("RF_API_PORT", "8851"))
     URL: str = f"http://{HOST}:{PORT}"
 
+    def __str__(self):
+        return f"DispatcherConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
+
 # Frontend Constants
 class FrontendConfig:
     """Class to manage the frontend configuration"""
@@ -31,6 +34,9 @@ class FrontendConfig:
     HOST: str = os.getenv("RF_FRONTEND_HOST", "127.0.0.1")
     PORT: int = int(os.getenv("RF_FRONTEND_PORT", "8853"))
     URL: str = f"http://{HOST}:{PORT}"
+
+    def __str__(self):
+        return f"FrontendConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
 
 # MLFlow Constants
 class MLFlowConfig:
@@ -40,6 +46,9 @@ class MLFlowConfig:
     PORT: int = int(os.getenv("RF_MLFLOW_PORT", "8852"))
     URL: str = f"http://{HOST}:{PORT}"
 
+    def __str__(self):
+        return f"MLFlowConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
+
 # Jupyter Constants
 class JupyterConfig:
     """Class to manage the Jupyter configuration"""
@@ -47,6 +56,9 @@ class JupyterConfig:
     HOST: str = os.getenv("RF_JUPYTER_HOST", "127.0.0.1")
     PORT: int = int(os.getenv("RF_JUPYTER_PORT", "8850"))
     URL: str = f"http://{HOST}:{PORT}"
+
+    def __str__(self):
+        return f"JupyterConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
 
 # Ray Constants
 class RayConfig:
@@ -56,10 +68,16 @@ class RayConfig:
     PORT: int = int(os.getenv("RF_RAY_PORT", "8855"))
     URL: str = f"http://{HOST}:{PORT}"
 
+    def __str__(self):
+        return f"RayConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
+
 # Colab Constants
 class ColabConfig:
     """Class to manage the Colab configuration"""
 
     ON_COLAB: bool = is_running_in_colab()
+
+    def __str__(self):
+        return f"ColabConfig(ON_COLAB={self.ON_COLAB})"
 
 RF_TRACKING_BACKEND = os.getenv("RF_TRACKING_BACKEND", "mlflow" if not ColabConfig.ON_COLAB else "tensorboard")
