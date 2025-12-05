@@ -4,8 +4,7 @@
 torch>=2.5.1
 torchvision>=0.20.1
 torchaudio>=2.5.1
-datasets==3.6.0
-fsspec<=2025.3.0,>=2023.1.0
+datasets>=3.6.0
 sentence-transformers==5.1.0
 gpustat==1.1.1
 
