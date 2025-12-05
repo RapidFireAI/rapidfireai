@@ -205,17 +205,21 @@ def get_doctor_info():
     print(f"\n🪵 Log Files (last {lines_to_print} lines):")
     for root, dirs, list_files in os.walk(RF_LOG_PATH):
         for file in list_files:
-            print(f"{os.path.join(root, file)}")
-            with open(os.path.join(root, file), "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                for line in lines[-lines_to_print:]:
-                    print(line.strip())
+            current_item = os.path.join(root, file)
+            print(current_item)
+            if not os.path.isdir(current_item):
+                with open(current_item, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                    for line in lines[-lines_to_print:]:
+                        print(line.strip())
         for directory in dirs:
-            print(f"{os.path.join(root, directory)}")
-            with open(os.path.join(root, directory), "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                for line in lines[-lines_to_print:]:
-                    print(line.strip())
+            current_item = os.path.join(root, directory)
+            print(current_item)
+            if not os.path.isdir(current_item):
+                with open(current_item, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                    for line in lines[-lines_to_print:]:
+                        print(line.strip())
     print("\n")
     if status == 0:
         print("\n✅ Diagnostics complete!")
