@@ -332,6 +332,24 @@ Dev dependencies:
 - ruff (via ruff.toml)
 - mypy >= 0.800
 
+## README Guidelines
+
+### Image URLs Must Be Absolute
+
+Always use absolute URLs for images in `README.md`, not relative paths. The README is rendered on multiple platforms (GitHub, PyPI, npm, etc.), and relative paths only work on GitHub where the repository file structure is accessible.
+
+**Correct:**
+```markdown
+<img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/example.svg">
+```
+
+**Incorrect:**
+```markdown
+<img src="docs/images/example.svg">
+```
+
+Use the pattern `https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/...` for all image references to ensure cross-platform compatibility.
+
 ## Troubleshooting
 
 ### GPU Issues
