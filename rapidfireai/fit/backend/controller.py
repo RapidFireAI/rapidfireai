@@ -142,10 +142,10 @@ class Controller:
                 final_checkpoint_path = DataPath.final_checkpoint_path(base_run_path)
                 intermediate_checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path)
 
-                mkdir_p(work_dir_path)
-                mkdir_p(initial_checkpoint_path)
-                mkdir_p(final_checkpoint_path)
-                mkdir_p(intermediate_checkpoint_path)
+                mkdir_p(work_dir_path, notify=False)
+                mkdir_p(initial_checkpoint_path, notify=False)
+                mkdir_p(final_checkpoint_path, notify=False)
+                mkdir_p(intermediate_checkpoint_path, notify=False)
             except (PermissionError, OSError) as e:
                 raise ControllerException(f"Failed to create required Run DataPath directories: {e}") from e
 

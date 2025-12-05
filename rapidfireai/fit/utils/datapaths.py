@@ -22,9 +22,9 @@ class DataPath:
             cls.mlflow_path: Path = cls.experiments_path / "mlflow"
 
             # create directories
-            mkdir_p(cls.experiments_path)
-            mkdir_p(cls.user_code_path)
-            mkdir_p(cls.mlflow_path)
+            mkdir_p(cls.experiments_path, notify=False)
+            mkdir_p(cls.user_code_path, notify=False)
+            mkdir_p(cls.mlflow_path, notify=False)
         except (PermissionError, OSError) as e:
             raise DataPathException(f"Failed to create required DataPaths directories: {e}") from e
 

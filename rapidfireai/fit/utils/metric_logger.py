@@ -177,7 +177,7 @@ class TensorBoardMetricLogger(MetricLogger):
 
         self.log_dir = Path(log_dir)
         try:
-            mkdir_p(self.log_dir)
+            mkdir_p(self.log_dir, notify=False)
         except (PermissionError, OSError) as e:
             print(f"Error creating directory: {e}")
             raise
@@ -194,7 +194,7 @@ class TensorBoardMetricLogger(MetricLogger):
 
         run_log_dir = os.path.join(self.log_dir, run_name)
         try:
-            mkdir_p(run_log_dir)
+            mkdir_p(run_log_dir, notify=False)
         except (PermissionError, OSError) as e:
             print(f"Error creating directory: {e}")
             raise
@@ -277,7 +277,7 @@ class TensorBoardMetricLogger(MetricLogger):
             # Create deleted directory as sibling, not child, of log_dir
             deleted_dir = os.path.join(self.log_dir.parent, f"{self.log_dir.name}_deleted")
             try:
-                mkdir_p(deleted_dir)
+                mkdir_p(deleted_dir, notify=False)
             except (PermissionError, OSError) as e:
                 print(f"Error creating directory: {e}")
                 raise
