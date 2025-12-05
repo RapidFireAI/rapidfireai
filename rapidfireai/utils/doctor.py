@@ -201,12 +201,21 @@ def get_doctor_info():
     print(f"RayConfig: {RayConfig()}")
     print(f"ColabConfig: {ColabConfig()}")
     # Print all files recursively under RF_LOG_PATH
-    print("\n🪵 Log Files:")
+    lines_to_print = 10
+    print(f"\n🪵 Log Files (last {lines_to_print} lines):")
     for root, dirs, list_files in os.walk(RF_LOG_PATH):
         for file in list_files:
             print(f"{os.path.join(root, file)}")
+            with open(os.path.join(root, file), "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                for line in lines[-lines_to_print:]:
+                    print(line.strip())
         for directory in dirs:
             print(f"{os.path.join(root, directory)}")
+            with open(os.path.join(root, directory), "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                for line in lines[-lines_to_print:]:
+                    print(line.strip())
     print("\n")
     if status == 0:
         print("\n✅ Diagnostics complete!")
