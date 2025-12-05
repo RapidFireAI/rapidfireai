@@ -4,34 +4,23 @@ Utility functions for doctor command.
 
 import os
 import platform
-from rapidfireai.utils.get_python_info import get_python_info
-from rapidfireai.utils.get_pip_packages import get_pip_packages
-from rapidfireai.utils.get_gpu_info import get_gpu_info
-from rapidfireai.utils.get_torch_version import get_torch_version
+from rapidfireai.utils.python_info import get_python_info, get_pip_packages
+from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
 from rapidfireai.utils.ping import ping_server
 from rapidfireai.utils.constants import (
     JupyterConfig, 
     DispatcherConfig, 
     MLFlowConfig, 
     FrontendConfig, 
-    RayConfig, 
+    RayConfig,
+    ColabConfig,
     RF_LOG_PATH, 
     RF_EXPERIMENT_PATH, 
     RF_DB_PATH, 
     RF_TENSORBOARD_LOG_DIR, 
     RF_TRAINING_LOG_FILENAME, 
     RF_TRACKING_BACKEND, 
-    RF_COLAB_MODE, 
-    RF_LOG_FILENAME, 
-    RF_API_HOST, 
-    RF_API_PORT, 
-    RF_MLFLOW_HOST, 
-    RF_FRONTEND_HOST, 
-    RF_FRONTEND_PORT, 
-    RF_RAY_HOST, 
-    RF_RAY_PORT, 
-    RF_JUPYTER_HOST, 
-    RF_JUPYTER_PORT
+    RF_LOG_FILENAME,
 )
 
 def get_doctor_info():
@@ -199,23 +188,18 @@ def get_doctor_info():
     print("\n🔍 RF_ Constants:")
     print("-" * 30)
     print(f"RF_LOG_PATH: {RF_LOG_PATH}")
+    print(f"RF_LOG_FILENAME: {RF_LOG_FILENAME}")
+    print(f"RF_TRAINING_LOG_FILENAME: {RF_TRAINING_LOG_FILENAME}")
     print(f"RF_EXPERIMENT_PATH: {RF_EXPERIMENT_PATH}")
     print(f"RF_DB_PATH: {RF_DB_PATH}")
     print(f"RF_TENSORBOARD_LOG_DIR: {RF_TENSORBOARD_LOG_DIR}")
-    print(f"RF_TRAINING_LOG_FILENAME: {RF_TRAINING_LOG_FILENAME}")
     print(f"RF_TRACKING_BACKEND: {RF_TRACKING_BACKEND}")
-    print(f"RF_COLAB_MODE: {RF_COLAB_MODE}")
-    print(f"RF_LOG_FILENAME: {RF_LOG_FILENAME}")
-    print(f"RF_API_HOST: {RF_API_HOST}")
-    print(f"RF_API_PORT: {RF_API_PORT}")
-    print(f"RF_MLFLOW_HOST: {RF_MLFLOW_HOST}")
-    print(f"RF_MLFLOW_PORT: {RF_MLFLOW_PORT}")
-    print(f"RF_FRONTEND_HOST: {RF_FRONTEND_HOST}")
-    print(f"RF_FRONTEND_PORT: {RF_FRONTEND_PORT}")
-    print(f"RF_RAY_HOST: {RF_RAY_HOST}")
-    print(f"RF_RAY_PORT: {RF_RAY_PORT}")
-    print(f"RF_JUPYTER_HOST: {RF_JUPYTER_HOST}")
-    print(f"RF_JUPYTER_PORT: {RF_JUPYTER_PORT}")
+    print(f"JupyterConfig: {JupyterConfig}")
+    print(f"DispatcherConfig: {DispatcherConfig}")
+    print(f"MLFlowConfig: {MLFlowConfig}")
+    print(f"FrontendConfig: {FrontendConfig}")
+    print(f"RayConfig: {RayConfig}")
+    print(f"ColabConfig: {ColabConfig}")
     # Print all files recursively under RF_LOG_PATH
     print("\n🔍 Log Files:")
     for root, dirs, list_files in os.walk(RF_LOG_PATH):
