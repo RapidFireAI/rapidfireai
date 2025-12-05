@@ -30,12 +30,12 @@ langchain-huggingface
 faiss-gpu-cu12==1.13.0
 
 # Statistical Analysis
-scipy==1.16.1
+scipy>=1.16.1
 
 # Data Manipulation & Display
-pandas==2.3.2
+pandas>=2.3.2
 pyarrow==21.0.0
-numpy==1.26.4
+numpy>=1.26.4
 unstructured==0.18.15
 
 
