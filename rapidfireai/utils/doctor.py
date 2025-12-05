@@ -194,12 +194,12 @@ def get_doctor_info():
     print(f"RF_DB_PATH: {RF_DB_PATH}")
     print(f"RF_TENSORBOARD_LOG_DIR: {RF_TENSORBOARD_LOG_DIR}")
     print(f"RF_TRACKING_BACKEND: {RF_TRACKING_BACKEND}")
-    print(f"JupyterConfig: {JupyterConfig}")
-    print(f"DispatcherConfig: {DispatcherConfig}")
-    print(f"MLFlowConfig: {MLFlowConfig}")
-    print(f"FrontendConfig: {FrontendConfig}")
-    print(f"RayConfig: {RayConfig}")
-    print(f"ColabConfig: {ColabConfig}")
+    print(f"JupyterConfig: {JupyterConfig()}")
+    print(f"DispatcherConfig: {DispatcherConfig()}")
+    print(f"MLFlowConfig: {MLFlowConfig()}")
+    print(f"FrontendConfig: {FrontendConfig()}")
+    print(f"RayConfig: {RayConfig()}")
+    print(f"ColabConfig: {ColabConfig()}")
     # Print all files recursively under RF_LOG_PATH
     print("\n🔍 Log Files:")
     for root, dirs, list_files in os.walk(RF_LOG_PATH):

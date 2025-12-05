@@ -76,8 +76,9 @@ class ColabConfig:
     """Class to manage the Colab configuration"""
 
     ON_COLAB: bool = is_running_in_colab()
+    RF_COLAB_MODE: str = os.getenv("RF_COLAB_MODE", str(ON_COLAB)).lower()
 
     def __str__(self):
-        return f"ColabConfig(ON_COLAB={self.ON_COLAB})"
+        return f"ColabConfig(ON_COLAB={self.ON_COLAB}, RF_COLAB_MODE={self.RF_COLAB_MODE})"
 
 RF_TRACKING_BACKEND = os.getenv("RF_TRACKING_BACKEND", "mlflow" if not ColabConfig.ON_COLAB else "tensorboard")
