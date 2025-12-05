@@ -156,7 +156,10 @@ def _configure_training_args(training_args: dict, trainer_config: TrainerConfig)
     training_args["no_cuda"] = False
     training_args["local_rank"] = -1
     training_args["disable_tqdm"] = True
-    training_args["output_dir"] = RF_TRAINER_OUTPUT
+    if training_args.get("output_dir") is None:
+        training_args["output_dir"] = RF_TRAINER_OUTPUT
+    if training_args.get("report_to") is None:
+        training_args["report_to"] = "none"
 
     if "save_steps" in training_args:
         training_args.pop("save_steps")
