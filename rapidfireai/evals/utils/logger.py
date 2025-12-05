@@ -38,7 +38,7 @@ class RFLogger:
             log_format = "%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s"
 
             # Set up the file handler
-            log_file_path = log_dir / RF_LOG_FILENAME
+            log_file_path = os.path.join(log_dir, RF_LOG_FILENAME)
             RFLogger._file_handler = logging.FileHandler(log_file_path)
             RFLogger._file_handler.setFormatter(logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S"))
             RFLogger._file_handler.setLevel(self.level)
