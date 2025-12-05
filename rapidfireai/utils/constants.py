@@ -12,6 +12,7 @@ RF_EXPERIMENT_PATH = os.getenv("RF_EXPERIMENT_PATH", os.path.join(RF_HOME, "rapi
 RF_DB_PATH = os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join(RF_HOME, "db")))
 RF_TENSORBOARD_LOG_DIR = os.getenv("RF_TENSORBOARD_LOG_DIR", None)
 RF_TRAINING_LOG_FILENAME = os.getenv("RF_TRAINING_LOG_FILENAME", "training.log")
+RF_TRAINER_OUTPUT = os.getenv("RF_TRAINER_OUTPUT", os.path.join(RF_HOME, "trainer_output"))
 
 try:
     mkdir_p(RF_LOG_PATH)

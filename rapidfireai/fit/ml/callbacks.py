@@ -3,6 +3,7 @@ from collections.abc import Callable
 import torch
 from datasets import Dataset
 from tqdm import tqdm
+from rapidfireai.utils.constants import RF_TRAINER_OUTPUT
 from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
 from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
@@ -37,7 +38,7 @@ class GenerationMetricsCallback(TrainerCallback):
 
     def on_evaluate(
         self,
-        args: TrainingArguments,
+        args: TrainingArguments(output_dir=RF_TRAINER_OUTPUT),
         state: TrainerState,
         control: TrainerControl,
         **kwargs,
@@ -207,7 +208,7 @@ class MLflowLoggingCallback(TrainerCallback):
 
     def on_log(
         self,
-        args: TrainingArguments,
+        args: TrainingArguments(output_dir=RF_TRAINER_OUTPUT),
         state: TrainerState,
         control: TrainerControl,
         logs=None,
@@ -253,7 +254,7 @@ class LogLevelCallback(TrainerCallback):
 
     def on_step_end(
         self,
-        args: TrainingArguments,
+        args: TrainingArguments(output_dir=RF_TRAINER_OUTPUT),
         state: TrainerState,
         control: TrainerControl,
         **kwargs,
@@ -294,7 +295,7 @@ class LogLevelCallback(TrainerCallback):
 
     def on_epoch_end(
         self,
-        args: TrainingArguments,
+        args: TrainingArguments(output_dir=RF_TRAINER_OUTPUT),
         state: TrainerState,
         control: TrainerControl,
         **kwargs,

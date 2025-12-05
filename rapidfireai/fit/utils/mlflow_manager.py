@@ -2,6 +2,7 @@
 
 import mlflow
 from mlflow.tracking import MlflowClient
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 
 
 class MLflowManager:
@@ -17,7 +18,8 @@ class MLflowManager:
 
     def create_experiment(self, experiment_name: str) -> str:
         """Create a new experiment and set it as active."""
-        self.experiment_id = self.client.create_experiment(experiment_name)
+        artifact_location = os.path.join(RF_EXPERIMENT_PATH, experiment_name, "mlruns")
+        self.experiment_id = self.client.create_experiment(experiment_name, artifact_location=artifact_location)
         # IMPORTANT: Set this as the active experiment in MLflow context
         mlflow.set_experiment(experiment_name)
         return self.experiment_id
