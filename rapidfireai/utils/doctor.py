@@ -206,7 +206,7 @@ def get_doctor_info():
     for root, dirs, list_files in os.walk(RF_LOG_PATH):
         for file in list_files:
             current_item = os.path.join(root, file)
-            print(f"\n{current_item}:")
+            print(f"\n📁{current_item}:")
             if not os.path.isdir(current_item):
                 with open(current_item, "r", encoding="utf-8") as f:
                     lines = f.readlines()
@@ -214,7 +214,7 @@ def get_doctor_info():
                         print(line.strip())
         for directory in dirs:
             current_item = os.path.join(root, directory)
-            print(f"\n{current_item}:")
+            print(f"\n📁{current_item}:")
             if not os.path.isdir(current_item):
                 with open(current_item, "r", encoding="utf-8") as f:
                     lines = f.readlines()
