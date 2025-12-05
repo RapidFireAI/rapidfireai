@@ -9,6 +9,7 @@ sentence-transformers==5.1.0
 gpustat==1.1.1
 
 # Distributed Computing
+click<8.3.0
 ray>=2.44.1
 
 # LLM Inference
