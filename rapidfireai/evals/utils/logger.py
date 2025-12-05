@@ -1,8 +1,8 @@
 import logging
 import os
-from pathlib import Path
 
 from rapidfireai.utils.constants import RF_LOG_FILENAME, RF_LOG_PATH, RF_EXPERIMENT_PATH
+from rapidfireai.utils.os_utils import mkdir_p
 
 
 class RFLogger:
@@ -27,8 +27,12 @@ class RFLogger:
         # Only set up the file handler on the Controller/Experiment process
         # Ray workers will forward their logs to the driver's logging system
         if not is_ray_worker and RFLogger._file_handler is None:
-            log_dir = Path(os.path.join(RF_LOG_PATH, self._experiment_name))
-            log_dir.mkdir(parents=True, exist_ok=True)
+            log_dir = os.path.join(RF_LOG_PATH, self._experiment_name)
+            try:
+                mkdir_p(log_dir)
+            except (PermissionError, OSError) as e:
+                print(f"Error creating directory: {e}")
+                raise
 
             # Use standard format fields only - LoggerAdapter will prefix messages
             log_format = "%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s"

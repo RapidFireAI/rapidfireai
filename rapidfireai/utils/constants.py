@@ -3,19 +3,22 @@ Constants for the RapidFire AI package
 """
 import os
 from rapidfireai.utils.colab import is_running_in_colab
+from rapidfireai.utils.os_utils import mkdir_p
 
-# Logging Constants
+RF_HOME = os.getenv("RF_HOME", os.path.join(os.path.expanduser("~"), "rapidfireai")))
 RF_LOG_FILENAME = os.getenv("RF_LOG_FILENAME", "rapidfire.log")
-RF_LOG_PATH = os.getenv("RF_LOG_PATH", os.path.join(os.path.expanduser("~"), "logs"))
-RF_EXPERIMENT_PATH = os.getenv("RF_EXPERIMENT_PATH", os.path.join(".", "rapidfire_experiments"))
-RF_DB_PATH = os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~", "db")))
+RF_LOG_PATH = os.getenv("RF_LOG_PATH", os.path.join(RF_HOME, "logs"))
+RF_EXPERIMENT_PATH = os.getenv("RF_EXPERIMENT_PATH", os.path.join(RF_HOME, "rapidfire_experiments"))
+RF_DB_PATH = os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join(RF_HOME, "db")))
 RF_TENSORBOARD_LOG_DIR = os.getenv("RF_TENSORBOARD_LOG_DIR", None)
 RF_TRAINING_LOG_FILENAME = os.getenv("RF_TRAINING_LOG_FILENAME", "training.log")
 
-if not os.path.exists(RF_LOG_PATH):
-    print(f"Creating directory: {RF_LOG_PATH}")
-    from pathlib import Path
-    Path(RF_LOG_PATH).mkdir(parents=True, exist_ok=True)
+try:
+    mkdir_p(RF_LOG_PATH)
+    mkdir_p(RF_HOME)
+except (PermissionError, OSError) as e:
+    print(f"Error creating directory: {e}")
+    raise
 
 class DispatcherConfig:
     """Class to manage the dispatcher configuration"""

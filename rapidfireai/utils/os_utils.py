@@ -2,6 +2,19 @@
 
 import subprocess
 import re
+import os
+from pathlib import Path
+
+def mkdir_p(path: str, parents: bool = True, exist_ok: bool = True):
+    """Create a directory if it does not exist."""
+    if not os.path.exists(path):
+            Path(path).mkdir(parents=parents, exist_ok=exist_ok)
+            print(f"Created directory: {path}")
+            return
+    if not os.path.isdir(path):
+        raise OSError(f"Path exist and is not a directory: {path}")
+    return
+
 
 def get_os_package_installed(package_pattern: str):
     """Get list of installed packages matching a pattern."""

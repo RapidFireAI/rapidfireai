@@ -18,7 +18,7 @@ def temp_tensorboard_dir(tmp_path):
     Returns:
         str: Path to temporary TensorBoard log directory
     """
-    tensorboard_dir = tmp_path / "tensorboard_logs"
+    tensorboard_dir = os.path.join(tmp_path, "tensorboard_logs")
     tensorboard_dir.mkdir()
     return str(tensorboard_dir)
 

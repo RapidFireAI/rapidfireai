@@ -7,6 +7,7 @@
 set -e  # Exit on any error
 
 # Configuration
+RF_HOME="${RF_HOME:=$HOME/rapidfireai}"
 RF_JUPYTER_PORT=${RF_JUPYTER_PORT:=8850}
 RF_JUPYTER_HOST=${RF_JUPYTER_HOST:=127.0.0.1}
 RF_RAY_PORT=${RF_RAY_PORT:=8855}
@@ -19,8 +20,8 @@ RF_FRONTEND_HOST=${RF_FRONTEND_HOST:=0.0.0.0}
 RF_API_PORT=${RF_API_PORT:=8851}
 RF_API_HOST=${RF_API_HOST:=127.0.0.1}
 
-RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
-RF_LOG_PATH="${RF_LOG_PATH:=$HOME/logs}"
+RF_DB_PATH="${RF_DB_PATH:=$RF_HOME/db}"
+RF_LOG_PATH="${RF_LOG_PATH:=$RF_HOME/logs}"
 
 # Colab mode configuration
 if [ -z "${COLAB_GPU+x}" ]; then
@@ -40,7 +41,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # PID file to track processes
-RF_PID_FILE="${RF_PID_FILE:=$HOME/rapidfire_pids.txt}"
+RF_PID_FILE="${RF_PID_FILE:=$RF_HOME/rapidfire_pids.txt}"
 
 # Directory paths for pip-installed package
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -340,9 +341,9 @@ start_api_server() {
 
     # Create database directory
     print_status "Creating database directory..."
-    mkdir -p ~/db
+    mkdir -p "$RF_DB_PATH"
     # Ensure proper permissions
-    chmod 755 ~/db
+    chmod 755 "$RF_DB_PATH"
 
     # Change to dispatcher directory and start Gunicorn server
     cd "$DISPATCHER_DIR"
