@@ -1,15 +1,15 @@
 # Non Colab Packages
 # fit dependencies
 # Core ML/AI Framework
-torch==2.5.1
-torchvision==0.20.1
-torchaudio==2.5.1
+torch>=2.5.1
+torchvision>=0.20.1
+torchaudio>=2.5.1
 datasets==3.6.0
 sentence-transformers==5.1.0
 gpustat==1.1.1
 
 # Distributed Computing
-ray==2.44.1
+ray>=2.44.1
 
 # LLM Inference
 transformers==4.56.1
@@ -27,7 +27,7 @@ langchain-openai
 langchain-huggingface
 
 # Vector Search
-faiss-gpu-cu12==1.12.0
+faiss-gpu-cu12==1.13.0
 
 # Statistical Analysis
 scipy==1.16.1
