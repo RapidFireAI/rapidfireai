@@ -152,7 +152,7 @@ def get_doctor_info():
         print("⚠️ Torch CUDA Version: unknown")
 
     # Check RapidFire AI ports
-    print ("\n🔍 RapidFire AI Ports:")
+    print ("\n🛜 RapidFire AI Ports:")
     print ("-" * 30)
     for check_item in [
         {"host": JupyterConfig.HOST, "port": JupyterConfig.PORT, "service": "Jupyter"}, 
@@ -201,7 +201,7 @@ def get_doctor_info():
     print(f"RayConfig: {RayConfig()}")
     print(f"ColabConfig: {ColabConfig()}")
     # Print all files recursively under RF_LOG_PATH
-    print("\n🔍 Log Files:")
+    print("\n🪵 Log Files:")
     for root, dirs, list_files in os.walk(RF_LOG_PATH):
         for file in list_files:
             print(f"  {os.path.join(root, file)}")
