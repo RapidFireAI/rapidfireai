@@ -28,7 +28,7 @@ def get_doctor_info():
     Get doctor information.
     """
     status = 0
-    print("🔍 RapidFire AI System Diagnostics")
+    print("🩺 RapidFire AI System Diagnostics")
     print("=" * 50)
 
     # Python Information
@@ -204,9 +204,9 @@ def get_doctor_info():
     print("\n🪵 Log Files:")
     for root, dirs, list_files in os.walk(RF_LOG_PATH):
         for file in list_files:
-            print(f"  {os.path.join(root, file)}")
+            print(f"{os.path.join(root, file)}")
         for directory in dirs:
-            print(f"  {os.path.join(root, directory)}")
+            print(f"{os.path.join(root, directory)}")
     print("\n")
     if status == 0:
         print("\n✅ Diagnostics complete!")
