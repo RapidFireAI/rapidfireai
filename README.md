@@ -12,7 +12,7 @@
 <h3>Rapid AI Customization from RAG to Fine-Tuning</h3>
 <p>20x experimentation throughput of LLM pipelines faster, more systematic.</p>
 
-<a href="https://colab.research.google.com/github/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/rf-colab-rag-fiqa-tutorial.ipynb"><img src="docs/images/colab-rag-button.svg" alt="Try RAG on Colab"></a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://colab.research.google.com/github/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/rf-colab-tensorboard-tutorial.ipynb"><img src="docs/images/colab-finetuning-button.svg" alt="Try Fine-Tuning on Colab"></a>
+<a href="https://colab.research.google.com/github/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/rf-colab-rag-fiqa-tutorial.ipynb"><img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/colab-rag-button.svg" alt="Try RAG on Colab"></a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://colab.research.google.com/github/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/rf-colab-tensorboard-tutorial.ipynb"><img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/colab-finetuning-button.svg" alt="Try Fine-Tuning on Colab"></a>
 
 </div>
 
