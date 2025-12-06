@@ -17,6 +17,7 @@ from rapidfireai.utils.get_ip_address import get_ip_address
 from rapidfireai.utils.python_info import get_python_info
 from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabConfig
 from rapidfireai.utils.doctor import get_doctor_info
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 
 from .version import __version__
 
@@ -58,9 +59,9 @@ def run_script(args):
         return 1
 
 
-def run_doctor():
+def run_doctor(log_lines: int = 10):
     """Run the doctor command to diagnose system issues."""
-    get_doctor_info()
+    get_doctor_info(log_lines)
     return 0
 
 
@@ -399,7 +400,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument(
         "--tensorboard-log-dir",
         default=os.getenv("RF_TENSORBOARD_LOG_DIR", None),
-        help="Directory for TensorBoard logs (default: {experiment_path}/tensorboard_logs)",
+        help=f"Directory for TensorBoard logs (default: {RF_EXPERIMENT_PATH}/tensorboard_logs)",
     )
 
     parser.add_argument(
