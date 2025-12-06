@@ -29,7 +29,7 @@ class Experiment:
         Args:
             experiment_name: Name of the experiment
             mode: Either "fit" or "evals"
-            experiment_path: Path to store experiment artifacts (default: ./rapidfire_experiments)
+            experiment_path: Path to store experiment artifacts (default: $RF_HOME/rapidfire_experiments)
 
         Raises:
             ValueError: If mode is not "fit" or "evals"
@@ -500,9 +500,14 @@ class Experiment:
             # Eval mode
             self.experiment_utils.cancel_current(internal=False)
 
-    def end(self) -> None:
+    def end(self) -> dict[str, Any]:
         """
         End the experiment and clean up resources.
+
+        Returns:
+            Dictionary with the following keys:
+                - "log_file_path": Log file path
+
 
         Works in both fit and evals modes with mode-specific cleanup.
         """
@@ -534,3 +539,7 @@ class Experiment:
             self._ray.shutdown()
             self.logger.info("All actors shut down")
             self.logger.info("Dispatcher will automatically shut down (daemon thread)")
+
+        return {
+            "log_file_path": self.logger.get_log_file_path(self.experiment_name),
+        }

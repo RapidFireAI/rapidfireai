@@ -114,3 +114,9 @@ class RFLogger:
                 "logger_name": logger_name,
             },
         )
+    
+    def get_log_file_path(self, experiment_name: str):
+        """Get the log file path for the experiment"""
+        return os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
+
+
