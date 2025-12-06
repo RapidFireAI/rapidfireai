@@ -416,6 +416,8 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
 
+    parser.add_argument("--log-lines", type=int, default=10, help="Number of lines to log to the console")
+
     args = parser.parse_args()
 
     # Set environment variables from CLI args
@@ -431,7 +433,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     # Handle doctor command separately
     if args.command == "doctor":
-        return run_doctor()
+        return run_doctor(args.log_lines)
 
     # Handle init command separately
     if args.command == "init":

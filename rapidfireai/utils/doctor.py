@@ -23,7 +23,7 @@ from rapidfireai.utils.constants import (
     RF_LOG_FILENAME,
 )
 
-def get_doctor_info():
+def get_doctor_info(log_lines: int = 10):
     """
     Get doctor information.
     """
@@ -201,8 +201,10 @@ def get_doctor_info():
     print(f"RayConfig: {RayConfig()}")
     print(f"ColabConfig: {ColabConfig()}")
     # Print all files recursively under RF_LOG_PATH
-    lines_to_print = 10
-    print(f"\n🪵 Log Files (last {lines_to_print} lines):")
+    lines_to_log = str(log_lines)
+    if log_lines == -1:
+        lines_to_log = "all"
+    print(f"\n🪵 Log Files (last {lines_to_log} lines):")
     for root, dirs, list_files in os.walk(RF_LOG_PATH):
         for file in list_files:
             current_item = os.path.join(root, file)
@@ -210,15 +212,20 @@ def get_doctor_info():
             if not os.path.isdir(current_item):
                 with open(current_item, "r", encoding="utf-8") as f:
                     lines = f.readlines()
-                    for line in lines[-lines_to_print:]:
+                    read_lines = lines[-log_lines:]
+                    if log_lines == -1:
+                        read_lines = lines
+                    for line in read_lines:
                         print(line.strip())
         for directory in dirs:
             current_item = os.path.join(root, directory)
             print(f"\n📁{current_item}:")
             if not os.path.isdir(current_item):
                 with open(current_item, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-                    for line in lines[-lines_to_print:]:
+                    read_lines = lines[-log_lines:]
+                    if log_lines == -1:
+                        read_lines = lines
+                    for line in read_lines:
                         print(line.strip())
     print("\n")
     if status == 0:
