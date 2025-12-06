@@ -209,14 +209,14 @@ def get_doctor_info(log_lines: int = 10):
         for file in list_files:
             current_item = os.path.join(root, file)
             print(f"\n📄{current_item}:")
-            if not os.path.isdir(current_item):
-                with open(current_item, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-                    read_lines = lines[-log_lines:]
-                    if log_lines == -1:
-                        read_lines = lines
-                    for line in read_lines:
-                        print(line.strip())
+            if log_lines != 0:
+                if log_lines == -1:
+                    log_lines = 0
+                if not os.path.isdir(current_item):
+                    with open(current_item, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                        for line in lines[-log_lines:]:
+                            print(line.strip())
     print("\n")
     if status == 0:
         print("\n✅ Diagnostics complete!")
