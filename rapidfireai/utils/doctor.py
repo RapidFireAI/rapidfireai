@@ -210,12 +210,13 @@ def get_doctor_info(log_lines: int = 10):
             current_item = os.path.join(root, file)
             print(f"\n📄{current_item}:")
             if log_lines != 0:
-                if log_lines == -1:
-                    log_lines = 0
                 if not os.path.isdir(current_item):
                     with open(current_item, "r", encoding="utf-8") as f:
                         lines = f.readlines()
-                        for line in lines[-log_lines:]:
+                        read_lines = lines[-log_lines:]
+                        if log_lines == -1:
+                            read_lines = lines
+                        for line in read_lines:
                             print(line.strip())
     print("\n")
     if status == 0:
