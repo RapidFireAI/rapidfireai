@@ -242,7 +242,7 @@ check_startup_issues() {
     fi
 
     # Check if ports are available
-    if ing_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
+    if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
         print_error "MLFlow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
         return 1
     fi
