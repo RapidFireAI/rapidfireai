@@ -93,41 +93,41 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     setup_directory = None
     for site_package in site_packages.split(","):
         if os.path.exists(os.path.join(site_package.strip(), "setup", "fit")):
-            setup_directory = os.path.join(site_package, "setup")
+            setup_directory = Path(site_package) / "setup"
             break
     if not setup_directory:
         print("❌ Setup directory not found, skipping package installation")
         return 1
     if ColabConfig.ON_COLAB and evals:
         print("Colab environment detected, installing evals packages")
-        requirements_file = os.path.join(setup_directory, "evals", "requirements-colab.txt")
+        requirements_file = setup_directory / "evals" / "requirements-colab.txt"
     elif ColabConfig.ON_COLAB and not evals:
         print("Colab environment detected, installing fit packages")
-        requirements_file = os.path.join(setup_directory, "fit", "requirements-colab.txt")
+        requirements_file = setup_directory / "fit" / "requirements-colab.txt"
     elif not ColabConfig.ON_COLAB and evals:
         print("Non-Colab environment detected, installing evals packages")
-        requirements_file = os.path.join(setup_directory, "evals", "requirements-local.txt")
+        requirements_file = setup_directory / "evals" / "requirements-local.txt"
     elif not ColabConfig.ON_COLAB and not evals:
         print("Non-Colab environment detected, installing fit packages")
-        requirements_file = os.path.join(setup_directory, "fit", "requirements-local.txt")
+        requirements_file = setup_directory / "fit" / "requirements-local.txt"
     else:
         print("❌ Unknown environment detected, skipping package installation")
         return 1
 
     try:
-        print(f"Installing packages from {requirements_file}...")
-        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file]
+        print(f"Installing packages from {requirements_file.absolute()}...")
+        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file.absolute()]
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to install packages from {requirements_file}")
+        print(f"❌ Failed to install packages from {requirements_file.absolute()}")
         print(f"   Error: {e}")
         if e.stdout:
             print(f"   Standard output: {e.stdout}")
         if e.stderr:
             print(f"   Standard error: {e.stderr}")
-        print(f"   You may need to install {requirements_file} manually")
+        print(f"   You may need to install {requirements_file.absolute()} manually")
         return 1
-    print(f"✅ Successfully installed packages from {requirements_file}")
+    print(f"✅ Successfully installed packages from {requirements_file.absolute()}")
 
     vllm_version = "0.10.2"
     torch_version = "2.5.1"

@@ -539,4 +539,4 @@ class Experiment:
         """
         Get the log file path for the experiment.
         """
-        return os.path.join(RF_LOG_PATH, self.experiment_name, RF_LOG_FILENAME)
+        return Path(RF_LOG_PATH) / self.experiment_name / RF_LOG_FILENAME
