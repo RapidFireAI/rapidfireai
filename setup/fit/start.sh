@@ -242,15 +242,15 @@ check_startup_issues() {
     fi
 
     # Check if ports are available
-    if ! ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
+    if ing_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
         print_error "MLFlow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
         return 1
     fi
-    if ! ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
+    if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
         print_error "Frontend $RF_FRONTEND_HOST:$RF_FRONTEND_PORT in use"
         return 1
     fi
-    if ! ping_port $RF_API_HOST $RF_API_PORT; then
+    if ping_port $RF_API_HOST $RF_API_PORT; then
         print_error "API port $RF_API_HOST:$RF_API_PORT in use"
         return 1
     fi
