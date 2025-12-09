@@ -606,7 +606,7 @@ show_status() {
             print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
             print_status "   (Click the link above or copy/paste the URL into your browser)"
         else
-            print_error "🚨 RapidFire Frontend is not ready!"
+            print_status "🚨 RapidFire Frontend is not ready!"
         fi
     fi
 
