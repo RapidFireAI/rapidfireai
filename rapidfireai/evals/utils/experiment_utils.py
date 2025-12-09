@@ -3,6 +3,7 @@
 import os
 import re
 import warnings
+from pathlib import Path
 
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.db.rf_db import RFDatabase
@@ -102,9 +103,8 @@ class ExperimentUtils:
 
         # Create experiment directory
         try:
-            experiment_dir = os.path.join(experiments_path, experiment_name)
-            os.makedirs(experiment_dir, exist_ok=True)
-            os.makedirs(os.path.join(experiment_dir, "logs"), exist_ok=True)
+            experiment_dir = Path(experiments_path) / experiment_name
+            experiment_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             raise Exception(f"Failed to create experiment directories: {e}")
 

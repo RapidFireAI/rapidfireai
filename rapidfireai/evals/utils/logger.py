@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 
 from rapidfireai.utils.constants import RF_LOG_FILENAME, RF_LOG_PATH, RF_EXPERIMENT_PATH
 from rapidfireai.utils.os_utils import mkdir_p
