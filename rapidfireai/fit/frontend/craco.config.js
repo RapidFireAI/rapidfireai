@@ -7,6 +7,8 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 const proxyTarget = process.env.MLFLOW_PROXY;
 const useProxyServer = !!proxyTarget && !process.env.MLFLOW_DEV_PROXY_MODE;
+const rfFrontendHost: string = process.env.RF_FRONTEND_HOST || 'localhost';
+const rfFrontendPort: string = process.env.RF_FRONTEND_PORT || '8853';
 
 const isDevserverWebsocketRequest = (request) =>
   request.url === '/ws' && (request.headers.upgrade === 'websocket' || request.headers['sec-websocket-version']);
@@ -209,8 +211,8 @@ module.exports = function () {
             },
           },
         ],
-        host: 'localhost',
-        port: 8853,
+        host: rfFrontendHost,
+        port: rfFrontendPort,
         open: false,
       }),
       client: {
