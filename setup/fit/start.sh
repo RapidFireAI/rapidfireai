@@ -23,6 +23,8 @@ RF_API_HOST=${RF_API_HOST:=127.0.0.1}
 RF_DB_PATH="${RF_DB_PATH:=$RF_HOME/db}"
 RF_LOG_PATH="${RF_LOG_PATH:=$RF_HOME/logs}"
 
+RF_TIMEOUT_TIME=${RF_TIMEOUT_TIME:=30}
+
 # Colab mode configuration
 if [ -z "${COLAB_GPU+x}" ]; then
     RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=mlflow}
@@ -215,7 +217,7 @@ wait_for_service() {
     local host=$1
     local port=$2
     local service=$3
-    local max_attempts=${4:-30}  # Allow custom timeout, default 30 seconds
+    local max_attempts=${4:-$RF_TIMEOUT_TIME}  # Allow custom timeout, default 30 seconds
     local attempt=1
 
     print_status "Waiting for $service to be ready on $host:$port (timeout: ${max_attempts} attempts)..."
@@ -268,7 +270,7 @@ start_mlflow() {
     echo "$mlflow_pid MLflow" >> "$RF_PID_FILE"
 
     # Wait for MLflow to be ready
-    if wait_for_service $RF_MLFLOW_HOST $RF_MLFLOW_PORT "MLflow server"; then
+    if wait_for_service $RF_MLFLOW_HOST $RF_MLFLOW_PORT "MLflow server" $RF_TIMEOUT_TIME; then
         print_success "MLflow server started (PID: $mlflow_pid)"
         return 0
     else
@@ -357,7 +359,7 @@ start_api_server() {
     echo "$api_pid API_Server" >> "$RF_PID_FILE"
 
     # Wait for API server to be ready - use longer timeout for API server
-    if wait_for_service $RF_API_HOST $RF_API_PORT "API server" 60; then
+    if wait_for_service $RF_API_HOST $RF_API_PORT "API server" $((RF_TIMEOUT_TIME * 2)); then
         print_success "API server started (PID: $api_pid)"
         print_status "API server available at: http://$RF_API_HOST:$RF_API_PORT"
         return 0
@@ -467,7 +469,7 @@ start_frontend() {
     local check_hosts=("localhost" "127.0.0.1" "$RF_FRONTEND_HOST")
 
     for host in "${check_hosts[@]}"; do
-        if wait_for_service $host $RF_FRONTEND_PORT "Frontend server" 15; then
+        if wait_for_service $host $RF_FRONTEND_PORT "Frontend server" $RF_TIMEOUT_TIME; then
             print_success "Frontend Flask server started (PID: $frontend_pid) on $host:$RF_FRONTEND_PORT"
             frontend_ready=true
             break
