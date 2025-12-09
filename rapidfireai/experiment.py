@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
-from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH
+from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME
 
 
 class Experiment:
@@ -504,11 +504,6 @@ class Experiment:
         """
         End the experiment and clean up resources.
 
-        Returns:
-            Dictionary with the following keys:
-                - "log_file_path": Log file path
-
-
         Works in both fit and evals modes with mode-specific cleanup.
         """
         if self.mode == "fit":
@@ -539,7 +534,9 @@ class Experiment:
             self._ray.shutdown()
             self.logger.info("All actors shut down")
             self.logger.info("Dispatcher will automatically shut down (daemon thread)")
-
-        return {
-            "log_file_path": self.logger.get_log_file_path(self.experiment_name),
-        }
+    
+    def get_log_file_path(self) -> str:
+        """
+        Get the log file path for the experiment.
+        """
+        return os.path.join(self.experiment_path, self.experiment_name, RF_LOG_FILENAME)
