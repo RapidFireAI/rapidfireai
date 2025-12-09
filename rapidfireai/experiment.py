@@ -399,17 +399,21 @@ class Experiment:
 
     def get_results(self) -> pd.DataFrame:
         """
-        Get the MLflow training metrics for all runs in the experiment.
+        Get the MLflow metrics for all runs/pipelines in the experiment.
+
+        In fit mode: Returns training metrics for all runs.
+        In evals mode: Returns inference metrics for all pipelines.
 
         Returns:
-            DataFrame with training metrics
-
-        Raises:
-            ValueError: If not in fit mode
+            DataFrame with metrics (columns vary by mode)
         """
-        if self.mode != "fit":
-            raise ValueError("get_results() is only available in 'fit' mode")
+        if self.mode == "fit":
+            return self._get_results_fit()
+        else:
+            return self._get_results_evals()
 
+    def _get_results_fit(self) -> pd.DataFrame:
+        """Get results for fit mode."""
         from rapidfireai.fit.utils.constants import MLFlowConfig
 
         ExperimentException = self._ExperimentException
@@ -460,6 +464,113 @@ class Experiment:
             if hasattr(self, "logger"):
                 self.logger.opt(exception=True).error(f"Error getting results: {e}")
             raise ExperimentException(f"Error getting results: {e}, traceback: {traceback.format_exc()}") from e
+
+    def _get_results_evals(self) -> pd.DataFrame:
+        """
+        Get results for evals mode.
+
+        Returns DataFrame with pipeline metrics from MLflow.
+        """
+        from rapidfireai.evals.db import RFDatabase
+        from rapidfireai.evals.utils.constants import MLFlowConfig
+
+        try:
+            db = RFDatabase()
+            pipelines = db.get_all_pipelines()
+
+            if not pipelines:
+                return pd.DataFrame(columns=["pipeline_id", "step"])
+
+            # Check if any pipeline has MLflow run IDs
+            has_mlflow_runs = any(p.get("mlflow_run_id") for p in pipelines)
+
+            if not has_mlflow_runs:
+                # No MLflow runs - return basic pipeline info
+                return pd.DataFrame([
+                    {
+                        "pipeline_id": p["pipeline_id"],
+                        "pipeline_type": p.get("pipeline_type"),
+                        "status": p.get("status"),
+                        "shards_completed": p.get("shards_completed", 0),
+                        "total_samples_processed": p.get("total_samples_processed", 0),
+                    }
+                    for p in pipelines
+                ])
+
+            # Import MLflow manager
+            from rapidfireai.evals.utils.mlflow_manager import MLflowManager
+
+            mlflow_manager = MLflowManager(MLFlowConfig.URL)
+
+            metrics_data = []
+
+            for pipeline in pipelines:
+                pipeline_id = pipeline["pipeline_id"]
+                mlflow_run_id = pipeline.get("mlflow_run_id")
+
+                if not mlflow_run_id:
+                    # Include pipeline even without MLflow metrics
+                    metrics_data.append({
+                        "pipeline_id": pipeline_id,
+                        "pipeline_type": pipeline.get("pipeline_type"),
+                        "status": pipeline.get("status"),
+                        "step": 0,
+                    })
+                    continue
+
+                try:
+                    run_metrics = mlflow_manager.get_run_metrics(mlflow_run_id)
+
+                    if not run_metrics:
+                        # No metrics recorded yet
+                        metrics_data.append({
+                            "pipeline_id": pipeline_id,
+                            "pipeline_type": pipeline.get("pipeline_type"),
+                            "status": pipeline.get("status"),
+                            "step": 0,
+                        })
+                        continue
+
+                    # Group metrics by step
+                    step_metrics = {}
+                    for metric_name, metric_values in run_metrics.items():
+                        for step, value in metric_values:
+                            if step not in step_metrics:
+                                step_metrics[step] = {
+                                    "pipeline_id": pipeline_id,
+                                    "pipeline_type": pipeline.get("pipeline_type"),
+                                    "status": pipeline.get("status"),
+                                    "step": step,
+                                }
+                            step_metrics[step][metric_name] = value
+
+                    if step_metrics:
+                        metrics_data.extend(step_metrics.values())
+                    else:
+                        metrics_data.append({
+                            "pipeline_id": pipeline_id,
+                            "pipeline_type": pipeline.get("pipeline_type"),
+                            "status": pipeline.get("status"),
+                            "step": 0,
+                        })
+                except Exception:
+                    # If MLflow query fails, still include basic info
+                    metrics_data.append({
+                        "pipeline_id": pipeline_id,
+                        "pipeline_type": pipeline.get("pipeline_type"),
+                        "status": pipeline.get("status"),
+                        "step": 0,
+                    })
+
+            if metrics_data:
+                return pd.DataFrame(metrics_data).sort_values(["pipeline_id", "step"])
+            else:
+                return pd.DataFrame(columns=["pipeline_id", "step"])
+
+        except Exception as e:
+            if hasattr(self, "logger"):
+                self.logger.opt(exception=True).error(f"Error getting evals results: {e}")
+            raise Exception(f"Error getting evals results: {e}, traceback: {traceback.format_exc()}") from e
 
     def get_runs_info(self) -> pd.DataFrame:
         """

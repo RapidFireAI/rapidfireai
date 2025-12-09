@@ -23,8 +23,10 @@ from rapidfireai.evals.utils.constants import (
     ExperimentStatus,
     PipelineStatus,
     TaskStatus,
+    MLFlowConfig,
 )
 from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.evals.utils.mlflow_manager import MLflowManager
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 from rapidfireai.evals.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.evals.utils.automl_utils import get_runs
@@ -41,6 +43,7 @@ class Controller:
         self,
         experiment_name: str,
         experiment_path: str,
+        mlflow_tracking_uri: str = None,
     ):
         """
         Initialize the controller.
@@ -48,6 +51,7 @@ class Controller:
         Args:
             experiment_name: Name of the experiment
             experiment_path: Path to experiment logs/artifacts
+            mlflow_tracking_uri: Optional MLflow tracking server URI. If provided, enables MLflow logging.
         """
         self.aggregator = Aggregator()
         self.dataloader = DataLoader()
@@ -58,6 +62,17 @@ class Controller:
         # Initialize logger
         logging_manager = RFLogger(experiment_name=self.experiment_name, experiment_path=self.experiment_path)
         self.logger = logging_manager.get_logger("Controller")
+
+        # Initialize MLflow manager if tracking URI provided
+        self.mlflow_manager: MLflowManager | None = None
+        self.mlflow_tracking_uri = mlflow_tracking_uri
+        if mlflow_tracking_uri:
+            try:
+                self.mlflow_manager = MLflowManager(tracking_uri=mlflow_tracking_uri)
+                self.logger.info(f"MLflow tracking enabled at {mlflow_tracking_uri}")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize MLflow manager: {e}. MLflow tracking disabled.")
+                self.mlflow_manager = None
 
         # Cache for RAG contexts (persists only during Controller lifetime)
         # Maps context_hash -> (context_id, components_ref)
@@ -502,6 +517,138 @@ class Controller:
 
         return pipeline_ids, pipeline_id_to_config
 
+    def _setup_mlflow_runs(
+        self,
+        pipeline_ids: list[int],
+        pipeline_id_to_config: dict[int, dict],
+        db: RFDatabase,
+    ) -> dict[int, str]:
+        """
+        Create MLflow runs for each pipeline and log initial parameters.
+
+        Args:
+            pipeline_ids: List of pipeline IDs
+            pipeline_id_to_config: Mapping of pipeline_id to config
+            db: Database instance
+
+        Returns:
+            Mapping of pipeline_id to mlflow_run_id
+        """
+        if not self.mlflow_manager:
+            return {}
+
+        pipeline_to_mlflow_run = {}
+
+        try:
+            # Create or get MLflow experiment
+            self.mlflow_manager.get_or_create_experiment(self.experiment_name)
+            self.logger.info(f"MLflow experiment '{self.experiment_name}' ready")
+        except Exception as e:
+            self.logger.warning(f"Failed to create MLflow experiment: {e}")
+            return {}
+
+        for pipeline_id in pipeline_ids:
+            try:
+                pipeline_config = pipeline_id_to_config[pipeline_id]
+                pipeline_name = pipeline_config.get("pipeline_name", f"pipeline_{pipeline_id}")
+
+                # Create MLflow run
+                mlflow_run_id = self.mlflow_manager.create_run(
+                    run_name=pipeline_name,
+                    tags={"pipeline_id": str(pipeline_id)}
+                )
+
+                # Store mapping
+                pipeline_to_mlflow_run[pipeline_id] = mlflow_run_id
+
+                # Save to database
+                db.set_pipeline_mlflow_run_id(pipeline_id, mlflow_run_id)
+
+                # Log pipeline parameters
+                params_to_log = {"pipeline_id": pipeline_id}
+
+                # Extract model info
+                pipeline = pipeline_config.get("pipeline")
+                if pipeline and hasattr(pipeline, "model_config") and pipeline.model_config:
+                    model_config = pipeline.model_config
+                    if isinstance(model_config, dict):
+                        for key, value in model_config.items():
+                            params_to_log[f"model_{key}"] = value
+
+                # Extract RAG info
+                if pipeline and hasattr(pipeline, "rag") and pipeline.rag:
+                    rag = pipeline.rag
+                    if hasattr(rag, "search_type"):
+                        params_to_log["rag_search_type"] = getattr(rag, "search_type", None)
+                    if hasattr(rag, "search_kwargs") and rag.search_kwargs:
+                        params_to_log["rag_k"] = rag.search_kwargs.get("k", None)
+
+                # Log parameters
+                self.mlflow_manager.log_params(mlflow_run_id, params_to_log)
+
+                self.logger.debug(f"Created MLflow run {mlflow_run_id} for pipeline {pipeline_id}")
+
+            except Exception as e:
+                self.logger.warning(f"Failed to create MLflow run for pipeline {pipeline_id}: {e}")
+
+        return pipeline_to_mlflow_run
+
+    def _log_mlflow_metrics(
+        self,
+        pipeline_id: int,
+        mlflow_run_id: str,
+        metrics: dict[str, Any],
+        step: int = None,
+    ) -> None:
+        """
+        Log metrics to MLflow for a pipeline.
+
+        Args:
+            pipeline_id: Pipeline ID
+            mlflow_run_id: MLflow run ID
+            metrics: Dictionary of metric names to values
+            step: Optional step number (shard number)
+        """
+        if not self.mlflow_manager or not mlflow_run_id:
+            return
+
+        try:
+            # Extract numeric values from metrics dict
+            flat_metrics = {}
+            for key, value in metrics.items():
+                if isinstance(value, dict) and "value" in value:
+                    flat_metrics[key] = value["value"]
+                elif isinstance(value, (int, float)):
+                    flat_metrics[key] = value
+
+            if flat_metrics:
+                self.mlflow_manager.log_metrics(mlflow_run_id, flat_metrics, step=step)
+        except Exception as e:
+            self.logger.debug(f"Failed to log MLflow metrics for pipeline {pipeline_id}: {e}")
+
+    def _end_mlflow_run(
+        self,
+        pipeline_id: int,
+        mlflow_run_id: str,
+        status: str = "FINISHED",
+    ) -> None:
+        """
+        End MLflow run for a pipeline.
+
+        Args:
+            pipeline_id: Pipeline ID
+            mlflow_run_id: MLflow run ID
+            status: Run status ("FINISHED", "FAILED", "KILLED")
+        """
+        if not self.mlflow_manager or not mlflow_run_id:
+            return
+
+        try:
+            self.mlflow_manager.end_run(mlflow_run_id, status=status)
+            self.logger.debug(f"Ended MLflow run {mlflow_run_id} for pipeline {pipeline_id} with status {status}")
+        except Exception as e:
+            self.logger.debug(f"Failed to end MLflow run for pipeline {pipeline_id}: {e}")
+
     def _compute_final_metrics_for_pipelines(
         self,
         pipeline_ids: list[int],
@@ -511,6 +658,7 @@ class Controller:
         db: RFDatabase,
         progress_display=None,
         pipeline_id_to_info: dict[int, dict] = None,
+        pipeline_to_mlflow_run: dict[int, str] = None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Compute final metrics for each pipeline and update database.
@@ -526,6 +674,7 @@ class Controller:
             db: Database instance
             progress_display: Optional progress display to update
             pipeline_id_to_info: Optional mapping of pipeline_id to pipeline info dict
+            pipeline_to_mlflow_run: Optional mapping of pipeline_id to MLflow run ID
 
         Returns:
             Dict mapping pipeline_id to (aggregated_results, cumulative_metrics) for
@@ -638,6 +787,28 @@ class Controller:
                 )
             self.logger.info(f"Pipeline {pipeline_id} ({pipeline_name}) completed successfully")
 
+            # Log final metrics to MLflow and end the run
+            if pipeline_to_mlflow_run and pipeline_id in pipeline_to_mlflow_run:
+                mlflow_run_id = pipeline_to_mlflow_run[pipeline_id]
+                try:
+                    # Log final computed metrics to MLflow
+                    final_mlflow_metrics = {}
+                    for metric_name, metric_data in ordered_metrics.items():
+                        if isinstance(metric_data, dict) and "value" in metric_data:
+                            value = metric_data["value"]
+                            # Only log numeric values
+                            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                # Use "final_" prefix to distinguish from per-shard metrics
+                                final_mlflow_metrics[f"final_{metric_name}"] = value
+
+                    if final_mlflow_metrics:
+                        self._log_mlflow_metrics(pipeline_id, mlflow_run_id, final_mlflow_metrics)
+
+                    # End the MLflow run with FINISHED status
+                    self._end_mlflow_run(pipeline_id, mlflow_run_id, status="FINISHED")
+                except Exception as e:
+                    self.logger.debug(f"Failed to log final metrics to MLflow for pipeline {pipeline_id}: {e}")
+
         if progress_display:
             progress_display.stop()
         return final_results
@@ -707,6 +878,11 @@ class Controller:
 
         # PHASE 5: Register pipelines in database
         pipeline_ids, pipeline_id_to_config = self._register_pipelines(config_leaves, db)
+
+        # PHASE 5.5: Setup MLflow runs for each pipeline (if MLflow enabled)
+        pipeline_to_mlflow_run = self._setup_mlflow_runs(pipeline_ids, pipeline_id_to_config, db)
+        if pipeline_to_mlflow_run:
+            self.logger.info(f"Created {len(pipeline_to_mlflow_run)} MLflow runs for pipeline tracking")
 
         # PHASE 6: Initialize PipelineScheduler
         scheduler = PipelineScheduler(
@@ -989,6 +1165,13 @@ class Controller:
                                 if elapsed_time > 0:
                                     throughput = samples_processed / elapsed_time
                                     display_metrics["Throughput"] = {"value": throughput}
+
+                                # Log metrics to MLflow (if enabled)
+                                mlflow_run_id = pipeline_to_mlflow_run.get(pipeline_id)
+                                if mlflow_run_id:
+                                    self._log_mlflow_metrics(
+                                        pipeline_id, mlflow_run_id, display_metrics, step=shards_completed
+                                    )
                             except Exception as e:
                                 self.logger.debug(f"Could not compute live metrics: {e}")
 
@@ -1035,6 +1218,11 @@ class Controller:
 
                         # Update progress display
                         progress_display.update_pipeline(pipeline_id, status="FAILED")
+
+                        # End MLflow run with FAILED status
+                        mlflow_run_id = pipeline_to_mlflow_run.get(pipeline_id)
+                        if mlflow_run_id:
+                            self._end_mlflow_run(pipeline_id, mlflow_run_id, status="FAILED")
 
                         # Remove pipeline from scheduler (no more tasks will be scheduled for it)
                         scheduler.remove_pipeline(pipeline_id)
@@ -1218,6 +1406,7 @@ class Controller:
             db,
             progress_display,
             pipeline_id_to_info,
+            pipeline_to_mlflow_run,
         )
 
 

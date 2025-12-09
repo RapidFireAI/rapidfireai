@@ -20,26 +20,38 @@ from rapidfireai.utils.constants import DispatcherConfig
 from .version import __version__
 
 
-def get_script_path():
-    """Get the path to the start.sh script."""
+def get_script_path(evals: bool = False):
+    """Get the path to the start.sh script.
+
+    Args:
+        evals: If True, return path to evals startup script. If False, return fit startup script.
+    """
     # Get the directory where this package is installed
     package_dir = Path(__file__).parent
 
-    # Try setup/fit directory relative to package directory
-    script_path = package_dir.parent / "setup" / "fit" / "start.sh"
+    # Determine which mode's script to use
+    mode = "evals" if evals else "fit"
+
+    # Try setup/{mode} directory relative to package directory
+    script_path = package_dir.parent / "setup" / mode / "start.sh"
 
     if not script_path.exists():
         # Fallback: try to find it relative to the current working directory
-        script_path = Path.cwd() / "setup" / "fit" / "start.sh"
+        script_path = Path.cwd() / "setup" / mode / "start.sh"
         if not script_path.exists():
             raise FileNotFoundError(f"Could not find start.sh script at {script_path}")
 
     return script_path
 
 
-def run_script(args):
-    """Run the start.sh script with the given arguments."""
-    script_path = get_script_path()
+def run_script(args, evals: bool = False):
+    """Run the start.sh script with the given arguments.
+
+    Args:
+        args: Command line arguments to pass to the script.
+        evals: If True, run evals startup script. If False, run fit startup script.
+    """
+    script_path = get_script_path(evals=evals)
 
     # Make sure the script is executable
     if not os.access(script_path, os.X_OK):
@@ -764,17 +776,21 @@ def main():
     parser = argparse.ArgumentParser(description="RapidFire AI - Start/stop/manage services", prog="rapidfireai",
     epilog="""
 Examples:
-  # Basic initialization
+  # Basic initialization (fit mode)
   rapidfireai init
-  
+
   # Initialize with evaluation dependencies
   rapidfireai init --evals
-  
-  # Start services
+
+  # Start fit services (MLflow, Dispatcher, Frontend)
   rapidfireai start
-  
+
+  # Start evals services (MLflow, Evals Dispatcher, Frontend)
+  rapidfireai start --evals
+
   # Stop services
   rapidfireai stop
+  rapidfireai stop --evals
 
 For more information, visit: https://github.com/RapidFireAI/rapidfireai
         """
@@ -815,7 +831,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         help="Copy test notebooks to the tutorial_notebooks directory",
     )
 
-    parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
+    parser.add_argument("--evals", action="store_true", help="Use evals mode (for init: install evals dependencies; for start/stop: manage evals services)")
 
     args = parser.parse_args()
 
@@ -845,7 +861,8 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         return copy_test_notebooks()
 
     # Run the script with the specified command
-    return run_script([args.command])
+    # Pass --evals flag for start/stop/restart/status commands
+    return run_script([args.command], evals=args.evals)
 
 
 if __name__ == "__main__":
