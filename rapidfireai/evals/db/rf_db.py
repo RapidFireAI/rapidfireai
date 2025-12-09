@@ -277,6 +277,37 @@ class RFDatabase:
         result = self.db.execute(query, fetch=True)
         return [row[0] for row in result] if result else []
 
+    def get_all_experiments(self) -> list[dict[str, Any]]:
+        """
+        Get all experiments.
+
+        Returns:
+            List of experiment dictionaries with all fields
+        """
+        query = """
+        SELECT experiment_id, experiment_name, num_actors, num_cpus, num_gpus,
+               mlflow_experiment_id, status, num_shards, error, created_at
+        FROM experiments
+        ORDER BY created_at DESC
+        """
+        result = self.db.execute(query, fetch=True)
+        experiments = []
+        if result:
+            for row in result:
+                experiments.append({
+                    "experiment_id": row[0],
+                    "experiment_name": row[1],
+                    "num_actors": row[2],
+                    "num_cpus": row[3],
+                    "num_gpus": row[4],
+                    "mlflow_experiment_id": row[5],
+                    "status": row[6],
+                    "num_shards": row[7],
+                    "error": row[8],
+                    "created_at": row[9],
+                })
+        return experiments
+
     def get_running_experiment(self) -> dict[str, Any] | None:
         """
         Get the currently running experiment (most recent if multiple).
@@ -527,7 +558,7 @@ class RFDatabase:
         """
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, status, current_shard_id,
+               pipeline_config, pipeline_config_json, mlflow_run_id, status, current_shard_id,
                shards_completed, total_samples_processed, error, created_at
         FROM pipelines
         WHERE pipeline_id = ?
@@ -547,12 +578,13 @@ class RFDatabase:
                 "pipeline_type": row[2],
                 "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
                 "pipeline_config_json": json_config,  # JSON version for display/analytics
-                "status": row[5],
-                "current_shard_id": row[6],
-                "shards_completed": row[7],
-                "total_samples_processed": row[8],
-                "error": row[9],
-                "created_at": row[10],
+                "mlflow_run_id": row[5],
+                "status": row[6],
+                "current_shard_id": row[7],
+                "shards_completed": row[8],
+                "total_samples_processed": row[9],
+                "error": row[10],
+                "created_at": row[11],
             }
         return None
 
@@ -568,7 +600,7 @@ class RFDatabase:
         """
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, status, current_shard_id,
+               pipeline_config, pipeline_config_json, mlflow_run_id, status, current_shard_id,
                shards_completed, total_samples_processed, error, created_at
         FROM pipelines
         WHERE pipeline_id = ?
@@ -588,12 +620,13 @@ class RFDatabase:
                 "pipeline_type": row[2],
                 "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
                 "pipeline_config_json": json_config,  # JSON version for display/analytics
-                "status": row[5],
-                "current_shard_id": row[6],
-                "shards_completed": row[7],
-                "total_samples_processed": row[8],
-                "error": row[9],
-                "created_at": row[10],
+                "mlflow_run_id": row[5],
+                "status": row[6],
+                "current_shard_id": row[7],
+                "shards_completed": row[8],
+                "total_samples_processed": row[9],
+                "error": row[10],
+                "created_at": row[11],
             }
         return None
 
@@ -660,7 +693,7 @@ class RFDatabase:
         """
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, status, current_shard_id,
+               pipeline_config, pipeline_config_json, mlflow_run_id, status, current_shard_id,
                shards_completed, total_samples_processed, error, created_at
         FROM pipelines
         ORDER BY pipeline_id DESC
@@ -682,12 +715,13 @@ class RFDatabase:
                         "pipeline_type": row[2],
                         "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
                         "pipeline_config_json": json_config,  # JSON version for display/analytics
-                        "status": row[5],
-                        "current_shard_id": row[6],
-                        "shards_completed": row[7],
-                        "total_samples_processed": row[8],
-                        "error": row[9],
-                        "created_at": row[10],
+                        "mlflow_run_id": row[5],
+                        "status": row[6],
+                        "current_shard_id": row[7],
+                        "shards_completed": row[8],
+                        "total_samples_processed": row[9],
+                        "error": row[10],
+                        "created_at": row[11],
                     }
                 )
         return pipelines
@@ -751,6 +785,33 @@ class RFDatabase:
         """
         query = "UPDATE pipelines SET error = ? WHERE pipeline_id = ?"
         self.db.execute(query, (error, pipeline_id), commit=True)
+
+    def set_pipeline_mlflow_run_id(self, pipeline_id: int, mlflow_run_id: str):
+        """
+        Set MLflow run ID for a pipeline.
+
+        Args:
+            pipeline_id: ID of the pipeline
+            mlflow_run_id: MLflow run ID for metrics tracking
+        """
+        query = "UPDATE pipelines SET mlflow_run_id = ? WHERE pipeline_id = ?"
+        self.db.execute(query, (mlflow_run_id, pipeline_id), commit=True)
+
+    def get_pipeline_mlflow_run_id(self, pipeline_id: int) -> str | None:
+        """
+        Get MLflow run ID for a pipeline.
+
+        Args:
+            pipeline_id: ID of the pipeline
+
+        Returns:
+            MLflow run ID, or None if not set
+        """
+        query = "SELECT mlflow_run_id FROM pipelines WHERE pipeline_id = ?"
+        result = self.db.execute(query, (pipeline_id,), fetch=True)
+        if result and len(result) > 0:
+            return result[0][0]
+        return None
 
     # ============================================================================
     # ACTOR_TASKS TABLE METHODS
