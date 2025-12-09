@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
-from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME
+from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_LOG_PATH
 
 
 class Experiment:
@@ -539,4 +539,4 @@ class Experiment:
         """
         Get the log file path for the experiment.
         """
-        return os.path.join(self.experiment_path, self.experiment_name, RF_LOG_FILENAME)
+        return os.path.join(RF_LOG_PATH, self.experiment_name, RF_LOG_FILENAME)
