@@ -306,10 +306,10 @@ class Controller:
                 device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
                 if device and str(device).startswith("cuda"):
                     needs_gpu = True
-
-            if needs_gpu and not ColabConfig.ON_COLAB:
+            system_num_gpus = ray.available_resources().get("GPU", 0)
+            if system_num_gpus > 1:
                 num_gpus_for_actor = 1
-            elif needs_gpu and ColabConfig.ON_COLAB:
+            elif system_num_gpus > 0:
                 num_gpus_for_actor = 0.5
             else:
                 num_gpus_for_actor = 0
