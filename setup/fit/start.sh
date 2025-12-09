@@ -228,12 +228,17 @@ check_startup_issues() {
     fi
     rm -f "$RF_HOME/test_write.tmp"
 
-    # Check if existing PID file and output contents
+    # Check if existing PID file and output contents, do not error if running
     if [[ -f "$RF_PID_FILE" ]]; then
-        print_status "Existing PID file contents:"
-        cat "$RF_PID_FILE"
+        while read -r pid service; do
+            if kill -0 "$pid" 2>/dev/null; then
+                print_success "$service is running (PID: $pid)"
+            else
+                print_success "$service is not running (PID: $pid)"
+            fi
+        done < "$RF_PID_FILE"
     fi
-
+    
     # Check if ports are available
     if ! ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
         echo "MLFlow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
@@ -563,8 +568,9 @@ start_frontend_if_needed() {
 
 # Function to display running services
 show_status() {
-    print_status "RapidFire AI Services Status:"
-    echo "=================================="
+    RF_VERSION=$(rapidfireai --version)
+    print_status "${RF_VERSION} Services Status:"
+    echo "================================================"
 
     if [[ -f "$RF_PID_FILE" ]]; then
         while read -r pid service; do
