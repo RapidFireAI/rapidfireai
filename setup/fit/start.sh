@@ -233,6 +233,7 @@ check_startup_issues() {
         while read -r pid service; do
             if kill -0 "$pid" 2>/dev/null; then
                 print_error "$service is running (PID: $pid)"
+                print_error "Try running 'rapidfireai stop' to stop the service"
                 return 1
             else
                 print_success "$service is not running (PID: $pid)"
