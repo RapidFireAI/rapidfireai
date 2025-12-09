@@ -228,8 +228,9 @@ check_startup_issues() {
     fi
     rm -f "$RF_HOME/test_write.tmp"
 
-    # Check if existing PID file and output contents, do not error if running
+    # Check if existing PID file and output contents, error if running
     if [[ -f "$RF_PID_FILE" ]]; then
+        print_warning "Existing PID file found: $RF_PID_FILE"
         while read -r pid service; do
             if kill -0 "$pid" 2>/dev/null; then
                 print_error "$service is running (PID: $pid)"
@@ -702,9 +703,6 @@ main() {
     RF_VERSION=$(rapidfireai --version)
     print_status "Starting ${RF_VERSION} services..."
 
-    # Remove old PID file
-    rm -f "$RF_PID_FILE"
-
     # Set up signal handlers for cleanup
     trap cleanup SIGINT SIGTERM EXIT
 
@@ -727,6 +725,9 @@ main() {
         print_error "Startup checks failed"
         exit 1
     fi
+
+    # Remove old PID file
+    rm -f "$RF_PID_FILE"
 
     # Start services
     if start_services; then
