@@ -232,22 +232,26 @@ check_startup_issues() {
     if [[ -f "$RF_PID_FILE" ]]; then
         while read -r pid service; do
             if kill -0 "$pid" 2>/dev/null; then
-                print_success "$service is running (PID: $pid)"
+                print_error "$service is running (PID: $pid)"
+                return 1
             else
                 print_success "$service is not running (PID: $pid)"
             fi
         done < "$RF_PID_FILE"
     fi
-    
+
     # Check if ports are available
     if ! ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
-        echo "MLFlow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
+        print_error "MLFlow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
+        return 1
     fi
     if ! ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
-        echo "Frontend $RF_FRONTEND_HOST:$RF_FRONTEND_PORT in use"
+        print_error "Frontend $RF_FRONTEND_HOST:$RF_FRONTEND_PORT in use"
+        return 1
     fi
     if ! ping_port $RF_API_HOST $RF_API_PORT; then
-        echo "API port $RF_API_HOST:$RF_API_PORT in use"
+        print_error "API port $RF_API_HOST:$RF_API_PORT in use"
+        return 1
     fi
     return 0
 }
