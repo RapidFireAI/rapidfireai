@@ -17,7 +17,7 @@ from rapidfireai.utils.get_ip_address import get_ip_address
 from rapidfireai.utils.python_info import get_python_info
 from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabConfig
 from rapidfireai.utils.doctor import get_doctor_info
-from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME
 from rapidfireai.utils.gpu_info import get_compute_capability
 
 from .version import __version__
@@ -88,6 +88,11 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     """Install packages for the RapidFire AI project."""
     packages = []
     # Generate CUDA requirements file
+    mode_file = Path(RF_HOME) / "rf_mode.txt"
+    if evals:
+        mode_file.write_text("evals")
+    else:
+        mode_file.write_text("fit")
     cuda_major, cuda_minor = get_cuda_version()
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
