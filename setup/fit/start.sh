@@ -172,6 +172,18 @@ check_port() {
     return 0
 }
 
+ping_port() {
+    local host=$1
+    local port=$2
+    if command -v nc &> /dev/null; then
+        ping_command="$(command -v nc) -z $host $port"
+    else
+        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
+    fi
+    eval $ping_command
+    return $?
+}
+
 # Function to check for common startup issues
 check_startup_issues() {
     print_status "Checking for common startup issues..."
@@ -209,6 +221,29 @@ check_startup_issues() {
     fi
     rm -f "$SCRIPT_DIR/test_write.tmp"
 
+    # Check if we can write to RF_HOME directory
+    if ! touch "$RF_HOME/test_write.tmp" 2>/dev/null; then
+        print_error "Cannot write to RF_HOME directory: $RF_HOME"
+        return 1
+    fi
+    rm -f "$RF_HOME/test_write.tmp"
+
+    # Check if existing PID file and output contents
+    if [[ -f "$RF_PID_FILE" ]]; then
+        print_status "Existing PID file contents:"
+        cat "$RF_PID_FILE"
+    fi
+
+    # Check if ports are available
+    if ! ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
+        echo "MLFlow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
+    fi
+    if ! ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
+        echo "Frontend $RF_FRONTEND_HOST:$RF_FRONTEND_PORT in use"
+    fi
+    if ! ping_port $RF_API_HOST $RF_API_PORT; then
+        echo "API port $RF_API_HOST:$RF_API_PORT in use"
+    fi
     return 0
 }
 
