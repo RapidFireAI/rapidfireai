@@ -235,8 +235,6 @@ check_startup_issues() {
                 print_error "$service is running (PID: $pid)"
                 print_error "Try running 'rapidfireai stop' to stop the service"
                 return 1
-            else
-                print_success "$service is not running (PID: $pid)"
             fi
         done < "$RF_PID_FILE"
     fi
