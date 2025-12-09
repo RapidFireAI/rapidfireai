@@ -9,6 +9,7 @@ import time
 import traceback
 from collections.abc import Callable
 from typing import Any
+from pathlib import Path
 
 import pandas as pd
 from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_LOG_PATH
