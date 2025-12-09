@@ -600,8 +600,8 @@ show_status() {
             print_status "📈 MLflow UI available at: http://$RF_MLFLOW_HOST:$RF_MLFLOW_PORT"
         fi
     else
-        ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT
-        if [[ $? -eq 0 ]]; then
+        ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT || ping_status=$?
+        if [[ $ping_status -eq 0 ]]; then
             print_success "🚀 RapidFire Frontend is ready!"
             print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
             print_status "   (Click the link above or copy/paste the URL into your browser)"
