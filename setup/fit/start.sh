@@ -649,7 +649,8 @@ start_services() {
 
 # Main execution
 main() {
-    print_status "Starting RapidFire AI services..."
+    RF_VERSION=$(rapidfireai --version)
+    print_status "Starting ${RF_VERSION} services..."
 
     # Remove old PID file
     rm -f "$RF_PID_FILE"
