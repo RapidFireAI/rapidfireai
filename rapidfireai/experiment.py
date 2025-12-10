@@ -156,8 +156,8 @@ class Experiment:
         # Initialize Ray with runtime environment for CUDA initialization
         # This fixes AWS-specific CUDA/cuBLAS initialization issues
         ray.init(
-            logging_level=logging.INFO,
-            log_to_driver=True,
+            logging_level=logging.ERROR,
+            log_to_driver=False,
             configure_logging=True,
             ignore_reinit_error=True,
             include_dashboard=True,

@@ -38,7 +38,7 @@ dependencies = [
     # Other
     "dill>=0.3.0,<0.3.9",
     "jedi>=0.16",
-    "pytest>=8.4.1",
+    # "pytest>=8.4.2",
     "uv>=0.8.14",
 ]
 
