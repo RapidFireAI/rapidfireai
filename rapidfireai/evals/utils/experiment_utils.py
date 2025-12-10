@@ -3,7 +3,9 @@
 import os
 import re
 import warnings
+from pathlib import Path
 
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.db.rf_db import RFDatabase
 from rapidfireai.evals.utils.constants import ExperimentStatus
 from rapidfireai.evals.utils.logger import RFLogger
@@ -101,9 +103,8 @@ class ExperimentUtils:
 
         # Create experiment directory
         try:
-            experiment_dir = os.path.join(experiments_path, experiment_name)
-            os.makedirs(experiment_dir, exist_ok=True)
-            os.makedirs(os.path.join(experiment_dir, "logs"), exist_ok=True)
+            experiment_dir = Path(experiments_path) / experiment_name
+            experiment_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             raise Exception(f"Failed to create experiment directories: {e}")
 
@@ -127,7 +128,7 @@ class ExperimentUtils:
 
         # create logger
         experiment_name = current_experiment["experiment_name"]
-        logging_manager = RFLogger(experiment_name=experiment_name, experiment_path="./rapidfire_experiments")
+        logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=RF_EXPERIMENT_PATH)
         logger = logging_manager.get_logger("ExperimentUtils")
 
         # cancel current tasks if any
@@ -161,7 +162,7 @@ class ExperimentUtils:
 
         # create logger
         experiment_name = current_experiment["experiment_name"]
-        logging_manager = RFLogger(experiment_name=experiment_name, experiment_path="./rapidfire_experiments")
+        logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=RF_EXPERIMENT_PATH)
         logger = logging_manager.get_logger("ExperimentUtils")
 
         try:

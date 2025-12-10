@@ -9,9 +9,10 @@ import time
 import traceback
 from collections.abc import Callable
 from typing import Any
+from pathlib import Path
 
 import pandas as pd
-from rapidfireai.utils.colab import is_running_in_colab
+from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_TRAINING_LOG_FILENAME, RF_LOG_PATH
 
 
 class Experiment:
@@ -21,7 +22,7 @@ class Experiment:
         self,
         experiment_name: str,
         mode: str = "fit",
-        experiment_path: str = os.getenv("RF_EXPERIMENT_PATH", "./rapidfire_experiments"),
+        experiment_path: str = RF_EXPERIMENT_PATH,
     ) -> None:
         """
         Initialize an experiment.
@@ -29,7 +30,7 @@ class Experiment:
         Args:
             experiment_name: Name of the experiment
             mode: Either "fit" or "evals"
-            experiment_path: Path to store experiment artifacts (default: ./rapidfire_experiments)
+            experiment_path: Path to store experiment artifacts (default: $RF_HOME/rapidfire_experiments)
 
         Raises:
             ValueError: If mode is not "fit" or "evals"
@@ -117,7 +118,7 @@ class Experiment:
         from rapidfireai.evals.scheduling.controller import Controller
         from rapidfireai.utils.colab import get_colab_auth_token
         from rapidfireai.utils.constants import DispatcherConfig
-        from rapidfireai.evals.utils.constants import get_dispatcher_url, get_ray_port
+        from rapidfireai.evals.utils.constants import get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
@@ -154,15 +155,14 @@ class Experiment:
 
         # Initialize Ray with runtime environment for CUDA initialization
         # This fixes AWS-specific CUDA/cuBLAS initialization issues
-        ray_port = get_ray_port()
         ray.init(
             logging_level=logging.INFO,
             log_to_driver=True,
             configure_logging=True,
             ignore_reinit_error=True,
             include_dashboard=True,
-            dashboard_host="0.0.0.0",
-            dashboard_port=ray_port,
+            dashboard_host=RayConfig.HOST,
+            dashboard_port=RayConfig.PORT,
             # Disable metrics export to prevent "Failed to establish connection" errors
             _metrics_export_port=None,
             runtime_env={
@@ -175,12 +175,12 @@ class Experiment:
                 }
             },
         )
-        if is_running_in_colab():
+        if ColabConfig.ON_COLAB:
             try:
                 from google.colab.output import eval_js
 
                 # Get the Colab proxy URL for the dispatcher port
-                proxy_url = eval_js(f"google.colab.kernel.proxyPort({ray_port})")
+                proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
                 print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
             except Exception as e:
                 print(f"⚠️ Colab detected but failed to get proxy URL: {e}")
@@ -235,9 +235,7 @@ class Experiment:
             print("⚠️  Training is already running in background. Please wait for it to complete.")
             return
 
-        in_colab = is_running_in_colab()
-
-        if in_colab:
+        if ColabConfig.ON_COLAB:
             # Run Controller in background thread to keep kernel responsive
             import sys
             import threading
@@ -337,9 +335,9 @@ class Experiment:
         available_cpus = self._ray.cluster_resources().get("CPU", 0)
 
         if gpus_per_actor is None:
-            gpus_per_actor = available_gpus if not is_running_in_colab() else available_gpus/2
+            gpus_per_actor = available_gpus if available_gpus > 1 else available_gpus/2
         if cpus_per_actor is None:
-            cpus_per_actor = available_cpus if not is_running_in_colab() else available_cpus/2
+            cpus_per_actor = available_cpus if available_cpus > 2 else available_cpus/2
         if num_actors is None:
             # Default to number of GPUs, or 1 if no GPUs available
             num_actors = int(gpus_per_actor) if gpus_per_actor > 0 else 1
@@ -410,7 +408,7 @@ class Experiment:
         if self.mode != "fit":
             raise ValueError("get_results() is only available in 'fit' mode")
 
-        from rapidfireai.fit.utils.constants import MLFlowConfig
+        from rapidfireai.utils.constants import MLFlowConfig
 
         ExperimentException = self._ExperimentException
 
@@ -537,3 +535,20 @@ class Experiment:
             self._ray.shutdown()
             self.logger.info("All actors shut down")
             self.logger.info("Dispatcher will automatically shut down (daemon thread)")
+    
+    def get_log_file_path(self, log_type: str | None = None) -> Path:
+        """
+        Get the log file path for the experiment.
+
+        Args:
+            log_type: Type of log to get (default: None)
+
+        Returns:
+            Path to the log file
+        """
+        if log_type is None or log_type.lower() in ["main", "experiment"]:
+            return Path(RF_LOG_PATH) / self.experiment_name / RF_LOG_FILENAME
+        elif log_type.lower() == "training":
+            return Path(RF_LOG_PATH) / self.experiment_name / RF_TRAINING_LOG_FILENAME
+        else:
+            raise ValueError(f"Invalid log type: {log_type}")
