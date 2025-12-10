@@ -576,8 +576,15 @@ start_frontend_if_needed() {
 
 # Function to display running services
 show_status() {
+    # Get mode from rf_mode.txt in RF_HOME
+    mode_file = "$RF_HOME/rf_mode.txt"
+    if [[ -f "$mode_file" ]]; then
+        mode = $(cat "$mode_file")
+    else
+        mode = "unknown"
+    fi
     RF_VERSION=$(rapidfireai --version)
-    print_status "${RF_VERSION} Services Status:"
+    print_status "${RF_VERSION} Services Status, Mode: ${mode}"
     echo "================================================"
 
     if [[ -f "$RF_PID_FILE" ]]; then
