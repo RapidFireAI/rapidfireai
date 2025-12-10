@@ -583,8 +583,8 @@ show_status() {
     else
         rf_mode="unknown"
     fi
-    RF_VERSION=$(rapidfireai --version)
-    print_status "${RF_VERSION} Services Status, Mode: ${rf_mode}"
+    rf_version=$(rapidfireai --version)
+    print_status "${rf_version} Services Status, Mode: ${rf_mode}"
     echo "================================================"
 
     if [[ -f "$RF_PID_FILE" ]]; then
@@ -730,8 +730,8 @@ start_services() {
 
 # Main execution
 main() {
-    RF_VERSION=$(rapidfireai --version)
-    print_status "Starting ${RF_VERSION} services..."
+    rf_version=$(rapidfireai --version)
+    print_status "Starting ${rf_version} services..."
 
     # Set up signal handlers for cleanup
     trap cleanup SIGINT SIGTERM EXIT
