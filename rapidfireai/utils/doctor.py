@@ -36,7 +36,6 @@ def get_doctor_info(log_lines: int = 10):
         mode = mode_file.read_text().strip()
     else:
         mode = "unknown"
-    print(f"Mode: {mode}")
     print(f"🩺 RapidFire AI System Diagnostics, Mode: {mode}")
     print("=" * 50)
 
