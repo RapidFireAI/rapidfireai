@@ -300,10 +300,10 @@ await fetch('http://localhost:8851/dispatcher/my-endpoint', {
 **Check logs**:
 ```bash
 # Dispatcher logs
-cat {experiment_path}/logs/dispatcher.log
+cat {log_dir}/dispatcher.log
 
 # Or watch in real-time
-tail -f {experiment_path}/logs/dispatcher.log
+tail -f {log_dir}/dispatcher.log
 ```
 
 **Test endpoint directly**:
