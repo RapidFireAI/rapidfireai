@@ -32,6 +32,7 @@ class ExperimentUtils:
         warnings.filterwarnings("ignore", message=".*computation placer already registered.")
         warnings.filterwarnings("ignore", message=".*Rank 0 is connected to 0 peer ranks.*")
         warnings.filterwarnings("ignore", message=".*No cudagraph will be used.*")
+        warnings.filterwarnings("ignore", module="multiprocessing.resource_tracker")
 
     def create_experiment(self, given_name: str, experiments_path: str) -> tuple[int, str, list[str]]:
         """
