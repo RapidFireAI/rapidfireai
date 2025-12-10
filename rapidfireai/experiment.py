@@ -536,7 +536,7 @@ class Experiment:
             self.logger.info("All actors shut down")
             self.logger.info("Dispatcher will automatically shut down (daemon thread)")
     
-    def get_log_file_path(self) -> str:
+    def get_log_file_path(self) -> Path:
         """
         Get the log file path for the experiment.
         """

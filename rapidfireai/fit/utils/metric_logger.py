@@ -200,7 +200,7 @@ class TensorBoardMetricLogger(MetricLogger):
             raise
 
         # Create SummaryWriter for this run
-        writer = SummaryWriter(log_dir=str(run_log_dir))
+        writer = SummaryWriter(log_dir=run_log_dir)
         self.writers[run_name] = writer
 
         return run_name
@@ -273,7 +273,7 @@ class TensorBoardMetricLogger(MetricLogger):
 
         # Move the run directory to sibling deleted folder (outside log_dir tree)
         run_log_dir = os.path.join(self.log_dir, run_id)
-        if run_log_dir.exists() and run_log_dir.is_dir():
+        if os.path.exists(run_log_dir) and os.path.isdir(run_log_dir):
             # Create deleted directory as sibling, not child, of log_dir
             deleted_dir = os.path.join(self.log_dir.parent, f"{self.log_dir.name}_deleted")
             try:
@@ -286,7 +286,7 @@ class TensorBoardMetricLogger(MetricLogger):
             timestamp = int(time.time())
             destination = os.path.join(deleted_dir, f"{run_id}_{timestamp}")
 
-            shutil.move(str(run_log_dir), str(destination))
+            shutil.move(run_log_dir, destination)
     
     def __del__(self):
         """Clean up all writers on deletion."""
