@@ -25,6 +25,13 @@ class ExperimentUtils:
         warnings.filterwarnings("ignore", message=".*generation flags are not valid.*")
         warnings.filterwarnings("ignore", message=".*decoder-only architecture.*")
         warnings.filterwarnings("ignore", message=".*attention mask is not set.*")
+        warnings.filterwarnings("ignore", message=".*Unable to register cuDNN factory.*")
+        warnings.filterwarnings("ignore", message=".*Unable to register cuBLAS factory.*")
+        warnings.filterwarnings("ignore", message=".*All log messages before absl::InitializeLog.*")
+        warnings.filterwarnings("ignore", message=".*resource_tracker: process died unexpectedly.*")
+        warnings.filterwarnings("ignore", message=".*computation placer already registered.")
+        warnings.filterwarnings("ignore", message=".*Rank 0 is connected to 0 peer ranks.*")
+        warnings.filterwarnings("ignore", message=".*No cudagraph will be used.*")
 
     def create_experiment(self, given_name: str, experiments_path: str) -> tuple[int, str, list[str]]:
         """
