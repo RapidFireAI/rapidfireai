@@ -604,20 +604,39 @@ show_status() {
     # Display appropriate message based on mode
     if [[ "$RF_COLAB_MODE" == "true" ]]; then
         print_success "🚀 RapidFire running in Colab mode!"
-        print_status "📊 Use TensorBoard for metrics visualization:"
-        print_status "   In a Colab notebook cell, run:"
-        print_status "   %tensorboard --logdir ~/experiments/{experiment_name}/tensorboard_logs"
-        if [[ "$RF_TRACKING_BACKEND" == "mlflow" ]] || [[ "$RF_TRACKING_BACKEND" == "both" ]]; then
-            print_status ""
-            print_status "📈 MLflow UI available at: http://$RF_MLFLOW_HOST:$RF_MLFLOW_PORT"
+        if [[ "$rf_mode" == "fit" ]]; then
+            print_status "📊 Use TensorBoard for metrics visualization:"
+            print_status "   In a Colab notebook cell, run:"
+            print_status "   %tensorboard --logdir ~/experiments/{experiment_name}/tensorboard_logs"
         fi
     else
-        if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
-            print_success "🚀 RapidFire Frontend is ready!"
-            print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
-            print_status "   (Click the link above or copy/paste the URL into your browser)"
+        if [[ "$rf_mode" == "fit" ]]; then
+            if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
+                print_success "🚀 RapidFire Frontend is ready!"
+                print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
+                print_status "   (Click the link above or copy/paste the URL into your browser)"
+            else
+                print_error "🚨 RapidFire Frontend is not ready!"
+            fi
+        fi
+    fi
+    if [[ "$RF_TRACKING_BACKEND" == "mlflow" ]] || [[ "$RF_TRACKING_BACKEND" == "both" ]]; then
+        if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
+            print_success "🚀 MLflow server is ready!"
         else
-            print_status "🚨 RapidFire Frontend is not ready!"
+            print_error "🚨 MLflow server is not ready!"
+        fi
+    fi
+    if ping_port $RF_API_HOST $RF_API_PORT; then
+        print_success "🚀 RapidFire API server is ready!"
+    else
+        print_error "🚨 RapidFire API server is not ready!"
+    fi
+    if rf_mode == "evals"; then
+        if ping_port $RF_RAY_HOST $RF_RAY_PORT; then
+            print_success "🚀 RapidFire Ray server is ready!"
+        else
+            print_error "🚨 RapidFire Ray server is not ready!"
         fi
     fi
 
