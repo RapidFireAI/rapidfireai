@@ -577,7 +577,7 @@ start_frontend_if_needed() {
 # Function to display running services
 show_status() {
     # Get mode from rf_mode.txt in RF_HOME
-    mode_file = "$RF_HOME/rf_mode.txt"
+    mode_file="${RF_HOME}/rf_mode.txt"
     if [[ -f "$mode_file" ]]; then
         mode = $(cat "$mode_file")
     else
