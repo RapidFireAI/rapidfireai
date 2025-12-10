@@ -12,7 +12,7 @@ from typing import Any
 from pathlib import Path
 
 import pandas as pd
-from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_TRAINING_LOG_FILENAME, RF_LOG_PATH
 
 
 class Experiment:
@@ -536,8 +536,19 @@ class Experiment:
             self.logger.info("All actors shut down")
             self.logger.info("Dispatcher will automatically shut down (daemon thread)")
     
-    def get_log_file_path(self) -> Path:
+    def get_log_file_path(self, log_type: str | None = None) -> Path:
         """
         Get the log file path for the experiment.
+
+        Args:
+            log_type: Type of log to get (default: None)
+
+        Returns:
+            Path to the log file
         """
-        return Path(RF_LOG_PATH) / self.experiment_name / RF_LOG_FILENAME
+        if log_type is None or log_type.lower() in ["main", "experiment"]:
+            return Path(RF_LOG_PATH) / self.experiment_name / RF_LOG_FILENAME
+        elif log_type.lower() == "training":
+            return Path(RF_LOG_PATH) / self.experiment_name / RF_TRAINING_LOG_FILENAME
+        else:
+            raise ValueError(f"Invalid log type: {log_type}")
