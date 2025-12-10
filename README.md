@@ -241,7 +241,7 @@ while IC Ops panel also appears on the notebook itself.
 ## Developing with RapidFire AI
 
 ### Development prerequisites
-## TODO: This section needs updating
+#### TODO: This section needs updating
 
 - Python 3.12.x
 - Git
