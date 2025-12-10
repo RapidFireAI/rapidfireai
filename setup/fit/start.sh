@@ -7,7 +7,11 @@
 set -e  # Exit on any error
 
 # Configuration
-RF_HOME="${RF_HOME:=$HOME/rapidfireai}"
+if [ -z "${COLAB_GPU+x}" ]; then
+    RF_HOME="${RF_HOME:=$HOME/rapidfireai}"
+else
+    RF_HOME="${RF_HOME:=/content/rapidfireai}"
+fi
 RF_JUPYTER_PORT=${RF_JUPYTER_PORT:=8850}
 RF_JUPYTER_HOST=${RF_JUPYTER_HOST:=127.0.0.1}
 RF_RAY_PORT=${RF_RAY_PORT:=8855}

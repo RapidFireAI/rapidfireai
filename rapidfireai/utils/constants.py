@@ -5,7 +5,10 @@ import os
 from rapidfireai.utils.colab import is_running_in_colab
 from rapidfireai.utils.os_utils import mkdir_p
 
-RF_HOME = os.getenv("RF_HOME", os.path.join(os.path.expanduser("~"), "rapidfireai"))
+if is_running_in_colab():
+    RF_HOME = "/content/rapidfireai"
+else:
+    RF_HOME = os.getenv("RF_HOME", os.path.join(os.path.expanduser("~"), "rapidfireai"))
 RF_LOG_FILENAME = os.getenv("RF_LOG_FILENAME", "rapidfire.log")
 RF_LOG_PATH = os.getenv("RF_LOG_PATH", os.path.join(RF_HOME, "logs"))
 RF_EXPERIMENT_PATH = os.getenv("RF_EXPERIMENT_PATH", os.path.join(RF_HOME, "rapidfire_experiments"))

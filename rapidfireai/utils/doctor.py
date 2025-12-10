@@ -4,6 +4,7 @@ Utility functions for doctor command.
 
 import os
 import platform
+from pathlib import Path
 from rapidfireai.utils.python_info import get_python_info, get_pip_packages
 from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
 from rapidfireai.utils.ping import ping_server
@@ -14,6 +15,7 @@ from rapidfireai.utils.constants import (
     FrontendConfig, 
     RayConfig,
     ColabConfig,
+    RF_HOME,
     RF_LOG_PATH, 
     RF_EXPERIMENT_PATH, 
     RF_DB_PATH, 
@@ -28,7 +30,14 @@ def get_doctor_info(log_lines: int = 10):
     Get doctor information.
     """
     status = 0
-    print("🩺 RapidFire AI System Diagnostics")
+    # Get mode from rf_mode.txt in RF_HOME
+    mode_file = Path(RF_HOME) / "rf_mode.txt"
+    if mode_file.exists():
+        mode = mode_file.read_text().strip()
+    else:
+        mode = "unknown"
+    print(f"Mode: {mode}")
+    print(f"🩺 RapidFire AI System Diagnostics, Mode: {mode}")
     print("=" * 50)
 
     # Python Information
@@ -187,6 +196,7 @@ def get_doctor_info(log_lines: int = 10):
         print(f"{var}: {value}")
     print("\n🔍 RF_ Constants:")
     print("-" * 30)
+    print(f"RF_HOME: {RF_HOME}")
     print(f"RF_LOG_PATH: {RF_LOG_PATH}")
     print(f"RF_LOG_FILENAME: {RF_LOG_FILENAME}")
     print(f"RF_TRAINING_LOG_FILENAME: {RF_TRAINING_LOG_FILENAME}")
