@@ -114,7 +114,14 @@ setup_python_env() {
 
 # Function to cleanup processes on exit
 cleanup() {
-    print_warning "Shutting down services..."
+    # Confirm cleanup
+    read -p "Do you want to shutdown services and delete the PID file? (y/n) " -n 1 -r
+    echo    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        print_warning "Shutting down services..."
+    else
+        print_warning "Cleanup cancelled"
+        exit 0
+    fi
 
     # Kill processes by port (more reliable for MLflow)
     for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT $RF_JUPYTER_PORT; do
