@@ -579,12 +579,12 @@ show_status() {
     # Get mode from rf_mode.txt in RF_HOME
     mode_file="${RF_HOME}/rf_mode.txt"
     if [[ -f "$mode_file" ]]; then
-        mode = $(cat "$mode_file")
+        rf_mode=$(cat "$mode_file")
     else
-        mode = "unknown"
+        rf_mode="unknown"
     fi
     RF_VERSION=$(rapidfireai --version)
-    print_status "${RF_VERSION} Services Status, Mode: ${mode}"
+    print_status "${RF_VERSION} Services Status, Mode: ${rf_mode}"
     echo "================================================"
 
     if [[ -f "$RF_PID_FILE" ]]; then
