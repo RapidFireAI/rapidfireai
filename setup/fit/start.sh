@@ -115,8 +115,9 @@ setup_python_env() {
 # Function to cleanup processes on exit
 cleanup() {
     # Confirm cleanup
-    read -p "Do you want to shutdown services and delete the PID file? (y/n) " -n 1 -r
-    echo    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    read -p "Do you want to shutdown services and delete the PID file? (y/n) " -n 1 -r REPLY
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
         print_warning "Shutting down services..."
     else
         print_warning "Cleanup cancelled"
