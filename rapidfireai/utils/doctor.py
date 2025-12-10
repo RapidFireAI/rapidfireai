@@ -9,19 +9,19 @@ from rapidfireai.utils.python_info import get_python_info, get_pip_packages
 from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
 from rapidfireai.utils.ping import ping_server
 from rapidfireai.utils.constants import (
-    JupyterConfig, 
-    DispatcherConfig, 
-    MLFlowConfig, 
-    FrontendConfig, 
+    JupyterConfig,
+    DispatcherConfig,
+    MLFlowConfig,
+    FrontendConfig,
     RayConfig,
     ColabConfig,
     RF_HOME,
-    RF_LOG_PATH, 
-    RF_EXPERIMENT_PATH, 
-    RF_DB_PATH, 
-    RF_TENSORBOARD_LOG_DIR, 
-    RF_TRAINING_LOG_FILENAME, 
-    RF_TRACKING_BACKEND, 
+    RF_LOG_PATH,
+    RF_EXPERIMENT_PATH,
+    RF_DB_PATH,
+    RF_TENSORBOARD_LOG_DIR,
+    RF_TRAINING_LOG_FILENAME,
+    RF_TRACKING_BACKEND,
     RF_LOG_FILENAME,
 )
 
