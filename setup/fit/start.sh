@@ -7,6 +7,15 @@
 set -e  # Exit on any error
 
 # Configuration
+if [ -z "${COLAB_GPU+x}" ]; then
+    RF_HOME="${RF_HOME:=$HOME/rapidfireai}"
+else
+    RF_HOME="${RF_HOME:=/content/rapidfireai}"
+fi
+RF_JUPYTER_PORT=${RF_JUPYTER_PORT:=8850}
+RF_JUPYTER_HOST=${RF_JUPYTER_HOST:=127.0.0.1}
+RF_RAY_PORT=${RF_RAY_PORT:=8855}
+RF_RAY_HOST=${RF_RAY_HOST:=127.0.0.1}
 RF_MLFLOW_PORT=${RF_MLFLOW_PORT:=8852}
 RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=127.0.0.1}
 RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=8853}
@@ -15,12 +24,20 @@ RF_FRONTEND_HOST=${RF_FRONTEND_HOST:=0.0.0.0}
 RF_API_PORT=${RF_API_PORT:=8851}
 RF_API_HOST=${RF_API_HOST:=127.0.0.1}
 
-RF_DB_PATH="${RF_DB_PATH:=$HOME/db}"
-RF_LOG_PATH="${RF_LOG_PATH:=$HOME/logs}"
+RF_DB_PATH="${RF_DB_PATH:=$RF_HOME/db}"
+RF_LOG_PATH="${RF_LOG_PATH:=$RF_HOME/logs}"
+
+RF_TIMEOUT_TIME=${RF_TIMEOUT_TIME:=30}
 
 # Colab mode configuration
-RF_COLAB_MODE=${RF_COLAB_MODE:=false}
-RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=mlflow}
+if [ -z "${COLAB_GPU+x}" ]; then
+    RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=mlflow}
+    RF_COLAB_MODE=${RF_COLAB_MODE:=false}
+else
+    echo "Google Colab environment detected"
+    RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=tensorboard}
+    RF_COLAB_MODE=${RF_COLAB_MODE:=true}
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -30,7 +47,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # PID file to track processes
-RF_PID_FILE="${RF_PID_FILE:=rapidfire_pids.txt}"
+RF_PID_FILE="${RF_PID_FILE:=$RF_HOME/rapidfire_pids.txt}"
 
 # Directory paths for pip-installed package
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -97,10 +114,18 @@ setup_python_env() {
 
 # Function to cleanup processes on exit
 cleanup() {
-    print_warning "Shutting down services..."
+    # Confirm cleanup
+    read -p "Do you want to shutdown services and delete the PID file? (y/n) " -n 1 -r REPLY
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        print_warning "Shutting down services..."
+    else
+        print_warning "Cleanup cancelled"
+        exit 0
+    fi
 
     # Kill processes by port (more reliable for MLflow)
-    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT; do
+    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT $RF_JUPYTER_PORT; do
         local pids=$(lsof -ti :$port 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
             print_status "Killing processes on port $port"
@@ -159,6 +184,18 @@ check_port() {
     return 0
 }
 
+ping_port() {
+    local host=$1
+    local port=$2
+    if command -v nc &> /dev/null; then
+        ping_command="$(command -v nc) -z $host $port"
+    else
+        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
+    fi
+    eval $ping_command
+    return $?
+}
+
 # Function to check for common startup issues
 check_startup_issues() {
     print_status "Checking for common startup issues..."
@@ -196,6 +233,38 @@ check_startup_issues() {
     fi
     rm -f "$SCRIPT_DIR/test_write.tmp"
 
+    # Check if we can write to RF_HOME directory
+    if ! touch "$RF_HOME/test_write.tmp" 2>/dev/null; then
+        print_error "Cannot write to RF_HOME directory: $RF_HOME"
+        return 1
+    fi
+    rm -f "$RF_HOME/test_write.tmp"
+
+    # Check if existing PID file and output contents, error if running
+    if [[ -f "$RF_PID_FILE" ]]; then
+        print_warning "Existing PID file found: $RF_PID_FILE"
+        while read -r pid service; do
+            if kill -0 "$pid" 2>/dev/null; then
+                print_error "$service is running (PID: $pid)"
+                print_error "Try running 'rapidfireai stop' to stop the service"
+                return 1
+            fi
+        done < "$RF_PID_FILE"
+    fi
+
+    # Check if ports are available
+    if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
+        print_error "MLFlow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
+        return 1
+    fi
+    if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
+        print_error "Frontend $RF_FRONTEND_HOST:$RF_FRONTEND_PORT in use"
+        return 1
+    fi
+    if ping_port $RF_API_HOST $RF_API_PORT; then
+        print_error "API port $RF_API_HOST:$RF_API_PORT in use"
+        return 1
+    fi
     return 0
 }
 
@@ -204,7 +273,7 @@ wait_for_service() {
     local host=$1
     local port=$2
     local service=$3
-    local max_attempts=${4:-30}  # Allow custom timeout, default 30 seconds
+    local max_attempts=${4:-$RF_TIMEOUT_TIME}  # Allow custom timeout, default 30 seconds
     local attempt=1
 
     print_status "Waiting for $service to be ready on $host:$port (timeout: ${max_attempts} attempts)..."
@@ -212,7 +281,7 @@ wait_for_service() {
     if command -v nc &> /dev/null; then
         ping_command="$(command -v nc) -z $host $port"
     else
-        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.fit.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
+        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
     fi
     while [ $attempt -le $max_attempts ]; do
         if eval ${ping_command} &>/dev/null; then
@@ -257,7 +326,7 @@ start_mlflow() {
     echo "$mlflow_pid MLflow" >> "$RF_PID_FILE"
 
     # Wait for MLflow to be ready
-    if wait_for_service $RF_MLFLOW_HOST $RF_MLFLOW_PORT "MLflow server"; then
+    if wait_for_service $RF_MLFLOW_HOST $RF_MLFLOW_PORT "MLflow server" $RF_TIMEOUT_TIME; then
         print_success "MLflow server started (PID: $mlflow_pid)"
         return 0
     else
@@ -330,9 +399,9 @@ start_api_server() {
 
     # Create database directory
     print_status "Creating database directory..."
-    mkdir -p ~/db
+    mkdir -p "$RF_DB_PATH"
     # Ensure proper permissions
-    chmod 755 ~/db
+    chmod 755 "$RF_DB_PATH"
 
     # Change to dispatcher directory and start Gunicorn server
     cd "$DISPATCHER_DIR"
@@ -346,7 +415,7 @@ start_api_server() {
     echo "$api_pid API_Server" >> "$RF_PID_FILE"
 
     # Wait for API server to be ready - use longer timeout for API server
-    if wait_for_service $RF_API_HOST $RF_API_PORT "API server" 60; then
+    if wait_for_service $RF_API_HOST $RF_API_PORT "API server" $((RF_TIMEOUT_TIME * 2)); then
         print_success "API server started (PID: $api_pid)"
         print_status "API server available at: http://$RF_API_HOST:$RF_API_PORT"
         return 0
@@ -456,7 +525,7 @@ start_frontend() {
     local check_hosts=("localhost" "127.0.0.1" "$RF_FRONTEND_HOST")
 
     for host in "${check_hosts[@]}"; do
-        if wait_for_service $host $RF_FRONTEND_PORT "Frontend server" 15; then
+        if wait_for_service $host $RF_FRONTEND_PORT "Frontend server" $RF_TIMEOUT_TIME; then
             print_success "Frontend Flask server started (PID: $frontend_pid) on $host:$RF_FRONTEND_PORT"
             frontend_ready=true
             break
@@ -515,8 +584,16 @@ start_frontend_if_needed() {
 
 # Function to display running services
 show_status() {
-    print_status "RapidFire AI Services Status:"
-    echo "=================================="
+    # Get mode from rf_mode.txt in RF_HOME
+    mode_file="${RF_HOME}/rf_mode.txt"
+    if [[ -f "$mode_file" ]]; then
+        rf_mode=$(cat "$mode_file")
+    else
+        rf_mode="unknown"
+    fi
+    rf_version=$(rapidfireai --version)
+    print_status "${rf_version} Services Status, Mode: ${rf_mode}"
+    echo "================================================"
 
     if [[ -f "$RF_PID_FILE" ]]; then
         while read -r pid service; do
@@ -535,17 +612,40 @@ show_status() {
     # Display appropriate message based on mode
     if [[ "$RF_COLAB_MODE" == "true" ]]; then
         print_success "🚀 RapidFire running in Colab mode!"
-        print_status "📊 Use TensorBoard for metrics visualization:"
-        print_status "   In a Colab notebook cell, run:"
-        print_status "   %tensorboard --logdir ~/experiments/{experiment_name}/tensorboard_logs"
-        if [[ "$RF_TRACKING_BACKEND" == "mlflow" ]] || [[ "$RF_TRACKING_BACKEND" == "both" ]]; then
-            print_status ""
-            print_status "📈 MLflow UI available at: http://$RF_MLFLOW_HOST:$RF_MLFLOW_PORT"
+        if [[ "$rf_mode" == "fit" ]]; then
+            print_status "📊 Use TensorBoard for metrics visualization:"
+            print_status "   In a Colab notebook cell, run:"
+            print_status "   %tensorboard --logdir ~/experiments/{experiment_name}/tensorboard_logs"
         fi
     else
-        print_success "🚀 RapidFire Frontend is ready!"
-        print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
-        print_status "   (Click the link above or copy/paste the URL into your browser)"
+        if [[ "$rf_mode" == "fit" ]]; then
+            if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
+                print_success "🚀 RapidFire Frontend is ready!"
+                print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
+                print_status "   (Click the link above or copy/paste the URL into your browser)"
+            else
+                print_error "🚨 RapidFire Frontend is not ready!"
+            fi
+        fi
+    fi
+    if [[ "$RF_TRACKING_BACKEND" == "mlflow" ]] || [[ "$RF_TRACKING_BACKEND" == "both" ]]; then
+        if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
+            print_success "🚀 MLflow server is ready!"
+        else
+            print_error "🚨 MLflow server is not ready!"
+        fi
+    fi
+    if ping_port $RF_API_HOST $RF_API_PORT; then
+        print_success "🚀 RapidFire API server is ready!"
+    else
+        print_error "🚨 RapidFire API server is not ready!"
+    fi
+    if [[ "$rf_mode" == "evals" ]]; then
+        if ping_port $RF_RAY_HOST $RF_RAY_PORT; then
+            print_success "🚀 RapidFire Ray server is ready!"
+        else
+            print_error "🚨 RapidFire Ray server is not ready!"
+        fi
     fi
 
     # Show log file status
@@ -638,10 +738,8 @@ start_services() {
 
 # Main execution
 main() {
-    print_status "Starting RapidFire AI services..."
-
-    # Remove old PID file
-    rm -f "$RF_PID_FILE"
+    rf_version=$(rapidfireai --version)
+    print_status "Starting ${rf_version} services..."
 
     # Set up signal handlers for cleanup
     trap cleanup SIGINT SIGTERM EXIT
@@ -665,6 +763,9 @@ main() {
         print_error "Startup checks failed"
         exit 1
     fi
+
+    # Remove old PID file
+    rm -f "$RF_PID_FILE"
 
     # Start services
     if start_services; then

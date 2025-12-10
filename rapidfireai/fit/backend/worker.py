@@ -16,6 +16,7 @@ from typing import Any
 
 import torch
 
+from rapidfireai.utils.constants import MLFlowConfig
 from rapidfireai.fit.backend.chunks import DatasetChunks
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.ml.checkpoint_utils import (
@@ -25,7 +26,6 @@ from rapidfireai.fit.ml.checkpoint_utils import (
 )
 from rapidfireai.fit.ml.trainer import create_trainer_instance
 from rapidfireai.fit.utils.constants import (
-    MLFlowConfig,
     TENSORBOARD_LOG_DIR,
     USE_SHARED_MEMORY,
     RunStatus,

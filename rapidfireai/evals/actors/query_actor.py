@@ -10,9 +10,9 @@ import hashlib
 import os
 from collections.abc import Callable
 from typing import Any
-
 import ray
 
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
 from rapidfireai.evals.rag.prompt_manager import PromptManager
@@ -34,7 +34,7 @@ class QueryProcessingActor:
     def __init__(
         self,
         experiment_name: str = "unknown",
-        experiment_path: str = "./rapidfire_experiments",
+        experiment_path: str = RF_EXPERIMENT_PATH,
         actor_id: int = 0,
     ):
         """
@@ -49,6 +49,19 @@ class QueryProcessingActor:
             experiment_path: Path to experiment logs/artifacts
             actor_id: Index of this actor (for logging and identification)
         """
+        # AWS Fix: Initialize CUDA context early to prevent CUBLAS_STATUS_NOT_INITIALIZED
+        # This must happen BEFORE any torch operations (including embedding/LLM model loading)
+        if "CUDA_VISIBLE_DEVICES" in os.environ and os.environ["CUDA_VISIBLE_DEVICES"]:
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    # Force CUDA initialization by performing a simple operation
+                    _ = torch.zeros(1, device='cuda')
+                    torch.cuda.synchronize()
+            except Exception:
+                # Silently continue if CUDA initialization fails (will use CPU)
+                pass
+
         # Initialize logger with actor ID
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
         self.logger = logging_manager.get_logger(f"QueryProcessingActor-{actor_id}")

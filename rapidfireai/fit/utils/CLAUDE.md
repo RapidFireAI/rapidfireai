@@ -13,7 +13,6 @@ The utils module contains shared utilities used across RapidFire components, inc
 **Purpose**: Utilities for running RapidFire in Google Colab and restricted notebook environments
 
 **Key Functions**:
-- `is_colab()`: Detect if running in Google Colab
 - `get_notebook_environment()`: Returns 'colab', 'kaggle', 'jupyter', or 'unknown'
 - `setup_cloudflare_tunnel(port, description)`: Create free Cloudflare tunnel for port forwarding
 - `setup_ngrok_tunnel(port, auth_token, description)`: Create ngrok tunnel (requires auth token)
@@ -74,7 +73,8 @@ See `worker_manager.py` for implementation of these workarounds.
 
 **Key Constants**:
 - `USE_SHARED_MEMORY`: Flag to enable shared memory for checkpoints (default: True)
-- `LOG_FILENAME`: Log file naming pattern
+- `RF_LOG_FILENAME`: Log file naming pattern
+- `RF_LOG_PATH`: Log file path
 - `DB_PATH`: SQLite database file path
 
 **Key Enums**:
@@ -92,7 +92,8 @@ See `worker_manager.py` for implementation of these workarounds.
 
 **Usage**:
 ```python
-from rapidfireai.fit.utils.constants import RunStatus, MLFlowConfig
+from rapidfireai.utils.constants import MLFlowConfig
+from rapidfireai.fit.utils.constants import RunStatus
 
 if run['status'] == RunStatus.ONGOING.value:
     # ...
@@ -122,9 +123,9 @@ logger.error("Failed to schedule", run_id=5)
 ```
 
 **Log Locations**:
-- `{experiment_path}/logs/controller.log`
-- `{experiment_path}/logs/worker_0.log`
-- `{experiment_path}/logs/dispatcher.log`
+- `{log_dir}/controller.log`
+- `{log_dir}/worker_0.log`
+- `{log_dir}/dispatcher.log`
 
 ### mlflow_manager.py
 **Purpose**: Wrapper around MLflow tracking API

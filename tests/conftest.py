@@ -18,9 +18,9 @@ def temp_tensorboard_dir(tmp_path):
     Returns:
         str: Path to temporary TensorBoard log directory
     """
-    tensorboard_dir = tmp_path / "tensorboard_logs"
+    tensorboard_dir = Path(tmp_path) /  "tensorboard_logs"
     tensorboard_dir.mkdir()
-    return str(tensorboard_dir)
+    return tensorboard_dir.absolute()
 
 
 @pytest.fixture
@@ -92,6 +92,8 @@ def tensorboard_logger(temp_tensorboard_dir):
     Returns:
         TensorBoardMetricLogger: Logger with temp directory
     """
+    import os
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
     from rapidfireai.fit.utils.metric_logger import TensorBoardMetricLogger
 
     return TensorBoardMetricLogger(temp_tensorboard_dir)

@@ -5,7 +5,8 @@ from abc import ABC, abstractmethod
 from loguru import logger
 
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.fit.utils.constants import LOG_FILENAME, TRAINING_LOG_FILENAME, LogType
+from rapidfireai.utils.constants import RF_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.fit.utils.constants import TRAINING_LOG_FILENAME, LogType
 
 
 class BaseRFLogger(ABC):
@@ -19,7 +20,7 @@ class BaseRFLogger(ABC):
         try:
             db = RfDb()
             experiment_name = db.get_running_experiment()["experiment_name"]
-            log_file_path = self.get_log_file_path(db, experiment_name)
+            log_file_path = self.get_log_file_path(experiment_name)
         except Exception as e:
             raise Exception("Error getting experiment name and log file path from database") from e
 
@@ -47,7 +48,7 @@ class BaseRFLogger(ABC):
                 BaseRFLogger._initialized_loggers[logger_key] = True
 
     @abstractmethod
-    def get_log_file_path(self, db: RfDb, experiment_name: str):
+    def get_log_file_path(self, experiment_name: str):
         """Get the log file path for this logger type"""
         pass
 
@@ -69,8 +70,8 @@ class BaseRFLogger(ABC):
 class RFLogger(BaseRFLogger):
     """Standard RapidFire logger"""
 
-    def get_log_file_path(self, db: RfDb, experiment_name: str):
-        return db.get_experiments_path(experiment_name) / LOG_FILENAME
+    def get_log_file_path(self, experiment_name: str):
+        return os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
 
     def get_logger_type(self) -> LogType:
         return LogType.RF_LOG
@@ -79,8 +80,8 @@ class RFLogger(BaseRFLogger):
 class TrainingLogger(BaseRFLogger):
     """Training-specific logger"""
 
-    def get_log_file_path(self, db: RfDb, experiment_name: str):
-        return db.get_experiments_path(experiment_name) / TRAINING_LOG_FILENAME
+    def get_log_file_path(self, experiment_name: str):
+        return os.path.join(RF_LOG_PATH, experiment_name, TRAINING_LOG_FILENAME)
 
     def get_logger_type(self) -> LogType:
         return LogType.TRAINING_LOG

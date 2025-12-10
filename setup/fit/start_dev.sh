@@ -32,7 +32,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # PID file to track processes
-RF_PID_FILE="${RF_PID_FILE:=rapidfire_pids.txt}"
+RF_PID_FILE="${RF_PID_FILE:=$HOME/rapidfire_pids.txt}"
 
 # Function to print colored output
 print_status() {

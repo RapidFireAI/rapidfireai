@@ -13,12 +13,13 @@ import torch
 from torch.utils.data import Dataset
 
 from rapidfireai.automl import AutoMLAlgorithm
+from rapidfireai.utils.constants import MLFlowConfig
+from rapidfireai.utils.os_utils import mkdir_p
 from rapidfireai.fit.backend.chunks import DatasetChunks
 from rapidfireai.fit.backend.scheduler import Scheduler
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.automl import get_flattened_config_leaf, get_runs
 from rapidfireai.fit.utils.constants import (
-    MLFlowConfig,
     TENSORBOARD_LOG_DIR,
     ControllerTask,
     ExperimentTask,
@@ -141,10 +142,10 @@ class Controller:
                 final_checkpoint_path = DataPath.final_checkpoint_path(base_run_path)
                 intermediate_checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path)
 
-                Path.mkdir(work_dir_path, parents=True, exist_ok=True)
-                Path.mkdir(initial_checkpoint_path, parents=True, exist_ok=True)
-                Path.mkdir(final_checkpoint_path, parents=True, exist_ok=True)
-                Path.mkdir(intermediate_checkpoint_path, parents=True, exist_ok=True)
+                mkdir_p(work_dir_path, notify=False)
+                mkdir_p(initial_checkpoint_path, notify=False)
+                mkdir_p(final_checkpoint_path, notify=False)
+                mkdir_p(intermediate_checkpoint_path, notify=False)
             except (PermissionError, OSError) as e:
                 raise ControllerException(f"Failed to create required Run DataPath directories: {e}") from e
 

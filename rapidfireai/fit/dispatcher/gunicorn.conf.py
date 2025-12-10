@@ -1,7 +1,7 @@
 """Gunicorn configuration file for the RapidFire dispatcher"""
 
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.fit.utils.constants import DispatcherConfig
+from rapidfireai.utils.constants import DispatcherConfig
 
 # Other Gunicorn settings...
 bind = f"{DispatcherConfig.HOST}:{DispatcherConfig.PORT}"
