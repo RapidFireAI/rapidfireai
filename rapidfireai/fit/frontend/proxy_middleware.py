@@ -11,8 +11,7 @@ from urllib.parse import urlparse, urljoin
 import requests
 from flask import Flask, request, Response, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
-from rapidfireai.utils.constants import DispatcherConfig
-from rapidfireai.fit.utils.constants import MLFlowConfig
+from rapidfireai.utils.constants import DispatcherConfig, MLFlowConfig
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

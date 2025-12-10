@@ -42,6 +42,16 @@ class RFDatabase:
                 schema_sql = f.read()
                 self.db.conn.executescript(schema_sql)
                 self.db.conn.commit()
+        
+        # Migration: Add mlflow_run_id column to pipelines table if it doesn't exist
+        try:
+            cursor = self.db.conn.execute("PRAGMA table_info(pipelines)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "mlflow_run_id" not in columns:
+                self.db.conn.execute("ALTER TABLE pipelines ADD COLUMN mlflow_run_id TEXT")
+                self.db.conn.commit()
+        except Exception:
+            pass
 
     def close(self):
         """Close the database connection."""
@@ -499,8 +509,8 @@ class RFDatabase:
         INSERT INTO pipelines (
             context_id, pipeline_type,
             pipeline_config, pipeline_config_json, status, error,
-            current_shard_id, shards_completed, total_samples_processed
-        ) VALUES (?, ?, ?, ?, ?, '', '', 0, 0)
+            current_shard_id, shards_completed, total_samples_processed, mlflow_run_id
+        ) VALUES (?, ?, ?, ?, ?, '', '', 0, 0, NULL)
         """
         self.db.execute(
             query,
@@ -528,7 +538,7 @@ class RFDatabase:
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
                pipeline_config, pipeline_config_json, status, current_shard_id,
-               shards_completed, total_samples_processed, error, created_at
+               shards_completed, total_samples_processed, mlflow_run_id, error, created_at
         FROM pipelines
         WHERE pipeline_id = ?
         """
@@ -551,8 +561,9 @@ class RFDatabase:
                 "current_shard_id": row[6],
                 "shards_completed": row[7],
                 "total_samples_processed": row[8],
-                "error": row[9],
-                "created_at": row[10],
+                "mlflow_run_id": row[9],
+                "error": row[10],
+                "created_at": row[11],
             }
         return None
 
@@ -569,7 +580,7 @@ class RFDatabase:
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
                pipeline_config, pipeline_config_json, status, current_shard_id,
-               shards_completed, total_samples_processed, error, created_at
+               shards_completed, total_samples_processed, mlflow_run_id, error, created_at
         FROM pipelines
         WHERE pipeline_id = ?
         """
@@ -592,8 +603,9 @@ class RFDatabase:
                 "current_shard_id": row[6],
                 "shards_completed": row[7],
                 "total_samples_processed": row[8],
-                "error": row[9],
-                "created_at": row[10],
+                "mlflow_run_id": row[9],
+                "error": row[10],
+                "created_at": row[11],
             }
         return None
 
@@ -661,7 +673,7 @@ class RFDatabase:
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
                pipeline_config, pipeline_config_json, status, current_shard_id,
-               shards_completed, total_samples_processed, error, created_at
+               shards_completed, total_samples_processed, mlflow_run_id, error, created_at
         FROM pipelines
         ORDER BY pipeline_id DESC
         """
@@ -686,8 +698,9 @@ class RFDatabase:
                         "current_shard_id": row[6],
                         "shards_completed": row[7],
                         "total_samples_processed": row[8],
-                        "error": row[9],
-                        "created_at": row[10],
+                        "mlflow_run_id": row[9],
+                        "error": row[10],
+                        "created_at": row[11],
                     }
                 )
         return pipelines
@@ -751,6 +764,17 @@ class RFDatabase:
         """
         query = "UPDATE pipelines SET error = ? WHERE pipeline_id = ?"
         self.db.execute(query, (error, pipeline_id), commit=True)
+
+    def set_pipeline_mlflow_run_id(self, pipeline_id: int, mlflow_run_id: str):
+        """
+        Set MLflow run ID for a pipeline.
+
+        Args:
+            pipeline_id: ID of the pipeline
+            mlflow_run_id: MLflow run ID
+        """
+        query = "UPDATE pipelines SET mlflow_run_id = ? WHERE pipeline_id = ?"
+        self.db.execute(query, (mlflow_run_id, pipeline_id), commit=True)
 
     # ============================================================================
     # ACTOR_TASKS TABLE METHODS

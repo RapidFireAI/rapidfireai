@@ -1,6 +1,5 @@
 """This module contains the MLflowManager class which is responsible for managing the MLflow runs."""
 
-import os
 import mlflow
 from mlflow.tracking import MlflowClient
 
@@ -13,7 +12,6 @@ class MLflowManager:
         Args:
             tracking_uri: MLflow tracking server URI
         """
-        mlflow.set_tracking_uri(tracking_uri)
         self.client = MlflowClient(tracking_uri=tracking_uri)
         self.experiment_id = None
 

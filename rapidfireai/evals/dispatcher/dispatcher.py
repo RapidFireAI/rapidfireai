@@ -15,8 +15,7 @@ from flask_cors import CORS
 from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
-from rapidfireai.utils.constants import DispatcherConfig
-from rapidfireai.utils.colab import is_running_in_colab
+from rapidfireai.utils.constants import DispatcherConfig, ColabConfig
 from rapidfireai.evals.utils.constants import ICOperation
 
 CORS_ALLOWED_ORIGINS = "*" # Allow all origins
@@ -51,7 +50,7 @@ class Dispatcher:
                     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                     "allow_headers": ["Content-Type", "Authorization"],
                     "expose_headers": ["Content-Type"],
-                    "supports_credentials": True if is_running_in_colab() else False,
+                    "supports_credentials": True if ColabConfig.ON_COLAB else False,
                 }
             },
         )

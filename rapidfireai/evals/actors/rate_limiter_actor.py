@@ -6,6 +6,7 @@ distributed query processing actors.
 """
 import ray
 
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.utils.ratelimiter import OpenAIRateLimiter, RequestStatus
 from rapidfireai.evals.utils.logger import RFLogger
 
@@ -26,7 +27,7 @@ class RateLimiterActor:
         limit_safety_ratio: float = 0.98,
         minimum_wait_time: float = 3.0,
         experiment_name: str = "unknown",
-        experiment_path: str = "./rapidfire_experiments",
+        experiment_path: str = RF_EXPERIMENT_PATH,
     ):
         """
         Initialize the centralized rate limiter with per-model rate limits.

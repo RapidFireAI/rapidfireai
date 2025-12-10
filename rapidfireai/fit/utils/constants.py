@@ -1,6 +1,6 @@
 import os
 from enum import Enum
-from rapidfireai.utils.colab import is_running_in_colab
+from rapidfireai.utils.constants import RF_TRACKING_BACKEND, RF_TENSORBOARD_LOG_DIR, RF_TRAINING_LOG_FILENAME, RF_DB_PATH
 
 # Tracking Backend Configuration
 def get_tracking_backend() -> str:
@@ -13,13 +13,13 @@ def get_tracking_backend() -> str:
     Note: This reads from os.environ at runtime to allow setting the env var
     after module import (important for notebook environments like Colab).
     """
-    backend = os.getenv("RF_TRACKING_BACKEND", "mlflow" if not is_running_in_colab() else "tensorboard")
+    backend = RF_TRACKING_BACKEND
     return backend
 
 
 # Backwards compatibility: Keep constant but it will be stale if env var changes after import
 TRACKING_BACKEND = get_tracking_backend()  # Options: 'mlflow', 'tensorboard', 'both'
-TENSORBOARD_LOG_DIR = os.getenv("RF_TENSORBOARD_LOG_DIR", None)  # Default set by experiment path
+TENSORBOARD_LOG_DIR = RF_TENSORBOARD_LOG_DIR  # Default set by experiment path
 
 # Shared Memory Constants
 SHM_WARN_THRESHOLD = 80
@@ -27,8 +27,7 @@ SHM_MIN_FREE_SPACE = 1.0
 USE_SHARED_MEMORY = True
 
 # Logging Constants
-LOG_FILENAME = "rapidfire.log"
-TRAINING_LOG_FILENAME = "training.log"
+TRAINING_LOG_FILENAME = RF_TRAINING_LOG_FILENAME
 
 
 class LogType(Enum):
@@ -38,22 +37,6 @@ class LogType(Enum):
     TRAINING_LOG = "training_log"
 
 
-# MLFlow Constants
-class MLFlowConfig:
-    """Class to manage the MLFlow configuration"""
-
-    HOST: str = os.getenv("RF_MLFLOW_HOST", "127.0.0.1")
-    PORT: int = int(os.getenv("RF_MLFLOW_PORT", "8852"))
-    URL: str = f"http://{HOST}:{PORT}"
-
-# Frontend Constants
-class FrontendConfig:
-    """Class to manage the frontend configuration"""
-
-    HOST: str = os.getenv("RF_FRONTEND_HOST", "127.0.0.1")
-    PORT: int = int(os.getenv("RF_FRONTEND_PORT", "8853"))
-    URL: str = f"http://{HOST}:{PORT}"
-
 # Database Constants
 class DBConfig:
     """Class to manage the database configuration for SQLite"""
@@ -61,7 +44,7 @@ class DBConfig:
     # Use user's home directory for database path
 
     DB_PATH: str = os.path.join(
-        os.getenv("RF_DB_PATH", os.path.expanduser(os.path.join("~", "db"))), "rapidfire_fit.db"
+        RF_DB_PATH, "rapidfire_fit.db"
     )
 
     # Connection settings

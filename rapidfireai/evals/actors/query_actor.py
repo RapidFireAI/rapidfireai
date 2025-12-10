@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any
 import ray
 
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
 from rapidfireai.evals.rag.prompt_manager import PromptManager
@@ -33,7 +34,7 @@ class QueryProcessingActor:
     def __init__(
         self,
         experiment_name: str = "unknown",
-        experiment_path: str = "./rapidfire_experiments",
+        experiment_path: str = RF_EXPERIMENT_PATH,
         actor_id: int = 0,
     ):
         """
