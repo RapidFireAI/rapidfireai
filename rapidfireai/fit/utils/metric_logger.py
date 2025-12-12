@@ -2,7 +2,7 @@
 Metric Logger abstraction layer for RapidFire AI.
 
 This module provides a unified interface for logging metrics to different backends
-(MLflow, TensorBoard, or both). This abstraction allows minimal changes to core ML code
+(MLflow, TensorBoard, TrackIO, or combinations). This abstraction allows minimal changes to core ML code
 while supporting multiple tracking systems.
 """
 
@@ -10,8 +10,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 
-# Note: MLflowManager is imported lazily in MLflowMetricLogger to avoid
-# connection attempts when using tensorboard-only mode
+# Note: MLflowManager and TrackIOManager are imported lazily to avoid
+# connection attempts when using other backends
 
 
 class MetricLogger(ABC):
@@ -279,6 +279,66 @@ class TensorBoardMetricLogger(MetricLogger):
             writer.close()
 
 
+class TrackIOMetricLogger(MetricLogger):
+    """
+    TrackIO implementation of MetricLogger.
+
+    Wraps the TrackIOManager to provide the MetricLogger interface.
+    TrackIO is a lightweight, local-first experiment tracking library.
+    """
+
+    def __init__(self, tracking_uri: str = None):
+        """
+        Initialize TrackIO metric logger.
+
+        Args:
+            tracking_uri: TrackIO tracking URI (optional, TrackIO is local-first)
+        """
+        # Lazy import to avoid import errors when not using TrackIO
+        from rapidfireai.fit.utils.trackio_manager import TrackIOManager
+        self.trackio_manager = TrackIOManager(tracking_uri)
+
+    def get_experiment(self, experiment_name: str) -> str:
+        """
+        Get existing experiment by name.
+
+        Args:
+            experiment_name: Name of the experiment
+
+        Returns:
+            Experiment name (TrackIO uses names, not IDs)
+        """
+        return self.trackio_manager.get_experiment(experiment_name)
+
+    def create_run(self, run_name: str) -> str:
+        """Create a new TrackIO run."""
+        return self.trackio_manager.create_run(run_name)
+
+    def log_param(self, run_id: str, key: str, value: str) -> None:
+        """Log a parameter to TrackIO."""
+        self.trackio_manager.log_param(run_id, key, value)
+
+    def log_metric(self, run_id: str, key: str, value: float, step: Optional[int] = None) -> None:
+        """Log a metric to TrackIO."""
+        self.trackio_manager.log_metric(run_id, key, value, step=step)
+
+    def end_run(self, run_id: str) -> None:
+        """End a TrackIO run."""
+        self.trackio_manager.end_run(run_id)
+
+    def get_run_metrics(self, run_id: str) -> dict:
+        """Get metrics from TrackIO."""
+        return self.trackio_manager.get_run_metrics(run_id)
+
+    def delete_run(self, run_id: str) -> None:
+        """Delete a TrackIO run."""
+        self.trackio_manager.delete_run(run_id)
+
+    def clear_context(self) -> None:
+        """Clear TrackIO context."""
+        self.trackio_manager.clear_context()
+
+
 class DualMetricLogger(MetricLogger):
     """
     Dual implementation that logs to both MLflow and TensorBoard.
@@ -343,14 +403,16 @@ def create_metric_logger(
     backend: str,
     mlflow_tracking_uri: Optional[str] = None,
     tensorboard_log_dir: Optional[str] = None,
+    trackio_tracking_uri: Optional[str] = None,
 ) -> MetricLogger:
     """
     Factory function to create the appropriate metric logger.
 
     Args:
-        backend: Tracking backend to use ('mlflow', 'tensorboard', or 'both')
+        backend: Tracking backend to use ('mlflow', 'tensorboard', 'trackio', or 'both')
         mlflow_tracking_uri: MLflow tracking server URI (required if backend includes MLflow)
         tensorboard_log_dir: TensorBoard log directory (required if backend includes TensorBoard)
+        trackio_tracking_uri: TrackIO tracking URI (optional, TrackIO is local-first)
 
     Returns:
         MetricLogger instance
@@ -370,10 +432,13 @@ def create_metric_logger(
             raise ValueError("tensorboard_log_dir required for TensorBoard backend")
         return TensorBoardMetricLogger(tensorboard_log_dir)
 
+    elif backend == "trackio":
+        return TrackIOMetricLogger(trackio_tracking_uri)
+
     elif backend == "both":
         if not mlflow_tracking_uri or not tensorboard_log_dir:
             raise ValueError("Both mlflow_tracking_uri and tensorboard_log_dir required for dual backend")
         return DualMetricLogger(mlflow_tracking_uri, tensorboard_log_dir)
 
     else:
-        raise ValueError(f"Invalid backend: {backend}. Must be 'mlflow', 'tensorboard', or 'both'")
+        raise ValueError(f"Invalid backend: {backend}. Must be 'mlflow', 'tensorboard', 'trackio', or 'both'")

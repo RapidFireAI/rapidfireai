@@ -91,6 +91,14 @@ class Controller:
         if hasattr(self.metric_logger, "get_experiment"):
             self.metric_logger.get_experiment(self.experiment_name)
 
+        from rapidfireai.fit.utils.metric_logger import TrackIOMetricLogger
+        try:
+            self.trackio_logger = TrackIOMetricLogger(tracking_uri=None)
+            if hasattr(self.trackio_logger, "get_experiment"):
+                self.trackio_logger.get_experiment(self.experiment_name)
+        except Exception:
+            self.trackio_logger = None
+
         self.logger.debug("Controller initialized")
 
     def _create_models(
@@ -149,6 +157,8 @@ class Controller:
                 raise ControllerException(f"Failed to create required Run DataPath directories: {e}") from e
 
             # create new tracking run
+            mlflow_run_id = None
+            trackio_run_id = None
             try:
                 # create new tracking run and get the mlflow_run_id
                 mlflow_run_id = self.metric_logger.create_run(str(run_id))
@@ -161,16 +171,40 @@ class Controller:
                 if cloned_from:
                     self.metric_logger.log_param(mlflow_run_id, "parent-run", str(cloned_from))
                 self.logger.debug(f"Populated MLFlow with model config info for run {run_id}.")
+                
+                if self.trackio_logger is not None:
+                    try:
+                        trackio_run_id = self.trackio_logger.create_run(str(run_id))
+                        for key, value in flattened_config.items():
+                            self.trackio_logger.log_param(trackio_run_id, key, value)
+                        if warm_started_from:
+                            self.trackio_logger.log_param(trackio_run_id, "warm-start", str(warm_started_from))
+                        if cloned_from:
+                            self.trackio_logger.log_param(trackio_run_id, "parent-run", str(cloned_from))
+                        self.logger.debug(f"Populated TrackIO with model config info for run {run_id}.")
+                    except Exception as e:
+                        self.logger.warning(f"Error creating TrackIO run for run {run_id}: {e}")
+                
                 self.db.set_run_details(
                     run_id=run_id,
                     mlflow_run_id=mlflow_run_id,
+                    trackio_run_id=trackio_run_id,
                     flattened_config=flattened_config,
                 )
             except Exception as e:
                 # Catch any metric logger exceptions (MLflow, TensorBoard, etc.)
                 msg = f"Error creating new tracking run for run {run_id} - {e}."
                 print(msg)
-                self.metric_logger.end_run(mlflow_run_id)
+                if mlflow_run_id:
+                    try:
+                        self.metric_logger.end_run(mlflow_run_id)
+                    except Exception:
+                        pass
+                if trackio_run_id and self.trackio_logger:
+                    try:
+                        self.trackio_logger.end_run(trackio_run_id)
+                    except Exception:
+                        pass
                 self.logger.error(msg, exc_info=True)
 
         total_runs = len(runs)
@@ -234,6 +268,13 @@ class Controller:
                 # delete run from MLFlow
                 mlflow_run_id = self.db.get_run(run_id)["mlflow_run_id"]
                 self.metric_logger.delete_run(mlflow_run_id)
+                run_details = self.db.get_run(run_id)
+                trackio_run_id = run_details.get("trackio_run_id")
+                if trackio_run_id and self.trackio_logger:
+                    try:
+                        self.trackio_logger.delete_run(trackio_run_id)
+                    except Exception as e:
+                        self.logger.warning(f"Error deleting TrackIO run {trackio_run_id}: {e}")
                 # mark run as deleted
                 self.db.set_run_details(
                     run_id=run_id,

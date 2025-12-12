@@ -21,6 +21,15 @@ class DispatcherConfig:
     URL: str = f"http://{HOST}:{PORT}"
 
 
+# MLFlow Constants
+class MLFlowConfig:
+    """Class to manage the MLFlow configuration"""
+
+    HOST: str = os.getenv("RF_MLFLOW_HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("RF_MLFLOW_PORT", "8852"))
+    URL: str = f"http://{HOST}:{PORT}"
+
+
 def get_dispatcher_url() -> str:
     """
     Auto-detect dispatcher URL based on environment.
