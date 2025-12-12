@@ -13,6 +13,11 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.12.8]
+
+### Fixes
+- Fix issue with 2nd call to Experiment() crashing python process for RAG
+
 ## [v0.12.7]
 
 ### Changes
