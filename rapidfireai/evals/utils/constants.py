@@ -138,3 +138,21 @@ class DBConfig:
     DEFAULT_MAX_RETRIES: int = 3
     DEFAULT_BASE_DELAY: float = 0.1
     DEFAULT_MAX_DELAY: float = 1.0
+
+
+# MLflow Constants
+class MLFlowConfig:
+    """Class to manage the MLflow configuration for evals"""
+
+    HOST: str = os.getenv("RF_MLFLOW_HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("RF_MLFLOW_PORT", "8852"))
+    URL: str = f"http://{HOST}:{PORT}"
+
+
+# Frontend Constants
+class FrontendConfig:
+    """Class to manage the frontend configuration for evals"""
+
+    HOST: str = os.getenv("RF_FRONTEND_HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("RF_FRONTEND_PORT", "8853"))
+    URL: str = f"http://{HOST}:{PORT}"

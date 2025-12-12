@@ -124,6 +124,20 @@ class Dispatcher:
             f"{route_prefix}/get-pipeline", "get_pipeline", self.get_pipeline, methods=["POST", "OPTIONS"]
         )
 
+        # Experiment queries (for dashboard integration)
+        self.app.add_url_rule(
+            f"{route_prefix}/get-running-experiment",
+            "get_running_experiment",
+            self.get_running_experiment,
+            methods=["GET", "OPTIONS"],
+        )
+        self.app.add_url_rule(
+            f"{route_prefix}/get-all-experiment-names",
+            "get_all_experiment_names",
+            self.get_all_experiment_names,
+            methods=["GET", "OPTIONS"],
+        )
+
     def health_check(self) -> tuple[Response, int]:
         """Health check endpoint."""
         # Handle OPTIONS preflight
@@ -484,6 +498,45 @@ class Dispatcher:
         except Exception as e:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
+    def get_running_experiment(self) -> tuple[Response, int]:
+        """
+        Get the currently running experiment.
+
+        Returns:
+            Experiment details including mlflow_experiment_id
+        """
+        # Handle OPTIONS preflight
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+
+        try:
+            experiment = self.db.get_running_experiment()
+            if not experiment:
+                return jsonify({"error": "No running experiment found"}), 404
+
+            return jsonify(experiment), 200
+
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+    def get_all_experiment_names(self) -> tuple[Response, int]:
+        """
+        Get all experiment names.
+
+        Returns:
+            List of experiment names
+        """
+        # Handle OPTIONS preflight
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+
+        try:
+            experiment_names = self.db.get_all_experiment_names()
+            return jsonify(experiment_names), 200
+
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
 
 def run_dispatcher(host: str = "0.0.0.0", port: int = 8851) -> None:
     """
@@ -598,6 +651,16 @@ def start_dispatcher_thread(host: str = "0.0.0.0", port: int = 8851, logger=None
         else:
             print(f"WARNING: {error_msg}")
         return None
+
+
+def serve_forever() -> Flask:
+    """
+    Return the Flask app for Gunicorn to serve.
+
+    This function is called by Gunicorn when running the dispatcher
+    as a standalone process (via `rapidfireai start --evals`).
+    """
+    return Dispatcher().app
 
 
 if __name__ == "__main__":
