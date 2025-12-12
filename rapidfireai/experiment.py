@@ -118,6 +118,7 @@ class Experiment:
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
         from rapidfireai.evals.utils.mlflow_manager import MLflowManager
+        from rapidfireai.evals.utils.trackio_manager import TrackIOManager
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
 
         # Store ray reference for later use
@@ -175,11 +176,21 @@ class Experiment:
             self.logger.warning(f"Failed to initialize MLflow: {e}. MLflow logging will be disabled.")
             self.mlflow_manager = None
 
+        # Initialize TrackIO
+        try:
+            self.trackio_manager = TrackIOManager(tracking_uri=None)
+            self.trackio_manager.get_experiment(self.experiment_name)
+            self.logger.info(f"Initialized TrackIO experiment: {self.experiment_name}")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize TrackIO: {e}. TrackIO logging will be disabled.")
+            self.trackio_manager = None
+
         # Initialize the controller
         self.controller = Controller(
             experiment_name=self.experiment_name,
             experiment_path=self.experiment_path,
             mlflow_manager=self.mlflow_manager if hasattr(self, "mlflow_manager") else None,
+            trackio_manager=self.trackio_manager if hasattr(self, "trackio_manager") else None,
         )
 
         # Start dispatcher in background thread for interactive control

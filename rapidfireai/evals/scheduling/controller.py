@@ -42,6 +42,7 @@ class Controller:
         experiment_name: str,
         experiment_path: str,
         mlflow_manager=None,
+        trackio_manager=None,
     ):
         """
         Initialize the controller.
@@ -50,6 +51,7 @@ class Controller:
             experiment_name: Name of the experiment
             experiment_path: Path to experiment logs/artifacts
             mlflow_manager: Optional MLflowManager instance for logging metrics
+            trackio_manager: Optional TrackIOManager instance for logging metrics
         """
         self.aggregator = Aggregator()
         self.dataloader = DataLoader()
@@ -57,6 +59,7 @@ class Controller:
         self.experiment_name = experiment_name
         self.experiment_path = experiment_path
         self.mlflow_manager = mlflow_manager
+        self.trackio_manager = trackio_manager
 
         # Initialize logger
         logging_manager = RFLogger(experiment_name=self.experiment_name, experiment_path=self.experiment_path)
@@ -497,6 +500,7 @@ class Controller:
             )
             
             # Create MLflow run for this pipeline if MLflow is enabled
+            mlflow_run_id = None
             if self.mlflow_manager:
                 try:
                     pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
@@ -526,6 +530,38 @@ class Controller:
                     self.logger.debug(f"Created MLflow run {mlflow_run_id} for pipeline {pipeline_id}")
                 except Exception as e:
                     self.logger.warning(f"Failed to create MLflow run for pipeline {pipeline_id}: {e}")
+            
+            # Create TrackIO run for this pipeline if TrackIO is enabled
+            trackio_run_id = None
+            if self.trackio_manager:
+                try:
+                    pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
+                    trackio_run_id = self.trackio_manager.create_run(f"{pipeline_name}_{pipeline_id}")
+                    db.set_pipeline_trackio_run_id(pipeline_id, trackio_run_id)
+                    
+                    pipeline = pipeline_config.get("pipeline")
+                    if pipeline:
+                        if hasattr(pipeline, "model_config") and pipeline.model_config:
+                            model_name = pipeline.model_config.get("model", "unknown")
+                            self.trackio_manager.log_param(trackio_run_id, "model", model_name)
+                        
+                        if hasattr(pipeline, "rag") and pipeline.rag:
+                            if hasattr(pipeline.rag, "search_type"):
+                                self.trackio_manager.log_param(trackio_run_id, "rag_search_type", str(pipeline.rag.search_type))
+                            if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs:
+                                k = pipeline.rag.search_kwargs.get("k")
+                                if k is not None:
+                                    self.trackio_manager.log_param(trackio_run_id, "rag_k", str(k))
+                        
+                        # Extract sampling params
+                        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:
+                            import json
+                            sampling_str = json.dumps(pipeline.sampling_params) if isinstance(pipeline.sampling_params, dict) else str(pipeline.sampling_params)
+                            self.trackio_manager.log_param(trackio_run_id, "sampling_params", sampling_str)
+                    
+                    self.logger.debug(f"Created TrackIO run {trackio_run_id} for pipeline {pipeline_id}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to create TrackIO run for pipeline {pipeline_id}: {e}")
             
             pipeline_ids.append(pipeline_id)
             pipeline_id_to_config[pipeline_id] = pipeline_config
@@ -1075,58 +1111,109 @@ class Controller:
                                     throughput = samples_processed / elapsed_time
                                     display_metrics["Throughput"] = {"value": throughput}
                                 
-                                if self.mlflow_manager:
+                                pipeline = db.get_pipeline(pipeline_id)
+                                mlflow_run_id = pipeline.get("mlflow_run_id") if pipeline else None
+                                trackio_run_id = pipeline.get("trackio_run_id") if pipeline else None
+                                
+                                if self.mlflow_manager and mlflow_run_id:
                                     try:
-                                        pipeline = db.get_pipeline(pipeline_id)
-                                        mlflow_run_id = pipeline.get("mlflow_run_id") if pipeline else None
-                                        if mlflow_run_id:
-                                            actual_samples_processed = pipeline.get("total_samples_processed", samples_processed)
-                                            percentage_processed = (actual_samples_processed / total_dataset_size * 100) if total_dataset_size > 0 else 0
-                                            step = int(percentage_processed)  
+                                        actual_samples_processed = pipeline.get("total_samples_processed", samples_processed)
+                                        percentage_processed = (actual_samples_processed / total_dataset_size * 100) if total_dataset_size > 0 else 0
+                                        step = int(percentage_processed)  
+                                        
+                                        for metric_name, metric_data in metrics_with_ci.items():
+                                            if metric_name in ["run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second"]:
+                                                continue
                                             
-                                            for metric_name, metric_data in metrics_with_ci.items():
-                                                if metric_name in ["run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second"]:
-                                                    continue
-                                                
-                                                if isinstance(metric_data, dict):
-                                                    metric_value = metric_data.get("value", 0)
-                                                    lower_bound = metric_data.get("lower_bound")
-                                                    upper_bound = metric_data.get("upper_bound")
-                                                else:
-                                                    metric_value = metric_data
-                                                    lower_bound = None
-                                                    upper_bound = None
-                                                
-                                                # Log main metric value
-                                                if isinstance(metric_value, (int, float)):
-                                                    try:
-                                                        self.mlflow_manager.log_metric(mlflow_run_id, metric_name, float(metric_value), step=step)
-                                                    except Exception as e:
-                                                        self.logger.debug(f"Failed to log metric {metric_name} to MLflow: {e}")
-                                                
-                                                # Log lower_bound if available
-                                                if lower_bound is not None and isinstance(lower_bound, (int, float)):
-                                                    try:
-                                                        self.mlflow_manager.log_metric(mlflow_run_id, f"{metric_name}_lower_bound", float(lower_bound), step=step)
-                                                    except Exception as e:
-                                                        self.logger.debug(f"Failed to log metric {metric_name}_lower_bound to MLflow: {e}")
-                                                
-                                                # Log upper_bound if available
-                                                if upper_bound is not None and isinstance(upper_bound, (int, float)):
-                                                    try:
-                                                        self.mlflow_manager.log_metric(mlflow_run_id, f"{metric_name}_upper_bound", float(upper_bound), step=step)
-                                                    except Exception as e:
-                                                        self.logger.debug(f"Failed to log metric {metric_name}_upper_bound to MLflow: {e}")
+                                            if isinstance(metric_data, dict):
+                                                metric_value = metric_data.get("value", 0)
+                                                lower_bound = metric_data.get("lower_bound")
+                                                upper_bound = metric_data.get("upper_bound")
+                                            else:
+                                                metric_value = metric_data
+                                                lower_bound = None
+                                                upper_bound = None
                                             
-                                            if "Throughput" in display_metrics:
-                                                throughput_value = display_metrics["Throughput"]["value"]
-                                                if isinstance(throughput_value, (int, float)):
-                                                    try:
-                                                        self.mlflow_manager.log_metric(mlflow_run_id, "Throughput", float(throughput_value), step=step)
-                                                    except Exception as e:
-                                                        self.logger.debug(f"Failed to log Throughput to MLflow: {e}")
+                                            # Log main metric value
+                                            if isinstance(metric_value, (int, float)):
+                                                try:
+                                                    self.mlflow_manager.log_metric(mlflow_run_id, metric_name, float(metric_value), step=step)
+                                                except Exception as e:
+                                                    self.logger.debug(f"Failed to log metric {metric_name} to MLflow: {e}")
+                                            
+                                            # Log lower_bound if available
+                                            if lower_bound is not None and isinstance(lower_bound, (int, float)):
+                                                try:
+                                                    self.mlflow_manager.log_metric(mlflow_run_id, f"{metric_name}_lower_bound", float(lower_bound), step=step)
+                                                except Exception as e:
+                                                    self.logger.debug(f"Failed to log metric {metric_name}_lower_bound to MLflow: {e}")
+                                            
+                                            # Log upper_bound if available
+                                            if upper_bound is not None and isinstance(upper_bound, (int, float)):
+                                                try:
+                                                    self.mlflow_manager.log_metric(mlflow_run_id, f"{metric_name}_upper_bound", float(upper_bound), step=step)
+                                                except Exception as e:
+                                                    self.logger.debug(f"Failed to log metric {metric_name}_upper_bound to MLflow: {e}")
+                                        
+                                        if "Throughput" in display_metrics:
+                                            throughput_value = display_metrics["Throughput"]["value"]
+                                            if isinstance(throughput_value, (int, float)):
+                                                try:
+                                                    self.mlflow_manager.log_metric(mlflow_run_id, "Throughput", float(throughput_value), step=step)
+                                                except Exception as e:
+                                                    self.logger.debug(f"Failed to log Throughput to MLflow: {e}")
                                     except Exception as e:
                                         self.logger.debug(f"Failed to log metrics to MLflow: {e}")
+                                
+                                if self.trackio_manager and trackio_run_id:
+                                    try:
+                                        actual_samples_processed = pipeline.get("total_samples_processed", samples_processed)
+                                        percentage_processed = (actual_samples_processed / total_dataset_size * 100) if total_dataset_size > 0 else 0
+                                        step = int(percentage_processed)  
+                                        
+                                        for metric_name, metric_data in metrics_with_ci.items():
+                                            if metric_name in ["run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second"]:
+                                                continue
+                                            
+                                            if isinstance(metric_data, dict):
+                                                metric_value = metric_data.get("value", 0)
+                                                lower_bound = metric_data.get("lower_bound")
+                                                upper_bound = metric_data.get("upper_bound")
+                                            else:
+                                                metric_value = metric_data
+                                                lower_bound = None
+                                                upper_bound = None
+                                            
+                                            # Log main metric value
+                                            if isinstance(metric_value, (int, float)):
+                                                try:
+                                                    self.trackio_manager.log_metric(trackio_run_id, metric_name, float(metric_value), step=step)
+                                                except Exception as e:
+                                                    self.logger.debug(f"Failed to log metric {metric_name} to TrackIO: {e}")
+                                            
+                                            # Log lower_bound if available
+                                            if lower_bound is not None and isinstance(lower_bound, (int, float)):
+                                                try:
+                                                    self.trackio_manager.log_metric(trackio_run_id, f"{metric_name}_lower_bound", float(lower_bound), step=step)
+                                                except Exception as e:
+                                                    self.logger.debug(f"Failed to log metric {metric_name}_lower_bound to TrackIO: {e}")
+                                            
+                                            # Log upper_bound if available
+                                            if upper_bound is not None and isinstance(upper_bound, (int, float)):
+                                                try:
+                                                    self.trackio_manager.log_metric(trackio_run_id, f"{metric_name}_upper_bound", float(upper_bound), step=step)
+                                                except Exception as e:
+                                                    self.logger.debug(f"Failed to log metric {metric_name}_upper_bound to TrackIO: {e}")
+                                        
+                                        if "Throughput" in display_metrics:
+                                            throughput_value = display_metrics["Throughput"]["value"]
+                                            if isinstance(throughput_value, (int, float)):
+                                                try:
+                                                    self.trackio_manager.log_metric(trackio_run_id, "Throughput", float(throughput_value), step=step)
+                                                except Exception as e:
+                                                    self.logger.debug(f"Failed to log Throughput to TrackIO: {e}")
+                                    except Exception as e:
+                                        self.logger.debug(f"Failed to log metrics to TrackIO: {e}")
                             except Exception as e:
                                 self.logger.debug(f"Could not compute live metrics: {e}")
 
