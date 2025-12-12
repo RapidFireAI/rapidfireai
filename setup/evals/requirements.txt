@@ -44,4 +44,8 @@ ipykernel
 ipywidgets
 tensorboard
 
+# Experiment Tracking
+mlflow>=3.2.0
+gunicorn
+
 jq

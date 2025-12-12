@@ -35,3 +35,7 @@ faiss-gpu-cu12
 fsspec>=2023.1.0,<=2025.3.0
 flashinfer-python>=0.5.3
 flashinfer-cubin>=0.5.3
+
+# Experiment Tracking
+mlflow>=3.2.0
+gunicorn

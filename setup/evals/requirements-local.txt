@@ -10,6 +10,7 @@ ray[default]>=2.49.2
 
 # LLM Inference
 transformers>=4.56.1
+vllm>=0.7.2
 
 # OpenAI API
 openai>=1.106.1
@@ -34,3 +35,7 @@ datasets
 jupyter
 grpcio
 faiss-gpu-cu12
+
+# Experiment Tracking
+mlflow>=3.2.0
+gunicorn

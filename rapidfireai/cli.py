@@ -109,10 +109,16 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
     setup_directory = None
-    for site_package in site_packages.split(","):
-        if os.path.exists(os.path.join(site_package.strip(), "setup", "fit")):
-            setup_directory = Path(site_package) / "setup"
-            break
+    # First try source directory (for development/editable installs with latest requirements)
+    source_setup = Path(__file__).parent.parent / "setup"
+    if source_setup.exists() and (source_setup / "fit").exists():
+        setup_directory = source_setup
+    # Fallback to site-packages (for pip installed packages)
+    if not setup_directory:
+        for site_package in site_packages.split(","):
+            if os.path.exists(os.path.join(site_package.strip(), "setup", "fit")):
+                setup_directory = Path(site_package) / "setup"
+                break
     if not setup_directory:
         print("❌ Setup directory not found, skipping package installation")
         return 1
