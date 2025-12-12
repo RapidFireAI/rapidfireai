@@ -46,6 +46,15 @@ class RfDb:
                 with open(tables_file, encoding="utf-8") as f:
                     sql_content = f.read()
                 _ = self.db.conn.executescript(sql_content)
+            else:
+                try:
+                    cursor = self.db.conn.execute("PRAGMA table_info(runs)")
+                    columns = [column[1] for column in cursor.fetchall()]
+                    if "trackio_run_id" not in columns:
+                        self.db.conn.execute("ALTER TABLE runs ADD COLUMN trackio_run_id TEXT")
+                        self.db.conn.commit()
+                except sqlite3.Error:
+=                    pass
 
         except FileNotFoundError as e:
             raise DBException(f"tables.sql file not found at {tables_file}") from e
@@ -272,6 +281,7 @@ class RfDb:
         config_leaf: dict[str, Any],
         status: RunStatus,
         mlflow_run_id: str | None = None,
+        trackio_run_id: str | None = None,
         flattened_config: dict[str, Any] | None = None,
         completed_steps: int = 0,
         total_steps: int = 0,
@@ -286,16 +296,17 @@ class RfDb:
     ) -> int:
         """Create a new run"""
         query = """
-            INSERT INTO runs (status, mlflow_run_id, flattened_config, config_leaf,
+            INSERT INTO runs (status, mlflow_run_id, trackio_run_id, flattened_config, config_leaf,
             completed_steps, total_steps, num_chunks_visited_curr_epoch,
             num_epochs_completed, chunk_offset, error, source, ended_by, warm_started_from, cloned_from)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         self.db.execute(
             query,
             (
                 status.value,
                 mlflow_run_id,
+                trackio_run_id,
                 json.dumps(flattened_config) if flattened_config else "{}",
                 encode_payload(config_leaf) if config_leaf else "{}",
                 completed_steps,
@@ -321,6 +332,7 @@ class RfDb:
         run_id: int,
         status: RunStatus | None = None,
         mlflow_run_id: str | None = None,
+        trackio_run_id: str | None = None,
         flattened_config: dict[str, Any] | None = None,
         config_leaf: dict[str, Any] | None = None,
         completed_steps: int | None = None,
@@ -339,6 +351,7 @@ class RfDb:
         columns = {
             "status": status.value if status else None,
             "mlflow_run_id": mlflow_run_id,
+            "trackio_run_id": trackio_run_id,
             "flattened_config": json.dumps(flattened_config) if flattened_config else None,
             "config_leaf": encode_payload(config_leaf) if config_leaf else None,
             "completed_steps": completed_steps,
@@ -376,7 +389,7 @@ class RfDb:
     def get_run(self, run_id: int) -> dict[str, Any]:
         """Get a run's details"""
         query = """
-            SELECT status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
+            SELECT status, mlflow_run_id, trackio_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
             warm_started_from, cloned_from
             FROM runs
@@ -389,18 +402,19 @@ class RfDb:
             formatted_details = {
                 "status": RunStatus(run_details[0]),
                 "mlflow_run_id": run_details[1],
-                "flattened_config": json.loads(run_details[2]),
-                "config_leaf": decode_db_payload(run_details[3]) if run_details[3] and run_details[3] != "{}" else {},
-                "completed_steps": run_details[4],
-                "total_steps": run_details[5],
-                "num_chunks_visited_curr_epoch": run_details[6],
-                "num_epochs_completed": run_details[7],
-                "chunk_offset": run_details[8],
-                "error": run_details[9],
-                "source": RunSource(run_details[10]) if run_details[10] else None,
-                "ended_by": RunEndedBy(run_details[11]) if run_details[11] else None,
-                "warm_started_from": run_details[12],
-                "cloned_from": run_details[13],
+                "trackio_run_id": run_details[2],
+                "flattened_config": json.loads(run_details[3]),
+                "config_leaf": decode_db_payload(run_details[4]) if run_details[4] and run_details[4] != "{}" else {},
+                "completed_steps": run_details[5],
+                "total_steps": run_details[6],
+                "num_chunks_visited_curr_epoch": run_details[7],
+                "num_epochs_completed": run_details[8],
+                "chunk_offset": run_details[9],
+                "error": run_details[10],
+                "source": RunSource(run_details[11]) if run_details[11] else None,
+                "ended_by": RunEndedBy(run_details[12]) if run_details[12] else None,
+                "warm_started_from": run_details[13],
+                "cloned_from": run_details[14],
             }
             return formatted_details
         raise DBException("No run found")
@@ -413,7 +427,7 @@ class RfDb:
         # Create placeholders for SQL IN clause
         placeholders = ",".join(["?"] * len(statuses))
         query = f"""
-            SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
+            SELECT run_id, status, mlflow_run_id, trackio_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
             warm_started_from, cloned_from
             FROM runs
@@ -428,25 +442,26 @@ class RfDb:
                 formatted_details[run[0]] = {
                     "status": RunStatus(run[1]),
                     "mlflow_run_id": run[2],
-                    "flattened_config": json.loads(run[3]),
-                    "config_leaf": decode_db_payload(run[4]) if run[4] and run[4] != "{}" else {},
-                    "completed_steps": run[5],
-                    "total_steps": run[6],
-                    "num_chunks_visited_curr_epoch": run[7],
-                    "num_epochs_completed": run[8],
-                    "chunk_offset": run[9],
-                    "error": run[10],
-                    "source": RunSource(run[11]) if run[11] else None,
-                    "ended_by": RunEndedBy(run[12]) if run[12] else None,
-                    "warm_started_from": run[13],
-                    "cloned_from": run[14],
+                    "trackio_run_id": run[3],
+                    "flattened_config": json.loads(run[4]),
+                    "config_leaf": decode_db_payload(run[5]) if run[5] and run[5] != "{}" else {},
+                    "completed_steps": run[6],
+                    "total_steps": run[7],
+                    "num_chunks_visited_curr_epoch": run[8],
+                    "num_epochs_completed": run[9],
+                    "chunk_offset": run[10],
+                    "error": run[11],
+                    "source": RunSource(run[12]) if run[12] else None,
+                    "ended_by": RunEndedBy(run[13]) if run[13] else None,
+                    "warm_started_from": run[14],
+                    "cloned_from": run[15],
                 }
         return formatted_details
 
     def get_all_runs(self) -> dict[int, dict[str, Any]]:
         """Get all runs for UI display (ignore all complex fields)"""
         query = """
-            SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
+            SELECT run_id, status, mlflow_run_id, trackio_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
             warm_started_from, cloned_from
             FROM runs
@@ -459,18 +474,19 @@ class RfDb:
                 formatted_details[run[0]] = {
                     "status": RunStatus(run[1]),
                     "mlflow_run_id": run[2],
-                    "flattened_config": json.loads(run[3]),
-                    "config_leaf": decode_db_payload(run[4]) if run[4] and run[4] != "{}" else {},
-                    "completed_steps": run[5],
-                    "total_steps": run[6],
-                    "num_chunks_visited_curr_epoch": run[7],
-                    "num_epochs_completed": run[8],
-                    "chunk_offset": run[9],
-                    "error": run[10],
-                    "source": RunSource(run[11]) if run[11] else None,
-                    "ended_by": RunEndedBy(run[12]) if run[12] else None,
-                    "warm_started_from": run[13],
-                    "cloned_from": run[14],
+                    "trackio_run_id": run[3],
+                    "flattened_config": json.loads(run[4]),
+                    "config_leaf": decode_db_payload(run[5]) if run[5] and run[5] != "{}" else {},
+                    "completed_steps": run[6],
+                    "total_steps": run[7],
+                    "num_chunks_visited_curr_epoch": run[8],
+                    "num_epochs_completed": run[9],
+                    "chunk_offset": run[10],
+                    "error": run[11],
+                    "source": RunSource(run[12]) if run[12] else None,
+                    "ended_by": RunEndedBy(run[13]) if run[13] else None,
+                    "warm_started_from": run[14],
+                    "cloned_from": run[15],
                 }
         return formatted_details
 

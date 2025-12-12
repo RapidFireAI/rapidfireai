@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS runs (
     run_id INTEGER PRIMARY KEY AUTOINCREMENT,
     status TEXT NOT NULL,
     mlflow_run_id TEXT,
+    trackio_run_id TEXT,
     flattened_config TEXT DEFAULT '{}',
     config_leaf TEXT DEFAULT '{}',
     completed_steps INTEGER DEFAULT 0,

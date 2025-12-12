@@ -94,6 +94,14 @@ class Worker:
         if hasattr(self.metric_logger, "get_experiment"):
             self.metric_logger.get_experiment(self.experiment_name)
 
+        from rapidfireai.fit.utils.metric_logger import TrackIOMetricLogger
+        try:
+            self.trackio_logger = TrackIOMetricLogger(tracking_uri=None)
+            if hasattr(self.trackio_logger, "get_experiment"):
+                self.trackio_logger.get_experiment(self.experiment_name)
+        except Exception:
+            self.trackio_logger = None
+
         # load datasets
         self.train_dataset, self.eval_dataset, self.num_chunks = self.load_datasets()
         self.len_train_dataset = len(self.train_dataset)
@@ -123,6 +131,7 @@ class Worker:
         run_details = self.db.get_run(run_id)
         config_leaf = run_details["config_leaf"]
         mlflow_run_id = run_details["mlflow_run_id"]
+        trackio_run_id = run_details.get("trackio_run_id")
 
         # set seed
         # torch.manual_seed(run_details["seed"])
@@ -145,6 +154,7 @@ class Worker:
             worker_id=self.worker_id,
             run_id=run_id,
             mlflow_run_id=mlflow_run_id,
+            trackio_run_id=trackio_run_id,
             config_leaf=config_leaf,
             total_steps=run_details["total_steps"],
             completed_steps=run_details["completed_steps"],
@@ -167,7 +177,7 @@ class Worker:
         stderr_buffer = StringIO()
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             trainer_instance, base_model_name = create_trainer_instance(
-                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.metric_logger, chunk_id
+                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.metric_logger, self.trackio_logger, chunk_id
             )
 
         # if first time, save checkpoint to disk
