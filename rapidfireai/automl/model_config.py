@@ -1,5 +1,7 @@
 """Model configuration for AutoML training and evaluation."""
 
+from __future__ import annotations
+
 import copy
 import inspect
 from abc import ABC, abstractmethod
