@@ -5,6 +5,7 @@ This module contains the DatasetLocators class which encapsulates the filepaths 
 from pathlib import Path
 
 from rapidfireai.fit.utils.exceptions import DataPathException
+from rapidfireai.utils.os_utils import mkdir_p
 
 
 class DataPath:
@@ -21,9 +22,9 @@ class DataPath:
             cls.mlflow_path: Path = cls.experiments_path / "mlflow"
 
             # create directories
-            Path.mkdir(cls.experiments_path, parents=True, exist_ok=True)
-            Path.mkdir(cls.user_code_path, parents=True, exist_ok=True)
-            Path.mkdir(cls.mlflow_path, parents=True, exist_ok=True)
+            mkdir_p(cls.experiments_path, notify=False)
+            mkdir_p(cls.user_code_path, notify=False)
+            mkdir_p(cls.mlflow_path, notify=False)
         except (PermissionError, OSError) as e:
             raise DataPathException(f"Failed to create required DataPaths directories: {e}") from e
 

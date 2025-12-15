@@ -299,6 +299,42 @@ class InteractiveControlHandler:
             f"prompt_manager={'present' if prompt_manager else 'None'}"
         )
 
+        # Apply RAG configuration changes if present in edited_json
+        # This mirrors the extract_rag_params logic in serialize.py but in reverse:
+        # applies the flattened rag_config back to the nested RAG object structure
+        if rag is not None and "rag_config" in edited_json:
+            rag_config = edited_json["rag_config"]
+            self.logger.info(f"Applying RAG config changes: {rag_config}")
+
+            # Map flattened rag_config keys to their locations in the RAG object
+            # This mapping corresponds to extract_rag_params() in serialize.py
+
+            # Direct attribute: search_type
+            if "search_type" in rag_config:
+                rag.search_type = rag_config["search_type"]
+
+            # search_kwargs dict: k, filter, fetch_k, lambda_mult
+            if rag.search_kwargs is None:
+                rag.search_kwargs = {}
+            for key in ["k", "filter", "fetch_k", "lambda_mult"]:
+                if key in rag_config:
+                    rag.search_kwargs[key] = rag_config[key]
+
+            # reranker_kwargs dict: top_n
+            if rag.reranker_kwargs is None:
+                rag.reranker_kwargs = {}
+            if "top_n" in rag_config:
+                rag.reranker_kwargs["top_n"] = rag_config["top_n"]
+
+            # text_splitter attributes: chunk_size, chunk_overlap
+            if rag.text_splitter is not None:
+                if "chunk_size" in rag_config:
+                    rag.text_splitter._chunk_size = rag_config["chunk_size"]
+                if "chunk_overlap" in rag_config:
+                    rag.text_splitter._chunk_overlap = rag_config["chunk_overlap"]
+
+            self.logger.info(f"RAG config updated successfully")
+
         # Extract pipeline type from edited JSON (or inherit from parent)
         pipeline_type = edited_json.get("pipeline_type")
         if not pipeline_type:
@@ -312,39 +348,43 @@ class InteractiveControlHandler:
 
         # Apply JSON edits on top of parent's configuration
         if pipeline_type.lower() == "vllm":
-            # Get parent's baseline config
-            parent_model_config_dict = getattr(parent_model_config, "model_config", {})
-            parent_sampling_params = getattr(parent_model_config, "sampling_params", {})
+            # Get parent's baseline config from _user_params (original dicts, not converted objects)
+            parent_model_config_dict = parent_model_config._user_params.get("model_config", {})
+            parent_sampling_params = parent_model_config._user_params.get("sampling_params", {})
 
-            # Apply edits from JSON (use parent as fallback)
-            model_config_dict = edited_json.get("model_config", parent_model_config_dict)
-            sampling_params_dict = edited_json.get("sampling_params", parent_sampling_params)
+            # Apply edits from JSON using key-by-key merging (user values override parent values)
+            # This preserves all parent keys and only overrides the keys specified by the user
+            model_config_dict = {**parent_model_config_dict, **edited_json.get("model_config", {})}
+            sampling_params_dict = {**parent_sampling_params, **edited_json.get("sampling_params", {})}
 
             model_config = RFvLLMModelConfig(
                 model_config=model_config_dict,
                 sampling_params=sampling_params_dict,
-                rag=rag,  # Inherited from parent
+                rag=rag,  # Inherited from parent (with rag_config modifications applied if specified)
                 prompt_manager=prompt_manager,  # Inherited from parent
             )
 
         elif pipeline_type.lower() == "openai":
-            # Get parent's baseline config
-            parent_client_config = getattr(parent_model_config, "client_config", {})
-            parent_model_config_dict = getattr(parent_model_config, "model_config", {})
-            parent_rpm = getattr(parent_model_config, "rpm_limit", 500)
-            parent_tpm = getattr(parent_model_config, "tpm_limit", 500_000)
+            # Get parent's baseline config from _user_params (original dicts)
+            parent_client_config = parent_model_config._user_params.get("client_config", {})
+            parent_model_config_dict = parent_model_config._user_params.get("model_config", {})
+            parent_rpm = parent_model_config._user_params.get("rpm_limit", 500)
+            parent_tpm = parent_model_config._user_params.get("tpm_limit", 500_000)
+            parent_max_completion_tokens = parent_model_config._user_params.get("max_completion_tokens", None)
 
-            # Apply edits from JSON (use parent as fallback)
-            client_config = edited_json.get("client_config", parent_client_config)
-            model_config_dict = edited_json.get("model_config", parent_model_config_dict)
+            # Apply edits from JSON using key-by-key merging (user values override parent values)
+            # This preserves all parent keys and only overrides the keys specified by the user
+            client_config = {**parent_client_config, **edited_json.get("client_config", {})}
+            model_config_dict = {**parent_model_config_dict, **edited_json.get("model_config", {})}
 
             model_config = RFOpenAIAPIModelConfig(
                 client_config=client_config,
                 model_config=model_config_dict,
-                rag=rag,  # Inherited from parent
+                rag=rag,  # Inherited from parent (with rag_config modifications applied if specified)
                 prompt_manager=prompt_manager,  # Inherited from parent
                 rpm_limit=edited_json.get("rpm_limit", parent_rpm),
                 tpm_limit=edited_json.get("tpm_limit", parent_tpm),
+                max_completion_tokens=edited_json.get("max_completion_tokens", parent_max_completion_tokens),
             )
 
         else:
@@ -375,11 +415,16 @@ class InteractiveControlHandler:
         if parent_accumulate_metrics_fn is not None:
             pipeline_config_dict["accumulate_metrics_fn"] = parent_accumulate_metrics_fn
 
-        # Add online_strategy_kwargs if present (inherit from parent if not in JSON)
-        if "online_strategy_kwargs" in edited_json:
+        # Add online_strategy_kwargs if present (merge with parent using key-by-key)
+        if parent_online_strategy:
+            # Merge parent online_strategy_kwargs with user edits
+            pipeline_config_dict["online_strategy_kwargs"] = {
+                **parent_online_strategy,
+                **edited_json.get("online_strategy_kwargs", {})
+            }
+        elif "online_strategy_kwargs" in edited_json:
+            # No parent strategy, use user's strategy as-is
             pipeline_config_dict["online_strategy_kwargs"] = edited_json["online_strategy_kwargs"]
-        elif parent_online_strategy:
-            pipeline_config_dict["online_strategy_kwargs"] = parent_online_strategy
 
         # Create new pipeline in database
         new_pipeline_id = db.create_pipeline(
@@ -476,9 +521,9 @@ class InteractiveControlHandler:
                 chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)
                 chunk_overlap = getattr(pipeline.rag.text_splitter, "_chunk_overlap", None)
 
-        # Extract sampling params
+        # Extract sampling params from _user_params (dict, not SamplingParams object)
         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
-            sampling_params = pipeline.sampling_params
+            sampling_params = pipeline._user_params.get("sampling_params", None)
 
         # Extract prompt_manager fields
         if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:

@@ -1,0 +1,21 @@
+# Colab Packages
+# fit dependencies
+pandas>=2.0.0,<2.3.0  # Colab compatibility (2.2.2) and cudf constraint
+psutil>=5.9.0
+torch>=2.8.0
+transformers>=4.55.2
+peft>=0.17.0
+trl==0.21.0
+bitsandbytes>=0.47.0
+nltk>=3.9.1
+evaluate>=0.4.5
+rouge-score>=0.1.2
+sentencepiece>=0.2.1
+mlflow>=3.2.0
+pytest>=8.4.1
+requests>=2.32.0  # Relaxed for Colab (2.32.4)
+loguru>=0.7.3
+ipython>=7.34.0  # Colab compatibility (7.34.0)
+jupyter>=1.1.1
+ipywidgets>=7.3.4,<9.0.0  # Support both v7 (Colab) and v8 (Jupyter)
+tensorboard>=2.11.0
