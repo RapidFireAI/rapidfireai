@@ -233,8 +233,11 @@ Repository = "https://github.com/RapidFireAI/rapidfireai"
 [project.scripts]
 rapidfireai = "rapidfireai.cli:main"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rapidfireai", "rapidfireai.*"]
+
 [tool.setuptools]
-packages = ["rapidfireai"]
 include-package-data = true
 
 [tool.setuptools.package-data]
