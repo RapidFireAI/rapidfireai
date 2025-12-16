@@ -599,6 +599,18 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=No
         return None
 
 
+def serve_forever() -> Flask:
+    """Start the Dispatcher via Gunicorn.
+
+    This function is the entry point for Gunicorn WSGI server.
+    It returns the Flask app instance for Gunicorn to serve.
+
+    Returns:
+        Flask app instance
+    """
+    return Dispatcher().app
+
+
 if __name__ == "__main__":
     # For standalone testing
     run_dispatcher()

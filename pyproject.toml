@@ -188,6 +188,9 @@ rapidfireai = [
     "evals/*.py",
     "../setup/fit/start.sh",
     "../setup/fit/start_dev.sh",
+    "../setup/evals/start.sh",
+    "../setup/evals/requirements-local.txt",
+    "../setup/evals/requirements-colab.txt",
     "../tutorial_notebooks/**/*",
 ]
 

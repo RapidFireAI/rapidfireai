@@ -1,1 +1,5 @@
 # Colab Packages
+# MLFlow dashboard dependencies
+mlflow>=3.2.0
+gunicorn>=23.0.0
+flask-cors>=5.0.1

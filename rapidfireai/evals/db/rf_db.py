@@ -60,6 +60,15 @@ class RFDatabase:
         """Close the database connection."""
         self.db.close()
 
+    def create_tables(self):
+        """Create database tables.
+
+        Public method for Gunicorn on_starting() callback.
+        Re-runs _initialize_schema() which uses CREATE TABLE IF NOT EXISTS,
+        making it safe to call multiple times.
+        """
+        self._initialize_schema()
+
     # ============================================================================
     # EXPERIMENTS TABLE METHODS
     # ============================================================================

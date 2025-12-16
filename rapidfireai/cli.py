@@ -16,26 +16,35 @@ from pathlib import Path
 from .version import __version__
 
 
-def get_script_path():
-    """Get the path to the start.sh script."""
+def get_script_path(mode: str = "fit"):
+    """Get the path to the start.sh script based on mode.
+
+    Args:
+        mode: "fit" or "evals" - determines which start.sh to use
+    """
     # Get the directory where this package is installed
     package_dir = Path(__file__).parent
 
-    # Try setup/fit directory relative to package directory
-    script_path = package_dir.parent / "setup" / "fit" / "start.sh"
+    # Try setup/{mode} directory relative to package directory
+    script_path = package_dir.parent / "setup" / mode / "start.sh"
 
     if not script_path.exists():
         # Fallback: try to find it relative to the current working directory
-        script_path = Path.cwd() / "setup" / "fit" / "start.sh"
+        script_path = Path.cwd() / "setup" / mode / "start.sh"
         if not script_path.exists():
             raise FileNotFoundError(f"Could not find start.sh script at {script_path}")
 
     return script_path
 
 
-def run_script(args):
-    """Run the start.sh script with the given arguments."""
-    script_path = get_script_path()
+def run_script(args, mode: str = "fit"):
+    """Run the start.sh script with the given arguments.
+
+    Args:
+        args: Command arguments (e.g., ["start"])
+        mode: "fit" or "evals" - determines which start.sh to use
+    """
+    script_path = get_script_path(mode)
 
     # Make sure the script is executable
     if not os.access(script_path, os.X_OK):
@@ -482,8 +491,11 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     if args.command == "init":
         return run_init(args.evals)
 
-    # Run the script with the specified command
-    return run_script([args.command])
+    # Determine mode for start/stop/status/restart commands
+    mode = "evals" if args.evals else "fit"
+
+    # Run the script with the specified command and mode
+    return run_script([args.command], mode=mode)
 
 
 if __name__ == "__main__":
