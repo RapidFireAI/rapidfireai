@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunk_mlflow_mlflow=self.webpackChunk_mlflow_mlflow||[]).push([[505,8655],{21339:function(e,t,n){n.r(t);var r=n(31014),s=n(91144),l=n(26809),p=n(89736),i=n(77863),o=n(48624),c=n(58481),f=n(50111);const m={setExperimentTagApi:l.EJ,getExperimentApi:l.yc,setCompareExperiments:l.I_};t.default=()=>{const e=(0,o.Zp)(),{experimentId:t}=(0,o.g)();return(0,r.useEffect)((()=>{t&&!(0,s.w7)()&&e(c.Ay.getExperimentPageRoute(t))}),[t,e]),(0,f.Y)(p.Z,{actions:m,children:(0,f.Y)(i.n,{showHeader:!1})})}}}]);
+//# sourceMappingURL=505.92c8a2ab.chunk.js.map
