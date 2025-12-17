@@ -99,6 +99,7 @@ dependencies = [
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
     "jupyter>=1.1.1",
     "uv>=0.8.14",
+    "trackio",
 
     # Colab compatibility
     # # Core ML/AI Framework
