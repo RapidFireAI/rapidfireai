@@ -16,7 +16,6 @@ from typing import Any
 
 import torch
 
-from rapidfireai.utils.constants import MLFlowConfig
 from rapidfireai.fit.backend.chunks import DatasetChunks
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.ml.checkpoint_utils import (
@@ -41,6 +40,7 @@ from rapidfireai.fit.utils.metric_logger import create_metric_logger
 from rapidfireai.fit.utils.serialize import decode_db_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
+from rapidfireai.utils.constants import MLFlowConfig
 
 
 class Worker:
@@ -73,6 +73,19 @@ class Worker:
         self.logger: Logger = RFLogger().create_logger(f"worker_{worker_id}")
         self.training_logger: Logger = TrainingLogger().create_logger(f"worker_{worker_id}")
         self.logger.debug(f"Worker {self.worker_id} initialized with PID {os.getpid()}")
+        # #region agent log
+        try:
+            cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "NOT_SET")
+            device_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+            current_device = torch.cuda.current_device() if torch.cuda.is_available() else None
+            self.logger.debug(
+                f"[HYP-D] Worker __init__ - CUDA state - worker_id={self.worker_id}, "
+                f"CUDA_VISIBLE_DEVICES={cuda_visible}, cuda_device_count={device_count}, "
+                f"cuda_current_device={current_device}, pid={os.getpid()}"
+            )
+        except Exception as e:
+            self.logger.debug(f"[HYP-D] Error checking CUDA state in Worker.__init__: {e}")
+        # #endregion
 
         # create database object
         self.db: RfDb = RfDb()

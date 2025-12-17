@@ -22,10 +22,40 @@ def worker_process_target(worker_id: int, model_registry: DictProxy, process_loc
     Target function that runs in each worker process.
     Creates Worker instance inside the process to avoid pickling issues.
     """
+    # #region agent log
+    temp_logger = RFLogger().create_logger("worker_manager_debug")
+    cuda_visible_before = os.environ.get("CUDA_VISIBLE_DEVICES", "NOT_SET")
+    temp_logger.debug(
+        f"[HYP-A] Setting CUDA_VISIBLE_DEVICES before Worker creation - "
+        f"worker_id={worker_id}, CUDA_VISIBLE_DEVICES_before={cuda_visible_before}, pid={os.getpid()}"
+    )
+    # #endregion
     os.environ["CUDA_VISIBLE_DEVICES"] = str(worker_id)
+    # #region agent log
+    cuda_visible_after = os.environ.get("CUDA_VISIBLE_DEVICES")
+    temp_logger.debug(
+        f"[HYP-A] CUDA_VISIBLE_DEVICES set - worker_id={worker_id}, "
+        f"CUDA_VISIBLE_DEVICES_after={cuda_visible_after}, pid={os.getpid()}"
+    )
+    # #endregion
 
     # Create worker instance inside the process (avoids pickling)
     worker = Worker(worker_id, model_registry, process_lock, shutdown_event)
+    # #region agent log
+    try:
+        import torch
+
+        cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+        device_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        current_device = torch.cuda.current_device() if torch.cuda.is_available() else None
+        temp_logger.debug(
+            f"[HYP-A] After Worker creation - CUDA state - worker_id={worker_id}, "
+            f"CUDA_VISIBLE_DEVICES={cuda_visible}, cuda_device_count={device_count}, "
+            f"cuda_current_device={current_device}, pid={os.getpid()}"
+        )
+    except Exception as e:
+        temp_logger.debug(f"[HYP-A] Error checking CUDA state: {e}")
+    # #endregion
 
     # Set up signal handlers for graceful shutdown
     def signal_handler(signum, frame):

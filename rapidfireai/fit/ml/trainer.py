@@ -36,8 +36,46 @@ def create_trainer_instance(
     """
     Create a trainer instance with proper state restoration.
     """
+    # #region agent log
+    from rapidfireai.fit.utils.logging import RFLogger
+
+    debug_logger = RFLogger().create_logger(f"trainer_debug_{trainer_config.worker_id}")
+    try:
+        import torch
+        cuda_visible_before = os.environ.get("CUDA_VISIBLE_DEVICES", "NOT_SET")
+        device_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        current_device = torch.cuda.current_device() if torch.cuda.is_available() else None
+        debug_logger.debug(
+            f"[HYP-B] Before setting CUDA_VISIBLE_DEVICES in create_trainer_instance - "
+            f"worker_id={trainer_config.worker_id}, CUDA_VISIBLE_DEVICES_before={cuda_visible_before}, "
+            f"cuda_device_count={device_count}, cuda_current_device={current_device}, pid={os.getpid()}"
+        )
+    except Exception as e:
+        debug_logger.debug(f"[HYP-B] Error before setting CUDA_VISIBLE_DEVICES: {e}")
+    # #endregion
     os.environ["CUDA_VISIBLE_DEVICES"] = str(trainer_config.worker_id)
+    # #region agent log
+    cuda_visible_after = os.environ.get("CUDA_VISIBLE_DEVICES")
+    debug_logger.debug(
+        f"[HYP-B] After setting CUDA_VISIBLE_DEVICES in create_trainer_instance - "
+        f"worker_id={trainer_config.worker_id}, CUDA_VISIBLE_DEVICES_after={cuda_visible_after}, pid={os.getpid()}"
+    )
+    # #endregion
     device = "cuda:0"
+    # #region agent log
+    try:
+        import torch
+        cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+        device_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        current_device = torch.cuda.current_device() if torch.cuda.is_available() else None
+        debug_logger.debug(
+            f"[HYP-C] Device assignment - worker_id={trainer_config.worker_id}, device={device}, "
+            f"CUDA_VISIBLE_DEVICES={cuda_visible}, cuda_device_count={device_count}, "
+            f"cuda_current_device={current_device}, pid={os.getpid()}"
+        )
+    except Exception as e:
+        debug_logger.debug(f"[HYP-C] Error checking device assignment: {e}")
+    # #endregion
 
     trainer = None
     config_leaf = trainer_config.config_leaf
@@ -72,7 +110,41 @@ def create_trainer_instance(
             is_peft,
         )
 
+    # #region agent log
+    try:
+        import torch
+        cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+        device_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        current_device = torch.cuda.current_device() if torch.cuda.is_available() else None
+        debug_logger.debug(
+            f"[HYP-E] Before moving model to device - worker_id={trainer_config.worker_id}, device={device}, "
+            f"CUDA_VISIBLE_DEVICES={cuda_visible}, cuda_device_count={device_count}, "
+            f"cuda_current_device={current_device}, pid={os.getpid()}"
+        )
+    except Exception as e:
+        debug_logger.debug(f"[HYP-E] Error before moving model to device: {e}")
+    # #endregion
     model_instance = model_instance.to(device)
+    # #region agent log
+    try:
+        import torch
+        actual_device = (
+            str(next(model_instance.parameters()).device)
+            if hasattr(model_instance, "parameters")
+            and next(iter(model_instance.parameters()), None) is not None
+            else "unknown"
+        )
+        cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+        device_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        current_device = torch.cuda.current_device() if torch.cuda.is_available() else None
+        debug_logger.debug(
+            f"[HYP-E] After moving model to device - worker_id={trainer_config.worker_id}, "
+            f"intended_device={device}, actual_device={actual_device}, CUDA_VISIBLE_DEVICES={cuda_visible}, "
+            f"cuda_device_count={device_count}, cuda_current_device={current_device}, pid={os.getpid()}"
+        )
+    except Exception as e:
+        debug_logger.debug(f"[HYP-E] Error after moving model to device: {e}")
+    # #endregion
 
     trainer_kwargs, formatting_func, additional_trainer_kwargs = _prepare_trainer_kwargs(
         model_instance,
