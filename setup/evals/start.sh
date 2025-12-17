@@ -29,8 +29,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# PID file to track processes
-RF_PID_FILE="${RF_PID_FILE:=rapidfire_pids.txt}"
+# PID file to track processes - use absolute path to avoid issues with cd
+RF_PID_FILE="${RF_PID_FILE:=$RF_LOG_PATH/rapidfire_evals_pids.txt}"
 
 # Directory paths for pip-installed package
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
