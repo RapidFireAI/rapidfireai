@@ -165,6 +165,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 rapidfireai = [
+    "automl/*.py",
     "fit/dispatcher/*.py",
     "fit/frontend/build/**/*",
     "fit/frontend/server.py",

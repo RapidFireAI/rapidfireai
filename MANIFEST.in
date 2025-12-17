@@ -5,12 +5,18 @@ include LICENSE
 # Include setup scripts
 include setup/fit/start.sh
 include setup/fit/start_dev.sh
+include setup/evals/start.sh
+include setup/evals/requirements-local.txt
+include setup/evals/requirements-colab.txt
 
 # Include frontend resources
 include rapidfireai/fit/frontend/server.py
 include rapidfireai/fit/frontend/proxy_middleware.py
 include rapidfireai/fit/frontend/build/**/*
 include rapidfireai/fit/frontend/package.json
+
+# Include Python modules - top-level automl (shared)
+recursive-include rapidfireai/automl *.py
 
 # Include Python modules - fit
 recursive-include rapidfireai/fit/dispatcher *.py
