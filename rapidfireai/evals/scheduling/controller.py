@@ -15,7 +15,7 @@ from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.interactive_control import InteractiveControlHandler
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.evals.scheduling.scheduler import Scheduler
-from rapidfireai.evals.automl import ModelConfig, RFvLLMModelConfig
+from rapidfireai.automl import ModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import (
     NUM_CPUS_PER_DOC_ACTOR,
     NUM_QUERY_PROCESSING_ACTORS,
@@ -26,8 +26,8 @@ from rapidfireai.evals.utils.constants import (
 )
 from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
-from rapidfireai.evals.automl import RFGridSearch, RFRandomSearch
-from rapidfireai.evals.utils.automl_utils import get_runs
+from rapidfireai.automl import RFGridSearch, RFRandomSearch
+from rapidfireai.automl import get_runs
 
 class Controller:
     """
@@ -41,6 +41,7 @@ class Controller:
         self,
         experiment_name: str,
         experiment_path: str = RF_EXPERIMENT_PATH,
+        mlflow_manager=None,
     ):
         """
         Initialize the controller.
@@ -48,12 +49,14 @@ class Controller:
         Args:
             experiment_name: Name of the experiment
             experiment_path: Path to experiment logs/artifacts
+            mlflow_manager: Optional MLflowManager instance for logging metrics
         """
         self.aggregator = Aggregator()
         self.dataloader = DataLoader()
         self.scheduler = Scheduler(strategy="round_robin")
         self.experiment_name = experiment_name
         self.experiment_path = experiment_path
+        self.mlflow_manager = mlflow_manager
 
         # Initialize logger
         logging_manager = RFLogger(experiment_name=self.experiment_name, experiment_path=self.experiment_path)
@@ -497,6 +500,38 @@ class Controller:
                 pipeline_config=pipeline_config,
                 status=PipelineStatus.NEW,
             )
+            
+            # Create MLflow run for this pipeline if MLflow is enabled
+            if self.mlflow_manager:
+                try:
+                    pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
+                    mlflow_run_id = self.mlflow_manager.create_run(f"{pipeline_name}_{pipeline_id}")
+                    db.set_pipeline_mlflow_run_id(pipeline_id, mlflow_run_id)
+                    
+                    pipeline = pipeline_config.get("pipeline")
+                    if pipeline:
+                        if hasattr(pipeline, "model_config") and pipeline.model_config:
+                            model_name = pipeline.model_config.get("model", "unknown")
+                            self.mlflow_manager.log_param(mlflow_run_id, "model", model_name)
+                        
+                        if hasattr(pipeline, "rag") and pipeline.rag:
+                            if hasattr(pipeline.rag, "search_type"):
+                                self.mlflow_manager.log_param(mlflow_run_id, "rag_search_type", str(pipeline.rag.search_type))
+                            if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs:
+                                k = pipeline.rag.search_kwargs.get("k")
+                                if k is not None:
+                                    self.mlflow_manager.log_param(mlflow_run_id, "rag_k", str(k))
+                        
+                        # Extract sampling params
+                        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:
+                            import json
+                            sampling_str = json.dumps(pipeline.sampling_params) if isinstance(pipeline.sampling_params, dict) else str(pipeline.sampling_params)
+                            self.mlflow_manager.log_param(mlflow_run_id, "sampling_params", sampling_str)
+                    
+                    self.logger.debug(f"Created MLflow run {mlflow_run_id} for pipeline {pipeline_id}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to create MLflow run for pipeline {pipeline_id}: {e}")
+            
             pipeline_ids.append(pipeline_id)
             pipeline_id_to_config[pipeline_id] = pipeline_config
 
@@ -511,6 +546,7 @@ class Controller:
         db: RFDatabase,
         progress_display=None,
         pipeline_id_to_info: dict[int, dict] = None,
+        total_dataset_size: int = None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Compute final metrics for each pipeline and update database.
@@ -636,6 +672,61 @@ class Controller:
                     status="COMPLETED",
                     metrics=display_metrics
                 )
+            
+            # Log final metrics to MLflow
+            if self.mlflow_manager:
+                try:
+                    pipeline = db.get_pipeline(pipeline_id)
+                    mlflow_run_id = pipeline.get("mlflow_run_id") if pipeline else None
+                    if mlflow_run_id:
+                        total_samples = pipeline.get("total_samples_processed", 0)
+                        if total_dataset_size and total_dataset_size > 0:
+                            percentage_processed = (total_samples / total_dataset_size * 100)
+                        else:
+                            percentage_processed = 100  # Assume complete if dataset size unknown
+                        step = int(percentage_processed)
+                        
+                        for metric_name, metric_data in ordered_metrics.items():
+                            if metric_name in ["run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second"]:
+                                continue
+                            
+                            if isinstance(metric_data, dict):
+                                metric_value = metric_data.get("value", 0)
+                                lower_bound = metric_data.get("lower_bound")
+                                upper_bound = metric_data.get("upper_bound")
+                            else:
+                                metric_value = metric_data
+                                lower_bound = None
+                                upper_bound = None
+                            
+                            # Log main metric value
+                            if isinstance(metric_value, (int, float)):
+                                try:
+                                    self.mlflow_manager.log_metric(mlflow_run_id, metric_name, float(metric_value), step=step)
+                                except Exception as e:
+                                    self.logger.debug(f"Failed to log final metric {metric_name} to MLflow: {e}")
+                            
+                            # Log lower_bound if available
+                            if lower_bound is not None and isinstance(lower_bound, (int, float)):
+                                try:
+                                    self.mlflow_manager.log_metric(mlflow_run_id, f"{metric_name}_lower_bound", float(lower_bound), step=step)
+                                except Exception as e:
+                                    self.logger.debug(f"Failed to log final metric {metric_name}_lower_bound to MLflow: {e}")
+                            
+                            # Log upper_bound if available
+                            if upper_bound is not None and isinstance(upper_bound, (int, float)):
+                                try:
+                                    self.mlflow_manager.log_metric(mlflow_run_id, f"{metric_name}_upper_bound", float(upper_bound), step=step)
+                                except Exception as e:
+                                    self.logger.debug(f"Failed to log final metric {metric_name}_upper_bound to MLflow: {e}")
+                        
+                        try:
+                            self.mlflow_manager.end_run(mlflow_run_id)
+                        except Exception as e:
+                            self.logger.debug(f"Failed to end MLflow run {mlflow_run_id}: {e}")
+                except Exception as e:
+                    self.logger.debug(f"Failed to log final metrics to MLflow for pipeline {pipeline_id}: {e}")
+            
             self.logger.info(f"Pipeline {pipeline_id} ({pipeline_name}) completed successfully")
 
         if progress_display:
@@ -721,13 +812,14 @@ class Controller:
         # Set up aggregators for each pipeline
         pipeline_aggregators = {}
         pipeline_results = {}  # {pipeline_id: {"results": {}, "metrics": {}}}
+        total_dataset_size = len(dataset)  # Store for MLflow percentage calculation
 
         for pipeline_id in pipeline_ids:
             aggregator = Aggregator()
             pipeline_config = pipeline_id_to_config[pipeline_id]
             if hasattr(pipeline_config, "online_strategy"):
                 aggregator.set_online_strategy(**pipeline_config.online_strategy)
-            aggregator.set_total_population_size(len(dataset))
+            aggregator.set_total_population_size(total_dataset_size)
             pipeline_aggregators[pipeline_id] = aggregator
             pipeline_results[pipeline_id] = {"results": {}, "metrics": {}, "start_time": None}
 
@@ -813,7 +905,7 @@ class Controller:
         pipeline_to_max_completion_tokens = {}
 
         for pipeline_id, pipeline_config in pipeline_id_to_config.items():
-            from rapidfireai.evals.automl import RFOpenAIAPIModelConfig
+            from rapidfireai.automl import RFOpenAIAPIModelConfig
             pipeline = pipeline_config["pipeline"]
             if hasattr(pipeline, "model_config") and isinstance(pipeline, RFOpenAIAPIModelConfig):
                 has_openai_pipeline = True
@@ -965,7 +1057,7 @@ class Controller:
                                     cumulative_metrics, samples_processed
                                 )
 
-                                # Extract all metrics for display with full CI information
+                                # Extract all metrics for display with full CI info
                                 for metric_name, metric_data in metrics_with_ci.items():
                                     if isinstance(metric_data, dict):
                                         # Include full metric data with CI info (value, lower_bound, upper_bound, margin_of_error)
@@ -989,6 +1081,59 @@ class Controller:
                                 if elapsed_time > 0:
                                     throughput = samples_processed / elapsed_time
                                     display_metrics["Throughput"] = {"value": throughput}
+                                
+                                if self.mlflow_manager:
+                                    try:
+                                        pipeline = db.get_pipeline(pipeline_id)
+                                        mlflow_run_id = pipeline.get("mlflow_run_id") if pipeline else None
+                                        if mlflow_run_id:
+                                            actual_samples_processed = pipeline.get("total_samples_processed", samples_processed)
+                                            percentage_processed = (actual_samples_processed / total_dataset_size * 100) if total_dataset_size > 0 else 0
+                                            step = int(percentage_processed)  
+                                            
+                                            for metric_name, metric_data in metrics_with_ci.items():
+                                                if metric_name in ["run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second"]:
+                                                    continue
+                                                
+                                                if isinstance(metric_data, dict):
+                                                    metric_value = metric_data.get("value", 0)
+                                                    lower_bound = metric_data.get("lower_bound")
+                                                    upper_bound = metric_data.get("upper_bound")
+                                                else:
+                                                    metric_value = metric_data
+                                                    lower_bound = None
+                                                    upper_bound = None
+                                                
+                                                # Log main metric value
+                                                if isinstance(metric_value, (int, float)):
+                                                    try:
+                                                        self.mlflow_manager.log_metric(mlflow_run_id, metric_name, float(metric_value), step=step)
+                                                    except Exception as e:
+                                                        self.logger.debug(f"Failed to log metric {metric_name} to MLflow: {e}")
+                                                
+                                                # Log lower_bound if available
+                                                if lower_bound is not None and isinstance(lower_bound, (int, float)):
+                                                    try:
+                                                        self.mlflow_manager.log_metric(mlflow_run_id, f"{metric_name}_lower_bound", float(lower_bound), step=step)
+                                                    except Exception as e:
+                                                        self.logger.debug(f"Failed to log metric {metric_name}_lower_bound to MLflow: {e}")
+                                                
+                                                # Log upper_bound if available
+                                                if upper_bound is not None and isinstance(upper_bound, (int, float)):
+                                                    try:
+                                                        self.mlflow_manager.log_metric(mlflow_run_id, f"{metric_name}_upper_bound", float(upper_bound), step=step)
+                                                    except Exception as e:
+                                                        self.logger.debug(f"Failed to log metric {metric_name}_upper_bound to MLflow: {e}")
+                                            
+                                            if "Throughput" in display_metrics:
+                                                throughput_value = display_metrics["Throughput"]["value"]
+                                                if isinstance(throughput_value, (int, float)):
+                                                    try:
+                                                        self.mlflow_manager.log_metric(mlflow_run_id, "Throughput", float(throughput_value), step=step)
+                                                    except Exception as e:
+                                                        self.logger.debug(f"Failed to log Throughput to MLflow: {e}")
+                                    except Exception as e:
+                                        self.logger.debug(f"Failed to log metrics to MLflow: {e}")
                             except Exception as e:
                                 self.logger.debug(f"Could not compute live metrics: {e}")
 
@@ -1218,6 +1363,7 @@ class Controller:
             db,
             progress_display,
             pipeline_id_to_info,
+            total_dataset_size=total_dataset_size,
         )
 
 

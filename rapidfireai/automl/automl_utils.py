@@ -1,8 +1,8 @@
-"""This module contains utility functions for the ML module."""
+"""This module contains utility functions for the AutoML module."""
 
 from typing import Any
 
-from rapidfireai.fit.automl.base import AutoMLAlgorithm
+from rapidfireai.automl.base import AutoMLAlgorithm
 
 # TODO: add code to validate param_config
 
