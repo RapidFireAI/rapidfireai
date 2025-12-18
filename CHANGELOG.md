@@ -13,6 +13,57 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.12.8]
+
+### Fixes
+- Fix issue with 2nd call to Experiment() crashing python process for RAG
+
+## [v0.12.7]
+
+### Changes
+- Added comment cells to gsm8k and scifact notebooks on openai api costs
+- Downsampled data further in both notebooks to reduce cotsts
+- Now api costs are $3 and $5 only
+- Reasoning effort knob adjusted in gsm8k, reducing to 6 configs
+- Automatic check if running in Google Colab for simpler install/init process
+- Add some checks to rapidfireai doctor to give warning or errors if some required items not installed/compatible
+- Add additional Python packages to rapidifreai doctor
+- Add Torch version and Torch CUDA version to rapidfireai doctor
+- Support for evals of newer versions of Torch based on Cuda version
+- Move OPENAI_API_KEY to first line of Notebooks
+- Set default Ray console port to 8855, and allow customizing the port RF_RAY_PORT
+- Updates to notebook headers and README.md
+- Moved most RapidFire AI files into new RF_HOME location that defaults to ~/rapidfireai or /content/rapidfireai (for Colab)
+- Consolidated environment variables and common constants to rapidfireai/utils/constants.py
+- Add RF_HOME/rf_mode.txt file to store fit or evals depending on flag to rapidfireai init
+- Altered Colab notebooks to not need to run commands from the terminal anymore, default to T4 session
+- Altered Colab notebooks remove need for the Hugging Face token
+- For evals if system has 2 or fewer CPUs default Ray number of CPUs to 1
+- For evals if system has 1 or fewer GPUs default Ray number of GPUs to 0.5
+- Added get_log_file_path() to Experiment class to get log file location
+- Fix locations in JavaScript files for RF_ environment variable HOST and PORT
+- Add RF_TIMEOUT_TIME to change default (30s) timeout for service startups
+- Moved rapidfireai doctor code out of cli.py into dedicated module
+- Expanded rapidfireai doctor to provide more information including default of 10 lines of log files (override with --log-lines -1 for all lines, 0 for no lines)
+- Alter fit hard torch 2.5.1 version requirement
+
+### Fixes
+- IC Ops panel for evals fixed
+- Re-Support run_fit() on Google Colab
+- Updated IC Ops Clone code to create new run's config with the user's modifications of the parent run's config.
+- Fixed rapidfireai status output to not always show success
+- Fixed rapidfire start from automatically stopping services if run again, now prompts to shutdown
+
+### Added
+- run_evals() support on Google Colab
+- Add rapidfireai jupyter command, including outputting tunneling recommendations based on if in VSCode or not
+- Jupyter default URL is /tree
+- Add rapidfireai --test-notebooks to copy test notebook to tutorial_notebooks folder
+- Add additional items to startup issues check
+- Added section to README.md for RapidFire AI environment variables
+- For colab notebooks add confirmation button before experiment.end()
+
+
 ## [v0.12.6]
 *NOTE:* Colab is not working in this release, use 0.11.1 for fine tuning
 

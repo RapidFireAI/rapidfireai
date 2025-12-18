@@ -9,6 +9,10 @@
     </picture>
 </a>
 
+<h3>Rapid AI Customization from RAG to Fine-Tuning</h3>
+<p>20x experimentation throughput of LLM pipelines faster, more systematic.</p>
+
+<a href="https://colab.research.google.com/github/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/rf-colab-rag-fiqa-tutorial.ipynb"><img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/colab-rag-button.svg" alt="Try RAG on Colab"></a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://colab.research.google.com/github/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/rf-colab-tensorboard-tutorial.ipynb"><img src="https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/images/colab-finetuning-button.svg" alt="Try Fine-Tuning on Colab"></a>
 
 </div>
 
@@ -59,7 +63,7 @@ pip install rapidfireai
 
 rapidfireai --version
 # Verify it prints the following:
-# RapidFire AI 0.12.6
+# RapidFire AI 0.12.8
 
 # Replace YOUR_TOKEN with your actual Hugging Face token
 # https://huggingface.co/docs/hub/en/security-tokens
@@ -96,11 +100,10 @@ ssh -L 8853:localhost:8853 username@remote-machine
 rapidfireai init --evals
 
 # For the RAG/context eng. notebooks, only jupyter is supported for now and must be started as follows
-jupyter notebook --no-browser --port=8850 --ServerApp.allow_origin='*'
+rapidfireai jupyter
 
 # Forward these ports if you installed rapidfireai on a remote machine
-ssh -L 8850:localhost:8850 username@remote-machine
-ssh -L 8851:localhost:8851 username@remote-machine
+ssh -L 8850:localhost:8850 -L 8851:localhost:8851 username@remote-machine
 
 # Open the URL provided by the jupyter notebook command above via your browser
 # Open an example notebook from ./tutorial_notebooks/rag-contexteng/ and start experiment
@@ -120,9 +123,11 @@ rapidfireai doctor
 If you encounter port conflicts, you can kill existing processes:
 
 ```bash
-lsof -t -i:8852 | xargs kill -9  # mlflow
+lsof -t -i:8850 | xargs kill -9  # jupyter server
 lsof -t -i:8851 | xargs kill -9  # dispatcher
+lsof -t -i:8852 | xargs kill -9  # mlflow
 lsof -t -i:8853 | xargs kill -9  # frontend server
+lsof -t -i:8855 | xargs kill -9  # ray dashboard
 ```
 
 ## Documentation
@@ -240,6 +245,7 @@ while IC Ops panel also appears on the notebook itself.
 ## Developing with RapidFire AI
 
 ### Development prerequisites
+#### TODO: This section needs updating
 
 - Python 3.12.x
 - Git
@@ -302,10 +308,43 @@ chmod +x ./rapidfireai/start_dev.sh
 # VSCode can port-forward localhost:8853 where the rf-frontend server will be running
 
 # for port clash issues -
+lsof -t -i:8850 | xargs kill -9 # jupyter server
 lsof -t -i:8851 | xargs kill -9 # dispatcher
 lsof -t -i:8852 | xargs kill -9 # mlflow
 lsof -t -i:8853 | xargs kill -9 # frontend
+lsof -t -i:8855 | xargs kill -9 # ray console
 ```
+
+## RapidFireAI Environment Variables
+
+RapidFire AI has sane defaults for most installations, if customization is needed the following operating system variables can be
+used to overwrite the defaults.
+
+- `RF_HOME` - Base RapidFire AI home directory (default: ${HOME}/rapidfireai on Non-Google Colab and /content/rapidfireai on Google Colab)
+- `RF_LOG_PATH` - Base directory to store log files (default: ${RF_HOME}/logs)
+- `RF_EXPERIMENT_PATH` - Base directory to store experiment work files (default: ${RF_HOME}/rapidfire_experiments)
+- `RF_TENSORBOARD_LOG_DIR` - Base directory for Tensorboard logs (default: ${RF_EXPERIMENT_PATH}/tensorboard_logs))
+- `RF_LOG_FILENAME` - Default log file name (default: rapidfire.log)
+- `RF_TRAINING_LOG_FILENAME` - Default training log file name (default: training.log)
+- `RF_DB_PATH` - Base directory for database files (default: ${RF_HOME}/db)
+- `RF_TRACKING_BACKEND` - Tracking backend used (default: mlflow on Non-Google Colab and tensorboard on Google Colab)
+- `RF_COLAB_MODE` - Whether running on colab (default: false on Non-Google Colab and true on Google Colab)
+- `RF_TUTORIAL_PATH` - Location that `rapidfireai init` copies `tutorial_notebooks` to (default: ./tutorial_notebooks)
+- `RF_TEST_PATH` - Location that `rapidfireai --test-noteobooks` copies test notebooks to (default: ./tutorial_notebooks/tests)
+- `RF_JUPYTER_HOST` - Host that `rapidfireai jupyter` creates a Jupyter listener for (default: 127.0.0.1)
+- `RF_JUPYTER_PORT` - Port that `rapidfireai jupyter` creates a Jupyter listener for (default: 8850)
+- `RF_API_HOST` - Host that `rapidfireai start` or Experiment creates an API listener for (default: 127.0.0.1)
+- `RF_API_PORT` - Port that `rapidfireai start` or Experiment creates an API listener for (default: 8851)
+- `RF_MLFLOW_HOST` - Host that `rapidfireai start` creates a MLFow listener for (default: 127.0.0.1)
+- `RF_MLFLOW_PORT` - Port that `rapidfireai start` creates a MLFow listener for (default: 127.0.0.1)
+- `RF_FRONTEND_HOST` - Host that `rapidfireai start` creates a Frontend listener for (default: 0.0.0.0)
+- `RF_FRONTEND_PORT` - Port that `rapidfireai start` creates a Frontend listener for (default: 0.0.0.0)
+- `RF_RAY_HOST` - Host that Experiment creates a Ray dashboard listener for (default: 127.0.0.1)
+- `RF_RAY_PORT` - Port that Experiment creates a Ray dashboard listener for (default: 127.0.0.1)
+- `RF_TIMEOUT_TIME` - Time in seconds that services wait to start (default: 30)
+- `RF_PID_FILE` - File to store process ids of started services (default: ${RF_HOME}/rapidfire_pids.txt)
+- `RF_PYTHON_EXECUTABLE` - Python executable (default: python3 falls back to python if not found)
+- `RF_PIP_EXECUTABLE` - pip executable (default: pip3 falls back to pip if not found)
 
 ## Community & Governance
 

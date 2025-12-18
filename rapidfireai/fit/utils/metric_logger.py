@@ -6,9 +6,13 @@ This module provides a unified interface for logging metrics to different backen
 while supporting multiple tracking systems.
 """
 
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
+
+
+from rapidfireai.utils.os_utils import mkdir_p
 
 # Note: MLflowManager and TrackIOManager are imported lazily to avoid
 # connection attempts when using other backends
@@ -173,7 +177,11 @@ class TensorBoardMetricLogger(MetricLogger):
         from torch.utils.tensorboard import SummaryWriter
 
         self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            mkdir_p(self.log_dir, notify=False)
+        except (PermissionError, OSError) as e:
+            print(f"Error creating directory: {e}")
+            raise
         self.writers = {}  # Map run_id -> SummaryWriter
 
     def create_run(self, run_name: str) -> str:
@@ -185,11 +193,15 @@ class TensorBoardMetricLogger(MetricLogger):
         """
         from torch.utils.tensorboard import SummaryWriter
 
-        run_log_dir = self.log_dir / run_name
-        run_log_dir.mkdir(parents=True, exist_ok=True)
+        run_log_dir = os.path.join(self.log_dir, run_name)
+        try:
+            mkdir_p(run_log_dir, notify=False)
+        except (PermissionError, OSError) as e:
+            print(f"Error creating directory: {e}")
+            raise
 
         # Create SummaryWriter for this run
-        writer = SummaryWriter(log_dir=str(run_log_dir))
+        writer = SummaryWriter(log_dir=run_log_dir)
         self.writers[run_name] = writer
 
         return run_name
@@ -261,17 +273,21 @@ class TensorBoardMetricLogger(MetricLogger):
             del self.writers[run_id]
 
         # Move the run directory to sibling deleted folder (outside log_dir tree)
-        run_log_dir = self.log_dir / run_id
-        if run_log_dir.exists() and run_log_dir.is_dir():
+        run_log_dir = os.path.join(self.log_dir, run_id)
+        if os.path.exists(run_log_dir) and os.path.isdir(run_log_dir):
             # Create deleted directory as sibling, not child, of log_dir
-            deleted_dir = self.log_dir.parent / f"{self.log_dir.name}_deleted"
-            deleted_dir.mkdir(exist_ok=True)
+            deleted_dir = os.path.join(self.log_dir.parent, f"{self.log_dir.name}_deleted")
+            try:
+                mkdir_p(deleted_dir, notify=False)
+            except (PermissionError, OSError) as e:
+                print(f"Error creating directory: {e}")
+                raise
 
             # Add timestamp to avoid name collisions
             timestamp = int(time.time())
-            destination = deleted_dir / f"{run_id}_{timestamp}"
+            destination = os.path.join(deleted_dir, f"{run_id}_{timestamp}")
 
-            shutil.move(str(run_log_dir), str(destination))
+            shutil.move(run_log_dir, destination)
     
     def __del__(self):
         """Clean up all writers on deletion."""
