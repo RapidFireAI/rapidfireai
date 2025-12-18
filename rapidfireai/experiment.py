@@ -189,8 +189,23 @@ class Experiment:
         # Create database reference
         self.db = RFDatabase()
 
-        # Initialize MLflow
+        # Initialize MLflow (optional, gracefully disabled if server not available)
         try:
+            # Use socket-based pre-check with 2-second timeout (environment variable doesn't work reliably)
+            import socket
+            import urllib.parse
+
+            parsed_url = urllib.parse.urlparse(MLFlowConfig.URL)
+            host = parsed_url.hostname or 'localhost'
+            port = parsed_url.port or 5000
+
+            # Quick TCP connection test
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2.0)
+            sock.connect((host, port))
+            sock.close()
+
+            # Server is reachable, proceed with MLflow
             self.mlflow_manager = MLflowManager(MLFlowConfig.URL)
             mlflow_experiment_id = self.mlflow_manager.create_experiment(self.experiment_name)
             self.db.db.execute(
@@ -199,6 +214,9 @@ class Experiment:
             )
             self.db.db.conn.commit()
             self.logger.info(f"Initialized MLflow experiment: {mlflow_experiment_id}")
+        except (socket.timeout, socket.error, ConnectionRefusedError, OSError):
+            self.logger.info(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled.")
+            self.mlflow_manager = None
         except Exception as e:
             self.logger.warning(f"Failed to initialize MLflow: {e}. MLflow logging will be disabled.")
             self.mlflow_manager = None
@@ -551,7 +569,7 @@ class Experiment:
             self._ray.shutdown()
             self.logger.info("All actors shut down")
             self.logger.info("Dispatcher will automatically shut down (daemon thread)")
-    
+
     def get_log_file_path(self, log_type: str | None = None) -> Path:
         """
         Get the log file path for the experiment.
