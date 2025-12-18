@@ -54,7 +54,7 @@ class RfDb:
                         self.db.conn.execute("ALTER TABLE runs ADD COLUMN trackio_run_id TEXT")
                         self.db.conn.commit()
                 except sqlite3.Error:
-=                    pass
+                    pass
 
         except FileNotFoundError as e:
             raise DBException(f"tables.sql file not found at {tables_file}") from e
