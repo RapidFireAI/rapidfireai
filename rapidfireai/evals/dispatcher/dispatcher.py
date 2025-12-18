@@ -15,10 +15,10 @@ from flask_cors import CORS
 from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
-from rapidfireai.evals.utils.constants import ICOperation, DispatcherConfig
+from rapidfireai.utils.constants import DispatcherConfig, ColabConfig
+from rapidfireai.evals.utils.constants import ICOperation
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:8853", "http://localhost", DispatcherConfig.URL]
-
+CORS_ALLOWED_ORIGINS = "*" # Allow all origins
 
 class Dispatcher:
     """
@@ -54,15 +54,16 @@ class Dispatcher:
 
         # Enable CORS for local development
         # Dispatcher runs on localhost, safe to allow all origins
+        # supports_credentials=True is required for Colab proxy auth (credentials: 'include' in JS)
         _ = CORS(
             self.app,
             resources={
                 r"/*": {
-                    "origins": "*",
+                    "origins": CORS_ALLOWED_ORIGINS,
                     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                     "allow_headers": ["Content-Type", "Authorization"],
                     "expose_headers": ["Content-Type"],
-                    "supports_credentials": False,
+                    "supports_credentials": True if ColabConfig.ON_COLAB else False,
                 }
             },
         )
@@ -104,7 +105,7 @@ class Dispatcher:
         def handle_preflight():
             if request.method == "OPTIONS":
                 response = jsonify({})
-                response.headers.add("Access-Control-Allow-Origin", "*")
+                response.headers.add("Access-Control-Allow-Origin", CORS_ALLOWED_ORIGINS)
                 response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
                 response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
                 response.headers.add("Access-Control-Max-Age", "3600")
@@ -902,14 +903,14 @@ class Dispatcher:
         return jsonify([]), 200
 
 
-def run_dispatcher(host: str = "127.0.0.1", port: int = 8851) -> None:
+def run_dispatcher(host: str = "0.0.0.0", port: int = 8851) -> None:
     """
     Run the dispatcher server.
 
     This function is designed to be called in a separate thread from the main experiment.
 
     Args:
-        host: Host to bind to (default: 127.0.0.1)
+        host: Host to bind to (default: 0.0.0.0)
         port: Port to bind to (default: 8851)
     """
     try:
@@ -927,7 +928,12 @@ def run_dispatcher(host: str = "127.0.0.1", port: int = 8851) -> None:
         traceback.print_exc()
 
 
-def _check_port_in_use(host: str,port: int) -> bool:
+# Global dispatcher thread tracking to avoid killing our own process
+_dispatcher_thread: threading.Thread | None = None
+_dispatcher_lock = threading.Lock()
+
+
+def _check_port_in_use(host: str, port: int) -> bool:
     """Check if a port is already in use."""
     import socket
 
@@ -935,9 +941,30 @@ def _check_port_in_use(host: str,port: int) -> bool:
         return s.connect_ex((host, port)) == 0
 
 
+def _is_dispatcher_thread_alive() -> bool:
+    """Check if our dispatcher thread is still running."""
+    global _dispatcher_thread
+    return _dispatcher_thread is not None and _dispatcher_thread.is_alive()
+
+
 def _cleanup_old_dispatcher(port: int, logger=None) -> None:
-    """Kill any old dispatcher processes using the port."""
+    """
+    Kill any old dispatcher processes using the port.
+
+    IMPORTANT: Only kills external processes, not threads in the current process.
+    If the port is in use by our own dispatcher thread, this is a no-op.
+    """
+    import os
     import subprocess
+
+    # If our dispatcher thread is alive, don't try to kill anything
+    if _is_dispatcher_thread_alive():
+        msg = "Dispatcher thread is already running in this process, skipping cleanup"
+        if logger:
+            logger.debug(msg)
+        return
+
+    current_pid = str(os.getpid())
 
     try:
         # Find process using the port
@@ -945,6 +972,14 @@ def _cleanup_old_dispatcher(port: int, logger=None) -> None:
         if result.returncode == 0 and result.stdout.strip():
             pids = result.stdout.strip().split("\n")
             for pid in pids:
+                # CRITICAL: Never kill our own process
+                if pid.strip() == current_pid:
+                    msg = f"Port {port} is used by current process (PID {pid}), skipping kill"
+                    if logger:
+                        logger.warning(msg)
+                    else:
+                        print(f"WARNING: {msg}")
+                    continue
                 try:
                     subprocess.run(["kill", "-9", pid], timeout=2)
                     msg = f"Killed old process (PID {pid}) on port {port}"
@@ -958,7 +993,7 @@ def _cleanup_old_dispatcher(port: int, logger=None) -> None:
         pass  # lsof might not be available
 
 
-def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=None) -> threading.Thread | None:
+def start_dispatcher_thread(host: str = "0.0.0.0", port: int = 8851, logger=None) -> threading.Thread | None:
     """
     Start the dispatcher REST API server in a background daemon thread.
 
@@ -966,55 +1001,76 @@ def start_dispatcher_thread(host: str = "127.0.0.1", port: int = 8851, logger=No
     during experiment execution. It runs as a daemon thread and automatically
     cleans up when the experiment ends.
 
+    If a dispatcher thread is already running in this process, returns the existing
+    thread instead of starting a new one.
+
     Args:
-        host: Host to bind to (default: 127.0.0.1, localhost only)
+        host: Host to bind to (default: 0.0.0.0, localhost only)
         port: Port to bind to (default: 8851)
         logger: Optional logger instance for logging (if None, uses print)
 
     Returns:
         The dispatcher thread object, or None if startup failed
     """
-    try:
-        # Check if port is in use
-        if _check_port_in_use(host, port):
-            msg = f"Port {port} is already in use. Attempting cleanup..."
-            logger.warning(msg)
+    global _dispatcher_thread
 
-            # Try to clean up old process
-            _cleanup_old_dispatcher(port, logger)
+    with _dispatcher_lock:
+        # Check if our dispatcher thread is already running
+        if _is_dispatcher_thread_alive():
+            msg = f"Dispatcher thread already running on port {port}, reusing existing thread"
+            if logger:
+                logger.info(msg)
+            else:
+                print(msg)
+            return _dispatcher_thread
 
-            # Wait a moment and check again
-            import time
-
-            time.sleep(0.5)
+        try:
+            # Check if port is in use (by an external process)
             if _check_port_in_use(host, port):
-                error_msg = f"Port {port} still in use after cleanup. Restart your kernel or system."
-                logger.error(error_msg)
-                return None
+                msg = f"Port {port} is already in use. Attempting cleanup..."
+                if logger:
+                    logger.warning(msg)
+                else:
+                    print(f"WARNING: {msg}")
 
-        # Create daemon thread (auto-cleanup when main process ends)
-        dispatcher_thread = threading.Thread(
-            target=run_dispatcher, kwargs={"host": host, "port": port}, daemon=True, name="DispatcherThread"
-        )
-        dispatcher_thread.start()
+                # Try to clean up old process (will skip if it's our own process)
+                _cleanup_old_dispatcher(port, logger)
 
-        msg = f"Started interactive control dispatcher on http://{host}:{port}"
-        if logger:
-            logger.info(msg)
-            logger.info("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
-        else:
-            print(msg)
-            print("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
+                # Wait a moment and check again
+                import time
 
-        return dispatcher_thread
+                time.sleep(0.5)
+                if _check_port_in_use(host, port):
+                    error_msg = f"Port {port} still in use after cleanup. Restart your kernel or system."
+                    if logger:
+                        logger.error(error_msg)
+                    else:
+                        print(f"ERROR: {error_msg}")
+                    return None
 
-    except Exception as e:
-        error_msg = f"Failed to start dispatcher: {e}. Interactive control will not be available."
-        if logger:
-            logger.warning(error_msg)
-        else:
-            print(f"WARNING: {error_msg}")
-        return None
+            # Create daemon thread (auto-cleanup when main process ends)
+            _dispatcher_thread = threading.Thread(
+                target=run_dispatcher, kwargs={"host": host, "port": port}, daemon=True, name="DispatcherThread"
+            )
+            _dispatcher_thread.start()
+
+            msg = f"Started interactive control dispatcher on http://{host}:{port}"
+            if logger:
+                logger.info(msg)
+                logger.info("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
+            else:
+                print(msg)
+                print("Use dispatcher API to dynamically stop/resume/delete/clone pipelines")
+
+            return _dispatcher_thread
+
+        except Exception as e:
+            error_msg = f"Failed to start dispatcher: {e}. Interactive control will not be available."
+            if logger:
+                logger.warning(error_msg)
+            else:
+                print(f"WARNING: {error_msg}")
+            return None
 
 
 def serve_forever() -> Flask:

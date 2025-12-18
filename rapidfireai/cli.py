@@ -12,6 +12,13 @@ import site
 import subprocess
 import sys
 from pathlib import Path
+from importlib.resources import files
+from rapidfireai.utils.get_ip_address import get_ip_address
+from rapidfireai.utils.python_info import get_python_info
+from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabConfig
+from rapidfireai.utils.doctor import get_doctor_info
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME
+from rapidfireai.utils.gpu_info import get_compute_capability
 
 from .version import __version__
 
@@ -62,231 +69,9 @@ def run_script(args, mode: str = "fit"):
         return 1
 
 
-def get_python_info():
-    """Get comprehensive Python information."""
-    info = {}
-
-    # Python version and implementation
-    info["version"] = sys.version
-    info["implementation"] = platform.python_implementation()
-    info["executable"] = sys.executable
-
-    # Environment information
-    info["conda_env"] = os.environ.get("CONDA_DEFAULT_ENV", "none")
-    info["venv"] = (
-        "yes"
-        if hasattr(sys, "real_prefix") or (hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix)
-        else "no"
-    )
-
-    return info
-
-
-def get_pip_packages():
-    """Get list of installed pip packages."""
-    try:
-        result = subprocess.run([sys.executable, "-m", "pip", "list"], capture_output=True, text=True, check=True)
-        return result.stdout
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return "Failed to get pip packages"
-
-
-def get_gpu_info():
-    """Get comprehensive GPU and CUDA information."""
-    info = {}
-
-    # Check for nvidia-smi
-    nvidia_smi_path = shutil.which("nvidia-smi")
-    info["nvidia_smi"] = "found" if nvidia_smi_path else "not found"
-
-    if nvidia_smi_path:
-        try:
-            # Get driver and CUDA runtime version from the full nvidia-smi output
-            result = subprocess.run(["nvidia-smi"], capture_output=True, text=True, check=True)
-            if result.stdout.strip():
-                lines = result.stdout.strip().split("\n")
-                # Look for the header line that contains CUDA version
-                for line in lines:
-                    if "CUDA Version:" in line:
-                        # Extract CUDA version from line like "NVIDIA-SMI 535.183.06 Driver Version: 535.183.06 CUDA Version: 12.2"
-                        cuda_version = line.split("CUDA Version:")[1].split()[0]
-                        info["cuda_runtime"] = cuda_version
-                        # Also extract driver version from the same line
-                        if "Driver Version:" in line:
-                            driver_version = line.split("Driver Version:")[1].split("CUDA Version:")[0].strip()
-                            info["driver_version"] = driver_version
-                        break
-                else:
-                    info["driver_version"] = "unknown"
-                    info["cuda_runtime"] = "unknown"
-        except (subprocess.CalledProcessError, ValueError):
-            info["driver_version"] = "unknown"
-            info["cuda_runtime"] = "unknown"
-
-        # Get GPU count, models, and VRAM
-        try:
-            result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=count,name,memory.total", "--format=csv,noheader,nounits"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            if result.stdout.strip():
-                lines = result.stdout.strip().split("\n")
-                if lines:
-                    count, name, memory = lines[0].split(", ")
-                    info["gpu_count"] = int(count)
-                    info["gpu_model"] = name.strip()
-                    # Convert memory from MiB to GB
-                    memory_mib = int(memory.split()[0])
-                    memory_gb = memory_mib / 1024
-                    info["gpu_memory_gb"] = f"{memory_gb:.1f}"
-
-                    # Get detailed info for multiple GPUs if present
-                    if info["gpu_count"] > 1:
-                        info["gpu_details"] = []
-                        for line in lines:
-                            count, name, memory = line.split(", ")
-                            memory_mib = int(memory.split()[0])
-                            memory_gb = memory_mib / 1024
-                            info["gpu_details"].append({"name": name.strip(), "memory_gb": f"{memory_gb:.1f}"})
-        except (subprocess.CalledProcessError, ValueError):
-            info["gpu_count"] = 0
-            info["gpu_model"] = "unknown"
-            info["gpu_memory_gb"] = "unknown"
-    else:
-        info["driver_version"] = "N/A"
-        info["cuda_runtime"] = "N/A"
-        info["gpu_count"] = 0
-        info["gpu_model"] = "N/A"
-        info["gpu_memory_gb"] = "N/A"
-
-    # Check for nvcc (CUDA compiler)
-    nvcc_path = shutil.which("nvcc")
-    info["nvcc"] = "found" if nvcc_path else "not found"
-
-    if nvcc_path:
-        try:
-            result = subprocess.run(["nvcc", "--version"], capture_output=True, text=True, check=True)
-            # Extract version from output like "Cuda compilation tools, release 11.8, V11.8.89"
-            version_line = result.stdout.split("\n")[0]
-            if "release" in version_line:
-                version = version_line.split("release")[1].split(",")[0].strip()
-                info["nvcc_version"] = version
-            else:
-                info["nvcc_version"] = "unknown"
-        except subprocess.CalledProcessError:
-            info["nvcc_version"] = "unknown"
-    else:
-        info["nvcc_version"] = "N/A"
-
-    # Check CUDA installation paths
-    cuda_paths = ["/usr/local/cuda", "/opt/cuda", "/usr/cuda", os.path.expanduser("~/cuda")]
-
-    cuda_installed = False
-    for path in cuda_paths:
-        if os.path.exists(path):
-            cuda_installed = True
-            break
-
-    info["cuda_installation"] = "present" if cuda_installed else "not present"
-
-    # Check if CUDA is on PATH
-    cuda_on_path = any("cuda" in p.lower() for p in os.environ.get("PATH", "").split(os.pathsep))
-    info["cuda_on_path"] = "yes" if cuda_on_path else "no"
-
-    return info
-
-
-def run_doctor():
+def run_doctor(log_lines: int = 10):
     """Run the doctor command to diagnose system issues."""
-    print("🔍 RapidFire AI System Diagnostics")
-    print("=" * 50)
-
-    # Python Information
-    print("\n🐍 Python Environment:")
-    print("-" * 30)
-    python_info = get_python_info()
-    print(f"Version: {python_info['version'].split()[0]}")
-    print(f"Implementation: {python_info['implementation']}")
-    print(f"Executable: {python_info['executable']}")
-    print(f"Conda Environment: {python_info['conda_env']}")
-    print(f"Virtual Environment: {python_info['venv']}")
-
-    # Pip Packages
-    print("\n📦 Installed Packages:")
-    print("-" * 30)
-    pip_output = get_pip_packages()
-    if pip_output != "Failed to get pip packages":
-        # Show only relevant packages
-        relevant_packages = [
-            "rapidfireai",
-            "mlflow",
-            "torch",
-            "transformers",
-            "flask",
-            "gunicorn",
-            "peft",
-            "trl",
-            "bitsandbytes",
-            "nltk",
-            "evaluate",
-            "rouge-score",
-            "sentencepiece",
-        ]
-        lines = pip_output.split("\n")
-        for line in lines:
-            if any(pkg.lower() in line.lower() for pkg in relevant_packages):
-                print(line)
-        print("... (showing only relevant packages)")
-    else:
-        print(pip_output)
-
-    # GPU Information
-    print("\n🚀 GPU & CUDA Information:")
-    print("-" * 30)
-    gpu_info = get_gpu_info()
-    print(f"nvidia-smi: {gpu_info['nvidia_smi']}")
-
-    if gpu_info["nvidia_smi"] == "found":
-        print(f"Driver Version: {gpu_info['driver_version']}")
-        print(f"CUDA Runtime: {gpu_info['cuda_runtime']}")
-        print(f"GPU Count: {gpu_info['gpu_count']}")
-
-        if gpu_info["gpu_count"] > 0:
-            if "gpu_details" in gpu_info:
-                print("GPU Details:")
-                for i, gpu in enumerate(gpu_info["gpu_details"]):
-                    print(f"  GPU {i}: {gpu['name']} ({gpu['memory_gb']} GB)")
-            else:
-                print(f"GPU Model: {gpu_info['gpu_model']}")
-                print(f"Total VRAM: {gpu_info['gpu_memory_gb']} GB")
-
-    print(f"nvcc: {gpu_info['nvcc']}")
-    if gpu_info["nvcc"] == "found":
-        print(f"nvcc Version: {gpu_info['nvcc_version']}")
-
-    print(f"CUDA Installation: {gpu_info['cuda_installation']}")
-    print(f"CUDA on PATH: {gpu_info['cuda_on_path']}")
-
-    # System Information
-    print("\n💻 System Information:")
-    print("-" * 30)
-    print(f"Platform: {platform.platform()}")
-    print(f"Architecture: {platform.machine()}")
-    print(f"Processor: {platform.processor()}")
-
-    # Environment Variables
-    print("\n🔧 Environment Variables:")
-    print("-" * 30)
-    relevant_vars = ["CUDA_HOME", "CUDA_PATH", "LD_LIBRARY_PATH", "PATH"]
-    for var in relevant_vars:
-        value = os.environ.get(var, "not set")
-        if value != "not set" and len(value) > 100:
-            value = value[:100] + "..."
-        print(f"{var}: {value}")
-
-    print("\n✅ Diagnostics complete!")
+    get_doctor_info(log_lines)
     return 0
 
 
@@ -296,97 +81,179 @@ def get_cuda_version():
         result = subprocess.run(["nvcc", "--version"], capture_output=True, text=True, check=True)
         match = re.search(r"release (\d+)\.(\d+)", result.stdout)
         if match:
-            return int(match.group(1))
+            return int(match.group(1)), int(match.group(2))
     except (subprocess.CalledProcessError, FileNotFoundError):
         try:
             result = subprocess.run(["nvidia-smi"], capture_output=True, text=True, check=True)
             match = re.search(r"CUDA Version: (\d+)\.(\d+)", result.stdout)
             if match:
-                return int(match.group(1))
+                return int(match.group(1)), int(match.group(2))
         except (subprocess.CalledProcessError, FileNotFoundError):
             pass
-    return None
+    return 0, 0
 
 
-def get_compute_capability():
-    """Get compute capability from nvidia-smi"""
-    try:
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader,nounits"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        match = re.search(r"(\d+)\.(\d+)", result.stdout)
-        if match:
-            major = int(match.group(1))
-            minor = int(match.group(2))
-            return major + minor / 10.0  # Return as float (e.g., 7.5, 8.0, 8.6)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
-
-
-def install_packages(evals: bool = False):
+def install_packages(evals: bool = False, init_packages: list[str] | None = None):
     """Install packages for the RapidFire AI project."""
     packages = []
     # Generate CUDA requirements file
-    cuda_major = get_cuda_version()
-    compute_capability = get_compute_capability()
+    mode_file = Path(RF_HOME) / "rf_mode.txt"
+    if evals:
+        mode_file.write_text("evals")
+    else:
+        mode_file.write_text("fit")
+    cuda_major, cuda_minor = get_cuda_version()
+    python_info = get_python_info()
+    site_packages = python_info["site_packages"]
+    setup_directory = None
+    for site_package in site_packages.split(","):
+        if os.path.exists(os.path.join(site_package.strip(), "setup", "fit")):
+            setup_directory = Path(site_package) / "setup"
+            break
+    if not setup_directory:
+        print("❌ Setup directory not found, skipping package installation")
+        return 1
+    if ColabConfig.ON_COLAB and evals:
+        print("Colab environment detected, installing evals packages")
+        requirements_file = setup_directory / "evals" / "requirements-colab.txt"
+    elif ColabConfig.ON_COLAB and not evals:
+        print("Colab environment detected, installing fit packages")
+        requirements_file = setup_directory / "fit" / "requirements-colab.txt"
+    elif not ColabConfig.ON_COLAB and evals:
+        print("Non-Colab environment detected, installing evals packages")
+        requirements_file = setup_directory / "evals" / "requirements-local.txt"
+    elif not ColabConfig.ON_COLAB and not evals:
+        print("Non-Colab environment detected, installing fit packages")
+        requirements_file = setup_directory / "fit" / "requirements-local.txt"
+    else:
+        print("❌ Unknown environment detected, skipping package installation")
+        return 1
+
+    try:
+        print(f"Installing packages from {requirements_file.absolute()}...")
+        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file.absolute()]
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to install packages from {requirements_file.absolute()}")
+        print(f"   Error: {e}")
+        if e.stdout:
+            print(f"   Standard output: {e.stdout}")
+        if e.stderr:
+            print(f"   Standard error: {e.stderr}")
+        print(f"   You may need to install {requirements_file.absolute()} manually")
+        return 1
+    print(f"✅ Successfully installed packages from {requirements_file.absolute()}")
+
+    vllm_version = "0.10.2"
+    torch_version = "2.5.1"
+    torchvision_version = "0.20.1"
+    torchaudio_version = "2.5.1"
+    torch_cuda = "cu121"
+    flash_cuda = "cu121"
+    if cuda_major==12:
+        if cuda_minor>=9:
+            # Supports Torch 2.8.0
+            torch_version = "2.8.0"
+            torchvision_version = "0.23.0"
+            torchaudio_version = "2.8.0"
+            torch_cuda = "cu129"
+            flash_cuda = "cu129"
+            vllm_cuda = "cu129"
+            vllm_version = "0.11.0"
+        elif cuda_minor>=8:
+            # Supports Torch 2.9.0/1
+            torch_version = "2.8.0"
+            torchvision_version = "0.23.0"
+            torchaudio_version = "2.8.0"
+            torch_cuda = "cu128"
+            flash_cuda = "cu128"
+            vllm_cuda = "cu128"
+            vllm_version = "0.11.0"
+        elif cuda_minor>=6:
+            # Supports Torch 2.9.0/1
+            torch_version = "2.8.0"
+            torchvision_version = "0.23.0"
+            torchaudio_version = "2.8.0"
+            torch_cuda = "cu126"
+            flash_cuda = "cu126"
+            vllm_cuda = "cu126"
+        elif cuda_minor>=4:
+            # Supports Torch 2.6.0
+            torch_version = "2.6.0"
+            torchvision_version = "0.21.0"
+            torchaudio_version = "2.6.0"
+            torch_cuda = "cu124"
+            flash_cuda = "cu124"
+            vllm_cuda = "cu124"
+        else:
+            # Supports Torch 2.5.1
+            vllm_version = "0.7.3"
+            torch_version = "2.5.1"
+            torchvision_version = "0.20.1"
+            torchaudio_version = "2.5.1"
+            torch_cuda = "cu121"
+            flash_cuda = "cu121"
+            vllm_cuda = "cu121"
+
+    elif cuda_major==13:
+        # Supports Torch 2.9.0/1
+        torch_version = "2.8.0"
+        torchvision_version = "0.23.0"
+        torchaudio_version = "2.8.0"
+        torch_cuda = "cu129"
+        flash_cuda = "cu129"
+        vllm_cuda = "cu129"
+    else:
+        torch_cuda = "cu121"
+        flash_cuda = "cu121"
+
+    if ColabConfig.ON_COLAB:
+        flash_cuda = "cu128"
 
     if not evals:
-        # Upgrading pytorch to 2.7.0 for fit
-        print("Upgrading pytorch to 2.7.0 for fit")
-        packages.append({"package": "torch==2.7.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
-        packages.append({"package": "torchvision==0.22.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
-        packages.append({"package": "torchaudio==2.7.0", "extra_args": ["--upgrade","--index-url", "https://download.pytorch.org/whl/cu126"]})
-        packages.append({"package": "transformers==4.57.1", "extra_args": ["--upgrade"]})
+        pass
 
+    if evals and ColabConfig.ON_COLAB:
+        pass
+
+    
     ## TODO: re-enable for fit once trl has fix
-    if evals and cuda_major == 12:
-        print(f"\n🎯 Detected CUDA {cuda_major}.x")
-        packages.append({"package": "torch==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
-        packages.append({"package": "torchvision==0.20.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
-        packages.append({"package": "torchaudio==2.5.1", "extra_args": ["--upgrade", "--index-url", "https://download.pytorch.org/whl/cu124"]})
-        packages.append({"package": "vllm==0.7.2", "extra_args": ["--torch-backend=cu124"]})
-        packages.append({"package": "faiss-gpu-cu12==1.12.0", "extra_args": []})
-        packages.append({"package": "flashinfer-python==0.2.5", "extra_args": ["--index-url", "https://flashinfer.ai/whl/cu124/torch2.5/"]})
-    # elif cuda_major == 11:
-    #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
-    #     packages.append({"package": "vllm==0.10.1.1", "extra_args": ["--torch-backend=cu118"]})
-    # else:
-    #     print("\n⚠️  CUDA version not detected or unsupported.")
-
-    # TODO: re-enable for fit once flash-attn has fix
-    # if cuda_major is not None:
-    #     print(f"\n🎯 Detected CUDA {cuda_major}.x")
-
-        # Determine flash-attn version based on CUDA version
-        if evals and cuda_major < 8:
-            # flash-attn 1.x for CUDA < 8.0
-            print("Installing latest flash-attn 1.x for CUDA < 8.0")
-            packages.append({"package": "flash-attn<2.0", "extra_args": ["--no-build-isolation"]})
-        elif evals and cuda_major == 9:
-            # flash-attn 3.x for CUDA 9.0 specifically
-            print("Installing latest flash-attn 3.x for CUDA 9.0")
-            packages.append({"package": "flash-attn>=3.0,<4.0", "extra_args": ["--no-build-isolation"]})
-        elif evals and cuda_major >= 8:
-            # flash-attn 2.x for CUDA >= 8.0 (but not 9.0)
-            print("Installing flash-attn 2.8.3 for CUDA >= 8.0")
-            packages.append({"package": "flash-attn==2.8.3", "extra_args": ["--no-build-isolation"]})
-    # else:
-    #     print("\n⚠️  CUDA version not detected.")
-    #     print("Skipping flash-attn installation")
+    if not ColabConfig.ON_COLAB and cuda_major >= 12:
+        print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
+        
+        packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        if evals:
+            packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
+            packages.append({"package": "flashinfer-python", "extra_args": []})
+            packages.append({"package": "flashinfer-cubin", "extra_args": []})
+            if cuda_major + (cuda_minor / 10.0) >= 12.8:
+                packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
+            if get_compute_capability() >= 8.0:
+                packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
+            # else:
+            #     packages.append({"package": "flash-attn-triton", "extra_args": ["--upgrade"]})
+            # packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
+            # Re-install torch, torchvision, and torchaudio to ensure compatibility
+            packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+            packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+            packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
 
     for package_info in packages:
         try:
             package = package_info["package"]
             cmd = [sys.executable, "-m", "uv", "pip", "install", package] + package_info["extra_args"]
             print(f"   Installing {package}...")
-            subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
             print(f"✅ Successfully installed {package}")
         except subprocess.CalledProcessError as e:
             print(f"❌ Failed to install {package}")
             print(f"   Error: {e}")
+            if e.stdout:
+                print(f"   Standard output: {e.stdout}")
+            if e.stderr:
+                print(f"   Standard error: {e.stderr}")
             print(f"   You may need to install {package} manually")
     return 0
 
@@ -420,16 +287,102 @@ def run_init(evals: bool = False):
 
     return 0
 
+def copy_test_notebooks():
+    """Copy the test notebooks to the project."""
+    print("Getting test notebooks...")
+    try:
+        test_path = os.getenv("RF_TEST_PATH", os.path.join(".", "tutorial_notebooks", "tests"))
+        site_packages_path = site.getsitepackages()[0]
+        source_path = os.path.join(site_packages_path, "tests", "notebooks")
+        print(f"Copying test notebooks from {source_path} to {test_path}...")
+        os.makedirs(test_path, exist_ok=True)
+        shutil.copytree(source_path, test_path, dirs_exist_ok=True)
+        print(f"✅ Successfully copied test notebooks to {test_path}")
+    except Exception as e:
+        print(f"❌ Failed to copy test notebooks to {test_path} from {source_path}")
+        print(f"   Error: {e}")
+        print("   You may need to copy test notebooks manually")
+        return 1
+    return 0
+
+def run_jupyter():
+    """ Run the Jupyter notebook server. """
+    from jupyter_server.serverapp import ServerApp
+    import logging
+    import io
+    from contextlib import redirect_stdout, redirect_stderr
+
+    # Suppress all logging
+    logging.getLogger().setLevel(logging.CRITICAL)
+    for name in logging.root.manager.loggerDict:
+        logging.getLogger(name).setLevel(logging.CRITICAL)
+
+    app = ServerApp()
+    app.open_browser = False
+    app.port = JupyterConfig.PORT
+    app.allow_origin = '*'
+    app.websocket_ping_interval = 90000
+    app.log_level = 'CRITICAL'
+    app.token = ""
+    app.password = ""
+    app.default_url = "/tree"
+
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+
+    try:
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            app.initialize(argv=['--ServerApp.custom_display_url='])
+        
+        dispatcher_port = DispatcherConfig.PORT
+
+        if os.getenv("TERM_PROGRAM") == "vscode":
+            print(f"VSCode detected, port {app.port} should automatically be forwarded to localhost")
+            print(f"Manually forward port {dispatcher_port} to localhost, using the Ports tab in VSCode/Cursor/etc.")
+        else:
+            os_username = os.getenv("USER", os.getenv("LOGNAME", "username"))
+            print(f"Manually forward port {app.port} to localhost")
+            print(f"Manually forward port {dispatcher_port} to localhost")
+            print(f"For example using ssh:")
+            print(f"    ssh -L {app.port}:localhost:{app.port} -L {dispatcher_port}:localhost:{dispatcher_port} {os_username}@{get_ip_address()}")
+        print("If there is a problem, try running jupyter manually with:")
+        print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''")
+        print("\n\nAfter forwarding the ports above, access the Jupyter notebook at:")
+        print(f"http://localhost:{app.port}/tree?token={app.token}")
+        
+        # Don't redirect anything during start - let prompts through
+        app.start()
+        
+    except Exception as e:
+        print("ERROR occurred during Jupyter server startup:", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        
+        stdout_output = stdout_capture.getvalue()
+        stderr_output = stderr_capture.getvalue()
+        
+        if stdout_output:
+            print("   Standard output:", file=sys.stderr)
+            print(stdout_output, file=sys.stderr)
+        
+        if stderr_output:
+            print("   Standard error:", file=sys.stderr)
+            print(stderr_output, file=sys.stderr)
+        
+        print("=" * 60, file=sys.stderr)
+        print(f"Exception: {e}", file=sys.stderr)
+        print("Try running jupyter manually with:")
+        print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''")
+        raise
 
 def main():
     """Main entry point for the rapidfireai command."""
     parser = argparse.ArgumentParser(description="RapidFire AI - Start/stop/manage services", prog="rapidfireai",
     epilog="""
 Examples:
-  # Basic initialization
+  # Basic initialization for training
   rapidfireai init
-  
-  # Initialize with evaluation dependencies
+  #or
+  # Basic Initialize with evaluation dependencies
   rapidfireai init --evals
   
   # Start services
@@ -446,7 +399,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         "command",
         nargs="?",
         default="start",
-        choices=["start", "stop", "status", "restart", "setup", "doctor", "init"],
+        choices=["start", "stop", "status", "restart", "setup", "doctor", "init", "jupyter"],
         help="Command to execute (default: start)",
     )
 
@@ -455,14 +408,14 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument(
         "--tracking-backend",
         choices=["mlflow", "tensorboard", "both"],
-        default=os.getenv("RF_TRACKING_BACKEND", "mlflow"),
+        default=os.getenv("RF_TRACKING_BACKEND", "mlflow" if not ColabConfig.ON_COLAB else "tensorboard"),
         help="Tracking backend to use for metrics (default: mlflow)",
     )
 
     parser.add_argument(
         "--tensorboard-log-dir",
         default=os.getenv("RF_TENSORBOARD_LOG_DIR", None),
-        help="Directory for TensorBoard logs (default: {experiment_path}/tensorboard_logs)",
+        help=f"Directory for TensorBoard logs (default: {RF_EXPERIMENT_PATH}/tensorboard_logs)",
     )
 
     parser.add_argument(
@@ -471,25 +424,42 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         help="Run in Colab mode (skips frontend, conditionally starts MLflow based on tracking backend)",
     )
 
+    parser.add_argument(
+        "--test-notebooks",
+        action="store_true",
+        help="Copy test notebooks to the tutorial_notebooks directory",
+    )
+
     parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
+
+    parser.add_argument("--log-lines", type=int, default=10, help="Number of lines to log to the console")
 
     args = parser.parse_args()
 
     # Set environment variables from CLI args
+
     if args.tracking_backend:
         os.environ["RF_TRACKING_BACKEND"] = args.tracking_backend
     if args.tensorboard_log_dir:
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
     if args.colab:
         os.environ["RF_COLAB_MODE"] = "true"
+    elif ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
+        os.environ["RF_COLAB_MODE"] = "true"
 
     # Handle doctor command separately
     if args.command == "doctor":
-        return run_doctor()
+        return run_doctor(args.log_lines)
 
     # Handle init command separately
     if args.command == "init":
         return run_init(args.evals)
+    
+    if args.command == "jupyter":
+        return run_jupyter()
+
+    if args.test_notebooks:
+        return copy_test_notebooks()
 
     # Determine mode for start/stop/status/restart commands
     mode = "evals" if args.evals else "fit"

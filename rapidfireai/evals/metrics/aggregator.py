@@ -1,7 +1,6 @@
 from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
-
 import ray
 
 from .online_strategies import (

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="56" viewBox="0 0 280 56">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3BA0FF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0088FF;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="280" height="56" rx="6" fill="url(#grad)"/>
+  <g fill="white">
+    <circle cx="28" cy="20" r="3"/>
+    <circle cx="28" cy="28" r="3"/>
+    <circle cx="28" cy="36" r="3"/>
+    <circle cx="36" cy="24" r="2.5"/>
+    <circle cx="36" cy="32" r="2.5"/>
+    <circle cx="44" cy="28" r="2"/>
+  </g>
+  <text x="60" y="35" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="18" fill="white" font-weight="500">Try RAG on Colab →</text>
+</svg>
+

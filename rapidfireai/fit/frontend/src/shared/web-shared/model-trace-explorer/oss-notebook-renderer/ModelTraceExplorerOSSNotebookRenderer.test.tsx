@@ -8,6 +8,11 @@ import { ModelTraceExplorerOSSNotebookRenderer } from './ModelTraceExplorerOSSNo
 import { getTraceArtifact } from './mlflow-fetch-utils';
 import { MOCK_TRACE } from '../ModelTraceExplorer.test-utils';
 
+// Get RF_MLFLOW_HOST and RF_MLFLOW_PORT from environment variables
+const rfMlflowHost: string = process.env.RF_MLFLOW_HOST || 'localhost';
+const rfMlflowPort: string = process.env.RF_MLFLOW_PORT || '8852';
+const rfMlflowUrl: string = `http://${rfMlflowHost}:${rfMlflowPort}/`;
+
 jest.mock('./mlflow-fetch-utils', () => ({
   getTraceArtifact: jest.fn(),
 }));
@@ -24,7 +29,7 @@ describe('ModelTraceExplorerOSSNotebookRenderer', () => {
       configurable: true,
       writable: true,
       // Validated this works in Colab and outside of colab
-      value: new URL('http://localhost:8852/?trace_id=1&experiment_id=1'),
+      value: new URL(rfMlflowUrl + '?trace_id=1&experiment_id=1'),
     });
 
     jest.mocked(getTraceArtifact).mockResolvedValue(MOCK_TRACE);
