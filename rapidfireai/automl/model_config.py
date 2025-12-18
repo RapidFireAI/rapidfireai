@@ -138,7 +138,12 @@ class RFModelConfig:
     formatting_func: Callable | List | None = None
     compute_metrics: Callable | List | None = None
     peft_config: RFLoraConfig | List | None = None
+<<<<<<< HEAD
     training_args: RFSFTConfig | RFDPOConfig | RFGRPOConfig | None = None
+=======
+    # training_args: RFSFTConfig | RFDPOConfig | RFGRPOConfig | None = None
+    training_args = None
+>>>>>>> main
     model_type: str | None = "causal_lm"
     model_kwargs: dict[str, Any] | None = None
     ref_model_name: str | None = None

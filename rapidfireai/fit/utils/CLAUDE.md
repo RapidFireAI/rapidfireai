@@ -146,7 +146,7 @@ logger.error("Failed to schedule", run_id=5)
 
 **Usage**:
 ```python
-from rapidfireai.fit.utils.mlflow_manager import MLflowManager
+from rapidfireai.utils.mlflow_manager import MLflowManager
 
 mlflow = MLflowManager("http://localhost:8852")
 experiment = mlflow.get_experiment("my_experiment")

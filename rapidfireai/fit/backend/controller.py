@@ -12,6 +12,7 @@ from typing import Any
 import torch
 from torch.utils.data import Dataset
 
+from rapidfireai.automl import AutoMLAlgorithm
 from rapidfireai.utils.constants import MLFlowConfig
 from rapidfireai.utils.os_utils import mkdir_p
 from rapidfireai.automl import AutoMLAlgorithm
