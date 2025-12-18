@@ -12,13 +12,13 @@ from typing import Any
 import torch
 from torch.utils.data import Dataset
 
+from rapidfireai.automl import AutoMLAlgorithm
 from rapidfireai.utils.constants import MLFlowConfig
 from rapidfireai.utils.os_utils import mkdir_p
-from rapidfireai.fit.automl import AutoMLAlgorithm
 from rapidfireai.fit.backend.chunks import DatasetChunks
 from rapidfireai.fit.backend.scheduler import Scheduler
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.fit.utils.automl_utils import get_flattened_config_leaf, get_runs
+from rapidfireai.automl import get_flattened_config_leaf, get_runs
 from rapidfireai.fit.utils.constants import (
     TENSORBOARD_LOG_DIR,
     ControllerTask,

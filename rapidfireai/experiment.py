@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_TRAINING_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.utils.ping import ping_server
 
 
 class Experiment:
@@ -117,10 +118,11 @@ class Experiment:
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
         from rapidfireai.utils.colab import get_colab_auth_token
-        from rapidfireai.utils.constants import DispatcherConfig
+        from rapidfireai.utils.constants import DispatcherConfig, MLFlowConfig
         from rapidfireai.evals.utils.constants import get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
+        from rapidfireai.evals.utils.mlflow_manager import MLflowManager
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
 
         # Store ray reference for later use
@@ -188,10 +190,26 @@ class Experiment:
         # Create database reference
         self.db = RFDatabase()
 
+        # Initialize MLflow (optional, gracefully disabled if server not available)
+        if ping_server(MLFlowConfig.HOST, MLFlowConfig.PORT, 2):
+            # Server is reachable, proceed with MLflow
+            self.mlflow_manager = MLflowManager(MLFlowConfig.URL)
+            mlflow_experiment_id = self.mlflow_manager.create_experiment(self.experiment_name)
+            self.db.db.execute(
+                "UPDATE experiments SET mlflow_experiment_id = ? WHERE experiment_id = ?",
+                (mlflow_experiment_id, self.experiment_id),
+            )
+            self.db.db.conn.commit()
+            self.logger.info(f"Initialized MLflow experiment: {mlflow_experiment_id}")
+        else:
+            self.logger.info(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled.")
+            self.mlflow_manager = None
+
         # Initialize the controller
         self.controller = Controller(
             experiment_name=self.experiment_name,
             experiment_path=self.experiment_path,
+            mlflow_manager=self.mlflow_manager if hasattr(self, "mlflow_manager") else None,
         )
 
         # Start dispatcher in background thread for interactive control
@@ -535,7 +553,7 @@ class Experiment:
             self._ray.shutdown()
             self.logger.info("All actors shut down")
             self.logger.info("Dispatcher will automatically shut down (daemon thread)")
-    
+
     def get_log_file_path(self, log_type: str | None = None) -> Path:
         """
         Get the log file path for the experiment.

@@ -338,7 +338,7 @@ if num_gpus == 0:
 
 **Usage**:
 ```python
-from rapidfireai.fit.utils.automl_utils import get_runs
+from rapidfireai.automl import get_runs
 
 # Handles both AutoML instances and plain dicts
 if isinstance(param_config, AutoMLAlgorithm):
