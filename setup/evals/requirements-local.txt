@@ -40,3 +40,6 @@ flask-cors>=5.0.1
 
 # TrackIO for experiment tracking
 trackio
+
+# Logging
+loguru
