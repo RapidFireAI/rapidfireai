@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_TRAINING_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.utils.ping import ping_server
 
 
 class Experiment:
@@ -190,21 +191,7 @@ class Experiment:
         self.db = RFDatabase()
 
         # Initialize MLflow (optional, gracefully disabled if server not available)
-        try:
-            # Use socket-based pre-check with 2-second timeout (environment variable doesn't work reliably)
-            import socket
-            import urllib.parse
-
-            parsed_url = urllib.parse.urlparse(MLFlowConfig.URL)
-            host = parsed_url.hostname or 'localhost'
-            port = parsed_url.port or 5000
-
-            # Quick TCP connection test
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2.0)
-            sock.connect((host, port))
-            sock.close()
-
+        if ping_server(MLFlowConfig.HOST, MLFlowConfig.PORT, 2):
             # Server is reachable, proceed with MLflow
             self.mlflow_manager = MLflowManager(MLFlowConfig.URL)
             mlflow_experiment_id = self.mlflow_manager.create_experiment(self.experiment_name)
@@ -214,11 +201,8 @@ class Experiment:
             )
             self.db.db.conn.commit()
             self.logger.info(f"Initialized MLflow experiment: {mlflow_experiment_id}")
-        except (socket.timeout, socket.error, ConnectionRefusedError, OSError):
+        else:
             self.logger.info(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled.")
-            self.mlflow_manager = None
-        except Exception as e:
-            self.logger.warning(f"Failed to initialize MLflow: {e}. MLflow logging will be disabled.")
             self.mlflow_manager = None
 
         # Initialize the controller
