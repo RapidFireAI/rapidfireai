@@ -197,8 +197,8 @@ class Experiment:
             self.db.db.execute(
                 "UPDATE experiments SET mlflow_experiment_id = ? WHERE experiment_id = ?",
                 (mlflow_experiment_id, self.experiment_id),
+                commit=True,
             )
-            self.db.db.conn.commit()
             self.logger.info(f"Initialized MLflow experiment: {mlflow_experiment_id}")
         except Exception as e:
             self.logger.warning(f"Failed to initialize MLflow: {e}. MLflow logging will be disabled.")
