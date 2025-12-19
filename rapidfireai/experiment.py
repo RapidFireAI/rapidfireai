@@ -225,7 +225,13 @@ class Experiment:
         )
 
         # Start dispatcher in background thread for interactive control
-        self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
+        if ping_server(DispatcherConfig.HOST, DispatcherConfig.PORT, 2):
+            self.logger.info(f"Using existing dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
+            self.dispatcher_thread = None
+            
+        else:
+            self.logger.info(f"Starting new dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
+            self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
 
         # Initialize notebook UI controller with auth token for Colab
         self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
