@@ -617,8 +617,9 @@ class RFDatabase:
                 "shards_completed": row[7],
                 "total_samples_processed": row[8],
                 "mlflow_run_id": row[9],
-                "error": row[10],
-                "created_at": row[11],
+                "trackio_run_id": row[10],
+                "error": row[11],
+                "created_at": row[12],
             }
         return None
 

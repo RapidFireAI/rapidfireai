@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_TRAINING_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.utils.ping import ping_server
 
 
 class Experiment:
@@ -121,8 +122,8 @@ class Experiment:
         from rapidfireai.evals.utils.constants import get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
-        from rapidfireai.evals.utils.mlflow_manager import MLflowManager
-        from rapidfireai.evals.utils.trackio_manager import TrackIOManager
+        from rapidfireai.utils.mlflow_manager import MLflowManager
+        from rapidfireai.utils.trackio_manager import TrackIOManager
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
 
         # Store ray reference for later use
@@ -190,8 +191,9 @@ class Experiment:
         # Create database reference
         self.db = RFDatabase()
 
-        # Initialize MLflow
-        try:
+        # Initialize MLflow (optional, gracefully disabled if server not available)
+        if ping_server(MLFlowConfig.HOST, MLFlowConfig.PORT, 2):
+            # Server is reachable, proceed with MLflow
             self.mlflow_manager = MLflowManager(MLFlowConfig.URL)
             mlflow_experiment_id = self.mlflow_manager.create_experiment(self.experiment_name)
             self.db.db.execute(
@@ -200,8 +202,8 @@ class Experiment:
                 commit=True,
             )
             self.logger.info(f"Initialized MLflow experiment: {mlflow_experiment_id}")
-        except Exception as e:
-            self.logger.warning(f"Failed to initialize MLflow: {e}. MLflow logging will be disabled.")
+        else:
+            self.logger.info(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled.")
             self.mlflow_manager = None
 
         # Initialize TrackIO
@@ -213,6 +215,7 @@ class Experiment:
             self.logger.warning(f"Failed to initialize TrackIO: {e}. TrackIO logging will be disabled.")
             self.trackio_manager = None
 
+        
         # Initialize the controller
         self.controller = Controller(
             experiment_name=self.experiment_name,
@@ -452,7 +455,7 @@ class Experiment:
                 return pd.DataFrame(columns=["run_id", "step"])
 
             # Lazy import - only import when we actually have MLflow runs to fetch
-            from rapidfireai.fit.utils.mlflow_manager import MLflowManager
+            from rapidfireai.utils.mlflow_manager import MLflowManager
 
             mlflow_manager = MLflowManager(MLFlowConfig.URL)
 
@@ -562,7 +565,7 @@ class Experiment:
             self._ray.shutdown()
             self.logger.info("All actors shut down")
             self.logger.info("Dispatcher will automatically shut down (daemon thread)")
-    
+
     def get_log_file_path(self, log_type: str | None = None) -> Path:
         """
         Get the log file path for the experiment.

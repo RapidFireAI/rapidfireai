@@ -106,7 +106,7 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
     setup_directory = None
-    for site_package in site_packages.split(","):
+    for site_package in site_packages.split(",") + ["."]:
         if os.path.exists(os.path.join(site_package.strip(), "setup", "fit")):
             setup_directory = Path(site_package) / "setup"
             break

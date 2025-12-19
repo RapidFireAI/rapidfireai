@@ -217,7 +217,7 @@ class ExperimentUtils:
         if tracking_backend in ["mlflow", "both"]:
             import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
 
-            from rapidfireai.fit.utils.mlflow_manager import MLflowManager
+            from rapidfireai.utils.mlflow_manager import MLflowManager
 
             try:
                 if mlflow.active_run():
@@ -360,7 +360,7 @@ class ExperimentUtils:
             if tracking_backend in ["mlflow", "both"]:
                 import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
 
-                from rapidfireai.fit.utils.mlflow_manager import MLflowManager
+                from rapidfireai.utils.mlflow_manager import MLflowManager
 
                 try:
                     mlflow_manager = MLflowManager(MLFlowConfig.URL)

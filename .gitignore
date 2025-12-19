@@ -214,6 +214,7 @@ __marimo__/
 
 # RapidFire Database
 rapidfireai/db/rapidfire.db
+db/*
 
 # trials
 trials/
@@ -236,3 +237,7 @@ rapidfireai/rapidfire_pids.txt
 
 # frontend build
 rapidfireai/frontend/build/
+
+# misc files
+rapidfire_pids.txt
+rf_mode.txt
