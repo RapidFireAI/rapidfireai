@@ -117,7 +117,7 @@ class Experiment:
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
         from rapidfireai.utils.colab import get_colab_auth_token
-        from rapidfireai.utils.constants import DispatcherConfig
+        from rapidfireai.utils.constants import DispatcherConfig, MLFlowConfig
         from rapidfireai.evals.utils.constants import get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
