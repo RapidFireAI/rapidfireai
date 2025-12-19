@@ -916,9 +916,8 @@ def run_dispatcher(host: str = "0.0.0.0", port: int = 8851) -> None:
     try:
         dispatcher = Dispatcher()
 
-        # Suppress Flask/werkzeug request logging
-        log = logging.getLogger("werkzeug")
-        log.setLevel(logging.ERROR)
+        # Enable verbose logging for waitress
+        logging.getLogger("waitress").setLevel(logging.DEBUG)
 
         # Use waitress to serve the Flask app
         serve(dispatcher.app, host=host, port=port, threads=6)
