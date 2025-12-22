@@ -525,7 +525,7 @@ class RFDatabase:
             context_id, pipeline_type,
             pipeline_config, pipeline_config_json, flattened_config, status, error,
             current_shard_id, shards_completed, total_samples_processed, mlflow_run_id, trackio_run_id
-        ) VALUES (?, ?, ?, ?, ?, ?, '', 0, 0, NULL, NULL)
+        ) VALUES (?, ?, ?, ?, ?, ?, '', 0, 0, 0, NULL, NULL)
         """
         self.db.execute(
             query,
