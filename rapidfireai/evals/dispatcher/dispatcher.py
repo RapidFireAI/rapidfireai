@@ -607,7 +607,7 @@ class Dispatcher:
 
         Request body:
             {
-                "run_id": int
+                "run_id": int or str (pipeline_id or mlflow_run_id)
             }
 
         Returns:
@@ -625,7 +625,20 @@ class Dispatcher:
             if run_id is None:
                 return jsonify({"error": "run_id is required"}), 400
 
-            pipeline = self.db.get_pipeline(run_id)
+            # Try to get pipeline by ID first (if numeric), otherwise by MLflow run ID
+            pipeline = None
+            if isinstance(run_id, int):
+                pipeline = self.db.get_pipeline(run_id)
+            elif isinstance(run_id, str):
+                # Try as MLflow run ID (UUID string)
+                pipeline = self.db.get_pipeline_by_mlflow_run_id(run_id)
+                # Fallback: try parsing as int
+                if not pipeline:
+                    try:
+                        pipeline = self.db.get_pipeline(int(run_id))
+                    except ValueError:
+                        pass
+
             if not pipeline:
                 return jsonify({"error": "Run not found"}), 404
 
