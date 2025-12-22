@@ -517,8 +517,8 @@ class RFDatabase:
         import json
 
         json_config_dict = extract_pipeline_config_json(pipeline_config)
-        json_config_str = json.dumps(json_config_dict) if json_config_dict else None
-        flattened_config_str = json.dumps(flattened_config) if flattened_config else "{}"
+        json_config_str = json.dumps(json_config_dict) if json_config_dict is not None else "{}"
+        flattened_config_str = json.dumps(flattened_config) if flattened_config is not None else "{}"
 
         query = """
         INSERT INTO pipelines (
