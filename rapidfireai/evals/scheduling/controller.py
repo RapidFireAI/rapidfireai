@@ -28,6 +28,7 @@ from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 from rapidfireai.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.automl import get_runs, get_flattened_config_leaf
+from rapidfireai.evals.utils.serialize import extract_pipeline_config_json
 
 class Controller:
     """
@@ -592,7 +593,9 @@ class Controller:
                     context_id, _ = self._context_cache[context_hash]
 
             # Generate flattened config for IC Ops panel display
-            flattened_config = get_flattened_config_leaf(pipeline_config)
+            # First extract JSON-serializable config, then flatten it
+            json_config = extract_pipeline_config_json(pipeline_config)
+            flattened_config = get_flattened_config_leaf(json_config) if json_config else {}
 
             pipeline_id = db.create_pipeline(
                 context_id=context_id,
