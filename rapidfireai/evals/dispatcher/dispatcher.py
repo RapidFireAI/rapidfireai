@@ -91,6 +91,7 @@ class Dispatcher:
             "status": self.STATUS_MAP.get(status.lower(), status),
             "mlflow_run_id": pipeline.get("mlflow_run_id"),
             "config": pipeline.get("pipeline_config_json", {}),
+            "flattened_config": pipeline.get("flattened_config", {}),
             "num_chunks_visited": pipeline.get("shards_completed", 0),
             "total_samples_processed": pipeline.get("total_samples_processed", 0),
             "error": pipeline.get("error", ""),

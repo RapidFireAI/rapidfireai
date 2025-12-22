@@ -493,6 +493,7 @@ class RFDatabase:
         pipeline_config: Any,
         context_id: int = None,
         status: PipelineStatus = PipelineStatus.NEW,
+        flattened_config: dict[str, Any] = None,
     ) -> int:
         """
         Create a new pipeline record.
@@ -504,6 +505,7 @@ class RFDatabase:
                             and JSON-serialized for pipeline_config_json column)
             context_id: Optional context ID for RAG
             status: Initial status (default: PipelineStatus.NEW)
+            flattened_config: Flattened configuration dict for IC Ops panel display
 
         Returns:
             pipeline_id of the created pipeline
@@ -516,13 +518,14 @@ class RFDatabase:
 
         json_config_dict = extract_pipeline_config_json(pipeline_config)
         json_config_str = json.dumps(json_config_dict) if json_config_dict else None
+        flattened_config_str = json.dumps(flattened_config) if flattened_config else "{}"
 
         query = """
         INSERT INTO pipelines (
             context_id, pipeline_type,
-            pipeline_config, pipeline_config_json, status, error,
+            pipeline_config, pipeline_config_json, flattened_config, status, error,
             current_shard_id, shards_completed, total_samples_processed, mlflow_run_id, trackio_run_id
-        ) VALUES (?, ?, ?, ?, ?, '', '', 0, 0, NULL, NULL)
+        ) VALUES (?, ?, ?, ?, ?, ?, '', 0, 0, NULL, NULL)
         """
         self.db.execute(
             query,
@@ -531,6 +534,7 @@ class RFDatabase:
                 pipeline_type,
                 encoded_config,
                 json_config_str,
+                flattened_config_str,
                 status.value,
             ),
             commit=True,
@@ -592,7 +596,7 @@ class RFDatabase:
         """
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, status, current_shard_id,
+               pipeline_config, pipeline_config_json, flattened_config, status, current_shard_id,
                shards_completed, total_samples_processed, mlflow_run_id, trackio_run_id, error, created_at
         FROM pipelines
         WHERE pipeline_id = ?
@@ -606,20 +610,22 @@ class RFDatabase:
             import json
 
             json_config = json.loads(row[4]) if row[4] else None
+            flattened_config = json.loads(row[5]) if row[5] else {}
             return {
                 "pipeline_id": row[0],
                 "context_id": row[1],
                 "pipeline_type": row[2],
                 "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
                 "pipeline_config_json": json_config,  # JSON version for display/analytics
-                "status": row[5],
-                "current_shard_id": row[6],
-                "shards_completed": row[7],
-                "total_samples_processed": row[8],
-                "mlflow_run_id": row[9],
-                "trackio_run_id": row[10],
-                "error": row[11],
-                "created_at": row[12],
+                "flattened_config": flattened_config,  # Flattened config for IC Ops panel
+                "status": row[6],
+                "current_shard_id": row[7],
+                "shards_completed": row[8],
+                "total_samples_processed": row[9],
+                "mlflow_run_id": row[10],
+                "trackio_run_id": row[11],
+                "error": row[12],
+                "created_at": row[13],
             }
         return None
 
@@ -686,7 +692,7 @@ class RFDatabase:
         """
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, status, current_shard_id,
+               pipeline_config, pipeline_config_json, flattened_config, status, current_shard_id,
                shards_completed, total_samples_processed, mlflow_run_id, trackio_run_id, error, created_at
         FROM pipelines
         ORDER BY pipeline_id DESC
@@ -701,6 +707,7 @@ class RFDatabase:
                 decoded_config = decode_db_payload(row[3]) if row[3] else None
                 # Parse JSON config for display/analytics
                 json_config = json.loads(row[4]) if row[4] else None
+                flattened_config = json.loads(row[5]) if row[5] else {}
                 pipelines.append(
                     {
                         "pipeline_id": row[0],
@@ -708,14 +715,15 @@ class RFDatabase:
                         "pipeline_type": row[2],
                         "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
                         "pipeline_config_json": json_config,  # JSON version for display/analytics
-                        "status": row[5],
-                        "current_shard_id": row[6],
-                        "shards_completed": row[7],
-                        "total_samples_processed": row[8],
-                        "mlflow_run_id": row[9],
-                        "trackio_run_id": row[10],
-                        "error": row[11],
-                        "created_at": row[12],
+                        "flattened_config": flattened_config,  # Flattened config for IC Ops panel
+                        "status": row[6],
+                        "current_shard_id": row[7],
+                        "shards_completed": row[8],
+                        "total_samples_processed": row[9],
+                        "mlflow_run_id": row[10],
+                        "trackio_run_id": row[11],
+                        "error": row[12],
+                        "created_at": row[13],
                     }
                 )
         return pipelines

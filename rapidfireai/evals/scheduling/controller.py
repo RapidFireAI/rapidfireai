@@ -27,7 +27,7 @@ from rapidfireai.evals.utils.constants import (
 from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 from rapidfireai.automl import RFGridSearch, RFRandomSearch
-from rapidfireai.automl import get_runs
+from rapidfireai.automl import get_runs, get_flattened_config_leaf
 
 class Controller:
     """
@@ -122,6 +122,100 @@ class Controller:
                 continue
 
         return sanitized
+
+    def _log_pipeline_params(
+        self,
+        pipeline_config: dict,
+        run_id: str,
+        manager: Any,
+        manager_name: str = "tracking",
+    ) -> None:
+        """
+        Log comprehensive pipeline parameters to MLflow/TrackIO.
+
+        Args:
+            pipeline_config: The pipeline configuration dict
+            run_id: The MLflow/TrackIO run ID
+            manager: The MLflow or TrackIO manager instance
+            manager_name: Name of the manager for logging (default: "tracking")
+        """
+        pipeline = pipeline_config.get("pipeline")
+
+        # Log batch_size from config
+        batch_size = pipeline_config.get("batch_size")
+        if batch_size is not None:
+            manager.log_param(run_id, "batch_size", str(batch_size))
+
+        # Log online_strategy_kwargs
+        online_strategy = pipeline_config.get("online_strategy_kwargs")
+        if online_strategy:
+            for key, value in online_strategy.items():
+                manager.log_param(run_id, f"online_strategy.{key}", str(value))
+
+        if not pipeline:
+            return
+
+        # Log model_config params (comprehensive)
+        if hasattr(pipeline, "model_config") and pipeline.model_config:
+            model_config = pipeline.model_config
+            for key, value in model_config.items():
+                if value is not None:
+                    # Truncate long values for MLflow (max 500 chars)
+                    str_value = str(value)
+                    if len(str_value) > 500:
+                        str_value = str_value[:497] + "..."
+                    manager.log_param(run_id, f"model.{key}", str_value)
+
+        # Log client_config params (excluding sensitive data like api_key)
+        if hasattr(pipeline, "client_config") and pipeline.client_config:
+            client_config = pipeline.client_config
+            for key, value in client_config.items():
+                if key.lower() in ["api_key", "secret", "token", "password"]:
+                    continue  # Skip sensitive params
+                if value is not None:
+                    manager.log_param(run_id, f"client.{key}", str(value))
+
+        # Log rate limits
+        if hasattr(pipeline, "rpm_limit") and pipeline.rpm_limit:
+            manager.log_param(run_id, "rpm_limit", str(pipeline.rpm_limit))
+        if hasattr(pipeline, "tpm_limit") and pipeline.tpm_limit:
+            manager.log_param(run_id, "tpm_limit", str(pipeline.tpm_limit))
+
+        # Log prompt_manager params
+        if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager:
+            pm = pipeline.prompt_manager
+            if hasattr(pm, "k") and pm.k is not None:
+                manager.log_param(run_id, "fewshot_k", str(pm.k))
+            if hasattr(pm, "instructions") and pm.instructions:
+                # Truncate long instructions
+                instructions = pm.instructions[:200] + "..." if len(pm.instructions) > 200 else pm.instructions
+                manager.log_param(run_id, "instructions", instructions)
+
+        # Log RAG params
+        if hasattr(pipeline, "rag") and pipeline.rag:
+            rag = pipeline.rag
+            if hasattr(rag, "search_type"):
+                manager.log_param(run_id, "rag.search_type", str(rag.search_type))
+            if hasattr(rag, "search_kwargs") and rag.search_kwargs:
+                for key, value in rag.search_kwargs.items():
+                    manager.log_param(run_id, f"rag.{key}", str(value))
+            if hasattr(rag, "chunk_size"):
+                manager.log_param(run_id, "rag.chunk_size", str(rag.chunk_size))
+            if hasattr(rag, "chunk_overlap"):
+                manager.log_param(run_id, "rag.chunk_overlap", str(rag.chunk_overlap))
+
+        # Log sampling params (for vLLM)
+        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:
+            sampling = pipeline.sampling_params
+            if isinstance(sampling, dict):
+                for key, value in sampling.items():
+                    manager.log_param(run_id, f"sampling.{key}", str(value))
+            else:
+                manager.log_param(run_id, "sampling_params", str(sampling)[:500])
+
+        # Log max_completion_tokens
+        if hasattr(pipeline, "max_completion_tokens") and pipeline.max_completion_tokens:
+            manager.log_param(run_id, "max_completion_tokens", str(pipeline.max_completion_tokens))
 
     @staticmethod
     def _collect_unique_contexts(
@@ -497,11 +591,15 @@ class Controller:
                 if context_hash and context_hash in self._context_cache:
                     context_id, _ = self._context_cache[context_hash]
 
+            # Generate flattened config for IC Ops panel display
+            flattened_config = get_flattened_config_leaf(pipeline_config)
+
             pipeline_id = db.create_pipeline(
                 context_id=context_id,
                 pipeline_type="vllm",
                 pipeline_config=pipeline_config,
                 status=PipelineStatus.NEW,
+                flattened_config=flattened_config,
             )
             
             # Create MLflow run for this pipeline if MLflow is enabled
@@ -511,27 +609,15 @@ class Controller:
                     pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
                     mlflow_run_id = self.mlflow_manager.create_run(f"{pipeline_name}_{pipeline_id}")
                     db.set_pipeline_mlflow_run_id(pipeline_id, mlflow_run_id)
-                    
-                    pipeline = pipeline_config.get("pipeline")
-                    if pipeline:
-                        if hasattr(pipeline, "model_config") and pipeline.model_config:
-                            model_name = pipeline.model_config.get("model", "unknown")
-                            self.mlflow_manager.log_param(mlflow_run_id, "model", model_name)
-                        
-                        if hasattr(pipeline, "rag") and pipeline.rag:
-                            if hasattr(pipeline.rag, "search_type"):
-                                self.mlflow_manager.log_param(mlflow_run_id, "rag_search_type", str(pipeline.rag.search_type))
-                            if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs:
-                                k = pipeline.rag.search_kwargs.get("k")
-                                if k is not None:
-                                    self.mlflow_manager.log_param(mlflow_run_id, "rag_k", str(k))
-                        
-                        # Extract sampling params
-                        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:
-                            import json
-                            sampling_str = json.dumps(pipeline.sampling_params) if isinstance(pipeline.sampling_params, dict) else str(pipeline.sampling_params)
-                            self.mlflow_manager.log_param(mlflow_run_id, "sampling_params", sampling_str)
-                    
+
+                    # Log all pipeline params
+                    self._log_pipeline_params(
+                        pipeline_config=pipeline_config,
+                        run_id=mlflow_run_id,
+                        manager=self.mlflow_manager,
+                        manager_name="MLflow",
+                    )
+
                     self.logger.debug(f"Created MLflow run {mlflow_run_id} for pipeline {pipeline_id}")
                 except Exception as e:
                     self.logger.warning(f"Failed to create MLflow run for pipeline {pipeline_id}: {e}")
@@ -543,27 +629,15 @@ class Controller:
                     pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
                     trackio_run_id = self.trackio_manager.create_run(f"{pipeline_name}_{pipeline_id}")
                     db.set_pipeline_trackio_run_id(pipeline_id, trackio_run_id)
-                    
-                    pipeline = pipeline_config.get("pipeline")
-                    if pipeline:
-                        if hasattr(pipeline, "model_config") and pipeline.model_config:
-                            model_name = pipeline.model_config.get("model", "unknown")
-                            self.trackio_manager.log_param(trackio_run_id, "model", model_name)
-                        
-                        if hasattr(pipeline, "rag") and pipeline.rag:
-                            if hasattr(pipeline.rag, "search_type"):
-                                self.trackio_manager.log_param(trackio_run_id, "rag_search_type", str(pipeline.rag.search_type))
-                            if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs:
-                                k = pipeline.rag.search_kwargs.get("k")
-                                if k is not None:
-                                    self.trackio_manager.log_param(trackio_run_id, "rag_k", str(k))
-                        
-                        # Extract sampling params
-                        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:
-                            import json
-                            sampling_str = json.dumps(pipeline.sampling_params) if isinstance(pipeline.sampling_params, dict) else str(pipeline.sampling_params)
-                            self.trackio_manager.log_param(trackio_run_id, "sampling_params", sampling_str)
-                    
+
+                    # Log all pipeline params
+                    self._log_pipeline_params(
+                        pipeline_config=pipeline_config,
+                        run_id=trackio_run_id,
+                        manager=self.trackio_manager,
+                        manager_name="TrackIO",
+                    )
+
                     self.logger.debug(f"Created TrackIO run {trackio_run_id} for pipeline {pipeline_id}")
                 except Exception as e:
                     self.logger.warning(f"Failed to create TrackIO run for pipeline {pipeline_id}: {e}")

@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS pipelines (
     pipeline_type TEXT NOT NULL,  -- 'vllm', 'openai_api', etc.
     pipeline_config TEXT NOT NULL,  -- Full pipeline configuration (encoded with encode_payload - includes functions/classes)
     pipeline_config_json TEXT,  -- JSON-serializable pipeline configuration (for analytics/display, excludes functions/classes)
+    flattened_config TEXT DEFAULT '{}',  -- Flattened configuration for IC Ops panel display
     status TEXT NOT NULL,  -- 'new', 'ongoing', 'completed', 'stopped', 'deleted', 'failed'
     current_shard_id INTEGER DEFAULT 0,  -- Next shard to process
     shards_completed INTEGER DEFAULT 0,  -- Number of shards completed
