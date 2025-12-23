@@ -399,7 +399,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument(
         "--tracking-backends",
         choices=["mlflow", "tensorboard", "trackio"],
-        default="mlflow" if not ColabConfig.ON_COLAB else "tensorboard",
+        default=["mlflow"] if not ColabConfig.ON_COLAB else ["tensorboard"],
         help="Tracking backend to use for metrics (default: mlflow on Non-Google Colab and tensorboard on Google Colab)",
         nargs="+",
         action="extend"
