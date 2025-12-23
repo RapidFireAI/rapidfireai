@@ -402,7 +402,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         default="mlflow" if not ColabConfig.ON_COLAB else "tensorboard",
         help="Tracking backend to use for metrics (default: mlflow on Non-Google Colab and tensorboard on Google Colab)",
         nargs="+",
-        action="append"
+        action="extend"
     )
 
     parser.add_argument(

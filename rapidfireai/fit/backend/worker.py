@@ -25,17 +25,17 @@ from rapidfireai.fit.ml.checkpoint_utils import (
 )
 from rapidfireai.fit.ml.trainer import create_trainer_instance
 from rapidfireai.fit.utils.constants import (
-    TENSORBOARD_LOG_DIR,
     USE_SHARED_MEMORY,
     RunStatus,
     SHMObjectType,
     TaskStatus,
     WorkerTask,
 )
+from rapidfireai.utils.constants import RF_TENSORBOARD_LOG_DIR
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.exceptions import WorkerException
 from rapidfireai.fit.utils.logging import RFLogger, TrainingLogger
-from rapidfireai.utils.metric_logger import RFMetricLogger
+from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 from rapidfireai.fit.utils.serialize import decode_db_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
@@ -84,7 +84,6 @@ class Worker:
         default_metric_loggers = RFMetricLogger.get_default_metric_loggers()
         self.metric_logger = RFMetricLogger(default_metric_loggers)
         # create metric logger
-        tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.experiments_path / "tensorboard_logs")
         self.metric_logger.get_experiment(self.experiment_name)
 
         # load datasets

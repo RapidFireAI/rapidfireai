@@ -20,7 +20,6 @@ from rapidfireai.fit.backend.scheduler import Scheduler
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.automl import get_flattened_config_leaf, get_runs
 from rapidfireai.fit.utils.constants import (
-    TENSORBOARD_LOG_DIR,
     ControllerTask,
     ExperimentTask,
     RunEndedBy,
@@ -32,7 +31,7 @@ from rapidfireai.fit.utils.constants import (
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.exceptions import ControllerException, NoGPUsFoundException
 from rapidfireai.fit.utils.logging import RFLogger
-from rapidfireai.utils.metric_logger import RFMetricLogger
+from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 from rapidfireai.fit.utils.serialize import encode_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.worker_manager import WorkerManager

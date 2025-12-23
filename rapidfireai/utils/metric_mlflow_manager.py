@@ -3,7 +3,7 @@
 import os
 import mlflow
 from mlflow.tracking import MlflowClient
-from rapidfireai.utils.metric_logger import MetricLogger
+from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.utils.ping import ping_server
 from rapidfireai.utils.constants import MLFlowConfig
 
@@ -17,6 +17,7 @@ class MLflowMetricLogger(MetricLogger):
             tracking_uri: MLflow tracking server URI
             init_kwargs: Initialization kwargs for MLflow
         """
+        self.type = MetricLoggerType.MLFLOW
         self.client = None
         self.init_kwargs = init_kwargs # Not currently used
         if not ping_server(MLFlowConfig.HOST, MLFlowConfig.PORT, 2):

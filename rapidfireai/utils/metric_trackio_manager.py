@@ -2,7 +2,7 @@
 
 import trackio
 from typing import Any
-from rapidfireai.utils.metric_logger import MetricLogger
+from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 
 
 class TrackIOMetricLogger(MetricLogger):
@@ -14,6 +14,7 @@ class TrackIOMetricLogger(MetricLogger):
             init_kwargs: Initialization kwargs for TrackIO
         """
         self.init_kwargs = init_kwargs
+        self.type = MetricLoggerType.TRACKIO
         if self.init_kwargs is None:
             self.init_kwargs = {"embed": False}
         if not isinstance(self.init_kwargs, dict):

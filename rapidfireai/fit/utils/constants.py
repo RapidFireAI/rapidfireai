@@ -3,7 +3,6 @@ from enum import Enum
 from rapidfireai.utils.constants import RF_TENSORBOARD_LOG_DIR, RF_TRAINING_LOG_FILENAME, RF_DB_PATH
 
 # Backwards compatibility: Keep constant but it will be stale if env var changes after import
-TENSORBOARD_LOG_DIR = RF_TENSORBOARD_LOG_DIR  # Default set by experiment path
 
 # Shared Memory Constants
 SHM_WARN_THRESHOLD = 80

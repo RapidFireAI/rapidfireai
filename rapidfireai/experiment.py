@@ -129,7 +129,7 @@ class Experiment:
         from rapidfireai.evals.utils.constants import get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
-        from rapidfireai.utils.metric_logger import RFMetricLogger
+        from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
 
         # Store ray reference for later use
@@ -217,7 +217,7 @@ class Experiment:
         self.controller = Controller(
             experiment_name=self.experiment_name,
             experiment_path=self.experiment_path,
-            metrics_manager=self.metric_loggers,
+            metric_manager=self.metric_loggers,
         )
 
         # Start dispatcher in background thread for interactive control
@@ -449,7 +449,7 @@ class Experiment:
                 return pd.DataFrame(columns=["run_id", "step"])
 
             # Lazy import - only import when we actually have metric runs to fetch
-            from rapidfireai.utils.metric_logger import RFMetricLogger
+            from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
             try:
                 metric_loggers = RFMetricLogger.get_default_metric_loggers()
                 self.metric_loggers = RFMetricLogger(metric_loggers)
@@ -467,7 +467,7 @@ class Experiment:
                 if not metric_run_id:
                     continue
 
-                run_metrics = metric_loggers.get_run_metrics(metric_run_id)
+                run_metrics = self.metric_loggers.get_run_metrics(metric_run_id)
 
                 step_metrics = {}
                 for metric_name, metric_values in run_metrics.items():

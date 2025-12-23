@@ -4,7 +4,7 @@ TensorBoard implementation of MetricLogger.
 Uses torch.utils.tensorboard.SummaryWriter to log metrics to TensorBoard.
 """
 
-from rapidfireai.utils.metric_logger import MetricLogger
+from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from pathlib import Path
 from typing import Optional, Any
 import os
@@ -27,6 +27,7 @@ class TensorBoardMetricLogger(MetricLogger):
         """
         from torch.utils.tensorboard import SummaryWriter
 
+        self.type = MetricLoggerType.TENSORBOARD
         self.log_dir = Path(log_dir)
         self.init_kwargs = init_kwargs # Not currently used
         try:
