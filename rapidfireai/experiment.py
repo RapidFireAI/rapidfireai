@@ -12,8 +12,15 @@ from typing import Any
 from pathlib import Path
 
 import pandas as pd
-from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_TRAINING_LOG_FILENAME, RF_LOG_PATH
-from rapidfireai.utils.ping import ping_server
+from rapidfireai.utils.constants import (
+    ColabConfig, 
+    RayConfig, 
+    RF_EXPERIMENT_PATH, 
+    RF_LOG_FILENAME, 
+    F_TRAINING_LOG_FILENAME, 
+    RF_LOG_PATH,
+    RF_MLFLOW_ENABLED
+)
 
 
 class Experiment:
@@ -118,12 +125,11 @@ class Experiment:
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
         from rapidfireai.utils.colab import get_colab_auth_token
-        from rapidfireai.utils.constants import DispatcherConfig, MLFlowConfig
+        from rapidfireai.utils.constants import DispatcherConfig,
         from rapidfireai.evals.utils.constants import get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
-        from rapidfireai.utils.mlflow_manager import MLflowManager
-        from rapidfireai.utils.trackio_manager import TrackIOManager
+        from rapidfireai.utils.metric_logger import RFMetricLogger
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
 
         # Store ray reference for later use
@@ -191,37 +197,27 @@ class Experiment:
         # Create database reference
         self.db = RFDatabase()
 
-        # Initialize MLflow (optional, gracefully disabled if server not available)
-        if ping_server(MLFlowConfig.HOST, MLFlowConfig.PORT, 2):
-            # Server is reachable, proceed with MLflow
-            self.mlflow_manager = MLflowManager(MLFlowConfig.URL)
-            mlflow_experiment_id = self.mlflow_manager.create_experiment(self.experiment_name)
+        try:
+            metric_loggers = RFMetricLogger.get_default_metric_loggers()
+            self.metric_loggers = RFMetricLogger(metric_loggers)
+            metric_experiment_id = self.metric_loggers.create_experiment(self.experiment_name)
             self.db.db.execute(
-                "UPDATE experiments SET mlflow_experiment_id = ? WHERE experiment_id = ?",
-                (mlflow_experiment_id, self.experiment_id),
+                "UPDATE experiments SET metric_experiment_id = ? WHERE experiment_id = ?",
+                (metric_experiment_id, self.experiment_id),
             )
             self.db.db.conn.commit()
-            self.logger.info(f"Initialized MLflow experiment: {mlflow_experiment_id}")
-        else:
-            self.logger.info(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled.")
-            self.mlflow_manager = None
-
-        # Initialize TrackIO
-        try:
-            self.trackio_manager = TrackIOManager(tracking_uri=None)
-            self.trackio_manager.get_experiment(self.experiment_name)
-            self.logger.info(f"Initialized TrackIO experiment: {self.experiment_name}")
+            self.logger.info(f"Initialized MetricLogger experiment: {metric_experiment_id}")
         except Exception as e:
-            self.logger.warning(f"Failed to initialize TrackIO: {e}. TrackIO logging will be disabled.")
-            self.trackio_manager = None
+            self.logger.warning(f"Failed to initialize MetricLogger: {e}. MetricLogger logging will be disabled.")
+            self.metric_loggers = {}
+
 
         
         # Initialize the controller
         self.controller = Controller(
             experiment_name=self.experiment_name,
             experiment_path=self.experiment_path,
-            mlflow_manager=self.mlflow_manager if hasattr(self, "mlflow_manager") else None,
-            trackio_manager=self.trackio_manager if hasattr(self, "trackio_manager") else None,
+            metrics_manager=self.metric_loggers,
         )
 
         # Start dispatcher in background thread for interactive control
@@ -427,7 +423,7 @@ class Experiment:
 
     def get_results(self) -> pd.DataFrame:
         """
-        Get the MLflow training metrics for all runs in the experiment.
+        Get the training metrics for all runs in the experiment.
 
         Returns:
             DataFrame with training metrics
@@ -438,37 +434,40 @@ class Experiment:
         if self.mode != "fit":
             raise ValueError("get_results() is only available in 'fit' mode")
 
-        from rapidfireai.utils.constants import MLFlowConfig
-
         ExperimentException = self._ExperimentException
 
         try:
             runs_info_df = self.experiment_utils.get_runs_info()
 
-            # Check if there are any mlflow_run_ids before importing MLflow
-            has_mlflow_runs = (
-                runs_info_df.get("mlflow_run_id") is not None and runs_info_df["mlflow_run_id"].notna().any()
+            # Check if there are any metric_run_ids before importing metrics
+            has_metric_runs = (
+                runs_info_df.get("metric_run_id") is not None and runs_info_df["metric_run_id"].notna().any()
             )
 
-            if not has_mlflow_runs:
-                # No MLflow runs to fetch, return empty DataFrame
+            if not has_metric_runs or RF_MLFLOW_ENABLED != "true":
+                # No metric runs to fetch, return empty DataFrame
                 return pd.DataFrame(columns=["run_id", "step"])
 
-            # Lazy import - only import when we actually have MLflow runs to fetch
-            from rapidfireai.utils.mlflow_manager import MLflowManager
+            # Lazy import - only import when we actually have metric runs to fetch
+            from rapidfireai.utils.metric_logger import RFMetricLogger
+            try:
+                metric_loggers = RFMetricLogger.get_default_metric_loggers()
+                self.metric_loggers = RFMetricLogger(metric_loggers)
 
-            mlflow_manager = MLflowManager(MLFlowConfig.URL)
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize MetricLogger: {e}.")
+                return pd.DataFrame(columns=["run_id", "step"])
 
             metrics_data = []
 
             for _, run_row in runs_info_df.iterrows():
                 run_id = run_row["run_id"]
-                mlflow_run_id = run_row.get("mlflow_run_id")
+                metric_run_id = run_row.get("metric_run_id")
 
-                if not mlflow_run_id:
+                if not metric_run_id:
                     continue
 
-                run_metrics = mlflow_manager.get_run_metrics(mlflow_run_id)
+                run_metrics = metric_loggers.get_run_metrics(metric_run_id)
 
                 step_metrics = {}
                 for metric_name, metric_values in run_metrics.items():

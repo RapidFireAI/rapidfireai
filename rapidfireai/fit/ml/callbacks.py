@@ -16,9 +16,7 @@ class GenerationMetricsCallback(TrainerCallback):
         compute_metrics: Callable = None,
         batch_size: int = 8,
         metric_logger=None,
-        mlflow_run_id: str = None,
-        trackio_logger=None,
-        trackio_run_id: str = None,
+        metric_run_id: str = None,
         completed_steps: int = 0,
     ):
         self.tokenizer = tokenizer
@@ -34,9 +32,7 @@ class GenerationMetricsCallback(TrainerCallback):
             "eos_token_id": tokenizer.eos_token_id,
         }
         self.metric_logger = metric_logger
-        self.mlflow_run_id = mlflow_run_id
-        self.trackio_logger = trackio_logger
-        self.trackio_run_id = trackio_run_id
+        self.metric_run_id = metric_run_id
         self.completed_steps = completed_steps
 
     def on_evaluate(
@@ -65,14 +61,7 @@ class GenerationMetricsCallback(TrainerCallback):
             step = self.completed_steps + state.global_step
             if self.metric_logger:
                 self.metric_logger.log_metric(
-                    self.mlflow_run_id,
-                    key,
-                    value,
-                    step=step,
-                )
-            if self.trackio_logger and self.trackio_run_id:
-                self.trackio_logger.log_metric(
-                    self.trackio_run_id,
+                    self.metric_run_id,
                     key,
                     value,
                     step=step,
@@ -195,24 +184,20 @@ class GenerationMetricsCallback(TrainerCallback):
         return metrics
 
 
-class MLflowLoggingCallback(TrainerCallback):
+class MetricLoggingCallback(TrainerCallback):
     """Callback for logging metrics to tracking backend during training"""
 
     def __init__(
         self,
         metric_logger,
-        mlflow_run_id: str,
+        metric_run_id: str,
         excluded_keys: list = None,
         completed_steps: int = 0,
         chunk_id: int = 0,
         num_epochs_completed: int = 0,
-        trackio_logger=None,
-        trackio_run_id: str = None,
     ):
         self.metric_logger = metric_logger
-        self.mlflow_run_id = mlflow_run_id
-        self.trackio_logger = trackio_logger
-        self.trackio_run_id = trackio_run_id
+        self.metric_run_id = metric_run_id
         self.completed_steps = completed_steps
         self.excluded_keys = excluded_keys or [
             "step",
@@ -237,14 +222,7 @@ class MLflowLoggingCallback(TrainerCallback):
                     try:
                         if self.metric_logger:
                             self.metric_logger.log_metric(
-                                self.mlflow_run_id,
-                                key,
-                                value,
-                                step=step,
-                            )
-                        if self.trackio_logger and self.trackio_run_id:
-                            self.trackio_logger.log_metric(
-                                self.trackio_run_id,
+                                self.metric_run_id,
                                 key,
                                 value,
                                 step=step,
@@ -254,26 +232,13 @@ class MLflowLoggingCallback(TrainerCallback):
             if "eval_loss" not in logs and "train_runtime" not in logs:
                 if self.metric_logger:
                     self.metric_logger.log_metric(
-                        self.mlflow_run_id,
+                        self.metric_run_id,
                         "chunk number",
                         self.chunk_id,
                         step=step,
                     )
                     self.metric_logger.log_metric(
-                        self.mlflow_run_id,
-                        "num_epochs_completed",
-                        self.num_epochs_completed,
-                        step=step,
-                    )
-                if self.trackio_logger and self.trackio_run_id:
-                    self.trackio_logger.log_metric(
-                        self.trackio_run_id,
-                        "chunk number",
-                        self.chunk_id,
-                        step=step,
-                    )
-                    self.trackio_logger.log_metric(
-                        self.trackio_run_id,
+                        self.metric_run_id,
                         "num_epochs_completed",
                         self.num_epochs_completed,
                         step=step,

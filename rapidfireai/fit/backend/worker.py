@@ -16,7 +16,6 @@ from typing import Any
 
 import torch
 
-from rapidfireai.utils.constants import MLFlowConfig
 from rapidfireai.fit.backend.chunks import DatasetChunks
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.ml.checkpoint_utils import (
@@ -32,12 +31,11 @@ from rapidfireai.fit.utils.constants import (
     SHMObjectType,
     TaskStatus,
     WorkerTask,
-    get_tracking_backend,
 )
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.exceptions import WorkerException
 from rapidfireai.fit.utils.logging import RFLogger, TrainingLogger
-from rapidfireai.fit.utils.metric_logger import create_metric_logger
+from rapidfireai.utils.metric_logger import RFMetricLogger
 from rapidfireai.fit.utils.serialize import decode_db_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
@@ -83,24 +81,11 @@ class Worker:
         # initialize data paths
         DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_name))
 
+        default_metric_loggers = RFMetricLogger.get_default_metric_loggers()
+        self.metric_logger = RFMetricLogger(default_metric_loggers)
         # create metric logger
         tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.experiments_path / "tensorboard_logs")
-        self.metric_logger = create_metric_logger(
-            backend=get_tracking_backend(),
-            mlflow_tracking_uri=MLFlowConfig.URL,
-            tensorboard_log_dir=tensorboard_log_dir,
-        )
-        # Get experiment if using MLflow
-        if hasattr(self.metric_logger, "get_experiment"):
-            self.metric_logger.get_experiment(self.experiment_name)
-
-        from rapidfireai.fit.utils.metric_logger import TrackIOMetricLogger
-        try:
-            self.trackio_logger = TrackIOMetricLogger(tracking_uri=None)
-            if hasattr(self.trackio_logger, "get_experiment"):
-                self.trackio_logger.get_experiment(self.experiment_name)
-        except Exception:
-            self.trackio_logger = None
+        self.metric_logger.get_experiment(self.experiment_name)
 
         # load datasets
         self.train_dataset, self.eval_dataset, self.num_chunks = self.load_datasets()
@@ -130,8 +115,8 @@ class Worker:
         # get run details
         run_details = self.db.get_run(run_id)
         config_leaf = run_details["config_leaf"]
-        mlflow_run_id = run_details["mlflow_run_id"]
-        trackio_run_id = run_details.get("trackio_run_id")
+        metric_run_id = run_details["metric_run_id"]
+
 
         # set seed
         # torch.manual_seed(run_details["seed"])
@@ -153,8 +138,7 @@ class Worker:
         trainer_config = TrainerConfig(
             worker_id=self.worker_id,
             run_id=run_id,
-            mlflow_run_id=mlflow_run_id,
-            trackio_run_id=trackio_run_id,
+            metric_run_id=metric_run_id,
             config_leaf=config_leaf,
             total_steps=run_details["total_steps"],
             completed_steps=run_details["completed_steps"],
@@ -176,8 +160,8 @@ class Worker:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-            trainer_instance, base_model_name = create_trainer_instance(
-                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.metric_logger, self.trackio_logger, chunk_id
+            trainer_instance, _ = create_trainer_instance(
+                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.metric_logger, chunk_id
             )
 
         # if first time, save checkpoint to disk

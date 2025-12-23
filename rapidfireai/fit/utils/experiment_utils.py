@@ -15,8 +15,9 @@ from tqdm import tqdm
 from transformers import logging as transformers_logging
 
 from rapidfireai.utils.constants import MLFlowConfig
+from rapidfireai.utils.metric_logger import RFMetricLogger
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.fit.utils.constants import ExperimentStatus, ExperimentTask, get_tracking_backend
+from rapidfireai.fit.utils.constants import ExperimentStatus, ExperimentTask, RF_MLFLOW_ENABLED
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.exceptions import DBException, ExperimentException
 from rapidfireai.fit.utils.logging import RFLogger
@@ -85,8 +86,7 @@ class ExperimentUtils:
 
         # Clear any existing MLflow context before starting new experiment
         # Only if using MLflow backend
-        tracking_backend = get_tracking_backend()
-        if tracking_backend in ["mlflow", "both"]:
+        if RF_MLFLOW_ENABLED=="true":
             import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
 
             try:
@@ -127,15 +127,15 @@ class ExperimentUtils:
                 )
             else:
                 self.end_experiment(internal=True)
-                experiment_id, experiment_name, mlflow_experiment_id = self._create_experiment_internal(
+                experiment_id, experiment_name, metric_experiment_id = self._create_experiment_internal(
                     given_name,
                     experiments_path,
                 )
-                if mlflow_experiment_id:
+                if metric_experiment_id:
                     msg = (
                         f"The previously running experiment {running_experiment['experiment_name']} was forcibly ended."
                         f" Created a new experiment '{experiment_name}' with Experiment ID: {experiment_id}"
-                        f" and MLflow Experiment ID: {mlflow_experiment_id} at {experiments_path}/{experiment_name}"
+                        f" and Metric Experiment ID: {metric_experiment_id} at {experiments_path}/{experiment_name}"
                     )
                 else:
                     msg = (
@@ -147,15 +147,15 @@ class ExperimentUtils:
                 log_messages.append(msg)
         # check if experiment name already exists
         elif given_name in self.db.get_all_experiment_names():
-            experiment_id, experiment_name, mlflow_experiment_id = self._create_experiment_internal(
+            experiment_id, experiment_name, metric_experiment_id = self._create_experiment_internal(
                 given_name,
                 experiments_path,
             )
-            if mlflow_experiment_id:
+            if metric_experiment_id:
                 msg = (
                     "An experiment with the same name already exists."
                     f" Created a new experiment '{experiment_name}' with Experiment ID: {experiment_id}"
-                    f" and MLflow Experiment ID: {mlflow_experiment_id} at {experiments_path}/{experiment_name}"
+                    f" and Metric Experiment ID: {metric_experiment_id} at {experiments_path}/{experiment_name}"
                 )
             else:
                 msg = (
@@ -166,14 +166,14 @@ class ExperimentUtils:
             print(msg)
             log_messages.append(msg)
         else:
-            experiment_id, experiment_name, mlflow_experiment_id = self._create_experiment_internal(
+            experiment_id, experiment_name, metric_experiment_id = self._create_experiment_internal(
                 given_name,
                 experiments_path,
             )
-            if mlflow_experiment_id:
+            if metric_experiment_id:
                 msg = (
                     f"Experiment {experiment_name} created with Experiment ID: {experiment_id}"
-                    f" and MLflow Experiment ID: {mlflow_experiment_id} at {experiments_path}/{experiment_name}"
+                    f" and Metric Experiment ID: {metric_experiment_id} at {experiments_path}/{experiment_name}"
                 )
             else:
                 msg = (
@@ -213,8 +213,7 @@ class ExperimentUtils:
         self.db.reset_all_tables()
 
         # Clear MLflow context only if using MLflow backend
-        tracking_backend = get_tracking_backend()
-        if tracking_backend in ["mlflow", "both"]:
+        if RF_MLFLOW_ENABLED=="true":
             import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
 
             from rapidfireai.utils.mlflow_manager import MLflowManager
@@ -224,14 +223,15 @@ class ExperimentUtils:
                     print("Ending active MLflow run before ending experiment")
                     mlflow.end_run()
 
-                # Also clear context through MLflowManager if available
+                # Also clear context through RFMetricLogger if available
                 try:
-                    mlflow_manager = MLflowManager(MLFlowConfig.URL)
-                    mlflow_manager.clear_context()
+                    metric_logger_config = RFMetricLogger.get_default_metric_loggers()
+                    metric_logger = RFMetricLogger(metric_logger_config)
+                    metric_logger.clear_context()
                 except Exception as e2:
-                    print(f"Error clearing MLflow context through MLflowManager: {e2}")
+                    print(f"Error clearing Metric context through RFMetricLogger: {e2}")
             except Exception as e:
-                print(f"Error clearing MLflow context: {e}")
+                print(f"Error clearing Metric context: {e}")
 
         # print experiment ended message
         msg = f"Experiment {experiment_name} ended"
@@ -348,35 +348,33 @@ class ExperimentUtils:
         """Create new experiment -
         if given_name already exists - increment suffix and create new experiment
         if given_name is new - create new experiment with given name
-        Returns: experiment_id, experiment_name, mlflow_experiment_id (or None if tensorboard-only)
+        Returns: experiment_id, experiment_name, metric_experiment_id (or None)
         """
         try:
             given_name = given_name if given_name else "rf-exp"
             experiment_name = self._generate_unique_experiment_name(given_name, self.db.get_all_experiment_names())
 
-            # Create MLflow experiment only if using MLflow backend
-            mlflow_experiment_id = None
-            tracking_backend = get_tracking_backend()
-            if tracking_backend in ["mlflow", "both"]:
+            # Create Metricexperiment only if available
+            metric_experiment_id = None
+            if RF_MLFLOW_ENABLED=="true":
                 import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
 
-                from rapidfireai.utils.mlflow_manager import MLflowManager
-
                 try:
-                    mlflow_manager = MLflowManager(MLFlowConfig.URL)
-                    mlflow_experiment_id = mlflow_manager.create_experiment(experiment_name)
+                    metric_logger_config = RFMetricLogger.get_default_metric_loggers()
+                    metric_logger = RFMetricLogger(metric_logger_config)
+                    metric_experiment_id = metric_logger.create_experiment(experiment_name)
                     mlflow.tracing.disable_notebook_display()
                 except Exception as e:
                     # Catch MLflow-specific exceptions (mlflow.exceptions.RestException, etc.)
-                    raise ExperimentException(f"Error creating MLFlow experiment: {e}") from e
+                    raise ExperimentException(f"Error creating Metric experiment: {e}") from e
 
             # write new experiment details to database
             experiment_id = self.db.create_experiment(
                 experiment_name,
-                mlflow_experiment_id,  # Will be None for tensorboard-only
+                metric_experiment_id,  # Will be None for tensorboard-only
                 config_options={"experiments_path": experiments_path},
             )
-            return experiment_id, experiment_name, mlflow_experiment_id
+            return experiment_id, experiment_name, metric_experiment_id
         except ExperimentException:
             # Re-raise ExperimentExceptions (including MLflow errors from above)
             raise

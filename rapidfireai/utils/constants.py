@@ -88,4 +88,6 @@ class ColabConfig:
     def __str__(self):
         return f"ColabConfig(ON_COLAB={self.ON_COLAB}, RF_COLAB_MODE={self.RF_COLAB_MODE})"
 
-RF_TRACKING_BACKEND = os.getenv("RF_TRACKING_BACKEND", "mlflow" if not ColabConfig.ON_COLAB else "tensorboard")
+RF_MLFLOW_ENABLED = os.getenv("RF_MLFLOW_ENABLED", "true" if not ColabConfig.ON_COLAB else "false")
+RF_TENSORBOARD_ENABLED = os.getenv("RF_TENSORBOARD_ENABLED", "false" if not ColabConfig.ON_COLAB else "true")
+RF_TRACKIO_ENABLED = os.getenv("RF_TRACKIO_ENABLED", "false")

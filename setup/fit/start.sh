@@ -31,11 +31,15 @@ RF_TIMEOUT_TIME=${RF_TIMEOUT_TIME:=30}
 
 # Colab mode configuration
 if [ -z "${COLAB_GPU+x}" ]; then
-    RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=mlflow}
+    RF_MLFLOW_ENABLED=${RF_MLFLOW_ENABLED:=true}
+    RF_TENSORBOARD_ENABLED=${RF_TENSORBOARD_ENABLED:=false}
+    RF_TRACKIO_ENABLED=${RF_TRACKIO_ENABLED:=false}
     RF_COLAB_MODE=${RF_COLAB_MODE:=false}
 else
     echo "Google Colab environment detected"
-    RF_TRACKING_BACKEND=${RF_TRACKING_BACKEND:=tensorboard}
+    RF_MLFLOW_ENABLED=${RF_MLFLOW_ENABLED:=false}
+    RF_TENSORBOARD_ENABLED=${RF_TENSORBOARD_ENABLED:=true}
+    RF_TRACKIO_ENABLED=${RF_TRACKIO_ENABLED:=false}
     RF_COLAB_MODE=${RF_COLAB_MODE:=true}
 fi
 
@@ -351,10 +355,6 @@ start_mlflow() {
                 grep -A 5 -B 2 "Error\|Exception\|Traceback\|Failed\|ImportError\|ModuleNotFoundError" "$RF_LOG_PATH/mlflow.log" | head -20
             fi
         else
-            if [[ "$RF_COLAB_MODE" == "true" ]] && [[ "$RF_TRACKING_BACKEND" == "tensorboard" ]]; then
-                print_status "⊗ Skipping MLflow (using TensorBoard-only tracking in Colab mode)"
-                return 0
-            fi
             print_error "No mlflow.log file found"
         fi
 
@@ -366,19 +366,6 @@ start_mlflow() {
 
         return 1
     fi
-}
-
-# Function to conditionally start MLflow based on mode
-start_mlflow_if_needed() {
-    # In Colab mode with pure TensorBoard, skip MLflow
-    if [[ "$RF_COLAB_MODE" == "true" ]] && [[ "$RF_TRACKING_BACKEND" == "tensorboard" ]]; then
-        print_status "⊗ Skipping MLflow (using TensorBoard-only tracking in Colab mode)"
-        return 0
-    fi
-
-    # Otherwise start MLflow
-    start_mlflow
-    return $?
 }
 
 # Function to start API server
@@ -628,7 +615,7 @@ show_status() {
             fi
         fi
     fi
-    if [[ "$RF_TRACKING_BACKEND" == "mlflow" ]] || [[ "$RF_TRACKING_BACKEND" == "both" ]]; then
+    if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
             print_success "🚀 MLflow server is ready!"
         else
@@ -661,7 +648,7 @@ show_status() {
     fi
 
     # Only check mlflow.log if MLflow is running
-    if [[ "$RF_COLAB_MODE" != "true" ]] || [[ "$RF_TRACKING_BACKEND" != "tensorboard" ]]; then
+    if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         if [[ -f "$RF_LOG_PATH/mlflow.log" ]]; then
             local size=$(du -h "$RF_LOG_PATH/mlflow.log" | cut -f1)
             print_status "- $RF_LOG_PATH/mlflow.log: $size"
@@ -688,7 +675,7 @@ start_services() {
 
     # Calculate total services based on mode
     # MLflow runs unless tensorboard-only in Colab
-    if [[ "$RF_COLAB_MODE" != "true" ]] || [[ "$RF_TRACKING_BACKEND" != "tensorboard" ]]; then
+    if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         ((total_services++))
     fi
 
@@ -705,14 +692,12 @@ start_services() {
     print_status "Starting $total_services service(s)..."
 
     # Start MLflow server (conditionally)
-    if [[ "$RF_COLAB_MODE" != "true" ]] || [[ "$RF_TRACKING_BACKEND" != "tensorboard" ]]; then
+    if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         if start_mlflow; then
             ((services_started++))
         else
             print_error "Failed to start MLflow server"
         fi
-    else
-        print_status "⊗ Skipping MLflow (using TensorBoard-only tracking in Colab mode)"
     fi
 
     # Start API server (always)

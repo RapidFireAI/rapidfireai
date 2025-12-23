@@ -3,18 +3,27 @@
 import os
 import mlflow
 from mlflow.tracking import MlflowClient
+from rapidfireai.utils.metric_logger import MetricLogger
+from rapidfireai.utils.ping import ping_server
+from rapidfireai.utils.constants import MLFlowConfig
 
 
-class MLflowManager:
-    def __init__(self, tracking_uri: str):
+class MLflowMetricLogger(MetricLogger):
+    def __init__(self, tracking_uri: str, init_kwargs: dict[str, Any] = None):
         """
         Initialize MLflow Manager with tracking URI.
 
         Args:
             tracking_uri: MLflow tracking server URI
+            init_kwargs: Initialization kwargs for MLflow
         """
-        mlflow.set_tracking_uri(tracking_uri)
-        self.client = MlflowClient(tracking_uri=tracking_uri)
+        self.client = None
+        self.init_kwargs = init_kwargs # Not currently used
+        if not ping_server(MLFlowConfig.HOST, MLFlowConfig.PORT, 2):
+            raise ConnectionRefusedError(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled.")
+        else:
+            mlflow.set_tracking_uri(tracking_uri)
+            self.client = MlflowClient(tracking_uri=tracking_uri)
         self.experiment_id = None
 
     def create_experiment(self, experiment_name: str) -> str:
@@ -39,20 +48,20 @@ class MLflowManager:
         run = self.client.create_run(self.experiment_id, run_name=run_name)
         return run.info.run_id
 
-    def log_param(self, mlflow_run_id: str, key: str, value: str) -> None:
+    def log_param(self, run_id: str, key: str, value: str) -> None:
         """Log parameters to a specific run."""
-        self.client.log_param(mlflow_run_id, key, value)
+        self.client.log_param(run_id, key, value)
 
-    def log_metric(self, mlflow_run_id: str, key: str, value: float, step: int = None) -> None:
+    def log_metric(self, run_id: str, key: str, value: float, step: int = None) -> None:
         """Log a metric to a specific run."""
-        self.client.log_metric(mlflow_run_id, key, value, step=step)
+        self.client.log_metric(run_id, key, value, step=step)
 
-    def get_run_metrics(self, mlflow_run_id: str) -> dict[str, list[tuple[int, float]]]:
+    def get_run_metrics(self, run_id: str) -> dict[str, list[tuple[int, float]]]:
         """
         Get all metrics for a specific run.
         """
         try:
-            run = self.client.get_run(mlflow_run_id)
+            run = self.client.get_run(run_id)
             if run is None:
                 return {}
 
@@ -60,45 +69,45 @@ class MLflowManager:
             metric_dict = {}
             for metric_key in run_data.metrics.keys():
                 try:
-                    metric_history = self.client.get_metric_history(mlflow_run_id, metric_key)
+                    metric_history = self.client.get_metric_history(run_id, metric_key)
                     metric_dict[metric_key] = [(metric.step, metric.value) for metric in metric_history]
                 except Exception as e:
                     print(f"Error getting metric history for {metric_key}: {e}")
                     continue
             return metric_dict
         except Exception as e:
-            print(f"Error getting metrics for run {mlflow_run_id}: {e}")
+            print(f"Error getting metrics for run {run_id}: {e}")
             return {}
 
-    def end_run(self, mlflow_run_id: str) -> None:
+    def end_run(self, run_id: str) -> None:
         """End a specific run."""
         # Check if run exists before terminating
-        run = self.client.get_run(mlflow_run_id)
+        run = self.client.get_run(run_id)
         if run is not None:
             # First terminate the run on the server
-            self.client.set_terminated(mlflow_run_id)
+            self.client.set_terminated(run_id)
 
             # Then clear the local MLflow context if this is the active run
             try:
                 current_run = mlflow.active_run()
                 # Make sure we end the run on the correct worker
-                if current_run and current_run.info.run_id == mlflow_run_id:
+                if current_run and current_run.info.run_id == run_id:
                     mlflow.end_run()
                 else:
-                    print(f"Run {mlflow_run_id} is not the active run, no local context to clear")
+                    print(f"Run {run_id} is not the active run, no local context to clear")
             except Exception as e:
                 print(f"Error clearing local MLflow context: {e}")
         else:
-            print(f"MLflow run {mlflow_run_id} not found, cannot terminate")
+            print(f"MLflow run {run_id} not found, cannot terminate")
 
-    def delete_run(self, mlflow_run_id: str) -> None:
+    def delete_run(self, run_id: str) -> None:
         """Delete a specific run."""
         # Check if run exists before deleting
-        run = self.client.get_run(mlflow_run_id)
+        run = self.client.get_run(run_id)
         if run is not None:
-            self.client.delete_run(mlflow_run_id)
+            self.client.delete_run(run_id)
         else:
-            raise ValueError(f"Run '{mlflow_run_id}' not found")
+            raise ValueError(f"Run '{run_id}' not found")
 
     def clear_context(self) -> None:
         """Clear the MLflow context by ending any active run."""

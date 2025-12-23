@@ -397,10 +397,12 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument("--version", action="version", version=f"RapidFire AI {__version__}")
 
     parser.add_argument(
-        "--tracking-backend",
-        choices=["mlflow", "tensorboard", "both"],
-        default=os.getenv("RF_TRACKING_BACKEND", "mlflow" if not ColabConfig.ON_COLAB else "tensorboard"),
-        help="Tracking backend to use for metrics (default: mlflow)",
+        "--tracking-backends",
+        choices=["mlflow", "tensorboard", "trackio"],
+        default="mlflow" if not ColabConfig.ON_COLAB else "tensorboard",
+        help="Tracking backend to use for metrics (default: mlflow on Non-Google Colab and tensorboard on Google Colab)",
+        nargs="+",
+        action="append"
     )
 
     parser.add_argument(
@@ -429,8 +431,13 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     # Set environment variables from CLI args
 
-    if args.tracking_backend:
-        os.environ["RF_TRACKING_BACKEND"] = args.tracking_backend
+    if args.tracking_backends:
+        if "mlflow" in args.tracking_backends:
+            os.environ["RF_MLFLOW_ENABLED"] = "true"
+        if "tensorboard" in args.tracking_backends:
+            os.environ["RF_TENSORBOARD_ENABLED"] = "true"
+        if "trackio" in args.tracking_backends:
+            os.environ["RF_TRACKIO_ENABLED"] = "true"
     if args.tensorboard_log_dir:
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
     if args.colab:

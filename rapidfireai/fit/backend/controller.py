@@ -13,7 +13,6 @@ import torch
 from torch.utils.data import Dataset
 
 from rapidfireai.automl import AutoMLAlgorithm
-from rapidfireai.utils.constants import MLFlowConfig
 from rapidfireai.utils.os_utils import mkdir_p
 from rapidfireai.automl import AutoMLAlgorithm
 from rapidfireai.fit.backend.chunks import DatasetChunks
@@ -29,12 +28,11 @@ from rapidfireai.fit.utils.constants import (
     RunStatus,
     TaskStatus,
     WorkerTask,
-    get_tracking_backend,
 )
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.exceptions import ControllerException, NoGPUsFoundException
 from rapidfireai.fit.utils.logging import RFLogger
-from rapidfireai.fit.utils.metric_logger import create_metric_logger
+from rapidfireai.utils.metric_logger import RFMetricLogger
 from rapidfireai.fit.utils.serialize import encode_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.worker_manager import WorkerManager
@@ -78,29 +76,11 @@ class Controller:
         # create worker manager
         self.worker_manager: WorkerManager = WorkerManager(self.num_workers, registry, process_lock)
 
-        # create metric logger
-        # Initialize DataPath temporarily to get experiment path for tensorboard logs
-        experiment_path = self.db.get_experiments_path(self.experiment_name)
-        DataPath.initialize(self.experiment_name, experiment_path)
-        tensorboard_log_dir = TENSORBOARD_LOG_DIR or str(DataPath.experiments_path / "tensorboard_logs")
-
-        self.metric_logger = create_metric_logger(
-            backend=get_tracking_backend(),
-            mlflow_tracking_uri=MLFlowConfig.URL,
-            tensorboard_log_dir=tensorboard_log_dir,
+        default_metric_loggers = RFMetricLogger.get_default_metric_loggers()
+        self.metric_logger = RFMetricLogger(
+            default_metric_loggers,
         )
-        # Get experiment if using MLflow
-        if hasattr(self.metric_logger, "get_experiment"):
-            self.metric_logger.get_experiment(self.experiment_name)
-
-        from rapidfireai.fit.utils.metric_logger import TrackIOMetricLogger
-        try:
-            self.trackio_logger = TrackIOMetricLogger(tracking_uri=None)
-            if hasattr(self.trackio_logger, "get_experiment"):
-                self.trackio_logger.get_experiment(self.experiment_name)
-        except Exception:
-            self.trackio_logger = None
-
+        self.metric_logger.get_experiment(self.experiment_name)
         self.logger.debug("Controller initialized")
 
     def _create_models(
@@ -159,52 +139,31 @@ class Controller:
                 raise ControllerException(f"Failed to create required Run DataPath directories: {e}") from e
 
             # create new tracking run
-            mlflow_run_id = None
-            trackio_run_id = None
+            metric_run_id = None
             try:
-                # create new tracking run and get the mlflow_run_id
-                mlflow_run_id = self.metric_logger.create_run(str(run_id))
+                # create new tracking run and get the metric_run_id
+                metric_run_id = self.metric_logger.create_run(str(run_id))
 
                 # populate tracking backend with model config info
                 for key, value in flattened_config.items():
-                    self.metric_logger.log_param(mlflow_run_id, key, value)
+                    self.metric_logger.log_param(metric_run_id, key, value)
                 if warm_started_from:
-                    self.metric_logger.log_param(mlflow_run_id, "warm-start", str(warm_started_from))
+                    self.metric_logger.log_param(metric_run_id, "warm-start", str(warm_started_from))
                 if cloned_from:
-                    self.metric_logger.log_param(mlflow_run_id, "parent-run", str(cloned_from))
-                self.logger.debug(f"Populated MLFlow with model config info for run {run_id}.")
-                
-                if self.trackio_logger is not None:
-                    try:
-                        trackio_run_id = self.trackio_logger.create_run(str(run_id))
-                        for key, value in flattened_config.items():
-                            self.trackio_logger.log_param(trackio_run_id, key, value)
-                        if warm_started_from:
-                            self.trackio_logger.log_param(trackio_run_id, "warm-start", str(warm_started_from))
-                        if cloned_from:
-                            self.trackio_logger.log_param(trackio_run_id, "parent-run", str(cloned_from))
-                        self.logger.debug(f"Populated TrackIO with model config info for run {run_id}.")
-                    except Exception as e:
-                        self.logger.warning(f"Error creating TrackIO run for run {run_id}: {e}")
-                
+                    self.metric_logger.log_param(metric_run_id, "parent-run", str(cloned_from))
+                self.logger.debug(f"Populated MetricLogger with model config info for run {run_id}.")           
                 self.db.set_run_details(
                     run_id=run_id,
-                    mlflow_run_id=mlflow_run_id,
-                    trackio_run_id=trackio_run_id,
+                    metric_run_id=metric_run_id,
                     flattened_config=flattened_config,
                 )
             except Exception as e:
                 # Catch any metric logger exceptions (MLflow, TensorBoard, etc.)
                 msg = f"Error creating new tracking run for run {run_id} - {e}."
                 print(msg)
-                if mlflow_run_id:
+                if metric_run_id:
                     try:
-                        self.metric_logger.end_run(mlflow_run_id)
-                    except Exception:
-                        pass
-                if trackio_run_id and self.trackio_logger:
-                    try:
-                        self.trackio_logger.end_run(trackio_run_id)
+                        self.metric_logger.end_run(metric_run_id)
                     except Exception:
                         pass
                 self.logger.error(msg, exc_info=True)
@@ -267,16 +226,9 @@ class Controller:
                 # TODO: commented out to prevent clone of deleted runs issue (see Issue # 22)
                 # self._clear_run_from_shm(run_id)
 
-                # delete run from MLFlow
-                mlflow_run_id = self.db.get_run(run_id)["mlflow_run_id"]
-                self.metric_logger.delete_run(mlflow_run_id)
-                run_details = self.db.get_run(run_id)
-                trackio_run_id = run_details.get("trackio_run_id")
-                if trackio_run_id and self.trackio_logger:
-                    try:
-                        self.trackio_logger.delete_run(trackio_run_id)
-                    except Exception as e:
-                        self.logger.warning(f"Error deleting TrackIO run {trackio_run_id}: {e}")
+                # delete run from MetricLogger
+                metric_run_id = self.db.get_run(run_id)["metric_run_id"]
+                self.metric_logger.delete_run(metric_run_id)
                 # mark run as deleted
                 self.db.set_run_details(
                     run_id=run_id,
