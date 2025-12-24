@@ -121,7 +121,7 @@ class Dispatcher:
                     {
                         "run_id": run_id,
                         "status": result["status"].value,
-                        "mlflow_run_id": result["mlflow_run_id"],
+                        "metric_run_id": result["metric_run_id"],
                         "config": result["config_leaf"],
                         "flattened_config": result["flattened_config"],
                         "completed_steps": result["completed_steps"],
@@ -161,7 +161,7 @@ class Dispatcher:
             safe_result = {
                 "run_id": data["run_id"],
                 "status": result["status"].value,
-                "mlflow_run_id": result["mlflow_run_id"],
+                "metric_run_id": result["metric_run_id"],
                 "config": result["config_leaf"],
                 "flattened_config": result["flattened_config"],
                 "completed_steps": result["completed_steps"],

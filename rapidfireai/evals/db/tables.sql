@@ -9,7 +9,7 @@
 CREATE TABLE IF NOT EXISTS experiments (
     experiment_id INTEGER PRIMARY KEY AUTOINCREMENT,
     experiment_name TEXT NOT NULL,
-    mlflow_experiment_id TEXT,
+    metric_experiment_id TEXT,
     num_shards INTEGER DEFAULT 0,
     num_actors INTEGER NOT NULL,
     num_cpus INTEGER,
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS pipelines (
     current_shard_id INTEGER DEFAULT 0,  -- Next shard to process
     shards_completed INTEGER DEFAULT 0,  -- Number of shards completed
     total_samples_processed INTEGER DEFAULT 0,
-    mlflow_run_id TEXT,  -- MLflow run ID for this pipeline
+    metric_run_id TEXT,  -- MetricLogger run ID for this pipeline
     error TEXT DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
