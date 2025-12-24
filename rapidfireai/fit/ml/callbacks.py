@@ -159,7 +159,7 @@ class GenerationMetricsCallback(TrainerCallback):
         with torch.no_grad():
             for i in tqdm(range(0, len(indices), self.batch_size), desc="Generating for metrics"):
                 input_ids_batch = input_ids[i : i + self.batch_size]
-                with torch.inference_mode(), torch.cuda.amp.autocast():
+                with torch.inference_mode(), torch.amp.autocast("cuda"):
                     outputs_batch = model.generate(input_ids_batch, **self.generation_config)
                 generated_texts = self.tokenizer.batch_decode(
                     outputs_batch[:, input_ids_batch.shape[1] :],

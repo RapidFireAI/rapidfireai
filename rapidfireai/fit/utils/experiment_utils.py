@@ -46,6 +46,7 @@ class ExperimentUtils:
 
         # Suppress the FutureWarning
         warnings.filterwarnings("ignore", message=".*torch.cuda.amp.autocast.*")
+        warnings.filterwarnings("ignore", message=".*torch.amp.autocast.*")
         warnings.filterwarnings("ignore", message=".*generation flags are not valid.*")
         warnings.filterwarnings("ignore", message=".*decoder-only architecture.*")
         warnings.filterwarnings("ignore", message=".*attention mask is not set.*")
