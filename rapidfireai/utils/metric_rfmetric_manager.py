@@ -99,11 +99,6 @@ class RFMetricLogger(MetricLogger):
         """Create run in MetricLogger."""
         mlflow_run = None
         this_run = None
-       # Debug: print keys and types without repr'ing the objects
-        self.logger.error(f"David: run_name={run_name}")
-        self.logger.error(f"David: metric_loggers keys={list(self.metric_loggers.keys())}")
-        for k, v in self.metric_loggers.items():
-            self.logger.error(f"David: key={k}, type={type(v).__name__}")
         for metric_logger in self.metric_loggers.values():
             this_run = metric_logger.create_run(run_name)
             if metric_logger.type == MetricLoggerType.MLFLOW:
