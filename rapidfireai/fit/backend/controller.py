@@ -143,17 +143,20 @@ class Controller:
             # create new tracking run
             metric_run_id = None
             try:
+                self.logger.error(f"{self.metric_logger=}", exc_info=True)
                 # create new tracking run and get the metric_run_id
                 metric_run_id = self.metric_logger.create_run(str(run_id))
+                self.logger.error(f"{metric_run_id=}", exc_info=True)
 
                 # populate tracking backend with model config info
                 for key, value in flattened_config.items():
                     self.metric_logger.log_param(metric_run_id, key, value)
+                self.logger.error(f"{run_id=}", exc_info=True)
                 if warm_started_from:
                     self.metric_logger.log_param(metric_run_id, "warm-start", str(warm_started_from))
                 if cloned_from:
                     self.metric_logger.log_param(metric_run_id, "parent-run", str(cloned_from))
-                self.logger.debug(f"Populated MetricLogger with model config info for run {run_id}.")           
+                self.logger.debug(f"Populated MetricLogger with model config info for run {run_id}.")       
                 self.db.set_run_details(
                     run_id=run_id,
                     metric_run_id=metric_run_id,
