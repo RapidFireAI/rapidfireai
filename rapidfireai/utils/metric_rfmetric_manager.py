@@ -93,7 +93,7 @@ class RFMetricLogger(MetricLogger):
         mlflow_run = None
         this_run = None
         self.logger.error(f"David: {run_name=}", exc_info=True)
-        self.logger.error(f"David: {self.metric_loggers=}", exc_info=True)
+        self.logger.error(f"David: {str(self.metric_loggers)=}", exc_info=True)
         for metric_logger in self.metric_loggers.values():
             this_run = metric_logger.create_run(run_name)
             if metric_logger.type == MetricLoggerType.MLFLOW:
