@@ -19,7 +19,10 @@ class BaseRFLogger(ABC):
     def __init__(self, level: str = "DEBUG"):
         try:
             db = RfDb()
-            experiment_name = db.get_running_experiment()["experiment_name"]
+            try:
+                experiment_name = db.get_running_experiment()["experiment_name"]
+            except Exception:
+                experiment_name = "no_active_experiment"
             log_file_path = self.get_log_file_path(experiment_name)
         except Exception as e:
             raise Exception("Error getting experiment name and log file path from database") from e
