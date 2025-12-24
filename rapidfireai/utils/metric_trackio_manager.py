@@ -80,6 +80,7 @@ class TrackIOMetricLogger(MetricLogger):
         # TrackIO logs params via the log() method
         # Try to log immediately, or store for later if run not active
         try:
+            self._ensure_initialized()
             trackio.log({key: value})
         except Exception:
             # Run not active, store for later when run is created
@@ -93,6 +94,7 @@ class TrackIOMetricLogger(MetricLogger):
         log_dict = {key: value}
         if step is not None:
             log_dict["step"] = step
+        self._ensure_initialized()
         trackio.log(log_dict)
 
     def get_run_metrics(self, run_id: str) -> dict[str, list[tuple[int, float]]]:
