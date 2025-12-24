@@ -79,6 +79,8 @@ class Controller:
         self.metric_logger = RFMetricLogger(
             default_metric_loggers,
         )
+        if self.metric_logger is None:
+            raise ControllerException("MetricLogger is not initialized. Please check the metric logger configuration.")
         self.metric_logger.get_experiment(self.experiment_name)
         self.logger.debug("Controller initialized")
 
