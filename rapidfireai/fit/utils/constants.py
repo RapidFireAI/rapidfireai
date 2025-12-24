@@ -1,6 +1,6 @@
 import os
 from enum import Enum
-from rapidfireai.utils.constants import RF_TENSORBOARD_LOG_DIR, RF_TRAINING_LOG_FILENAME, RF_DB_PATH
+from rapidfireai.utils.constants import RF_TRAINING_LOG_FILENAME, RF_DB_PATH
 
 # Backwards compatibility: Keep constant but it will be stale if env var changes after import
 

@@ -225,7 +225,7 @@ class ExperimentUtils:
                 # Also clear context through RFMetricLogger if available
                 try:
                     metric_logger_config = RFMetricLogger.get_default_metric_loggers()
-                    metric_logger = RFMetricLogger(metric_logger_config)
+                    metric_logger = RFMetricLogger(metric_logger_config, logger=logger)
                     metric_logger.clear_context()
                 except Exception as e2:
                     print(f"Error clearing Metric context through RFMetricLogger: {e2}")

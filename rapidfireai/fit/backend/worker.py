@@ -31,7 +31,6 @@ from rapidfireai.fit.utils.constants import (
     TaskStatus,
     WorkerTask,
 )
-from rapidfireai.utils.constants import RF_TENSORBOARD_LOG_DIR
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.exceptions import WorkerException
 from rapidfireai.fit.utils.logging import RFLogger, TrainingLogger
@@ -83,7 +82,7 @@ class Worker:
 
         # create metric logger
         default_metric_loggers = RFMetricLogger.get_default_metric_loggers()
-        self.metric_logger = RFMetricLogger(default_metric_loggers)   
+        self.metric_logger = RFMetricLogger(default_metric_loggers, logger=self.logger)
         if self.metric_logger is None:
             raise WorkerException("MetricLogger is not initialized. Please check the metric logger configuration.")
         self.metric_logger.get_experiment(self.experiment_name)

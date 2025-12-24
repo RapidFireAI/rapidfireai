@@ -8,6 +8,7 @@ from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerConfig, Me
 from rapidfireai.utils.metric_mlflow_manager import MLflowMetricLogger
 from rapidfireai.utils.metric_tensorboard_manager import TensorBoardMetricLogger
 from rapidfireai.utils.metric_trackio_manager import TrackIOMetricLogger
+from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.utils.constants import (
     MLFlowConfig,
     RF_MLFLOW_ENABLED,
@@ -27,7 +28,7 @@ class RFMetricLogger(MetricLogger):
          - TrackIO for local-first experiment tracking
     """
 
-    def __init__(self, metric_loggers: dict[str, MetricLoggerConfig]):
+    def __init__(self, metric_loggers: dict[str, MetricLoggerConfig], logger: RFLogger = None):
         """
         Initialize RFMetricLogger.
 
@@ -38,6 +39,7 @@ class RFMetricLogger(MetricLogger):
             - "name": {"type": MetricLoggerType.TRACKIO, "config": {"tracking_uri": None}}
         """
         self.type = MetricLoggerType.MULTIPLE
+        self.logger = logger if logger is not None else RFLogger() 
         if not isinstance(metric_loggers, dict):
             raise ValueError("metric_loggers must be a dictionary")
         if len(metric_loggers) == 0:
@@ -48,10 +50,13 @@ class RFMetricLogger(MetricLogger):
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
             if metric_logger_config.get("type") == MetricLoggerType.MLFLOW:
                 self.metric_loggers[metric_logger_name] = MLflowMetricLogger(metric_logger_config["config"]["tracking_uri"])
+                self.logger.info(f"Initialized MLflowMetricLogger: {metric_logger_name}")
             elif metric_logger_config.get("type") == MetricLoggerType.TENSORBOARD:
                 self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"])
+                self.logger.info(f"Initialized TensorBoardMetricLogger: {metric_logger_name}")
             elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
                 self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(metric_logger_config["config"])
+                self.logger.info(f"Initialized TrackIOMetricLogger: {metric_logger_name}")
             else:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
     
@@ -72,6 +77,7 @@ class RFMetricLogger(MetricLogger):
         """Create experiment in MetricLogger."""
         for metric_logger in self.metric_loggers.values():
             if metric_logger.type == MetricLoggerType.MLFLOW:
+                self.logger.info(f"Creating MLflow experiment: {experiment_name}")
                 return metric_logger.create_experiment(experiment_name)
         return experiment_name
     
@@ -91,6 +97,7 @@ class RFMetricLogger(MetricLogger):
             if metric_logger.type == MetricLoggerType.MLFLOW:
                 mlflow_run = this_run
         if mlflow_run is not None:
+            self.logger.info(f"Created MLflow run: {mlflow_run}")
             return mlflow_run
         return run_name
     
@@ -120,6 +127,7 @@ class RFMetricLogger(MetricLogger):
     def end_run(self, run_id: str) -> None:
         """End run in MetricLogger."""
         for metric_logger_name, metric_logger in self.metric_loggers.items():
+            self.logger.info(f"Ending run: {run_id} in {metric_logger_name}")
             if hasattr(metric_logger, "end_run"):
                 metric_logger.end_run(run_id)
             else:

@@ -199,7 +199,7 @@ class Experiment:
 
         try:
             metric_loggers = RFMetricLogger.get_default_metric_loggers()
-            self.metric_loggers = RFMetricLogger(metric_loggers)
+            self.metric_loggers = RFMetricLogger(metric_loggers, logger=self.logger)
             metric_experiment_id = self.metric_loggers.create_experiment(self.experiment_name)
             self.db.db.execute(
                 "UPDATE experiments SET metric_experiment_id = ? WHERE experiment_id = ?",
@@ -452,7 +452,7 @@ class Experiment:
             from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
             try:
                 metric_loggers = RFMetricLogger.get_default_metric_loggers()
-                self.metric_loggers = RFMetricLogger(metric_loggers)
+                self.metric_loggers = RFMetricLogger(metric_loggers, logger=self.logger)
 
             except Exception as e:
                 self.logger.warning(f"Failed to initialize MetricLogger: {e}.")
