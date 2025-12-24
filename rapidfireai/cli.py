@@ -434,6 +434,9 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     # Set environment variables from CLI args
 
     if args.tracking_backends:
+        os.environ["RF_MLFLOW_ENABLED"] = "false"
+        os.environ["RF_TENSORBOARD_ENABLED"] = "false"
+        os.environ["RF_TRACKIO_ENABLED"] = "false"
         if "mlflow" in args.tracking_backends:
             os.environ["RF_MLFLOW_ENABLED"] = "true"
         if "tensorboard" in args.tracking_backends:
