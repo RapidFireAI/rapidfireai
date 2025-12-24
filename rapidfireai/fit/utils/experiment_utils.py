@@ -216,7 +216,7 @@ class ExperimentUtils:
         if RF_MLFLOW_ENABLED=="true":
             import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
 
-            from rapidfireai.utils.mlflow_manager import MLflowManager
+            from rapidfireai.utils.metric_mlflow_manager import MLflowManager
 
             try:
                 if mlflow.active_run():
