@@ -7,10 +7,11 @@ from typing import Any
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.utils.ping import ping_server
 from rapidfireai.utils.constants import MLFlowConfig
+from rapidfireai.evals.utils.logger import RFLogger
 
 
 class MLflowMetricLogger(MetricLogger):
-    def __init__(self, tracking_uri: str, init_kwargs: dict[str, Any] = None):
+    def __init__(self, tracking_uri: str, logger: RFLogger = None, init_kwargs: dict[str, Any] = None):
         """
         Initialize MLflow Manager with tracking URI.
 
@@ -20,6 +21,7 @@ class MLflowMetricLogger(MetricLogger):
         """
         self.type = MetricLoggerType.MLFLOW
         self.client = None
+        self.logger = logger if logger is not None else RFLogger()
         self.init_kwargs = init_kwargs # Not currently used
         if not ping_server(MLFlowConfig.HOST, MLFlowConfig.PORT, 2):
             raise ConnectionRefusedError(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled.")

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, Any
 import os
 from rapidfireai.utils.os_utils import mkdir_p
+from rapidfireai.evals.utils.logger import RFLogger
 
 class TensorBoardMetricLogger(MetricLogger):
     """
@@ -17,7 +18,7 @@ class TensorBoardMetricLogger(MetricLogger):
     Uses torch.utils.tensorboard.SummaryWriter to log metrics to TensorBoard.
     """
 
-    def __init__(self, log_dir: str, init_kwargs: dict[str, Any] = None):
+    def __init__(self, log_dir: str, logger: RFLogger = None, init_kwargs: dict[str, Any] = None):
         """
         Initialize TensorBoard metric logger.
 
@@ -29,6 +30,7 @@ class TensorBoardMetricLogger(MetricLogger):
 
         self.type = MetricLoggerType.TENSORBOARD
         self.log_dir = Path(log_dir)
+        self.logger = logger if logger is not None else RFLogger()
         self.init_kwargs = init_kwargs # Not currently used
         try:
             mkdir_p(self.log_dir, notify=False)
