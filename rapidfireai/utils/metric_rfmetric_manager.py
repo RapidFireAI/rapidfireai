@@ -41,30 +41,26 @@ class RFMetricLogger(MetricLogger):
             raise ValueError("metric_loggers must contain at least one metric logger")
         self.metric_loggers = {}
         for metric_logger_name, metric_logger_config in metric_loggers.items():
-            if not isinstance(metric_logger_config, MetricLoggerConfig):
-                raise ValueError(f"metric_logger_config for {metric_logger_name} must be a MetricLoggerConfig")
-            if metric_logger_config["type"] not in MetricLoggerType:
+            if metric_logger_config.get("type") not in MetricLoggerType:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
-            if metric_logger_config["type"] == MetricLoggerType.MLFLOW:
+            if metric_logger_config.get("type") == MetricLoggerType.MLFLOW:
                 self.metric_loggers[metric_logger_name] = MLflowMetricLogger(metric_logger_config["config"]["tracking_uri"])
-            elif metric_logger_config["type"] == MetricLoggerType.TENSORBOARD:
+            elif metric_logger_config.get("type") == MetricLoggerType.TENSORBOARD:
                 self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"])
-            elif metric_logger_config["type"] == MetricLoggerType.TRACKIO:
+            elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
                 self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(metric_logger_config["config"])
             else:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
     
     def add_logger(self, metric_logger_name: str, metric_logger_config: MetricLoggerConfig) -> None:
         """Add a metric logger to the dictionary."""
-        if not isinstance(metric_logger_config, MetricLoggerConfig):
-            raise ValueError(f"metric_logger_config for {metric_logger_name} must be a MetricLoggerConfig")
-        if metric_logger_config["type"] not in MetricLoggerType:
+        if metric_logger_config.get("type") not in MetricLoggerType:
             raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
-        if metric_logger_config["type"] == MetricLoggerType.MLFLOW:
+        if metric_logger_config.get("type") == MetricLoggerType.MLFLOW:
             self.metric_loggers[metric_logger_name] = MLflowMetricLogger(metric_logger_config["config"]["tracking_uri"])
-        elif metric_logger_config["type"] == MetricLoggerType.TENSORBOARD:
+        elif metric_logger_config.get("type") == MetricLoggerType.TENSORBOARD:
             self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"])
-        elif metric_logger_config["type"] == MetricLoggerType.TRACKIO:
+        elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
             self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(metric_logger_config["config"])
         else:
             raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")

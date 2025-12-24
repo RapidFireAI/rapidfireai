@@ -401,7 +401,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         choices=["mlflow", "tensorboard", "trackio"],
         default=["mlflow"] if not ColabConfig.ON_COLAB else ["tensorboard"],
         help="Tracking backend to use for metrics (default: mlflow on Non-Google Colab and tensorboard on Google Colab)",
-        nargs="+",
+        nargs="*",
         action="extend"
     )
 
