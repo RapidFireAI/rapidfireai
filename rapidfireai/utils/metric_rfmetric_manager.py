@@ -55,7 +55,10 @@ class RFMetricLogger(MetricLogger):
                 self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"])
                 self.logger.info(f"Initialized TensorBoardMetricLogger: {metric_logger_name}")
             elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
-                self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(metric_logger_config["config"])
+                self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(
+                    experiment_name=metric_logger_config["config"]["experiment_name"],
+                    init_kwargs=metric_logger_config["config"].get("init_kwargs")
+                )
                 self.logger.info(f"Initialized TrackIOMetricLogger: {metric_logger_name}")
             else:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
@@ -69,7 +72,10 @@ class RFMetricLogger(MetricLogger):
         elif metric_logger_config.get("type") == MetricLoggerType.TENSORBOARD:
             self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"])
         elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
-            self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(metric_logger_config["config"])
+            self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(
+                experiment_name=metric_logger_config["config"]["experiment_name"],
+                init_kwargs=metric_logger_config["config"].get("init_kwargs")
+            )
         else:
             raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
 
