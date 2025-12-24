@@ -17,7 +17,7 @@ from rapidfireai.utils.constants import (
     RayConfig, 
     RF_EXPERIMENT_PATH, 
     RF_LOG_FILENAME, 
-    F_TRAINING_LOG_FILENAME, 
+    RF_TRAINING_LOG_FILENAME, 
     RF_LOG_PATH,
     RF_MLFLOW_ENABLED
 )
