@@ -59,7 +59,7 @@ class TrackIOMetricLogger(MetricLogger):
             trackio.init(project=self.experiment_name, name=run_name, **self.init_kwargs)
         except Exception:
             # If init doesn't accept name, try without it
-            trackio.init(project=self.experiment_name, **self.init_kwargs))
+            trackio.init(project=self.experiment_name, **self.init_kwargs)
         
         self.active_runs[run_name] = run_name
         # Log any pending params for this run
