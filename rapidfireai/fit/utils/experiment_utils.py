@@ -359,8 +359,10 @@ class ExperimentUtils:
                 import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
 
                 try:
+                    # create logger
+                    logger = RFLogger().create_logger(experiment_name)
                     metric_logger_config = RFMetricLogger.get_default_metric_loggers()
-                    metric_logger = RFMetricLogger(metric_logger_config)
+                    metric_logger = RFMetricLogger(metric_logger_config, logger=logger)
                     metric_experiment_id = metric_logger.create_experiment(experiment_name)
                     mlflow.tracing.disable_notebook_display()
                 except Exception as e:
