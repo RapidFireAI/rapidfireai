@@ -125,6 +125,7 @@ cleanup() {
         echo
     else
         REPLY=y
+    fi
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         print_warning "Shutting down services..."
     else
