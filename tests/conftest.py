@@ -31,9 +31,9 @@ def mock_mlflow_manager():
     Returns:
         Mock: Mocked MLflowManager with all required methods
     """
-    from rapidfireai.utils.metric_mlflow_manager import MLflowManager
+    from rapidfireai.utils.metric_mlflow_manager import MLflowMetricLogger
 
-    mock = Mock(spec=MLflowManager)
+    mock = Mock(spec=MLflowMetricLogger)
     mock.create_run.return_value = "test_run_id"
     mock.log_param.return_value = None
     mock.log_metric.return_value = None
