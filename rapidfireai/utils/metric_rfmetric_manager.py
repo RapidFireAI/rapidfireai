@@ -2,14 +2,17 @@
 This module contains the RFMetricLogger class which is responsible for managing the metric loggers.
 """
 
+from typing import Optional
+
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerConfig, MetricLoggerType
 from rapidfireai.utils.metric_mlflow_manager import MLflowMetricLogger
 from rapidfireai.utils.metric_tensorboard_manager import TensorBoardMetricLogger
 from rapidfireai.utils.metric_trackio_manager import TrackIOMetricLogger
 from rapidfireai.utils.constants import (
-    RF_MLFLOW_ENABLED, 
-    RF_TENSORBOARD_ENABLED, 
-    RF_TRACKIO_ENABLED, 
+    MLFlowConfig,
+    RF_MLFLOW_ENABLED,
+    RF_TENSORBOARD_ENABLED,
+    RF_TRACKIO_ENABLED,
     RF_TENSORBOARD_LOG_DIR
 )
 
