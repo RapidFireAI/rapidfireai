@@ -209,7 +209,7 @@ class Experiment:
             self.logger.info(f"Initialized MetricLogger experiment: {metric_experiment_id}")
         except Exception as e:
             self.logger.warning(f"Failed to initialize MetricLogger: {e}. MetricLogger logging will be disabled.")
-            self.metric_loggers = {}
+            self.metric_loggers = None
 
 
         
