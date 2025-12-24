@@ -441,7 +441,7 @@ class RfDb:
                     "completed_steps": run[5],
                     "total_steps": run[6],
                     "num_chunks_visited_curr_epoch": run[7],
-                    "num_epochs_completed": run[],
+                    "num_epochs_completed": run[8],
                     "chunk_offset": run[9],
                     "error": run[10],
                     "source": RunSource(run[11]) if run[11] else None,
