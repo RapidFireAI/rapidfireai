@@ -118,7 +118,6 @@ setup_python_env() {
 
 # Function to cleanup processes on exit
 cleanup() {
-    set +x
     if [ "$RF_FORCE" != "true" ]; then
         # Confirm cleanup
         read -p "Do you want to shutdown services and delete the PID file? (y/n) " -n 1 -r REPLY
