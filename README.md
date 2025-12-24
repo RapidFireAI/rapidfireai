@@ -161,17 +161,10 @@ Built-in procedures for searching over configuration knob combinations, includin
 
 ```text
 rapidfireai/
-├── fit
-    ├── automl/          # Search and AutoML algorithms for knob tuning
-    ├── backend/         # Core backend components (controller, scheduler, worker)
-    ├── db/              # Database interface and SQLite operations
-    ├── dispatcher/      # Flask-based web API for UI communication
-    ├── frontend/        # Frontend components (dashboard, IC Ops implementation)
-    ├── ml/              # ML training utilities and trainer classes
-    └── utils/           # Utility functions and helper modules
+├── automl/              # Search and AutoML algorithms for knob tuning
+├── cli.py               # CLI script
 ├── evals
     ├── actors/          # Ray-based workers for doc and query processing  
-    ├── automl/          # Search and AutoML algorithms for knob tuning
     ├── data/            # Data sharding and handling
     ├── db/              # Database interface and SQLite operations
     ├── dispatcher/      # Flask-based web API for UI communication
@@ -179,7 +172,15 @@ rapidfireai/
     ├── rag/             # Stages of RAG pipeline
     ├── scheduling/      # Fair scheduler for multi-config resource sharing
     └── utils/           # Utility functions and helper modules
-└── experiment.py        # Main experiment lifecycle management
+├── experiment.py        # Main experiment lifecycle management
+├── fit
+    ├── backend/         # Core backend components (controller, scheduler, worker)
+    ├── db/              # Database interface and SQLite operations
+    ├── dispatcher/      # Flask-based web API for UI communication
+    ├── frontend/        # Frontend components (dashboard, IC Ops implementation)
+    ├── ml/              # ML training utilities and trainer classes
+    └── utils/           # Utility functions and helper modules
+└── utils.py             # Utility functions and helper modules
 ```
 
 ## Architecture
