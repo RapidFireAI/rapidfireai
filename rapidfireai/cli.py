@@ -423,6 +423,8 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         help="Copy test notebooks to the tutorial_notebooks directory",
     )
 
+    parser.add_argument("--force", "-f", action="store_true", help="Force action without confirmation")
+
     parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
 
     parser.add_argument("--log-lines", type=int, default=10, help="Number of lines to log to the console")
@@ -444,6 +446,10 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         os.environ["RF_COLAB_MODE"] = "true"
     elif ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
         os.environ["RF_COLAB_MODE"] = "true"
+    
+    # Handle force command separately
+    if args.force:
+        os.environ["RF_FORCE"] = "true"
 
     # Handle doctor command separately
     if args.command == "doctor":
