@@ -198,7 +198,7 @@ class Experiment:
         self.db = RFDatabase()
 
         try:
-            metric_loggers = RFMetricLogger.get_default_metric_loggers()
+            metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
             self.metric_loggers = RFMetricLogger(metric_loggers, logger=self.logger)
             metric_experiment_id = self.metric_loggers.create_experiment(self.experiment_name)
             self.db.db.execute(
@@ -451,7 +451,7 @@ class Experiment:
             # Lazy import - only import when we actually have metric runs to fetch
             from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
             try:
-                metric_loggers = RFMetricLogger.get_default_metric_loggers()
+                metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
                 self.metric_loggers = RFMetricLogger(metric_loggers, logger=self.logger)
 
             except Exception as e:

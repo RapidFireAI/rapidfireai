@@ -81,7 +81,7 @@ class Worker:
         DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_name))
 
         # create metric logger
-        default_metric_loggers = RFMetricLogger.get_default_metric_loggers()
+        default_metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
         self.metric_logger = RFMetricLogger(default_metric_loggers, logger=self.logger)
         if self.metric_logger is None:
             raise WorkerException("MetricLogger is not initialized. Please check the metric logger configuration.")

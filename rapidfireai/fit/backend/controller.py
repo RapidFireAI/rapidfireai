@@ -75,7 +75,7 @@ class Controller:
         # create worker manager
         self.worker_manager: WorkerManager = WorkerManager(self.num_workers, registry, process_lock)
 
-        default_metric_loggers = RFMetricLogger.get_default_metric_loggers()
+        default_metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
         self.metric_logger = RFMetricLogger(
             default_metric_loggers,
             logger=self.logger,
@@ -143,11 +143,11 @@ class Controller:
             # create new tracking run
             metric_run_id = None
             try:
-                self.logger.error(f"{self.metric_logger=}", exc_info=True)
-                self.logger.error(f"{run_id=}", exc_info=True)
+                self.logger.error(f"David: {self.metric_logger=}", exc_info=True)
+                self.logger.error(f"David: {run_id=}", exc_info=True)
                 # create new tracking run and get the metric_run_id
                 metric_run_id = self.metric_logger.create_run(str(run_id))
-                self.logger.error(f"{metric_run_id=}", exc_info=True)
+                self.logger.error(f"David: {metric_run_id=}", exc_info=True)
 
                 # populate tracking backend with model config info
                 for key, value in flattened_config.items():

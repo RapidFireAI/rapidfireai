@@ -225,7 +225,7 @@ class ExperimentUtils:
 
                 # Also clear context through RFMetricLogger if available
                 try:
-                    metric_logger_config = RFMetricLogger.get_default_metric_loggers()
+                    metric_logger_config = RFMetricLogger.get_default_metric_loggers(experiment_name=experiment_name)
                     metric_logger = RFMetricLogger(metric_logger_config, logger=logger)
                     metric_logger.clear_context()
                 except Exception as e2:
@@ -362,7 +362,7 @@ class ExperimentUtils:
                 try:
                     # create logger
                     logger = RFLogger().create_logger(experiment_name)
-                    metric_logger_config = RFMetricLogger.get_default_metric_loggers()
+                    metric_logger_config = RFMetricLogger.get_default_metric_loggers(experiment_name=experiment_name)
                     metric_logger = RFMetricLogger(metric_logger_config, logger=logger)
                     metric_experiment_id = metric_logger.create_experiment(experiment_name)
                     mlflow.tracing.disable_notebook_display()

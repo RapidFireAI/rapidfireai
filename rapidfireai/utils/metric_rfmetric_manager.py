@@ -154,7 +154,7 @@ class RFMetricLogger(MetricLogger):
         return None
     
     @classmethod
-    def get_default_metric_loggers(cls) -> dict[str, MetricLoggerConfig]:
+    def get_default_metric_loggers(cls, experiment_name: str) -> dict[str, MetricLoggerConfig]:
         """Get default metric loggers."""
         metric_loggers = {}
         if RF_MLFLOW_ENABLED == "true":
@@ -174,6 +174,8 @@ class RFMetricLogger(MetricLogger):
         if RF_TRACKIO_ENABLED == "true":
             metric_loggers["rf_trackio"] = {
                 "type": MetricLoggerType.TRACKIO,
-                "config": {},
+                "config": {
+                    "experiment_name": experiment_name,
+                },
             }
         return metric_loggers

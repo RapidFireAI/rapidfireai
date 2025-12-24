@@ -6,7 +6,7 @@ from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 
 
 class TrackIOMetricLogger(MetricLogger):
-    def __init__(self, init_kwargs: dict[str, Any] = None):
+    def __init__(self, experiment_name: str, init_kwargs: dict[str, Any] = None):
         """
         Initialize TrackIO Manager.
 
@@ -19,7 +19,7 @@ class TrackIOMetricLogger(MetricLogger):
             self.init_kwargs = {"embed": False}
         if not isinstance(self.init_kwargs, dict):
             raise ValueError("init_kwargs must be a dictionary")
-        self.experiment_name = None
+        self.experiment_name = experiment_name
         self.active_runs = {}  # Map run_id -> run_name
         self.run_params = {}  # Map run_id -> dict of params to log on init
         
