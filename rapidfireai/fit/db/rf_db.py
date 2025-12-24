@@ -53,6 +53,9 @@ class RfDb:
                     if "metric_run_id" not in columns:
                         self.db.conn.execute("ALTER TABLE runs ADD COLUMN metric_run_id TEXT")
                         self.db.conn.commit()
+                    if "metric_experiment_id" not in columns:
+                        self.db.conn.execute("ALTER TABLE experiments ADD COLUMN metric_experiment_id TEXT")
+                        self.db.conn.commit()
                 except sqlite3.Error:
                     pass
         except FileNotFoundError as e:
