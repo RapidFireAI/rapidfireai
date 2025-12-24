@@ -25,21 +25,37 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
+# dependencies = [
+#     # REST API (Dispatcher)
+#     "flask>=3.1.1",
+#     "flask-cors>=6.0.1",
+#     "waitress>=3.0.2",
+
+#     # JSON Query Tool
+#     "jq>=1.10.0",
+#     # "protobuf==5.29.5",
+
+#     # Other
+#     "dill>=0.3.0,<0.3.9",
+#     "jedi>=0.16",
+#     # "pytest>=8.4.2",
+#     "uv>=0.8.14",
+# ]
 dependencies = [
     # REST API (Dispatcher)
-    "flask>=3.1.1",
-    "flask-cors>=6.0.1",
-    "waitress>=3.0.2",
+    "flask",
+    "flask-cors",
+    "waitress",
 
     # JSON Query Tool
-    "jq>=1.10.0",
+    "jq",
     # "protobuf==5.29.5",
 
     # Other
-    "dill>=0.3.0,<0.3.9",
-    "jedi>=0.16",
+    "dill",
+    "jedi",
     # "pytest>=8.4.2",
-    "uv>=0.8.14",
+    "uv",
 ]
 
 [project.optional-dependencies]
