@@ -190,7 +190,9 @@ class Worker:
 
         # update completed steps
         new_completed_steps = completed_steps + trainer_instance.state.global_step
+        self.logger.error(f"David: new_completed_steps={new_completed_steps}")
         self.db.set_completed_steps(run_id, new_completed_steps)
+        self.logger.error(f"David: completed_steps={completed_steps}")
 
         save_strategy = config_leaf.get("training_args", {}).get("save_strategy", "epoch")
         # Save checkpoints to shared memory
