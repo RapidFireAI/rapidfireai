@@ -13,7 +13,7 @@ click<8.3.0
 ray<=2.49.0
 
 # LLM Inference
-transformers==4.56.1
+transformers>=4.56.1
 
 # OpenAI API
 openai==1.106.1

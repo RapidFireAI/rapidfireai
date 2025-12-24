@@ -123,7 +123,7 @@ local_evals = [
     "ray==2.44.1",
 
     # LLM Inference
-    "transformers==4.56.1",
+    "transformers>=4.56.1",
     "vllm==0.7.2",
 
     # OpenAI API
