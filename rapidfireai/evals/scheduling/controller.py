@@ -1,11 +1,11 @@
 import hashlib
 import json
 import time
-from collections.abc import Callable
 from typing import Any
+
 import ray
 
-from rapidfireai.utils.constants import ColabConfig, RF_EXPERIMENT_PATH
+from rapidfireai.automl import RFGridSearch, RFRandomSearch, get_runs
 from rapidfireai.evals.actors.doc_actor import DocProcessingActor
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.actors.query_actor import QueryProcessingActor
@@ -15,13 +15,11 @@ from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.interactive_control import InteractiveControlHandler
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.evals.scheduling.scheduler import Scheduler
-from rapidfireai.automl import ModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import (
     NUM_CPUS_PER_DOC_ACTOR,
     NUM_QUERY_PROCESSING_ACTORS,
     SEARCH_TYPE_KEYS,
     ContextStatus,
-    ExperimentStatus,
     PipelineStatus,
     TaskStatus,
 )
@@ -501,13 +499,13 @@ class Controller:
                 # HALT: Context creation is critical - stop the entire experiment
                 context_display.stop()
                 error_message = (
-                    f"\n{'='*80}\n"
+                    f"\n{'=' * 80}\n"
                     f"❌ CRITICAL ERROR: RAG Source Preprocessing Failed\n"
-                    f"{'='*80}\n"
+                    f"{'=' * 80}\n"
                     f"RAG Source ID: {context_id}\n"
                     f"Context Hash: {context_hash[:16]}...\n"
                     f"Error: {str(e)}\n"
-                    f"{'='*80}\n"
+                    f"{'=' * 80}\n"
                     f"\nThe experiment has been halted. Please fix the error and try again.\n"
                 )
                 print(error_message)
@@ -641,7 +639,9 @@ class Controller:
 
                         if hasattr(pipeline, "rag") and pipeline.rag:
                             if hasattr(pipeline.rag, "search_type"):
-                                self.metric_manager.log_param(metric_run_id, "rag_search_type", str(pipeline.rag.search_type))
+                                self.metric_manager.log_param(
+                                    metric_run_id, "rag_search_type", str(pipeline.rag.search_type)
+                                )
                             if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs:
                                 k = pipeline.rag.search_kwargs.get("k")
                                 if k is not None:
@@ -650,7 +650,12 @@ class Controller:
                         # Extract sampling params
                         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:
                             import json
-                            sampling_str = json.dumps(pipeline.sampling_params) if isinstance(pipeline.sampling_params, dict) else str(pipeline.sampling_params)
+
+                            sampling_str = (
+                                json.dumps(pipeline.sampling_params)
+                                if isinstance(pipeline.sampling_params, dict)
+                                else str(pipeline.sampling_params)
+                            )
                             self.metric_manager.log_param(metric_run_id, "sampling_params", sampling_str)
 
                     self.logger.debug(f"Created Metrics run {metric_run_id} for pipeline {pipeline_id}")
@@ -733,8 +738,7 @@ class Controller:
 
             # Add confidence intervals to final metrics before storing
             samples_processed = sum(
-                m.get("value", 0)
-                for m in pipeline_results[pipeline_id]["metrics"].get("Samples Processed", [{}])
+                m.get("value", 0) for m in pipeline_results[pipeline_id]["metrics"].get("Samples Processed", [{}])
             )
             if aggregator.online_strategy and samples_processed > 0:
                 cumulative_metrics = aggregator.online_strategy.add_confidence_interval_info(
@@ -799,11 +803,7 @@ class Controller:
                     else:
                         display_metrics[metric_name] = {"value": metric_data}
 
-                progress_display.update_pipeline(
-                    pipeline_id,
-                    status="COMPLETED",
-                    metrics=display_metrics
-                )
+                progress_display.update_pipeline(pipeline_id, status="COMPLETED", metrics=display_metrics)
 
             # Log final metrics to MetricLogger
             if self.metric_manager:
@@ -813,13 +813,19 @@ class Controller:
                     if metric_run_id:
                         total_samples = pipeline.get("total_samples_processed", 0)
                         if total_dataset_size and total_dataset_size > 0:
-                            percentage_processed = (total_samples / total_dataset_size * 100)
+                            percentage_processed = total_samples / total_dataset_size * 100
                         else:
                             percentage_processed = 100  # Assume complete if dataset size unknown
                         step = int(percentage_processed)
 
                         for metric_name, metric_data in ordered_metrics.items():
-                            if metric_name in ["run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second"]:
+                            if metric_name in [
+                                "run_id",
+                                "model_name",
+                                "Samples Processed",
+                                "Processing Time",
+                                "Samples Per Second",
+                            ]:
                                 continue
 
                             if isinstance(metric_data, dict):
@@ -832,7 +838,9 @@ class Controller:
                             # Log main metric value
                             if isinstance(metric_value, (int, float)):
                                 try:
-                                    self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
+                                    self.metric_manager.log_metric(
+                                        metric_run_id, metric_name, float(metric_value), step=step
+                                    )
                                 except Exception as e:
                                     self.logger.debug(f"Failed to log final metric {metric_name} to MetricLogger: {e}")
 
@@ -1055,6 +1063,7 @@ class Controller:
 
         for pipeline_id, pipeline_config in pipeline_id_to_config.items():
             from rapidfireai.automl import RFOpenAIAPIModelConfig
+
             pipeline = pipeline_config["pipeline"]
             if hasattr(pipeline, "model_config") and isinstance(pipeline, RFOpenAIAPIModelConfig):
                 has_openai_pipeline = True
@@ -1073,16 +1082,17 @@ class Controller:
                         "tpm": pipeline.tpm_limit,
                     }
                     max_completion_tokens_by_model[model_name] = model_config.get("max_completion_tokens", 150)
-                elif (model_rate_limits[model_name]["rpm"] != pipeline.rpm_limit or
-                      model_rate_limits[model_name]["tpm"] != pipeline.tpm_limit):
+                elif (
+                    model_rate_limits[model_name]["rpm"] != pipeline.rpm_limit
+                    or model_rate_limits[model_name]["tpm"] != pipeline.tpm_limit
+                ):
                     self.logger.warning(
                         f"Model {model_name} has inconsistent rate limits across pipelines. "
                         f"Using first encountered values: {model_rate_limits[model_name]}"
                     )
 
                 pipeline_to_max_completion_tokens[pipeline_id] = model_config.get(
-                    "max_completion_tokens",
-                    max_completion_tokens_by_model.get(model_name, 150)
+                    "max_completion_tokens", max_completion_tokens_by_model.get(model_name, 150)
                 )
                 pipeline_to_rate_limiter[pipeline_id] = None
 
@@ -1107,14 +1117,12 @@ class Controller:
                     pipeline = pipeline_config["pipeline"]
                     model_name = pipeline.model_config.get("model", "gpt-3.5-turbo")
                     pipeline_to_max_completion_tokens[pipeline_id] = max_completion_tokens_by_model.get(
-                        model_name,
-                        pipeline.model_config.get("max_completion_tokens", 150)
+                        model_name, pipeline.model_config.get("max_completion_tokens", 150)
                     )
 
-            limits_summary = ", ".join([
-                f"{model}: {limits['rpm']} RPM, {limits['tpm']} TPM"
-                for model, limits in model_rate_limits.items()
-            ])
+            limits_summary = ", ".join(
+                [f"{model}: {limits['rpm']} RPM, {limits['tpm']} TPM" for model, limits in model_rate_limits.items()]
+            )
             self.logger.info(
                 f"Created experiment-wide rate limiter actor for {len(pipeline_to_rate_limiter)} OpenAI pipeline(s) "
                 f"with per-model limits ({limits_summary})"
@@ -1189,9 +1197,7 @@ class Controller:
                             # Mark as completed (metrics will be finalized in Phase 8)
                             db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
                             progress_display.update_pipeline(pipeline_id, status="COMPLETED")
-                            self.logger.info(
-                                f"Pipeline {pipeline_id} completed all {num_shards} shards"
-                            )
+                            self.logger.info(f"Pipeline {pipeline_id} completed all {num_shards} shards")
 
                         # Compute current metrics with confidence intervals
                         confidence_value = None
@@ -1247,12 +1253,24 @@ class Controller:
 
                                 if self.metric_manager and metric_run_id:
                                     try:
-                                        actual_samples_processed = pipeline.get("total_samples_processed", samples_processed)
-                                        percentage_processed = (actual_samples_processed / total_dataset_size * 100) if total_dataset_size > 0 else 0
+                                        actual_samples_processed = pipeline.get(
+                                            "total_samples_processed", samples_processed
+                                        )
+                                        percentage_processed = (
+                                            (actual_samples_processed / total_dataset_size * 100)
+                                            if total_dataset_size > 0
+                                            else 0
+                                        )
                                         step = int(percentage_processed)
 
                                         for metric_name, metric_data in metrics_with_ci.items():
-                                            if metric_name in ["run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second"]:
+                                            if metric_name in [
+                                                "run_id",
+                                                "model_name",
+                                                "Samples Processed",
+                                                "Processing Time",
+                                                "Samples Per Second",
+                                            ]:
                                                 continue
 
                                             if isinstance(metric_data, dict):
@@ -1265,9 +1283,13 @@ class Controller:
                                             # Log main metric value
                                             if isinstance(metric_value, (int, float)):
                                                 try:
-                                                    self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
+                                                    self.metric_manager.log_metric(
+                                                        metric_run_id, metric_name, float(metric_value), step=step
+                                                    )
                                                 except Exception as e:
-                                                    self.logger.debug(f"Failed to log metric {metric_name} to MetricLogger: {e}")
+                                                    self.logger.debug(
+                                                        f"Failed to log metric {metric_name} to MetricLogger: {e}"
+                                                    )
 
                                             # Log confidence_interval if available
                                             if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
@@ -1280,7 +1302,12 @@ class Controller:
                                             throughput_value = display_metrics["Throughput"]["value"]
                                             if isinstance(throughput_value, (int, float)):
                                                 try:
-                                                    self.metric_manager.log_metric(metric_run_id, "Throughput", float(throughput_value), step=step)
+                                                    self.metric_manager.log_metric(
+                                                        metric_run_id,
+                                                        "Throughput",
+                                                        float(throughput_value),
+                                                        step=step,
+                                                    )
                                                 except Exception as e:
                                                     self.logger.debug(f"Failed to log Throughput to MetricLogger: {e}")
                                     except Exception as e:
@@ -1317,14 +1344,18 @@ class Controller:
 
                         # Display error in notebook (but don't halt the experiment)
                         pipeline_config = pipeline_id_to_config.get(pipeline_id)
-                        pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}") if pipeline_config else f"Pipeline {pipeline_id}"
+                        pipeline_name = (
+                            pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
+                            if pipeline_config
+                            else f"Pipeline {pipeline_id}"
+                        )
                         error_display = (
-                            f"\n{'='*80}\n"
+                            f"\n{'=' * 80}\n"
                             f"⚠️  Run {pipeline_id} ({pipeline_name}) FAILED\n"
-                            f"{'='*80}\n"
+                            f"{'=' * 80}\n"
                             f"Shard: {shard_id + 1}/{num_shards}\n"
                             f"Error: {error_msg}\n"
-                            f"{'='*80}\n"
+                            f"{'=' * 80}\n"
                             f"This run has been marked as FAILED. The experiment will continue with other runs.\n"
                         )
                         print(error_display)
@@ -1415,7 +1446,7 @@ class Controller:
                 db.set_pipeline_status(pipeline_id, PipelineStatus.ONGOING)
 
             # Get shard data and split into batches
-            batch_size = pipeline_config["batch_size"]#TODO: set default batch size
+            batch_size = pipeline_config["batch_size"]  # TODO: set default batch size
             shard_data = shards[shard_id]
             batches = self.dataloader.get_batches(shard_data, batch_size)
 
@@ -1587,7 +1618,6 @@ class Controller:
             pipeline_id_to_info,
             total_dataset_size=total_dataset_size,
         )
-
 
         # Cleanup actors
         for actor in query_actors:

@@ -1,7 +1,8 @@
 import os
 from enum import Enum
+
 from rapidfireai.utils.colab import get_colab_auth_token
-from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_DB_PATH, ExperimentStatus
+from rapidfireai.utils.constants import ColabConfig, DispatcherConfig, ExperimentStatus, RF_DB_PATH
 
 # ---------------------------------------------------------------------------
 # Reranker class registry
@@ -52,6 +53,7 @@ MAX_RATE_LIMIT_RETRIES = 5
 # Base wait time for exponential backoff (seconds)
 RATE_LIMIT_BACKOFF_BASE = 2
 
+
 def get_dispatcher_url() -> str:
     """
     Auto-detect dispatcher URL based on environment.
@@ -75,7 +77,6 @@ def get_dispatcher_url() -> str:
     else:
         # Running in Jupyter, local Python, or other environment
         return DispatcherConfig.URL
-
 
 
 def get_dispatcher_headers() -> dict[str, str]:
@@ -152,9 +153,7 @@ class DBConfig:
 
     # Use user's home directory for database path
 
-    DB_PATH: str = os.path.join(
-        RF_DB_PATH, "rapidfire_evals.db"
-    )
+    DB_PATH: str = os.path.join(RF_DB_PATH, "rapidfire_evals.db")
 
     # Connection settings
     CONNECTION_TIMEOUT: float = 30.0
