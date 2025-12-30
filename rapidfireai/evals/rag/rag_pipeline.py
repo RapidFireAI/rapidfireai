@@ -3,33 +3,36 @@ RAG (Retrieval-Augmented Generation) Specification using LangChain components.
 
 """
 
+import builtins
 import copy
 from collections.abc import Callable
 from typing import Any, Optional
 import hashlib
 import json
+from collections.abc import Callable
+from typing import Any
 
 import faiss
-from langchain_community.document_loaders.base import BaseLoader
-from langchain_core.documents import Document
+from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain_community.docstore.in_memory import InMemoryDocstore
+from langchain_community.document_loaders.base import BaseLoader
 from langchain_community.vectorstores import FAISS
+from langchain_core.documents import BaseDocumentCompressor, Document
 from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStore
 from langchain_text_splitters import TextSplitter
-from langchain_core.documents import BaseDocumentCompressor
-from langchain_community.cross_encoders import HuggingFaceCrossEncoder
-from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+
 
 def _default_document_template(doc: Document) -> str:
     """
     Default document formatting template.
-    
+
     Args:
         doc: A langchain Document to format.
-        
+
     Returns:
         Formatted string with metadata and content.
     """
@@ -77,7 +80,7 @@ class LangChainRagSpec:
         search_cfg: Optional[dict[str, Any]] | None = None,
         reranker_cfg: Optional[dict[str, Any]] | None = None,
         enable_gpu_search: bool = False,
-        document_template: Optional[Callable[[Document], str]] | None = None,
+        document_template: Callable[[Document], str] | None | None = None,
     ) -> None:
         """
         Initialize the RAG specification with LangChain components.
@@ -163,10 +166,10 @@ class LangChainRagSpec:
     def default_template(doc: Document) -> str:
         """
         Default document formatting template.
-        
+
         Args:
             doc: A langchain Document to format.
-            
+
         Returns:
             Formatted string with metadata and content.
         """
@@ -176,7 +179,7 @@ class LangChainRagSpec:
     def document_template(self) -> Callable[[Document], str]:
         """
         Get the document template function.
-        
+
         Returns:
             The document template callable.
         """
@@ -209,13 +212,10 @@ class LangChainRagSpec:
             if self.reranker_cls is CrossEncoderReranker:
                 hf_model_name = self.reranker_kwargs.pop("model_name", "cross-encoder/ms-marco-MiniLM-L6-v2")
                 hf_model_kwargs = self.reranker_kwargs.pop("model_kwargs", {})
-                
+
                 self.reranker = self.reranker_cls(
-                    model=HuggingFaceCrossEncoder(
-                        model_name=hf_model_name,
-                        model_kwargs=hf_model_kwargs
-                    ),
-                    **self.reranker_kwargs
+                    model=HuggingFaceCrossEncoder(model_name=hf_model_name, model_kwargs=hf_model_kwargs),
+                    **self.reranker_kwargs,
                 )
             else:
                 self.reranker = self.reranker_cls(**self.reranker_kwargs)
@@ -296,7 +296,7 @@ class LangChainRagSpec:
 
         return new_rag
 
-    def _load_documents(self) -> list[Document]:
+    def _load_documents(self) -> builtins.list[Document]:
         """
         Load documents using the configured document loader.
 
@@ -305,7 +305,7 @@ class LangChainRagSpec:
         """
         return self.document_loader.load()
 
-    def _split_documents(self, documents: list[Document]) -> list[Document]:
+    def _split_documents(self, documents: builtins.list[Document]) -> builtins.list[Document]:
         """
         Split documents into smaller chunks using the configured text splitter.
 
@@ -331,42 +331,44 @@ class LangChainRagSpec:
             documents = self._split_documents(documents)
         self.vector_store.add_documents(documents=documents)
 
-    def serialize_documents(self, batch_docs: list[list[Document]]) -> list[str]:
+    def serialize_documents(self, batch_docs: builtins.list[builtins.list[Document]]) -> builtins.list[str]:
         """
         Serialize batch documents into formatted strings for context injection.
         """
         separator = "\n\n"
         return [separator.join([self.template(d) for d in docs]) for docs in batch_docs]
 
-    def get_context(self, batch_queries: list[str], use_reranker: bool = True, serialize: bool = True) -> list[str]:
+    def get_context(
+        self, batch_queries: builtins.list[str], use_reranker: bool = True, serialize: bool = True
+    ) -> builtins.list[str]:
         """
         Retrieve and serialize relevant context documents for batch queries.
-        
+
         This is a convenience method that retrieves context documents. By default,
         it uses reranking if a reranker is configured. Set use_reranker=False to
         skip reranking and just retrieve and serialize documents.
-        
+
         Args:
             batch_queries: List of query strings to retrieve context for.
             use_reranker: Whether to apply reranking if a reranker is configured.
                          Default: True. Set to False to skip reranking.
-        
+
         Returns:
             List of formatted context strings, one per query.
-            
+
         Raises:
             ValueError: If retriever is not configured (build_index() not called).
         """
         if not self.retriever:
             raise ValueError("retriever not configured. Call build_index() first.")
-        
+
         # Batch retrieval
         batch_docs = self.retriever.batch(batch_queries)
-        
+
         # Optionally rerank
         if use_reranker:
             batch_docs = self._rerank_docs(batch_queries=batch_queries, batch_docs=batch_docs)
-        
+
         # Serialize documents
         if serialize:
             return self.serialize_documents(batch_docs=batch_docs)
@@ -410,26 +412,27 @@ class LangChainRagSpec:
         rag_json = json.dumps(rag_dict, sort_keys=True)
         return hashlib.sha256(rag_json.encode()).hexdigest()
 
-    def _rerank_docs(self, batch_queries: list[str], batch_docs: list[list[Document]]) -> list[list[Document]]:
+    def _rerank_docs(
+        self, batch_queries: builtins.list[str], batch_docs: builtins.list[builtins.list[Document]]
+    ) -> builtins.list[builtins.list[Document]]:
         """
         Optionally rerank batch documents using the configured BaseDocumentCompressor.
-        
-        The reranker (BaseDocumentCompressor) is applied to each query's document list 
-        individually using the compress_documents() method, which requires both the 
+
+        The reranker (BaseDocumentCompressor) is applied to each query's document list
+        individually using the compress_documents() method, which requires both the
         query and documents as input.
-        
+
         Args:
             batch_queries: A list of query strings corresponding to each document list.
             batch_docs: A batch of document lists where each inner list contains
                        documents for a single query.
-            
+
         Returns:
             List[List[Document]]: The batch of documents, reranked if a reranker
-                                 (BaseDocumentCompressor) is configured, otherwise 
+                                 (BaseDocumentCompressor) is configured, otherwise
                                  returned as-is. Maintains the same structure as input.
         """
         if self.reranker:
             # Apply reranker to each query's documents individually
-            return [self.reranker.compress_documents(docs, query) 
-                    for query, docs in zip(batch_queries, batch_docs)]
+            return [self.reranker.compress_documents(docs, query) for query, docs in zip(batch_queries, batch_docs)]
         return batch_docs

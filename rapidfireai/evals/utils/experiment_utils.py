@@ -1,14 +1,13 @@
 """This module contains utility functions for the evals experiment."""
 
-import os
 import re
 import warnings
 from pathlib import Path
 
-from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.db.rf_db import RFDatabase
 from rapidfireai.evals.utils.constants import ExperimentStatus
 from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 
 
 class ExperimentUtils:

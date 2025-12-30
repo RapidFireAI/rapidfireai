@@ -1,8 +1,8 @@
 """Random search implementation for AutoML hyperparameter optimization."""
 
+import hashlib
 import json
 import random
-import hashlib
 from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
@@ -72,16 +72,12 @@ class RFRandomSearch(AutoMLAlgorithm):
                 selected_peft_config = config.peft_config
 
             peft_params = (
-                {}
-                if selected_peft_config is None
-                else recursive_expand_randomsearch(selected_peft_config._user_params)
+                {} if selected_peft_config is None else recursive_expand_randomsearch(selected_peft_config._user_params)
             )
 
             # Sample other parameters
             training_params = (
-                {}
-                if config.training_args is None
-                else recursive_expand_randomsearch(config.training_args._user_params)
+                {} if config.training_args is None else recursive_expand_randomsearch(config.training_args._user_params)
             )
 
             model_kwargs = (
@@ -201,11 +197,7 @@ class RFRandomSearch(AutoMLAlgorithm):
 
             for pipeline in pipelines:
                 # Sample model config parameters
-                pipeline_instances = (
-                    [{}]
-                    if pipeline is None
-                    else [recursive_expand_randomsearch(pipeline)]
-                )
+                pipeline_instances = [{}] if pipeline is None else [recursive_expand_randomsearch(pipeline)]
 
                 additional_kwargs = {
                     k: v
@@ -216,9 +208,7 @@ class RFRandomSearch(AutoMLAlgorithm):
                     and v is not None
                 }
                 additional_kwargs_instances = (
-                    [{}]
-                    if not additional_kwargs
-                    else [recursive_expand_randomsearch(additional_kwargs)]
+                    [{}] if not additional_kwargs else [recursive_expand_randomsearch(additional_kwargs)]
                 )
 
                 # Generate random search combinations

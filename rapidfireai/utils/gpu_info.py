@@ -1,9 +1,10 @@
 """Utility functions for GPU information."""
 
+import os
+import re
 import shutil
 import subprocess
-import re
-import os
+
 
 def get_compute_capability():
     """Get compute capability from nvidia-smi"""
@@ -21,6 +22,7 @@ def get_compute_capability():
             return major + minor / 10.0  # Return as float (e.g., 7.5, 8.0, 8.6)
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
+
 
 def get_gpu_info():
     """Get comprehensive GPU and CUDA information."""
@@ -137,10 +139,13 @@ def get_gpu_info():
 
     return info
 
+
 def get_torch_version():
     """Get torch major, minor, patch version, along with cuda version if installed"""
     try:
-        result = subprocess.run(["python", "-c", "import torch; print(torch.__version__)"], capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ["python", "-c", "import torch; print(torch.__version__)"], capture_output=True, text=True, check=True
+        )
         version = result.stdout.strip()
         # version maybe like 2.8.0+cu128 or 2.8.0
         cuda_major = "0"
@@ -152,4 +157,4 @@ def get_torch_version():
         major, minor, patch = version.split("+")[0].split(".")
         return major, minor, patch, cuda_major, cuda_minor
     except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
-        return "0","0","0","0","0"
+        return "0", "0", "0", "0", "0"

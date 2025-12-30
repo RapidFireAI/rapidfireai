@@ -15,12 +15,13 @@ from flask_cors import CORS
 from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
-from rapidfireai.evals.utils.logger import RFLogger, SafeLoggerAdapter
-from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_LOG_PATH, RF_LOG_FILENAME
-from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.evals.utils.constants import ICOperation
+from rapidfireai.evals.utils.logger import RFLogger, SafeLoggerAdapter
+from rapidfireai.utils.constants import ColabConfig, DispatcherConfig, RF_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.utils.dispatcher_utils import check_experiment_running
 
-CORS_ALLOWED_ORIGINS = "*" # Allow all origins
+CORS_ALLOWED_ORIGINS = "*"  # Allow all origins
+
 
 class Dispatcher:
     """
