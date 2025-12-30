@@ -366,7 +366,7 @@ class InteractiveControlHandler:
                     rag.reranker_kwargs = {}
                 rag.reranker_kwargs.update({k: v for k, v in reranker_cfg.items() if k != "class"})
 
-            self.logger.info(f"RAG config updated successfully")
+            self.logger.info("RAG config updated successfully")
 
         # Extract pipeline type from edited JSON (or inherit from parent)
         pipeline_type = edited_json.get("pipeline_type")
@@ -453,7 +453,7 @@ class InteractiveControlHandler:
             # Merge parent online_strategy_kwargs with user edits
             pipeline_config_dict["online_strategy_kwargs"] = {
                 **parent_online_strategy,
-                **edited_json.get("online_strategy_kwargs", {})
+                **edited_json.get("online_strategy_kwargs", {}),
             }
         elif "online_strategy_kwargs" in edited_json:
             # No parent strategy, use user's strategy as-is

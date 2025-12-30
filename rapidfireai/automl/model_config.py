@@ -6,7 +6,7 @@ import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Type, get_type_hints
+from typing import Any, get_type_hints
 
 from rapidfireai.automl.datatypes import List, Range
 
@@ -207,7 +207,7 @@ else:
             pass
 
 
-def _create_rf_class_evals(base_class: Type, class_name: str):
+def _create_rf_class_evals(base_class: type, class_name: str):
     """Creating a RF class for evals that dynamically inherits all constructor parameters and supports singleton, list, and Range values."""
     if not inspect.isclass(base_class):
         raise ValueError(f"base_class must be a class, got {type(base_class)}")
