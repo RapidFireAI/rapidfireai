@@ -2,7 +2,7 @@ import logging
 import os
 from pathlib import Path
 
-from rapidfireai.utils.constants import RF_LOG_FILENAME, RF_LOG_PATH, RF_EXPERIMENT_PATH
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_LOG_PATH
 from rapidfireai.utils.os_utils import mkdir_p
 
 
@@ -67,6 +67,7 @@ class RFLogger:
             # Add filter to suppress harmless asyncio cleanup errors
             class AsyncioCleanupFilter(logging.Filter):
                 """Filter out harmless asyncio cleanup errors during shutdown."""
+
                 def filter(self, record):
                     # Suppress TCPTransport cleanup errors
                     if "TCPTransport" in str(record.getMessage()) and "closed=True" in str(record.getMessage()):
@@ -116,4 +117,3 @@ class RFLogger:
                 "logger_name": logger_name,
             },
         )
-

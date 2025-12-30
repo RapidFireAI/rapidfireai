@@ -1,10 +1,11 @@
 """Utility functions for Python information."""
 
 import os
-import sys
 import platform
 import site
 import subprocess
+import sys
+
 
 def get_python_info():
     """Get comprehensive Python information."""
@@ -25,6 +26,7 @@ def get_python_info():
     info["site_packages"] = ", ".join(site.getsitepackages())
 
     return info
+
 
 def get_pip_packages():
     """Get list of installed pip packages."""

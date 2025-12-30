@@ -9,11 +9,11 @@ from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.utils.constants import DispatcherConfig, FrontendConfig, MLFlowConfig, RF_LOG_FILENAME, RF_LOG_PATH
-from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.fit.utils.constants import ControllerTask
 from rapidfireai.fit.utils.exceptions import DispatcherException
 from rapidfireai.fit.utils.logging import RFLogger
+from rapidfireai.utils.constants import DispatcherConfig, FrontendConfig, MLFlowConfig, RF_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.utils.dispatcher_utils import check_experiment_running
 
 CORS_ALLOWED_ORIGINS = ["http://localhost", DispatcherConfig.URL, MLFlowConfig.URL, FrontendConfig.URL]
 
@@ -379,7 +379,7 @@ class Dispatcher:
 
             # Read and filter logs for interactive-control entries
             interactive_control_logs = []
-            with open(log_file_path,encoding="utf-8") as f:
+            with open(log_file_path, encoding="utf-8") as f:
                 for line in f:
                     if f"| {experiment_name} | interactive-control |" in line:
                         interactive_control_logs.append(line.strip())
@@ -404,7 +404,7 @@ class Dispatcher:
             log_file_path = os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
 
             experiment_logs = []
-            with open(log_file_path,encoding="utf-8") as f:
+            with open(log_file_path, encoding="utf-8") as f:
                 for line in f:
                     if f"| {experiment_name} |" in line:
                         experiment_logs.append(line.strip())

@@ -5,20 +5,18 @@ Command-line interface for RapidFire AI
 
 import argparse
 import os
-import platform
 import re
 import shutil
 import site
 import subprocess
 import sys
 from pathlib import Path
-from importlib.resources import files
-from rapidfireai.utils.get_ip_address import get_ip_address
-from rapidfireai.utils.python_info import get_python_info
-from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabConfig
+
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME, ColabConfig, DispatcherConfig, JupyterConfig
 from rapidfireai.utils.doctor import get_doctor_info
-from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME
+from rapidfireai.utils.get_ip_address import get_ip_address
 from rapidfireai.utils.gpu_info import get_compute_capability
+from rapidfireai.utils.python_info import get_python_info
 
 from .version import __version__
 
@@ -146,8 +144,8 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     torchaudio_version = "2.5.1"
     torch_cuda = "cu121"
     flash_cuda = "cu121"
-    if cuda_major==12:
-        if cuda_minor>=9:
+    if cuda_major == 12:
+        if cuda_minor >= 9:
             # Supports Torch 2.8.0
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
@@ -156,7 +154,7 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             flash_cuda = "cu129"
             vllm_cuda = "cu129"
             vllm_version = "0.11.0"
-        elif cuda_minor>=8:
+        elif cuda_minor >= 8:
             # Supports Torch 2.9.0/1
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
@@ -165,7 +163,7 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             flash_cuda = "cu128"
             vllm_cuda = "cu128"
             vllm_version = "0.11.0"
-        elif cuda_minor>=6:
+        elif cuda_minor >= 6:
             # Supports Torch 2.9.0/1
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
@@ -173,7 +171,7 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             torch_cuda = "cu126"
             flash_cuda = "cu126"
             vllm_cuda = "cu126"
-        elif cuda_minor>=4:
+        elif cuda_minor >= 4:
             # Supports Torch 2.6.0
             torch_version = "2.6.0"
             torchvision_version = "0.21.0"
@@ -191,7 +189,7 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             flash_cuda = "cu121"
             vllm_cuda = "cu121"
 
-    elif cuda_major==13:
+    elif cuda_major == 13:
         # Supports Torch 2.9.0/1
         torch_version = "2.8.0"
         torchvision_version = "0.23.0"
@@ -212,29 +210,63 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     if evals and ColabConfig.ON_COLAB:
         pass
 
-    
     ## TODO: re-enable for fit once trl has fix
     if not ColabConfig.ON_COLAB and cuda_major >= 12:
         print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
-        
-        packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+
+        packages.append(
+            {
+                "package": f"torch=={torch_version}",
+                "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+            }
+        )
+        packages.append(
+            {
+                "package": f"torchvision=={torchvision_version}",
+                "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+            }
+        )
+        packages.append(
+            {
+                "package": f"torchaudio=={torchaudio_version}",
+                "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+            }
+        )
         if evals:
             packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
             packages.append({"package": "flashinfer-python", "extra_args": []})
             packages.append({"package": "flashinfer-cubin", "extra_args": []})
             if cuda_major + (cuda_minor / 10.0) >= 12.8:
-                packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
+                packages.append(
+                    {
+                        "package": "flashinfer-jit-cache",
+                        "extra_args": ["--upgrade", "--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"],
+                    }
+                )
             if get_compute_capability() >= 8.0:
                 packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
             # else:
             #     packages.append({"package": "flash-attn-triton", "extra_args": ["--upgrade"]})
             # packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
             # Re-install torch, torchvision, and torchaudio to ensure compatibility
-            packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-            packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-            packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+            packages.append(
+                {
+                    "package": f"torch=={torch_version}",
+                    "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+                }
+            )
+            packages.append(
+                {
+                    "package": f"torchvision=={torchvision_version}",
+                    "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+                }
+            )
+            packages.append(
+                {
+                    "package": f"torchaudio=={torchaudio_version}",
+                    "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+                }
+            )
         packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
 
     for package_info in packages:
@@ -284,6 +316,7 @@ def run_init(evals: bool = False):
 
     return 0
 
+
 def copy_test_notebooks():
     """Copy the test notebooks to the project."""
     print("Getting test notebooks...")
@@ -302,12 +335,14 @@ def copy_test_notebooks():
         return 1
     return 0
 
+
 def run_jupyter():
-    """ Run the Jupyter notebook server. """
-    from jupyter_server.serverapp import ServerApp
-    import logging
+    """Run the Jupyter notebook server."""
     import io
-    from contextlib import redirect_stdout, redirect_stderr
+    import logging
+    from contextlib import redirect_stderr, redirect_stdout
+
+    from jupyter_server.serverapp import ServerApp
 
     # Suppress all logging
     logging.getLogger().setLevel(logging.CRITICAL)
@@ -317,9 +352,9 @@ def run_jupyter():
     app = ServerApp()
     app.open_browser = False
     app.port = JupyterConfig.PORT
-    app.allow_origin = '*'
+    app.allow_origin = "*"
     app.websocket_ping_interval = 90000
-    app.log_level = 'CRITICAL'
+    app.log_level = "CRITICAL"
     app.token = ""
     app.password = ""
     app.default_url = "/tree"
@@ -329,8 +364,8 @@ def run_jupyter():
 
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            app.initialize(argv=['--ServerApp.custom_display_url='])
-        
+            app.initialize(argv=["--ServerApp.custom_display_url="])
+
         dispatcher_port = DispatcherConfig.PORT
 
         if os.getenv("TERM_PROGRAM") == "vscode":
@@ -340,56 +375,65 @@ def run_jupyter():
             os_username = os.getenv("USER", os.getenv("LOGNAME", "username"))
             print(f"Manually forward port {app.port} to localhost")
             print(f"Manually forward port {dispatcher_port} to localhost")
-            print(f"For example using ssh:")
-            print(f"    ssh -L {app.port}:localhost:{app.port} -L {dispatcher_port}:localhost:{dispatcher_port} {os_username}@{get_ip_address()}")
+            print("For example using ssh:")
+            print(
+                f"    ssh -L {app.port}:localhost:{app.port} -L {dispatcher_port}:localhost:{dispatcher_port} {os_username}@{get_ip_address()}"
+            )
         print("If there is a problem, try running jupyter manually with:")
-        print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''")
+        print(
+            f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''"
+        )
         print("\n\nAfter forwarding the ports above, access the Jupyter notebook at:")
         print(f"http://localhost:{app.port}/tree?token={app.token}")
-        
+
         # Don't redirect anything during start - let prompts through
         app.start()
-        
+
     except Exception as e:
         print("ERROR occurred during Jupyter server startup:", file=sys.stderr)
         print("=" * 60, file=sys.stderr)
-        
+
         stdout_output = stdout_capture.getvalue()
         stderr_output = stderr_capture.getvalue()
-        
+
         if stdout_output:
             print("   Standard output:", file=sys.stderr)
             print(stdout_output, file=sys.stderr)
-        
+
         if stderr_output:
             print("   Standard error:", file=sys.stderr)
             print(stderr_output, file=sys.stderr)
-        
+
         print("=" * 60, file=sys.stderr)
         print(f"Exception: {e}", file=sys.stderr)
         print("Try running jupyter manually with:")
-        print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''")
+        print(
+            f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''"
+        )
         raise
+
 
 def main():
     """Main entry point for the rapidfireai command."""
-    parser = argparse.ArgumentParser(description="RapidFire AI - Start/stop/manage services", prog="rapidfireai",
-    epilog="""
+    parser = argparse.ArgumentParser(
+        description="RapidFire AI - Start/stop/manage services",
+        prog="rapidfireai",
+        epilog="""
 Examples:
   # Basic initialization for training
   rapidfireai init
   #or
   # Basic Initialize with evaluation dependencies
   rapidfireai init --evals
-  
+
   # Start services
   rapidfireai start
-  
+
   # Stop services
   rapidfireai stop
 
 For more information, visit: https://github.com/RapidFireAI/rapidfireai
-        """
+        """,
     )
 
     parser.add_argument(
@@ -451,9 +495,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
             os.environ["RF_TRACKIO_ENABLED"] = "true"
     if args.tensorboard_log_dir:
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
-    if args.colab:
-        os.environ["RF_COLAB_MODE"] = "true"
-    elif ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
+    if args.colab or ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
         os.environ["RF_COLAB_MODE"] = "true"
     
     # Handle force command separately
@@ -467,7 +509,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     # Handle init command separately
     if args.command == "init":
         return run_init(args.evals)
-    
+
     if args.command == "jupyter":
         return run_jupyter()
 
