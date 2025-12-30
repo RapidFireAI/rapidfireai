@@ -62,21 +62,15 @@ class OpenAIRateLimiter:
         self.model_names = list(model_rate_limits.keys())
 
         # Actual API limits per model (as specified by the API provider)
-        self.actual_rpm_limits: dict[str, int] = {
-            model: limits["rpm"] for model, limits in model_rate_limits.items()
-        }
-        self.actual_tpm_limits: dict[str, int] = {
-            model: limits["tpm"] for model, limits in model_rate_limits.items()
-        }
+        self.actual_rpm_limits: dict[str, int] = {model: limits["rpm"] for model, limits in model_rate_limits.items()}
+        self.actual_tpm_limits: dict[str, int] = {model: limits["tpm"] for model, limits in model_rate_limits.items()}
 
         # Enforced limits per model (with safety margin applied)
         self.enforced_rpm_limits: dict[str, int] = {
-            model: int(limit_safety_ratio * limits["rpm"])
-            for model, limits in model_rate_limits.items()
+            model: int(limit_safety_ratio * limits["rpm"]) for model, limits in model_rate_limits.items()
         }
         self.enforced_tpm_limits: dict[str, int] = {
-            model: int(limit_safety_ratio * limits["tpm"])
-            for model, limits in model_rate_limits.items()
+            model: int(limit_safety_ratio * limits["tpm"]) for model, limits in model_rate_limits.items()
         }
 
         # Request tracking
@@ -337,8 +331,7 @@ class OpenAIRateLimiter:
 
                 # Calculate total historical tokens for this model
                 total_tokens = sum(
-                    r.actual_tokens if r.actual_tokens is not None else r.projected_tokens
-                    for r in model_all
+                    r.actual_tokens if r.actual_tokens is not None else r.projected_tokens for r in model_all
                 )
 
                 per_model_stats[model_name] = {
@@ -395,9 +388,7 @@ class OpenAIRateLimiter:
                 "average_requests_per_minute": (total_all_requests / session_duration * 60)
                 if session_duration > 0
                 else 0,
-                "average_tokens_per_minute": (total_all_tokens / session_duration * 60)
-                if session_duration > 0
-                else 0,
+                "average_tokens_per_minute": (total_all_tokens / session_duration * 60) if session_duration > 0 else 0,
                 # Configuration
                 "limit_safety_ratio": self.limit_safety_ratio,
                 "minimum_wait_time": self.minimum_wait_time,

@@ -48,6 +48,7 @@ from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 from rapidfireai.fit.utils.serialize import decode_db_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
+from rapidfireai.utils.constants import MLFlowConfig
 
 
 def _scan_and_release_leaked_cuda_tensors(skip_quantized: bool = False):
