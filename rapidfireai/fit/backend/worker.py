@@ -16,7 +16,6 @@ from typing import Any
 
 import torch
 
-from rapidfireai.utils.constants import MLFlowConfig
 from rapidfireai.fit.backend.chunks import DatasetChunks
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.ml.checkpoint_utils import (
@@ -41,6 +40,7 @@ from rapidfireai.fit.utils.metric_logger import create_metric_logger
 from rapidfireai.fit.utils.serialize import decode_db_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
+from rapidfireai.utils.constants import MLFlowConfig
 
 
 class Worker:

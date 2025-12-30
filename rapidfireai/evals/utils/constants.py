@@ -1,7 +1,8 @@
 import os
 from enum import Enum
+
 from rapidfireai.utils.colab import get_colab_auth_token
-from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_DB_PATH
+from rapidfireai.utils.constants import RF_DB_PATH, ColabConfig, DispatcherConfig
 
 # Actor Constants
 NUM_QUERY_PROCESSING_ACTORS = 4
@@ -12,6 +13,7 @@ NUM_CPUS_PER_DOC_ACTOR = 2 if os.cpu_count() > 2 else 1
 MAX_RATE_LIMIT_RETRIES = 5
 # Base wait time for exponential backoff (seconds)
 RATE_LIMIT_BACKOFF_BASE = 2
+
 
 def get_dispatcher_url() -> str:
     """
@@ -36,7 +38,6 @@ def get_dispatcher_url() -> str:
     else:
         # Running in Jupyter, local Python, or other environment
         return DispatcherConfig.URL
-
 
 
 def get_dispatcher_headers() -> dict[str, str]:
@@ -121,9 +122,7 @@ class DBConfig:
 
     # Use user's home directory for database path
 
-    DB_PATH: str = os.path.join(
-        RF_DB_PATH, "rapidfire_evals.db"
-    )
+    DB_PATH: str = os.path.join(RF_DB_PATH, "rapidfire_evals.db")
 
     # Connection settings
     CONNECTION_TIMEOUT: float = 30.0

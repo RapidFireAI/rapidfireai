@@ -4,11 +4,12 @@ Ray Actor for centralized OpenAI API rate limiting.
 Provides a single point of coordination for rate limiting across all
 distributed query processing actors.
 """
+
 import ray
 
-from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
-from rapidfireai.evals.utils.ratelimiter import OpenAIRateLimiter, RequestStatus
 from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.evals.utils.ratelimiter import OpenAIRateLimiter, RequestStatus
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 
 
 @ray.remote
@@ -102,4 +103,3 @@ class RateLimiterActor:
 
 # Export for use in other modules
 __all__ = ["RateLimiterActor"]
-

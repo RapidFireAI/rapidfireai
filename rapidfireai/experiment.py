@@ -8,11 +8,19 @@ import os
 import time
 import traceback
 from collections.abc import Callable
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
-from rapidfireai.utils.constants import ColabConfig, RayConfig, RF_EXPERIMENT_PATH, RF_LOG_FILENAME, RF_TRAINING_LOG_FILENAME, RF_LOG_PATH
+
+from rapidfireai.utils.constants import (
+    RF_EXPERIMENT_PATH,
+    RF_LOG_FILENAME,
+    RF_LOG_PATH,
+    RF_TRAINING_LOG_FILENAME,
+    ColabConfig,
+    RayConfig,
+)
 from rapidfireai.utils.ping import ping_server
 
 
@@ -117,13 +125,13 @@ class Experiment:
         from rapidfireai.evals.db import RFDatabase
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.utils.colab import get_colab_auth_token
-        from rapidfireai.utils.constants import DispatcherConfig, MLFlowConfig
         from rapidfireai.evals.utils.constants import get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
         from rapidfireai.evals.utils.mlflow_manager import MLflowManager
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
+        from rapidfireai.utils.colab import get_colab_auth_token
+        from rapidfireai.utils.constants import DispatcherConfig, MLFlowConfig
 
         # Store ray reference for later use
         self._ray = ray
@@ -213,7 +221,9 @@ class Experiment:
         )
 
         # Start dispatcher in background thread for interactive control
-        self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
+        self.dispatcher_thread = start_dispatcher_thread(
+            host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger
+        )
 
         # Initialize notebook UI controller with auth token for Colab
         self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
@@ -353,9 +363,9 @@ class Experiment:
         available_cpus = self._ray.cluster_resources().get("CPU", 0)
 
         if gpus_per_actor is None:
-            gpus_per_actor = available_gpus if available_gpus > 1 else available_gpus/2
+            gpus_per_actor = available_gpus if available_gpus > 1 else available_gpus / 2
         if cpus_per_actor is None:
-            cpus_per_actor = available_cpus if available_cpus > 2 else available_cpus/2
+            cpus_per_actor = available_cpus if available_cpus > 2 else available_cpus / 2
         if num_actors is None:
             # Default to number of GPUs, or 1 if no GPUs available
             num_actors = int(gpus_per_actor) if gpus_per_actor > 0 else 1
@@ -408,8 +418,6 @@ class Experiment:
             self.db.set_experiment_status(self.experiment_id, ExperimentStatus.FAILED)
             self.db.set_experiment_error(self.experiment_id, str(e))
             raise
-
-
 
         return results
 

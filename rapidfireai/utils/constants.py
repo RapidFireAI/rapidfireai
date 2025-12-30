@@ -1,7 +1,9 @@
 """
 Constants for the RapidFire AI package
 """
+
 import os
+
 from rapidfireai.utils.colab import is_running_in_colab
 from rapidfireai.utils.os_utils import mkdir_p
 
@@ -24,6 +26,7 @@ except (PermissionError, OSError) as e:
     print(f"Error creating directory: {e}")
     raise
 
+
 class DispatcherConfig:
     """Class to manage the dispatcher configuration"""
 
@@ -33,6 +36,7 @@ class DispatcherConfig:
 
     def __str__(self):
         return f"DispatcherConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
+
 
 # Frontend Constants
 class FrontendConfig:
@@ -45,6 +49,7 @@ class FrontendConfig:
     def __str__(self):
         return f"FrontendConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
 
+
 # MLFlow Constants
 class MLFlowConfig:
     """Class to manage the MLFlow configuration"""
@@ -55,6 +60,7 @@ class MLFlowConfig:
 
     def __str__(self):
         return f"MLFlowConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
+
 
 # Jupyter Constants
 class JupyterConfig:
@@ -67,6 +73,7 @@ class JupyterConfig:
     def __str__(self):
         return f"JupyterConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
 
+
 # Ray Constants
 class RayConfig:
     """Class to manage the Ray configuration"""
@@ -78,6 +85,7 @@ class RayConfig:
     def __str__(self):
         return f"RayConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
 
+
 # Colab Constants
 class ColabConfig:
     """Class to manage the Colab configuration"""
@@ -87,5 +95,6 @@ class ColabConfig:
 
     def __str__(self):
         return f"ColabConfig(ON_COLAB={self.ON_COLAB}, RF_COLAB_MODE={self.RF_COLAB_MODE})"
+
 
 RF_TRACKING_BACKEND = os.getenv("RF_TRACKING_BACKEND", "mlflow" if not ColabConfig.ON_COLAB else "tensorboard")
