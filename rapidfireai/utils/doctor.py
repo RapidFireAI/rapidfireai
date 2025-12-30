@@ -5,27 +5,29 @@ Utility functions for doctor command.
 import os
 import platform
 from pathlib import Path
-from rapidfireai.utils.python_info import get_python_info, get_pip_packages
-from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
-from rapidfireai.utils.ping import ping_server
+
 from rapidfireai.utils.constants import (
-    JupyterConfig,
-    DispatcherConfig,
-    MLFlowConfig,
-    FrontendConfig,
-    RayConfig,
     ColabConfig,
-    RF_HOME,
-    RF_LOG_PATH,
-    RF_EXPERIMENT_PATH,
+    DispatcherConfig,
+    FrontendConfig,
+    JupyterConfig,
+    MLFlowConfig,
+    RayConfig,
     RF_DB_PATH,
-    RF_TENSORBOARD_LOG_DIR,
-    RF_TRAINING_LOG_FILENAME,
+    RF_EXPERIMENT_PATH,
+    RF_HOME,
+    RF_LOG_FILENAME,
+    RF_LOG_PATH,
     RF_MLFLOW_ENABLED,
     RF_TENSORBOARD_ENABLED,
+    RF_TENSORBOARD_LOG_DIR,
     RF_TRACKIO_ENABLED,
-    RF_LOG_FILENAME,
+    RF_TRAINING_LOG_FILENAME,
 )
+from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
+from rapidfireai.utils.ping import ping_server
+from rapidfireai.utils.python_info import get_pip_packages, get_python_info
+
 
 def get_doctor_info(log_lines: int = 10):
     """
@@ -154,7 +156,7 @@ def get_doctor_info(log_lines: int = 10):
         print(f"Torch Version: {major}.{minor}.{patch}")
     else:
         status = 1 if status == 0 else status
-        print("⚠️ Torch version not found") 
+        print("⚠️ Torch version not found")
     if int(torch_cuda_major) > 0:
         print(f"Torch CUDA Version: {torch_cuda_major}.{torch_cuda_minor}")
     else:
@@ -162,15 +164,15 @@ def get_doctor_info(log_lines: int = 10):
         print("⚠️ Torch CUDA Version: unknown")
 
     # Check RapidFire AI ports
-    print ("\n🛜 RapidFire AI Ports:")
-    print ("-" * 30)
+    print("\n🛜 RapidFire AI Ports:")
+    print("-" * 30)
     for check_item in [
-        {"host": JupyterConfig.HOST, "port": JupyterConfig.PORT, "service": "Jupyter"}, 
-        {"host": DispatcherConfig.HOST, "port": DispatcherConfig.PORT, "service": "API(Dispatcher)"}, 
+        {"host": JupyterConfig.HOST, "port": JupyterConfig.PORT, "service": "Jupyter"},
+        {"host": DispatcherConfig.HOST, "port": DispatcherConfig.PORT, "service": "API(Dispatcher)"},
         {"host": MLFlowConfig.HOST, "port": MLFlowConfig.PORT, "service": "MLFlow"},
         {"host": FrontendConfig.HOST, "port": FrontendConfig.PORT, "service": "Frontend"},
-        {"host": RayConfig.HOST, "port": RayConfig.PORT, "service": "Ray"}]:
-
+        {"host": RayConfig.HOST, "port": RayConfig.PORT, "service": "Ray"},
+    ]:
         for host_index, host_check in enumerate(["127.0.0.1", check_item["host"]]):
             if host_index == 0 or (host_check not in ["127.0.0.1", "0.0.0.0"]):
                 checker = ping_server(host_check, check_item["port"])
@@ -178,7 +180,7 @@ def get_doctor_info(log_lines: int = 10):
                     print(f"{check_item['service']}: is currently Listening on {host_check}:{check_item['port']}")
                 else:
                     print(f"{check_item['service']}: is NOT currently listening on {host_check}:{check_item['port']}")
-        
+
     # System Information
     print("\n💻 System Information:")
     print("-" * 30)
@@ -224,7 +226,7 @@ def get_doctor_info(log_lines: int = 10):
             print(f"\n📄{current_item}:")
             if log_lines != 0:
                 if not os.path.isdir(current_item):
-                    with open(current_item, "r", encoding="utf-8") as f:
+                    with open(current_item, encoding="utf-8") as f:
                         lines = f.readlines()
                         read_lines = lines[-log_lines:]
                         if log_lines == -1:

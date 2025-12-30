@@ -10,13 +10,13 @@ import hashlib
 import os
 from collections.abc import Callable
 from typing import Any
+
 import ray
 
-from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
-from rapidfireai.evals.rag.prompt_manager import PromptManager
 from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 
 
 @ray.remote
@@ -54,9 +54,10 @@ class QueryProcessingActor:
         if "CUDA_VISIBLE_DEVICES" in os.environ and os.environ["CUDA_VISIBLE_DEVICES"]:
             try:
                 import torch
+
                 if torch.cuda.is_available():
                     # Force CUDA initialization by performing a simple operation
-                    _ = torch.zeros(1, device='cuda')
+                    _ = torch.zeros(1, device="cuda")
                     torch.cuda.synchronize()
             except Exception:
                 # Silently continue if CUDA initialization fails (will use CPU)
@@ -164,6 +165,7 @@ class QueryProcessingActor:
                     # Deserialize FAISS index to create an independent copy for this actor
                     # FAISS indices are not thread-safe, so each actor needs its own copy
                     import pickle
+
                     from langchain_community.vectorstores import FAISS
 
                     self.logger.info("Deserializing FAISS index for this actor...")
@@ -182,17 +184,14 @@ class QueryProcessingActor:
                         embedding_function=embedding_function,
                         index=faiss_index,
                         docstore=docstore,
-                        index_to_docstore_id=index_to_docstore_id
+                        index_to_docstore_id=index_to_docstore_id,
                     )
                     self.logger.info("Created independent FAISS vector store for this actor")
 
                     # Create the retriever
                     search_type = context_generator_ref["search_type"]
                     search_kwargs = context_generator_ref["search_kwargs"]
-                    retriever = vector_store.as_retriever(
-                        search_type=search_type,
-                        search_kwargs=search_kwargs
-                    )
+                    retriever = vector_store.as_retriever(search_type=search_type, search_kwargs=search_kwargs)
                     self.logger.info(f"Recreated retriever with search_type={search_type}")
 
                     # Recreate RAG spec with query-time components

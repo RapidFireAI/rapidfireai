@@ -1,8 +1,8 @@
 """Random search implementation for AutoML hyperparameter optimization."""
 
+import hashlib
 import json
 import random
-import hashlib
 from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
@@ -23,9 +23,7 @@ def recursive_expand_randomsearch(item: Any):
         return item.__class__(**sampled_params)
     elif isinstance(item, dict):
         return {k: recursive_expand_randomsearch(v) for k, v in item.items()}
-    elif isinstance(item, List):
-        return item.sample()
-    elif isinstance(item, Range):
+    elif isinstance(item, (List, Range)):
         return item.sample()
     else:
         return item
@@ -74,16 +72,12 @@ class RFRandomSearch(AutoMLAlgorithm):
                 selected_peft_config = config.peft_config
 
             peft_params = (
-                {}
-                if selected_peft_config is None
-                else recursive_expand_randomsearch(selected_peft_config._user_params)
+                {} if selected_peft_config is None else recursive_expand_randomsearch(selected_peft_config._user_params)
             )
 
             # Sample other parameters
             training_params = (
-                {}
-                if config.training_args is None
-                else recursive_expand_randomsearch(config.training_args._user_params)
+                {} if config.training_args is None else recursive_expand_randomsearch(config.training_args._user_params)
             )
 
             model_kwargs = {} if config.model_kwargs is None else recursive_expand_randomsearch(config.model_kwargs)
@@ -108,9 +102,7 @@ class RFRandomSearch(AutoMLAlgorithm):
                 "ref_model_kwargs",
                 "reward_funcs",
             }
-            additional_kwargs = {
-                k: v for k, v in config.__dict__.items() if k not in excluded_attrs and v is not None
-            }
+            additional_kwargs = {k: v for k, v in config.__dict__.items() if k not in excluded_attrs and v is not None}
             additional_kwargs_sampled = (
                 {} if not additional_kwargs else recursive_expand_randomsearch(additional_kwargs)
             )
@@ -185,11 +177,7 @@ class RFRandomSearch(AutoMLAlgorithm):
 
             for pipeline in pipelines:
                 # Sample model config parameters
-                pipeline_instances = (
-                    [{}]
-                    if pipeline is None
-                    else [recursive_expand_randomsearch(pipeline)]
-                )
+                pipeline_instances = [{}] if pipeline is None else [recursive_expand_randomsearch(pipeline)]
 
                 additional_kwargs = {
                     k: v
@@ -197,9 +185,7 @@ class RFRandomSearch(AutoMLAlgorithm):
                     if k != "pipeline" and k != "vllm_config" and k != "openai_config" and v is not None
                 }
                 additional_kwargs_instances = (
-                    [{}]
-                    if not additional_kwargs
-                    else [recursive_expand_randomsearch(additional_kwargs)]
+                    [{}] if not additional_kwargs else [recursive_expand_randomsearch(additional_kwargs)]
                 )
 
                 # Generate random search combinations
