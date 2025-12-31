@@ -1,10 +1,7 @@
 """This module contains utility functions for the experiment."""
 
-import multiprocessing as mp
 import os
 import re
-import signal
-import sys
 import warnings
 from typing import Any
 
@@ -14,13 +11,13 @@ from IPython.display import display
 from tqdm import tqdm
 from transformers import logging as transformers_logging
 
-from rapidfireai.utils.constants import MLFlowConfig, RF_MLFLOW_ENABLED
-from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.utils.constants import ExperimentStatus, ExperimentTask
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.exceptions import DBException, ExperimentException
 from rapidfireai.fit.utils.logging import RFLogger
+from rapidfireai.utils.constants import MLFlowConfig, RF_MLFLOW_ENABLED
+from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 
 # Note: mlflow and MLflowManager are imported lazily inside conditional blocks
 # to avoid MLflow connection attempts when using tensorboard-only mode
@@ -51,33 +48,6 @@ class ExperimentUtils:
         warnings.filterwarnings("ignore", message=".*generation flags are not valid.*")
         warnings.filterwarnings("ignore", message=".*decoder-only architecture.*")
         warnings.filterwarnings("ignore", message=".*attention mask is not set.*")
-
-    def setup_signal_handlers(
-        self,
-        worker_processes: list[mp.Process],
-    ) -> None:
-        """Setup signal handlers for graceful shutdown on the main process."""
-
-        def signal_handler(signum, frame):
-            """Handle SIGINT and SIGTERM signals"""
-            signal_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
-            print(f"\nReceived {signal_name}, shutting down gracefully...")
-
-            try:
-                # Cancel current task if any
-                self.cancel_current()
-
-                self.shutdown_workers(worker_processes)
-
-                print("Graceful shutdown completed.")
-                sys.exit(0)
-            except Exception as e:
-                print(f"Error during graceful shutdown: {e}")
-                sys.exit(1)
-
-        # Register signal handlers
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
 
     def create_experiment(self, given_name: str, experiments_path: str) -> tuple[int, str, list[str]]:
         """Create a new experiment. Returns the experiment id, name, and log messages."""
@@ -269,16 +239,6 @@ class ExperimentUtils:
             print(msg)
             logger.info(msg)
         logger.debug("Reset experiment states and set current experiment task to idle")
-
-    def shutdown_workers(
-        self,
-        worker_processes: list[mp.Process],
-    ) -> None:
-        """Shutdown the workers"""
-        # stop workers
-        for worker_process in worker_processes:
-            worker_process.terminate()
-        print("Workers stopped")
 
     def get_runs_info(self) -> pd.DataFrame:
         """Get the run info"""

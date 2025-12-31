@@ -8,12 +8,13 @@ from logging import Logger
 from pprint import pformat
 from typing import Any
 
-import torch
+import ray
 from torch.utils.data import Dataset
 
 from rapidfireai.automl import AutoMLAlgorithm, get_flattened_config_leaf, get_runs
 from rapidfireai.fit.backend.chunks import DatasetChunks
 from rapidfireai.fit.backend.scheduler import Scheduler
+from rapidfireai.fit.backend.worker_actor import create_worker_actors
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.utils.constants import (
     ControllerTask,
@@ -25,11 +26,10 @@ from rapidfireai.fit.utils.constants import (
     WorkerTask,
 )
 from rapidfireai.fit.utils.datapaths import DataPath
-from rapidfireai.fit.utils.exceptions import ControllerException, NoGPUsFoundException
+from rapidfireai.fit.utils.exceptions import ControllerException
 from rapidfireai.fit.utils.logging import RFLogger
 from rapidfireai.fit.utils.serialize import encode_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
-from rapidfireai.fit.utils.worker_manager import WorkerManager
 from rapidfireai.utils.constants import MLFlowConfig
 from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 from rapidfireai.utils.os_utils import mkdir_p
@@ -38,40 +38,51 @@ from rapidfireai.utils.os_utils import mkdir_p
 class Controller:
     """This module contains the ML Controller class which is responsible for orchestrating the RapidFire lifecycle."""
 
-    def __init__(self, experiment_id: int, experiment_name: str) -> None:
-        """Initialize the controller."""
-        import torch.multiprocessing as mp
+    def __init__(
+        self,
+        experiment_id: int,
+        experiment_name: str,
+        num_workers: int = 1,
+        gpus_per_worker: int = 1,
+        cpus_per_worker: int = 1,
+    ) -> None:
+        """
+        Initialize the controller.
 
-        try:
-            mp.set_start_method("spawn", force=True)
-        except RuntimeError:
-            # Start method already set
-            pass
-
+        Args:
+            experiment_id: ID of the experiment
+            experiment_name: Name of the experiment
+            num_workers: Number of worker actors to create (typically = num GPUs)
+            gpus_per_worker: Number of GPUs per worker (typically 1)
+            cpus_per_worker: Number of CPUs per worker
+        """
         self.experiment_id: int = experiment_id
         self.experiment_name: str = experiment_name
+        self.num_workers: int = num_workers
+        self.gpus_per_worker: int = gpus_per_worker
+        self.cpus_per_worker: int = cpus_per_worker
 
-        # create database object
+        # Create database object
         self.db: RfDb = RfDb()
 
-        # create controller logger
+        # Create controller logger
         logging = RFLogger()
         self.logger: Logger = logging.create_logger("controller")
         self.user_logger: Logger = logging.create_logger("user")
         self.ic_logger: Logger = logging.create_logger("interactive-control")
 
-        # get number of GPUs
-        self.num_workers: int = torch.cuda.device_count()
-        if self.num_workers == 0:
-            raise NoGPUsFoundException("No GPUs found while initializing controller.")
-        self.logger.debug(f"Found {self.num_workers} workers/GPUs.")
+        # Validate GPU availability
+        if self.num_workers == 0 or (self.gpus_per_worker == 0 and self.num_workers > 0):
+            self.logger.warning("No GPUs available. Training will run on CPU (not recommended).")
+        else:
+            self.logger.debug(f"Configured for {self.num_workers} workers with {self.gpus_per_worker} GPU(s) each.")
 
-        # initialize shared manager and registry, create shared memory manager instance
+        # Initialize shared memory manager (used for model/checkpoint sharing between workers)
         self.shm_manager: SharedMemoryManager = SharedMemoryManager(name="controller-shm")
-        registry, process_lock = self.shm_manager.get_shm_objects()
+        self._model_registry, self._process_lock = self.shm_manager.get_shm_objects()
 
-        # create worker manager
-        self.worker_manager: WorkerManager = WorkerManager(self.num_workers, registry, process_lock)
+        # Worker actors (created in run_fit)
+        self.worker_actors: list = []
 
         default_metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
         self.metric_logger = RFMetricLogger(
@@ -491,13 +502,22 @@ class Controller:
         self.db.set_experiment_current_task(ExperimentTask.RUN_FIT)
         self.logger.debug(f"Set experiment task to {ExperimentTask.RUN_FIT.value}.")
 
-        # create workers
+        # Create Ray worker actors
         try:
-            self.worker_manager.create_workers()
-            print("Created workers")
-            self.logger.debug(f"Created {self.num_workers} workers.")
+            self.worker_actors = create_worker_actors(
+                num_workers=self.num_workers,
+                gpus_per_worker=self.gpus_per_worker,
+                cpus_per_worker=self.cpus_per_worker,
+                model_registry=self._model_registry,
+                process_lock=self._process_lock,
+            )
+            # Start all workers' serve_forever loops (fire-and-forget, runs in background)
+            for worker in self.worker_actors:
+                worker.serve_forever.remote()
+            print(f"Created {self.num_workers} Ray worker actors")
+            self.logger.debug(f"Created {self.num_workers} Ray worker actors.")
         except Exception as e:
-            raise ControllerException(f"Error creating workers: {e}") from e
+            raise ControllerException(f"Error creating Ray worker actors: {e}") from e
 
         # create scheduler
         run_ids = list(
@@ -693,7 +713,54 @@ class Controller:
             self.logger.debug(f"Set experiment task to {ExperimentTask.IDLE.value}.")
 
         except Exception as e:
+            self._shutdown_workers()
             raise ControllerException(f"Error during run_fit: {e}") from e
 
-        # shutdown workers
-        self.worker_manager.shutdown()
+        # Shutdown workers gracefully
+        self._shutdown_workers()
+
+    def _shutdown_workers(self, timeout: float = 60.0) -> None:
+        """
+        Gracefully shutdown all worker actors.
+
+        Uses hybrid approach:
+        1. Request graceful shutdown (wait for chunk completion)
+        2. ray.kill() as fallback after timeout
+
+        Args:
+            timeout: Maximum seconds to wait for graceful shutdown
+        """
+        if not self.worker_actors:
+            return
+
+        self.logger.info("Shutting down worker actors...")
+
+        # Request graceful shutdown for all workers
+        shutdown_futures = []
+        for worker in self.worker_actors:
+            try:
+                shutdown_futures.append(worker.request_shutdown.remote())
+            except Exception as e:
+                self.logger.warning(f"Error requesting shutdown: {e}")
+
+        # Wait for graceful shutdown with timeout
+        try:
+            ray.get(shutdown_futures, timeout=timeout)
+            self.logger.info("All workers shut down gracefully")
+        except ray.exceptions.GetTimeoutError:
+            self.logger.warning(f"Timeout waiting for graceful shutdown after {timeout}s. Force killing workers...")
+            for worker in self.worker_actors:
+                try:
+                    ray.kill(worker)
+                except Exception as e:
+                    self.logger.debug(f"Error killing worker: {e}")
+        except Exception as e:
+            self.logger.warning(f"Error during graceful shutdown: {e}. Force killing workers...")
+            import contextlib
+
+            for worker in self.worker_actors:
+                with contextlib.suppress(Exception):
+                    ray.kill(worker)
+
+        self.worker_actors = []
+        self.logger.info("Worker shutdown complete")

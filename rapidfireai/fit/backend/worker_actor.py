@@ -1,4 +1,9 @@
-"""This module contains the Worker class which is responsible for handling the worker operations."""
+"""
+Ray Actor-based Worker for distributed training.
+
+This module provides a Ray remote class that replaces the multiprocessing-based Worker.
+Each WorkerActor runs on a separate GPU and handles training tasks assigned by the Controller.
+"""
 
 import gc
 import os
@@ -8,12 +13,10 @@ from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from logging import Logger
-from multiprocessing import Process
-from multiprocessing.managers import DictProxy
-from multiprocessing.synchronize import Event as EventType
-from multiprocessing.synchronize import Lock
+from multiprocessing import Manager
 from typing import Any
 
+import ray
 import torch
 
 from rapidfireai.fit.backend.chunks import DatasetChunks
@@ -41,44 +44,60 @@ from rapidfireai.fit.utils.trainer_config import TrainerConfig
 from rapidfireai.utils.constants import MLFlowConfig
 
 
-class Worker:
-    """Worker class that handles training and validation of runs"""
+@ray.remote
+class WorkerActor:
+    """
+    Ray Actor-based Worker for handling training and validation.
+
+    Each WorkerActor:
+    - Runs on its own GPU (resource allocation handled by Ray)
+    - Polls the database for scheduled tasks
+    - Executes training chunks when assigned
+    - Saves checkpoints to shared memory and disk
+    """
 
     def __init__(
         self,
         worker_id: int,
-        model_registry: DictProxy,
-        process_lock: Lock,
-        shutdown_event: EventType,
+        model_registry: dict[int, Any],
+        process_lock: Any,
     ):
-        """Initialize the worker"""
-        self.process: Process
+        """
+        Initialize the WorkerActor.
+
+        Args:
+            worker_id: Unique identifier for this worker
+            model_registry: Shared dictionary for model storage across workers
+            process_lock: Lock for synchronizing access to shared resources
+        """
         self.worker_id: int = worker_id
-        self.shutdown_event: EventType = shutdown_event
+        self._shutdown_requested: bool = False
 
-        # Shared memory attributes (set by WorkerManager)
-        self.model_registry: DictProxy[int, Any] = model_registry
-        self.process_lock: Lock = process_lock
+        # Store shared memory objects
+        # Note: With Ray, model_registry is a regular dict that's been serialized
+        # via ray.put(). We wrap it in SharedMemoryManager for compatibility.
+        self.model_registry: dict[int, Any] = model_registry
+        self.process_lock = process_lock
 
-        # Shared memory manager will be created using global objects
+        # Create shared memory manager using passed objects
         self.shm_manager = SharedMemoryManager(
             name=f"worker-{worker_id}-shm",
             registry=model_registry,
             multiprocess_lock=process_lock,
         )
 
-        # create logger
+        # Create loggers
         self.logger: Logger = RFLogger().create_logger(f"worker_{worker_id}")
         self.training_logger: Logger = TrainingLogger().create_logger(f"worker_{worker_id}")
-        self.logger.debug(f"Worker {self.worker_id} initialized with PID {os.getpid()}")
+        self.logger.debug(f"WorkerActor {self.worker_id} initialized with PID {os.getpid()}")
 
-        # create database object
+        # Create database connection
         self.db: RfDb = RfDb()
 
-        # get experiment name
+        # Get experiment name
         self.experiment_name: str = self.db.get_running_experiment()["experiment_name"]
 
-        # initialize data paths
+        # Initialize data paths
         DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_name))
 
         # create metric logger
@@ -88,14 +107,16 @@ class Worker:
             raise WorkerException("MetricLogger is not initialized. Please check the metric logger configuration.")
         self.metric_logger.get_experiment(self.experiment_name)
 
-        # load datasets
-        self.train_dataset, self.eval_dataset, self.num_chunks = self.load_datasets()
+        # Load datasets
+        self.train_dataset, self.eval_dataset, self.num_chunks = self._load_datasets()
         self.len_train_dataset = len(self.train_dataset)
 
-    def load_datasets(
+        self.logger.info(f"WorkerActor {self.worker_id} ready on GPU {os.environ.get('CUDA_VISIBLE_DEVICES', 'N/A')}")
+
+    def _load_datasets(
         self,
     ) -> tuple[torch.utils.data.Dataset | None, torch.utils.data.Dataset | None, int]:
-        """Load the train and eval datasets"""
+        """Load the train and eval datasets from disk."""
         try:
             with open(DataPath.dataset_path(), "rb") as f:
                 datasets = decode_db_payload(f.read())
@@ -110,24 +131,27 @@ class Worker:
         chunk_id: int,
         create_model_fn: Callable,
     ) -> None:
-        """Run fit"""
+        """
+        Execute a training chunk for the specified run.
+
+        Args:
+            run_id: ID of the training run
+            chunk_id: ID of the chunk to train on
+            create_model_fn: Function to create/load the model
+        """
         self.logger.debug(f"Received run_fit on worker for run {run_id} with chunk {chunk_id}")
 
-        # get run details
+        # Get run details
         run_details = self.db.get_run(run_id)
         config_leaf = run_details["config_leaf"]
         metric_run_id = run_details["metric_run_id"]
 
 
-        # set seed
-        # torch.manual_seed(run_details["seed"])
-        # np.random.seed(run_details["seed"])
-        # random.seed(run_details["seed"])
         effective_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1) * config_leaf[
             "training_args"
         ].get("gradient_accumulation_steps", 1)
 
-        # fetch train dataset chunk
+        # Fetch train dataset chunk
         train_dataset_chunker = DatasetChunks(
             self.len_train_dataset,
             self.num_chunks,
@@ -135,7 +159,8 @@ class Worker:
             offset=run_details["chunk_offset"],
         )
         train_dataset_chunk = train_dataset_chunker.get_chunk(self.train_dataset, chunk_id)
-        # create worker config
+
+        # Create trainer config
         trainer_config = TrainerConfig(
             worker_id=self.worker_id,
             run_id=run_id,
@@ -152,7 +177,7 @@ class Worker:
         )
         completed_steps = self.db.get_completed_steps(run_id)
 
-        # add reward funcs to config_leaf if cloned from a GRPO run
+        # Add reward funcs to config_leaf if cloned from a GRPO run
         if trainer_config.cloned_from is not None and trainer_config.config_leaf.get("trainer_type") == "GRPO":
             parent_run_details = self.db.get_run(trainer_config.cloned_from)
             config_leaf["reward_funcs"] = parent_run_details["config_leaf"].get("reward_funcs")
@@ -165,11 +190,11 @@ class Worker:
                 trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.metric_logger, chunk_id
             )
 
-        # if first time, save checkpoint to disk
+        # If first time, save checkpoint to disk
         if completed_steps == 0 and not USE_SHARED_MEMORY:
             save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
 
-        # write logs to user logger
+        # Write logs to user logger
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
         if stderr_buffer.getvalue():
@@ -183,13 +208,13 @@ class Worker:
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             trainer_instance.train()
 
-        # write logs to user logger
+        # Write logs to user logger
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
         if stderr_buffer.getvalue():
             self.training_logger.error(stderr_buffer.getvalue())
 
-        # update completed steps
+        # Update completed steps
         new_completed_steps = completed_steps + trainer_instance.state.global_step
         self.db.set_completed_steps(run_id, new_completed_steps)
 
@@ -214,7 +239,7 @@ class Worker:
                     completed_steps=new_completed_steps,
                 )
                 self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
-        else:  # save checkpoint to disk when not using shared memory
+        else:  # Save checkpoint to disk when not using shared memory
             save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps)
             self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
 
@@ -222,7 +247,7 @@ class Worker:
             save_checkpoint_to_disk(trainer_instance, trainer_config, last=True)
             self.logger.debug(f"Saved final checkpoint for run {run_id} on chunk {chunk_id}")
 
-        # clean up all references to shared memory objects
+        # Clean up all references to free GPU memory
         if hasattr(trainer_instance, "model"):
             del trainer_instance.model
         if hasattr(trainer_instance, "ref_model"):
@@ -233,7 +258,7 @@ class Worker:
             del trainer_instance.lr_scheduler
         del trainer_instance
 
-        # run garbage collection
+        # Run garbage collection
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -241,18 +266,23 @@ class Worker:
         self.logger.debug(f"Completed training for run {run_id} on chunk {chunk_id}")
 
     def serve_forever(self) -> None:
-        """This runs in the worker process"""
+        """
+        Main loop: poll the database for scheduled tasks and execute them.
 
+        This method runs continuously until shutdown is requested (via request_shutdown())
+        or a critical error occurs.
+        """
         prev_task_id: int | None = None
-        while not (self.shutdown_event and self.shutdown_event.is_set()):
+
+        while not self._shutdown_requested:
             try:
                 scheduled_task = self.db.get_worker_scheduled_task(self.worker_id)
                 if not scheduled_task or scheduled_task["task_id"] == prev_task_id:
-                    # no new tasks or same task as previous iteration
+                    # No new tasks or same task as previous iteration
                     time.sleep(1)
                     continue
 
-                # get task details
+                # Get task details
                 prev_task_id = scheduled_task["task_id"]
                 task_type = scheduled_task["task_type"]
                 run_id = scheduled_task["run_id"]
@@ -263,7 +293,7 @@ class Worker:
                 if task_type == WorkerTask.TRAIN_VAL:
                     self.db.set_worker_task_status(self.worker_id, TaskStatus.IN_PROGRESS)
 
-                    # run train and validation function
+                    # Run train and validation function
                     try:
                         self.run_fit(run_id, chunk_id, create_model_fn)
                         self.db.set_worker_task_status(self.worker_id, TaskStatus.COMPLETED)
@@ -280,26 +310,85 @@ class Worker:
                 else:
                     raise WorkerException(f"Invalid task type: {task_type}")
             except Exception as e:
-                self.logger.opt(exception=True).error(f"Worker {self.worker_id} error: {e}")
+                self.logger.opt(exception=True).error(f"WorkerActor {self.worker_id} error: {e}")
                 self.db.set_experiment_error(str(e) + "\n" + traceback.format_exc())
                 break
 
-        self.shutdown()
+        self._cleanup()
 
-    def shutdown(self):
-        """Called by WorkerManager to gracefully shutdown this worker"""
-        self.logger.debug(f"Worker {self.worker_id} shutdown requested")
-        if self.shutdown_event:
-            self.shutdown_event.set()
+    def request_shutdown(self) -> bool:
+        """
+        Request graceful shutdown of this worker.
 
-        # Close database connection to prevent resource leaks
+        The worker will complete its current chunk before shutting down.
+
+        Returns:
+            True if shutdown was requested successfully
+        """
+        self.logger.debug(f"WorkerActor {self.worker_id} shutdown requested")
+        self._shutdown_requested = True
+        return True
+
+    def is_shutdown_requested(self) -> bool:
+        """Check if shutdown has been requested."""
+        return self._shutdown_requested
+
+    def _cleanup(self) -> None:
+        """Clean up resources on shutdown."""
+        self.logger.debug(f"WorkerActor {self.worker_id} cleaning up")
+
+        # Close database connection
         try:
             if hasattr(self, "db"):
                 self.db.close()
         except Exception as e:
             self.logger.debug(f"Error closing database connection: {e}")
 
-    def is_alive(self):
-        """Check if the worker process is alive"""
-        return self.process and self.process.is_alive()
-        return self.process and self.process.is_alive()
+        self.logger.info(f"WorkerActor {self.worker_id} shutdown complete")
+
+    def get_worker_id(self) -> int:
+        """Return this worker's ID."""
+        return self.worker_id
+
+    def ping(self) -> bool:
+        """Health check endpoint."""
+        return True
+
+
+def create_worker_actors(
+    num_workers: int,
+    gpus_per_worker: int,
+    cpus_per_worker: int,
+    model_registry: dict,
+    process_lock: Any,
+) -> list:
+    """
+    Create WorkerActor instances with proper GPU allocation.
+
+    Args:
+        num_workers: Number of workers to create
+        gpus_per_worker: Number of GPUs per worker (typically 1)
+        cpus_per_worker: Number of CPUs per worker
+        model_registry: Shared dictionary for model storage
+        process_lock: Lock for synchronizing shared memory access
+
+    Returns:
+        List of WorkerActor handles
+    """
+    workers = []
+
+    for worker_id in range(num_workers):
+        # Create actor with resource allocation
+        worker = WorkerActor.options(
+            num_gpus=gpus_per_worker,
+            num_cpus=cpus_per_worker,
+            name=f"fit_worker_{worker_id}",
+        ).remote(
+            worker_id=worker_id,
+            model_registry=model_registry,
+            process_lock=process_lock,
+        )
+        workers.append(worker)
+
+    return workers
+

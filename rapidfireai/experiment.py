@@ -3,7 +3,6 @@ This module contains the unified Experiment class for both fit and evals modes.
 """
 
 import logging
-import multiprocessing as mp
 import os
 import time
 import traceback
@@ -63,6 +62,8 @@ class Experiment:
     def _init_fit_mode(self) -> None:
         """Initialize fit-specific components."""
         # Import fit-specific modules
+        import ray
+
         from rapidfireai.fit.db.rf_db import RfDb
         from rapidfireai.fit.utils.exceptions import ExperimentException
         from rapidfireai.fit.utils.experiment_utils import ExperimentUtils
@@ -72,10 +73,19 @@ class Experiment:
         # Store exception class for use in methods
         self._ExperimentException = ExperimentException
 
+        # Store ray reference for later use
+        self._ray = ray
+
         # Initialize fit-specific attributes
-        self.log_server_process: mp.Process | None = None
-        self.worker_processes: list[mp.Process] = []
         self._training_thread: Any = None  # Track background training thread (Colab only)
+
+        # Disable tokenizers parallelism warning when using with Ray/multiprocessing
+        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+        # Suppress verbose third-party library logging
+        os.environ.setdefault("RAY_LOG_TO_STDERR", "0")
+        # Disable Ray and other verbose logging
+        os.environ["RAY_DISABLE_IMPORT_WARNING"] = "1"
+        os.environ["RAY_DEDUP_LOGS"] = "0"
 
         # Create db tables
         try:
@@ -108,15 +118,44 @@ class Experiment:
         except Exception as e:
             raise ExperimentException(f"Error creating logger: {e}, traceback: {traceback.format_exc()}") from e
 
-        # Setup signal handlers for graceful shutdown
+        # Initialize Ray with runtime environment for CUDA initialization
+        # This fixes AWS-specific CUDA/cuBLAS initialization issues
         try:
-            self.experiment_utils.setup_signal_handlers(self.worker_processes)
+            ray.init(
+                logging_level=logging.ERROR,
+                log_to_driver=False,
+                configure_logging=True,
+                ignore_reinit_error=True,
+                include_dashboard=True,
+                dashboard_host=RayConfig.HOST,
+                dashboard_port=RayConfig.PORT,
+                # Disable metrics export to prevent "Failed to establish connection" errors
+                _metrics_export_port=None,
+                runtime_env={
+                    "env_vars": {
+                        # Force CUDA to initialize properly in Ray actors (AWS fix)
+                        "CUDA_LAUNCH_BLOCKING": "0",
+                        "CUDA_MODULE_LOADING": "LAZY",
+                        "TF_CPP_MIN_LOG_LEVEL": "3",
+                        "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
+                    }
+                },
+            )
+            self.logger.info("Ray initialized successfully")
+
+            # Log Colab Ray dashboard URL
+            if ColabConfig.ON_COLAB:
+                try:
+                    from google.colab.output import eval_js
+
+                    # Get the Colab proxy URL for the Ray dashboard port
+                    proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
+                    print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
+                except Exception as e:
+                    self.logger.warning(f"Colab detected but failed to get proxy URL: {e}")
+
         except Exception as e:
-            if hasattr(self, "logger"):
-                self.logger.opt(exception=True).error(f"Error setting up signal handlers: {e}")
-            raise ExperimentException(
-                f"Error setting up signal handlers: {e}, traceback: {traceback.format_exc()}"
-            ) from e
+            raise ExperimentException(f"Error initializing Ray: {e}, traceback: {traceback.format_exc()}") from e
 
     def _init_evals_mode(self) -> None:
         """Initialize evals-specific components."""
@@ -273,6 +312,23 @@ class Experiment:
             print("⚠️  Training is already running in background. Please wait for it to complete.")
             return
 
+        # Auto-detect resources from Ray cluster (similar to evals)
+        available_gpus = self._ray.cluster_resources().get("GPU", 0)
+        available_cpus = self._ray.cluster_resources().get("CPU", 0)
+
+        # For fit mode: 1 GPU per worker (training requires full GPU)
+        num_workers = int(available_gpus) if available_gpus > 0 else 1
+        gpus_per_worker = 1 if available_gpus > 0 else 0
+        cpus_per_worker = max(1, int(available_cpus / num_workers)) if num_workers > 0 else 1
+
+        if available_gpus == 0:
+            self.logger.warning("No GPUs detected. Training will run on CPU (not recommended).")
+        else:
+            self.logger.info(
+                f"Detected {int(available_gpus)} GPU(s), {int(available_cpus)} CPU(s). "
+                f"Creating {num_workers} worker(s) with {gpus_per_worker} GPU(s) each."
+            )
+
         if ColabConfig.ON_COLAB:
             # Run Controller in background thread to keep kernel responsive
             import sys
@@ -288,7 +344,13 @@ class Experiment:
                 sys.stdout = StringIO()
 
                 try:
-                    controller = Controller(self.experiment_id, self.experiment_name)
+                    controller = Controller(
+                        self.experiment_id,
+                        self.experiment_name,
+                        num_workers=num_workers,
+                        gpus_per_worker=gpus_per_worker,
+                        cpus_per_worker=cpus_per_worker,
+                    )
                     controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed)
                 except Exception as e:
                     # Restore stdout for error logging
@@ -327,7 +389,13 @@ class Experiment:
         else:
             # Original blocking behavior for non-Colab environments
             try:
-                controller = Controller(self.experiment_id, self.experiment_name)
+                controller = Controller(
+                    self.experiment_id,
+                    self.experiment_name,
+                    num_workers=num_workers,
+                    gpus_per_worker=gpus_per_worker,
+                    cpus_per_worker=cpus_per_worker,
+                )
                 controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed)
             except Exception as e:
                 if hasattr(self, "logger"):
@@ -556,15 +624,14 @@ class Experiment:
                     self.logger.opt(exception=True).error(f"Error ending experiment: {e}")
                 raise ExperimentException(f"Error ending experiment: {e}, traceback: {traceback.format_exc()}") from e
 
-            # Shutdown all child processes
+            # Shutdown Ray (handles actor cleanup)
             try:
-                self.experiment_utils.shutdown_workers(self.worker_processes)
+                self._ray.shutdown()
+                self.logger.info("Ray shutdown complete - all actors terminated")
             except Exception as e:
                 if hasattr(self, "logger"):
-                    self.logger.opt(exception=True).error(f"Error shutting down RapidFire processes: {e}")
-                raise ExperimentException(
-                    f"Error shutting down RapidFire processes: {e}, traceback: {traceback.format_exc()}"
-                ) from e
+                    self.logger.opt(exception=True).error(f"Error shutting down Ray: {e}")
+                raise ExperimentException(f"Error shutting down Ray: {e}, traceback: {traceback.format_exc()}") from e
         else:
             # Eval mode
             # Use experiment_utils to end the experiment properly
