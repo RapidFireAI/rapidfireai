@@ -400,14 +400,14 @@ class TestMetricLoggerInterface:
 class TestCallbacksIntegration:
     """Test suite for integration with callbacks."""
 
-    def test_mlflow_logging_callback_accepts_metric_logger(self):
-        """Test that MLflowLoggingCallback accepts metric_logger parameter."""
-        from rapidfireai.ml.callbacks import MLflowLoggingCallback
+    def test_metric_logging_callback_accepts_metric_logger(self):
+        """Test that MetricLoggingCallback accepts metric_logger parameter."""
+        from rapidfireai.ml.callbacks import MetricLoggingCallback
 
         mock_logger = Mock(spec=MetricLogger)
-        callback = MLflowLoggingCallback(
+        callback = MetricLoggingCallback(
             metric_logger=mock_logger,
-            mlflow_run_id="run_1",
+            metric_run_id="run_1",
             completed_steps=0,
             chunk_id=0,
             num_epochs_completed=0
@@ -430,7 +430,7 @@ class TestCallbacksIntegration:
             tokenizer=tokenizer,
             eval_dataset=dataset,
             metric_logger=mock_logger,
-            mlflow_run_id="run_1",
+            metric_run_id="run_1",
             completed_steps=0
         )
 
@@ -438,13 +438,13 @@ class TestCallbacksIntegration:
 
     def test_callback_calls_log_metric(self):
         """Test that callback calls metric_logger.log_metric()."""
-        from rapidfireai.ml.callbacks import MLflowLoggingCallback
+        from rapidfireai.ml.callbacks import MetricLoggingCallback
         from transformers import TrainerState, TrainerControl, TrainingArguments
 
         mock_logger = Mock(spec=MetricLogger)
-        callback = MLflowLoggingCallback(
+        callback = MetricLoggingCallback(
             metric_logger=mock_logger,
-            mlflow_run_id="run_1",
+            metric_run_id="run_1",
             completed_steps=0,
             chunk_id=0,
             num_epochs_completed=0
@@ -463,13 +463,13 @@ class TestCallbacksIntegration:
 
     def test_callback_step_offset_works_correctly(self):
         """Test that callbacks apply completed_steps offset correctly."""
-        from rapidfireai.ml.callbacks import MLflowLoggingCallback
+        from rapidfireai.ml.callbacks import MetricLoggingCallback
         from transformers import TrainerState, TrainerControl, TrainingArguments
 
         mock_logger = Mock(spec=MetricLogger)
-        callback = MLflowLoggingCallback(
+        callback = MetricLoggingCallback(
             metric_logger=mock_logger,
-            mlflow_run_id="run_1",
+            metric_run_id="run_1",
             completed_steps=100,  # Resumed run
             chunk_id=0,
             num_epochs_completed=0

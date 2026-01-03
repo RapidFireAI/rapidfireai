@@ -7,13 +7,6 @@ from .version import __version__, __version_info__
 __author__ = "RapidFire AI Inc."
 __email__ = "support@rapidfire.ai"
 
-# Core imports - always available
-# from rapidfireai.experiment import Experiment
-
-# Optional evals imports - gracefully handle missing dependencies
-# get_dispatcher_url = None
-# get_dispatcher_headers = None
-# get_colab_auth_token = None
 
 try:
     from rapidfireai.experiment import Experiment
@@ -47,7 +40,4 @@ __all__ = [
     "Experiment",
     "__version__",
     "__version_info__",
-    # "get_dispatcher_url",
-    # "get_dispatcher_headers",
-    # "get_colab_auth_token",
 ]

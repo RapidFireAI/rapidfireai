@@ -16,7 +16,7 @@ class GenerationMetricsCallback(TrainerCallback):
         compute_metrics: Callable = None,
         batch_size: int = 8,
         metric_logger=None,
-        mlflow_run_id: str = None,
+        metric_run_id: str = None,
         completed_steps: int = 0,
     ):
         self.tokenizer = tokenizer
@@ -32,7 +32,7 @@ class GenerationMetricsCallback(TrainerCallback):
             "eos_token_id": tokenizer.eos_token_id,
         }
         self.metric_logger = metric_logger
-        self.mlflow_run_id = mlflow_run_id
+        self.metric_run_id = metric_run_id
         self.completed_steps = completed_steps
 
     def on_evaluate(
@@ -58,12 +58,13 @@ class GenerationMetricsCallback(TrainerCallback):
             state.log_history.append(metrics)
 
         for key, value in metrics.items():
+            step = self.completed_steps + state.global_step
             if self.metric_logger:
                 self.metric_logger.log_metric(
-                    self.mlflow_run_id,
+                    self.metric_run_id,
                     key,
                     value,
-                    step=self.completed_steps + state.global_step,
+                    step=step,
                 )
 
     def _prepare_data(self, eval_dataset: Dataset) -> tuple:
@@ -158,7 +159,7 @@ class GenerationMetricsCallback(TrainerCallback):
         with torch.no_grad():
             for i in tqdm(range(0, len(indices), self.batch_size), desc="Generating for metrics"):
                 input_ids_batch = input_ids[i : i + self.batch_size]
-                with torch.inference_mode(), torch.cuda.amp.autocast():
+                with torch.inference_mode(), torch.amp.autocast("cuda"):
                     outputs_batch = model.generate(input_ids_batch, **self.generation_config)
                 generated_texts = self.tokenizer.batch_decode(
                     outputs_batch[:, input_ids_batch.shape[1] :],
@@ -183,20 +184,20 @@ class GenerationMetricsCallback(TrainerCallback):
         return metrics
 
 
-class MLflowLoggingCallback(TrainerCallback):
+class MetricLoggingCallback(TrainerCallback):
     """Callback for logging metrics to tracking backend during training"""
 
     def __init__(
         self,
         metric_logger,
-        mlflow_run_id: str,
+        metric_run_id: str,
         excluded_keys: list = None,
         completed_steps: int = 0,
         chunk_id: int = 0,
         num_epochs_completed: int = 0,
     ):
         self.metric_logger = metric_logger
-        self.mlflow_run_id = mlflow_run_id
+        self.metric_run_id = metric_run_id
         self.completed_steps = completed_steps
         self.excluded_keys = excluded_keys or [
             "step",
@@ -215,30 +216,33 @@ class MLflowLoggingCallback(TrainerCallback):
     ):
         """Called when the trainer logs metrics"""
         if logs is not None:
+            step = self.completed_steps + state.global_step
             for key, value in logs.items():
                 if isinstance(value, (int, float)) and key not in self.excluded_keys:
                     try:
-                        self.metric_logger.log_metric(
-                            self.mlflow_run_id,
-                            key,
-                            value,
-                            step=self.completed_steps + state.global_step,
-                        )
+                        if self.metric_logger:
+                            self.metric_logger.log_metric(
+                                self.metric_run_id,
+                                key,
+                                value,
+                                step=step,
+                            )
                     except Exception as e:
                         print(f"Warning: Failed to log metric {key} to tracking backend: {e}")
             if "eval_loss" not in logs and "train_runtime" not in logs:
-                self.metric_logger.log_metric(
-                    self.mlflow_run_id,
-                    "chunk number",
-                    self.chunk_id,
-                    step=self.completed_steps + state.global_step,
-                )
-                self.metric_logger.log_metric(
-                    self.mlflow_run_id,
-                    "num_epochs_completed",
-                    self.num_epochs_completed,
-                    step=self.completed_steps + state.global_step,
-                )
+                if self.metric_logger:
+                    self.metric_logger.log_metric(
+                        self.metric_run_id,
+                        "chunk number",
+                        self.chunk_id,
+                        step=step,
+                    )
+                    self.metric_logger.log_metric(
+                        self.metric_run_id,
+                        "num_epochs_completed",
+                        self.num_epochs_completed,
+                        step=step,
+                    )
 
 
 class LogLevelCallback(TrainerCallback):

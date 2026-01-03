@@ -129,8 +129,8 @@ checkpoint = {
 - Batches generation for efficiency
 - Supports custom generation configs (temperature, top_p, max_tokens)
 
-**MLflowLoggingCallback**:
-- Logs training metrics (loss, learning rate, grad norm) to MLflow
+**MetricLoggingCallback**:
+- Logs training metrics (loss, learning rate, grad norm) to Metric Logger
 - Handles step offset for resumed runs (continued step numbering)
 - Filters out None values and non-numeric metrics
 - Logs at appropriate intervals based on `logging_steps`
@@ -144,7 +144,7 @@ checkpoint = {
 **Usage Pattern**:
 ```python
 callbacks = [
-    MLflowLoggingCallback(mlflow_manager, mlflow_run_id, completed_steps),
+    MetricLoggingCallback(metric_manager, metric_run_id, completed_steps),
     GenerationMetricsCallback(tokenizer, eval_dataset, generation_config, compute_metrics),
     LogLevelCallback(),
 ]
