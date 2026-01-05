@@ -1,12 +1,11 @@
 """Model configuration for AutoML training and evaluation."""
-
+from __future__ import annotations
 import copy
 import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Type, get_type_hints
-from __future__ import annotations
 
 from rapidfireai.automl.datatypes import List, Range
 
