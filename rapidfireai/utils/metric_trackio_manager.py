@@ -30,7 +30,6 @@ class TrackIOMetricLogger(MetricLogger):
     def _ensure_initialized(self) -> None:
         """Ensure TrackIO is initialized with the experiment."""
         if not self._initialized and self.experiment_name:
-            self.logger.error(f"David: _ensure_initialized init() TrackIO {self.experiment_name}")
             trackio.init(project=self.experiment_name, **self.init_kwargs)
             self._initialized = True
 
@@ -53,18 +52,15 @@ class TrackIOMetricLogger(MetricLogger):
         # TrackIO uses run names directly, so we use run_name as the run_id
         # Try to finish any existing run first
         try:
-            self.logger.error(f"David: create_run finish() TrackIO run {run_name}")
             trackio.finish()
         except Exception:
             pass  # No active run to finish
         
         # Initialize a new run with the run name
         try:
-            self.logger.error(f"David: create_run init() TrackIO run {run_name}")
             trackio.init(project=self.experiment_name, name=run_name, **self.init_kwargs)
         except Exception:
             # If init doesn't accept name, try without it
-            self.logger.error(f"David: create_run init() TrackIO run {run_name} without name")
             trackio.init(project=self.experiment_name, **self.init_kwargs)
         
         self.active_runs[run_name] = run_name
@@ -112,7 +108,6 @@ class TrackIOMetricLogger(MetricLogger):
     def end_run(self, run_id: str) -> None:
         """End a specific run."""
         try:
-            self.logger.error(f"David: end_run finish() TrackIO run {run_id}")
             trackio.finish()
             if run_id in self.active_runs:
                 del self.active_runs[run_id]
@@ -134,7 +129,6 @@ class TrackIOMetricLogger(MetricLogger):
     def clear_context(self) -> None:
         """Clear the TrackIO context by ending any active run."""
         try:
-            self.logger.error(f"David: clear_context finish() TrackIO")
             trackio.finish()
             print("TrackIO context cleared successfully")
         except Exception:
