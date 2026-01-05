@@ -57,7 +57,7 @@ class RFDatabase:
         try:
             cursor = self.db.conn.execute("PRAGMA table_info(experiments)")
             columns = [row[1] for row in cursor.fetchall()]
-            if "metric_run_id" not in columns:
+            if "metric_experiment_id" not in columns:
                 self.db.conn.execute("ALTER TABLE experiments ADD COLUMN metric_experiment_id TEXT")
                 self.db.conn.commit()
         except Exception:
