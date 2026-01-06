@@ -21,7 +21,9 @@ from rapidfireai.utils.constants import (
     RF_DB_PATH,
     RF_TENSORBOARD_LOG_DIR,
     RF_TRAINING_LOG_FILENAME,
-    RF_TRACKING_BACKEND,
+    RF_MLFLOW_ENABLED,
+    RF_TENSORBOARD_ENABLED,
+    RF_TRACKIO_ENABLED,
     RF_LOG_FILENAME,
 )
 
@@ -202,7 +204,9 @@ def get_doctor_info(log_lines: int = 10):
     print(f"RF_TENSORBOARD_LOG_DIR: {RF_TENSORBOARD_LOG_DIR}")
     print(f"RF_LOG_FILENAME: {RF_LOG_FILENAME}")
     print(f"RF_TRAINING_LOG_FILENAME: {RF_TRAINING_LOG_FILENAME}")
-    print(f"RF_TRACKING_BACKEND: {RF_TRACKING_BACKEND}")
+    print(f"RF_MLFLOW_ENABLED: {RF_MLFLOW_ENABLED}")
+    print(f"RF_TENSORBOARD_ENABLED: {RF_TENSORBOARD_ENABLED}")
+    print(f"RF_TRACKIO_ENABLED: {RF_TRACKIO_ENABLED}")
     print(f"JupyterConfig: {JupyterConfig()}")
     print(f"DispatcherConfig: {DispatcherConfig()}")
     print(f"MLFlowConfig: {MLFlowConfig()}")

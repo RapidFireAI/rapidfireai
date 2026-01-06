@@ -161,17 +161,10 @@ Built-in procedures for searching over configuration knob combinations, includin
 
 ```text
 rapidfireai/
-├── fit
-    ├── automl/          # Search and AutoML algorithms for knob tuning
-    ├── backend/         # Core backend components (controller, scheduler, worker)
-    ├── db/              # Database interface and SQLite operations
-    ├── dispatcher/      # Flask-based web API for UI communication
-    ├── frontend/        # Frontend components (dashboard, IC Ops implementation)
-    ├── ml/              # ML training utilities and trainer classes
-    └── utils/           # Utility functions and helper modules
+├── automl/              # Search and AutoML algorithms for knob tuning
+├── cli.py               # CLI script
 ├── evals
     ├── actors/          # Ray-based workers for doc and query processing  
-    ├── automl/          # Search and AutoML algorithms for knob tuning
     ├── data/            # Data sharding and handling
     ├── db/              # Database interface and SQLite operations
     ├── dispatcher/      # Flask-based web API for UI communication
@@ -179,7 +172,15 @@ rapidfireai/
     ├── rag/             # Stages of RAG pipeline
     ├── scheduling/      # Fair scheduler for multi-config resource sharing
     └── utils/           # Utility functions and helper modules
-└── experiment.py        # Main experiment lifecycle management
+├── experiment.py        # Main experiment lifecycle management
+├── fit
+    ├── backend/         # Core backend components (controller, scheduler, worker)
+    ├── db/              # Database interface and SQLite operations
+    ├── dispatcher/      # Flask-based web API for UI communication
+    ├── frontend/        # Frontend components (dashboard, IC Ops implementation)
+    ├── ml/              # ML training utilities and trainer classes
+    └── utils/           # Utility functions and helper modules
+└── utils.py             # Utility functions and helper modules
 ```
 
 ## Architecture
@@ -327,7 +328,9 @@ used to overwrite the defaults.
 - `RF_LOG_FILENAME` - Default log file name (default: rapidfire.log)
 - `RF_TRAINING_LOG_FILENAME` - Default training log file name (default: training.log)
 - `RF_DB_PATH` - Base directory for database files (default: ${RF_HOME}/db)
-- `RF_TRACKING_BACKEND` - Tracking backend used (default: mlflow on Non-Google Colab and tensorboard on Google Colab)
+- `RF_MLFLOW_ENABLED` - Enable MLFlow tracking backend
+- `RF_TENSORBOARD_ENABLED` - Enable Tensorboard tracking backend
+- `RF_TRACKIO_ENABLED` - Enable TrackIO tracking backend
 - `RF_COLAB_MODE` - Whether running on colab (default: false on Non-Google Colab and true on Google Colab)
 - `RF_TUTORIAL_PATH` - Location that `rapidfireai init` copies `tutorial_notebooks` to (default: ./tutorial_notebooks)
 - `RF_TEST_PATH` - Location that `rapidfireai --test-noteobooks` copies test notebooks to (default: ./tutorial_notebooks/tests)
