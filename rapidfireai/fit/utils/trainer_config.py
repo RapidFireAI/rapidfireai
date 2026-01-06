@@ -13,7 +13,7 @@ class TrainerConfig:
 
     worker_id: int
     run_id: int
-    mlflow_run_id: str
+    metric_run_id: str
     config_leaf: dict[str, Any]
     total_steps: int
     completed_steps: int

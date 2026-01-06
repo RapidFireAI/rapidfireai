@@ -95,7 +95,7 @@ The db module provides the persistence layer for RapidFire using SQLite. It stor
 - `run_id` (PK): Unique run identifier
 - `experiment_id` (FK): Parent experiment
 - `run_name`: Generated name (e.g., "run_1")
-- `mlflow_run_id`: MLflow tracking ID
+- `metric_run_id`: Metric tracking ID
 - `status`: RunStatus enum (NEW, ONGOING, COMPLETED, FAILED, STOPPED, KILLED)
 - `source`: RunSource enum (USER, CLONE_MODIFY)
 - `ended_by`: RunEndedBy enum (COMPLETED, FAILED, KILLED, STOPPED)
@@ -170,7 +170,7 @@ self.db.execute(query, (new_status, run_id), commit=True)
 run_id = db.create_run(
     experiment_id=1,
     run_name="run_1",
-    mlflow_run_id="abc123",
+    metric_run_id="abc123",
     config_leaf=encode_payload(config_dict),
     source=RunSource.USER,
     seed=42,

@@ -46,7 +46,23 @@ class RfDb:
                 with open(tables_file, encoding="utf-8") as f:
                     sql_content = f.read()
                 _ = self.db.conn.executescript(sql_content)
-
+            else:
+                try:
+                    cursor = self.db.conn.execute("PRAGMA table_info(runs)")
+                    columns = [column[1] for column in cursor.fetchall()]
+                    if "metric_run_id" not in columns:
+                        self.db.conn.execute("ALTER TABLE runs ADD COLUMN metric_run_id TEXT")
+                        self.db.conn.commit()
+                except sqlite3.Error:
+                    pass
+                try:
+                    cursor = self.db.conn.execute("PRAGMA table_info(experiments)")
+                    columns = [column[1] for column in cursor.fetchall()]
+                    if "metric_experiment_id" not in columns:
+                        self.db.conn.execute("ALTER TABLE experiments ADD COLUMN metric_experiment_id TEXT")
+                        self.db.conn.commit()
+                except sqlite3.Error:
+                    pass
         except FileNotFoundError as e:
             raise DBException(f"tables.sql file not found at {tables_file}") from e
         except sqlite3.Error as e:
@@ -113,12 +129,12 @@ class RfDb:
     def create_experiment(
         self,
         experiment_name: str,
-        mlflow_experiment_id: str | None,
+        metric_experiment_id: str | None,
         config_options: dict[str, Any],
     ) -> int:
         """Create a new experiment"""
         query = """
-            INSERT INTO experiments (experiment_name, mlflow_experiment_id, config_options,
+            INSERT INTO experiments (experiment_name, metric_experiment_id, config_options,
             status, current_task, error)
             VALUES (?, ?, ?, ?, ?, ?)
             RETURNING experiment_id
@@ -128,7 +144,7 @@ class RfDb:
             query,
             (
                 experiment_name,
-                mlflow_experiment_id,
+                metric_experiment_id,
                 encode_payload(config_options),
                 ExperimentStatus.RUNNING.value,
                 ExperimentTask.IDLE.value,
@@ -148,7 +164,7 @@ class RfDb:
     def get_running_experiment(self) -> dict[str, Any]:
         """Get an experiment's details by its ID"""
         query = """
-            SELECT experiment_id, experiment_name, status, error, mlflow_experiment_id, config_options
+            SELECT experiment_id, experiment_name, status, error, metric_experiment_id, config_options
             FROM experiments
             WHERE status = ?
             ORDER BY experiment_id DESC
@@ -163,7 +179,7 @@ class RfDb:
                 "experiment_name": experiment_details[1],
                 "status": ExperimentStatus(experiment_details[2]),
                 "error": experiment_details[3],
-                "mlflow_experiment_id": experiment_details[4],
+                "metric_experiment_id": experiment_details[4],
                 "config_options": decode_db_payload(experiment_details[5]),
             }
             return experiment_details
@@ -271,7 +287,7 @@ class RfDb:
         self,
         config_leaf: dict[str, Any],
         status: RunStatus,
-        mlflow_run_id: str | None = None,
+        metric_run_id: str | None = None,
         flattened_config: dict[str, Any] | None = None,
         completed_steps: int = 0,
         total_steps: int = 0,
@@ -286,7 +302,7 @@ class RfDb:
     ) -> int:
         """Create a new run"""
         query = """
-            INSERT INTO runs (status, mlflow_run_id, flattened_config, config_leaf,
+            INSERT INTO runs (status, metric_run_id, flattened_config, config_leaf,
             completed_steps, total_steps, num_chunks_visited_curr_epoch,
             num_epochs_completed, chunk_offset, error, source, ended_by, warm_started_from, cloned_from)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -295,7 +311,7 @@ class RfDb:
             query,
             (
                 status.value,
-                mlflow_run_id,
+                metric_run_id,
                 json.dumps(flattened_config) if flattened_config else "{}",
                 encode_payload(config_leaf) if config_leaf else "{}",
                 completed_steps,
@@ -320,7 +336,7 @@ class RfDb:
         self,
         run_id: int,
         status: RunStatus | None = None,
-        mlflow_run_id: str | None = None,
+        metric_run_id: str | None = None,
         flattened_config: dict[str, Any] | None = None,
         config_leaf: dict[str, Any] | None = None,
         completed_steps: int | None = None,
@@ -338,7 +354,7 @@ class RfDb:
         # Initialize a dictionary to hold the column-value pairs
         columns = {
             "status": status.value if status else None,
-            "mlflow_run_id": mlflow_run_id,
+            "metric_run_id": metric_run_id,
             "flattened_config": json.dumps(flattened_config) if flattened_config else None,
             "config_leaf": encode_payload(config_leaf) if config_leaf else None,
             "completed_steps": completed_steps,
@@ -376,7 +392,7 @@ class RfDb:
     def get_run(self, run_id: int) -> dict[str, Any]:
         """Get a run's details"""
         query = """
-            SELECT status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
+            SELECT status, metric_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
             warm_started_from, cloned_from
             FROM runs
@@ -388,7 +404,7 @@ class RfDb:
             run_details = run_details[0]
             formatted_details = {
                 "status": RunStatus(run_details[0]),
-                "mlflow_run_id": run_details[1],
+                "metric_run_id": run_details[1],
                 "flattened_config": json.loads(run_details[2]),
                 "config_leaf": decode_db_payload(run_details[3]) if run_details[3] and run_details[3] != "{}" else {},
                 "completed_steps": run_details[4],
@@ -413,7 +429,7 @@ class RfDb:
         # Create placeholders for SQL IN clause
         placeholders = ",".join(["?"] * len(statuses))
         query = f"""
-            SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
+            SELECT run_id, status, metric_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
             warm_started_from, cloned_from
             FROM runs
@@ -427,7 +443,7 @@ class RfDb:
             for run in run_details:
                 formatted_details[run[0]] = {
                     "status": RunStatus(run[1]),
-                    "mlflow_run_id": run[2],
+                    "metric_run_id": run[2],
                     "flattened_config": json.loads(run[3]),
                     "config_leaf": decode_db_payload(run[4]) if run[4] and run[4] != "{}" else {},
                     "completed_steps": run[5],
@@ -446,7 +462,7 @@ class RfDb:
     def get_all_runs(self) -> dict[int, dict[str, Any]]:
         """Get all runs for UI display (ignore all complex fields)"""
         query = """
-            SELECT run_id, status, mlflow_run_id, flattened_config, config_leaf, completed_steps, total_steps,
+            SELECT run_id, status, metric_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
             warm_started_from, cloned_from
             FROM runs
@@ -458,7 +474,7 @@ class RfDb:
             for run in run_details:
                 formatted_details[run[0]] = {
                     "status": RunStatus(run[1]),
-                    "mlflow_run_id": run[2],
+                    "metric_run_id": run[2],
                     "flattened_config": json.loads(run[3]),
                     "config_leaf": decode_db_payload(run[4]) if run[4] and run[4] != "{}" else {},
                     "completed_steps": run[5],

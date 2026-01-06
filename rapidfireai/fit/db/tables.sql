@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS experiments (
     experiment_id INTEGER PRIMARY KEY AUTOINCREMENT,
     experiment_name TEXT NOT NULL,
-    mlflow_experiment_id TEXT,
+    metric_experiment_id TEXT,
     config_options TEXT NOT NULL,
     status TEXT NOT NULL,
     current_task TEXT NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS experiments (
 CREATE TABLE IF NOT EXISTS runs (
     run_id INTEGER PRIMARY KEY AUTOINCREMENT,
     status TEXT NOT NULL,
-    mlflow_run_id TEXT,
+    metric_run_id TEXT,
     flattened_config TEXT DEFAULT '{}',
     config_leaf TEXT DEFAULT '{}',
     completed_steps INTEGER DEFAULT 0,

@@ -7,7 +7,7 @@ from transformers.utils.logging import set_verbosity_error
 from trl import DPOConfig, DPOTrainer, GRPOConfig, GRPOTrainer, SFTConfig, SFTTrainer
 from rapidfireai.utils.constants import RF_TRAINER_OUTPUT
 
-from rapidfireai.fit.ml.callbacks import GenerationMetricsCallback, LogLevelCallback, MLflowLoggingCallback
+from rapidfireai.fit.ml.callbacks import GenerationMetricsCallback, LogLevelCallback, MetricLoggingCallback
 from rapidfireai.fit.ml.checkpoint_utils import (
     ensure_gradient_compatibility,
     load_checkpoint_from_disk,
@@ -301,15 +301,15 @@ def _setup_callbacks(
     """Setup callbacks for the trainer."""
     callbacks = []
 
-    if metric_logger is not None and trainer_config.mlflow_run_id is not None:
-        mlflow_callback = MLflowLoggingCallback(
+    if metric_logger is not None and trainer_config.metric_run_id is not None:
+        metric_callback = MetricLoggingCallback(
             metric_logger=metric_logger,
-            mlflow_run_id=trainer_config.mlflow_run_id,
+            metric_run_id=trainer_config.metric_run_id,
             completed_steps=trainer_config.completed_steps,
             chunk_id=chunk_id,
             num_epochs_completed=trainer_config.num_epochs_completed,
         )
-        callbacks.append(mlflow_callback)
+        callbacks.append(metric_callback)
 
     if compute_metrics is not None and additional_trainer_kwargs.get("generation_config") is not None:
         compute_metrics_function = compute_metrics
@@ -325,7 +325,7 @@ def _setup_callbacks(
             compute_metrics=compute_metrics_function,
             batch_size=training_args.get("per_device_eval_batch_size"),
             metric_logger=metric_logger,
-            mlflow_run_id=trainer_config.mlflow_run_id,
+            metric_run_id=trainer_config.metric_run_id,
             completed_steps=trainer_config.completed_steps,
         )
         callbacks.append(generation_callback)
