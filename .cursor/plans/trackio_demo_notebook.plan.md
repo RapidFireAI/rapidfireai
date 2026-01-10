@@ -1,37 +1,3 @@
----
-name: Trackio Demo Notebook
-overview: Create a new tutorial notebook demonstrating Trackio experiment tracking by adapting the existing SFT ChatQA lite tutorial. The notebook will showcase Trackio as a standalone, local-first tracking backend for RapidFire AI experiments.
-todos:
-  - id: create-branch
-    content: Create new branch feat/trackio-demo-notebook
-    status: completed
-  - id: create-notebook
-    content: Create rf-tutorial-sft-trackio.ipynb in fine-tuning folder
-    status: completed
-    dependencies:
-      - create-branch
-  - id: add-trackio-config
-    content: Add environment variable cells to enable Trackio-only tracking
-    status: completed
-    dependencies:
-      - create-notebook
-  - id: add-documentation
-    content: Add markdown cells explaining Trackio benefits and usage
-    status: completed
-    dependencies:
-      - create-notebook
-  - id: add-dashboard-section
-    content: Add section showing how to view metrics with trackio show
-    status: completed
-    dependencies:
-      - create-notebook
-  - id: create-symlink
-    content: Create symlink in tutorial_notebooks root for discoverability
-    status: completed
-    dependencies:
-      - create-notebook
----
-
 # Trackio Demo Notebook Plan
 
 ## Overview
@@ -64,6 +30,8 @@ flowchart TD
     end
 ```
 
+
+
 ## Key Implementation Details
 
 The existing Trackio integration in the codebase ([`rapidfireai/utils/metric_trackio_manager.py`](rapidfireai/utils/metric_trackio_manager.py)) is already complete. The notebook will:
@@ -75,37 +43,7 @@ The existing Trackio integration in the codebase ([`rapidfireai/utils/metric_tra
 
 ## Notebook Structure
 
-| Section | Description |
-
-|---------|-------------|
-
-| Header | RapidFire AI branding with links |
-
-| Introduction | Explain Trackio as a local-first experiment tracking tool |
-
-| Environment Setup | Configure tracking backend environment variables |
-
-| Imports | Import RapidFire components |
-
-| Dataset Loading | Load Bitext customer support dataset (same as source) |
-
-| Data Processing | Define formatting function (same as source) |
-
-| Experiment Init | Create Experiment with Trackio-enabled mode |
-
-| Metrics Function | Define compute_metrics (same as source) |
-
-| Model Configs | Define LoRA and SFT configs (same as source) |
-
-| Create Model Function | Model factory (same as source) |
-
-| Config Group | RFGridSearch setup (same as source) |
-
-| Run Training | Execute `experiment.run_fit()` |
-
-| View Dashboard | Instructions for `trackio show` command |
-
-| End Experiment | Cleanup |
+| Section | Description ||---------|-------------|| Header | RapidFire AI branding with links || Introduction | Explain Trackio as a local-first experiment tracking tool || Environment Setup | Configure tracking backend environment variables || Imports | Import RapidFire components || Dataset Loading | Load Bitext customer support dataset (same as source) || Data Processing | Define formatting function (same as source) || Experiment Init | Create Experiment with Trackio-enabled mode || Metrics Function | Define compute_metrics (same as source) || Model Configs | Define LoRA and SFT configs (same as source) || Create Model Function | Model factory (same as source) || Config Group | RFGridSearch setup (same as source) || Run Training | Execute `experiment.run_fit()` || View Dashboard | Instructions for `trackio show` command || End Experiment | Cleanup |
 
 ## Key Changes from Source Notebook
 
@@ -115,6 +53,3 @@ The existing Trackio integration in the codebase ([`rapidfireai/utils/metric_tra
 4. **Updated experiment name**: Use `exp1-sft-trackio-demo`
 
 ## Files to Create/Modify
-
-- **Create**: [`tutorial_notebooks/fine-tuning/rf-tutorial-sft-trackio.ipynb`](tutorial_notebooks/fine-tuning/rf-tutorial-sft-trackio.ipynb) - New Trackio demo notebook
-- **Create**: Symlink at [`tutorial_notebooks/rf-tutorial-sft-trackio.ipynb`](tutorial_notebooks/rf-tutorial-sft-trackio.ipynb) for visibility (matching existing pattern)
