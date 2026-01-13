@@ -23,35 +23,31 @@ from rapidfireai.utils.gpu_info import get_compute_capability
 from .version import __version__
 
 
-def get_script_path(mode: str = "fit"):
-    """Get the path to the start.sh script based on mode.
-
-    Args:
-        mode: "fit" or "evals" - determines which start.sh to use
+def get_script_path():
+    """Get the path to the start.sh script.
     """
     # Get the directory where this package is installed
     package_dir = Path(__file__).parent
 
-    # Try setup/{mode} directory relative to package directory
-    script_path = package_dir.parent / "setup" / mode / "start.sh"
+    # Try setup directory relative to package directory
+    script_path = package_dir.parent / "setup" / "start.sh"
 
     if not script_path.exists():
         # Fallback: try to find it relative to the current working directory
-        script_path = Path.cwd() / "setup" / mode / "start.sh"
+        script_path = Path.cwd() / "setup" / "start.sh"
         if not script_path.exists():
             raise FileNotFoundError(f"Could not find start.sh script at {script_path}")
 
     return script_path
 
 
-def run_script(args, mode: str = "fit"):
+def run_script(args):
     """Run the start.sh script with the given arguments.
 
     Args:
         args: Command arguments (e.g., ["start"])
-        mode: "fit" or "evals" - determines which start.sh to use
     """
-    script_path = get_script_path(mode)
+    script_path = get_script_path()
 
     # Make sure the script is executable
     if not os.access(script_path, os.X_OK):
@@ -406,10 +402,12 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument("--version", action="version", version=f"RapidFire AI {__version__}")
 
     parser.add_argument(
-        "--tracking-backend",
-        choices=["mlflow", "tensorboard", "both"],
-        default=os.getenv("RF_TRACKING_BACKEND", "mlflow" if not ColabConfig.ON_COLAB else "tensorboard"),
-        help="Tracking backend to use for metrics (default: mlflow)",
+        "--tracking-backends",
+        choices=["mlflow", "tensorboard", "trackio"],
+        default=["mlflow"] if not ColabConfig.ON_COLAB else ["tensorboard"],
+        help="Tracking backend to use for metrics (default: mlflow on Non-Google Colab and tensorboard on Google Colab)",
+        nargs="*",
+        action="extend"
     )
 
     parser.add_argument(
@@ -430,6 +428,8 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         help="Copy test notebooks to the tutorial_notebooks directory",
     )
 
+    parser.add_argument("--force", "-f", action="store_true", help="Force action without confirmation")
+
     parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
 
     parser.add_argument("--log-lines", type=int, default=10, help="Number of lines to log to the console")
@@ -438,14 +438,26 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     # Set environment variables from CLI args
 
-    if args.tracking_backend:
-        os.environ["RF_TRACKING_BACKEND"] = args.tracking_backend
+    if args.tracking_backends:
+        os.environ["RF_MLFLOW_ENABLED"] = "false"
+        os.environ["RF_TENSORBOARD_ENABLED"] = "false"
+        os.environ["RF_TRACKIO_ENABLED"] = "false"
+        if "mlflow" in args.tracking_backends:
+            os.environ["RF_MLFLOW_ENABLED"] = "true"
+        if "tensorboard" in args.tracking_backends:
+            os.environ["RF_TENSORBOARD_ENABLED"] = "true"
+        if "trackio" in args.tracking_backends:
+            os.environ["RF_TRACKIO_ENABLED"] = "true"
     if args.tensorboard_log_dir:
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
     if args.colab:
         os.environ["RF_COLAB_MODE"] = "true"
     elif ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
         os.environ["RF_COLAB_MODE"] = "true"
+    
+    # Handle force command separately
+    if args.force:
+        os.environ["RF_FORCE"] = "true"
 
     # Handle doctor command separately
     if args.command == "doctor":

@@ -35,11 +35,13 @@ RF_PID_FILE="${RF_PID_FILE:=$RF_LOG_PATH/rapidfire_evals_pids.txt}"
 # Directory paths for pip-installed package
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Navigate to rapidfireai directories from setup/evals directory
-RAPIDFIRE_EVALS_DIR="$SCRIPT_DIR/../../rapidfireai/evals"
-RAPIDFIRE_FIT_DIR="$SCRIPT_DIR/../../rapidfireai/fit"
+RAPIDFIRE_DIR="$SCRIPT_DIR/../../rapidfireai"
+RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
+RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
+
 # Use evals dispatcher but fit frontend (reuse frontend code)
 DISPATCHER_DIR="$RAPIDFIRE_EVALS_DIR/dispatcher"
-FRONTEND_DIR="$RAPIDFIRE_FIT_DIR/frontend"
+FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
 
 RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
 RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
@@ -140,7 +142,7 @@ cleanup() {
         pkill -f "mlflow server" 2>/dev/null || true
         pkill -f "gunicorn.*rapidfireai.evals.dispatcher" 2>/dev/null || true
         # Only kill Flask server if we're not in Colab (frontend doesn't run in Colab)
-        pkill -f "python.*rapidfireai/fit/frontend/server.py" 2>/dev/null || true
+        pkill -f "python.*rapidfireai/frontend/server.py" 2>/dev/null || true
     fi
 
     print_success "All services stopped"
@@ -247,12 +249,12 @@ start_mlflow() {
         setsid mlflow server \
             --host $RF_MLFLOW_HOST \
             --port $RF_MLFLOW_PORT \
-            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > "$RF_LOG_PATH/mlflow.log" 2>&1 &
+            --backend-store-uri sqlite:///${RF_DB_PATH}/rapidfire_mlflow.db > "$RF_LOG_PATH/mlflow.log" 2>&1 &
     else
         nohup mlflow server \
             --host $RF_MLFLOW_HOST \
             --port $RF_MLFLOW_PORT \
-            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > "$RF_LOG_PATH/mlflow.log" 2>&1 &
+            --backend-store-uri sqlite:///${RF_DB_PATH}/rapidfire_mlflow.db > "$RF_LOG_PATH/mlflow.log" 2>&1 &
     fi
 
     local mlflow_pid=$!

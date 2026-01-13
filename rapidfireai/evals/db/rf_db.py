@@ -43,12 +43,22 @@ class RFDatabase:
                 self.db.conn.executescript(schema_sql)
                 self.db.conn.commit()
         
-        # Migration: Add mlflow_run_id and trackio_run_id columns to pipelines table if they don't exist
+        # Migration: Add metric_run_id to pipelines table if they don't exist
         try:
             cursor = self.db.conn.execute("PRAGMA table_info(pipelines)")
             columns = [row[1] for row in cursor.fetchall()]
-            if "mlflow_run_id" not in columns:
-                self.db.conn.execute("ALTER TABLE pipelines ADD COLUMN mlflow_run_id TEXT")
+            if "metric_run_id" not in columns:
+                self.db.conn.execute("ALTER TABLE pipelines ADD COLUMN metric_run_id TEXT")
+                self.db.conn.commit()
+        except Exception:
+            pass
+    
+        # Migration: Add metric_experiment_id to experiments table if they don't exist
+        try:
+            cursor = self.db.conn.execute("PRAGMA table_info(experiments)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "metric_experiment_id" not in columns:
+                self.db.conn.execute("ALTER TABLE experiments ADD COLUMN metric_experiment_id TEXT")
                 self.db.conn.commit()
             if "trackio_run_id" not in columns:
                 self.db.conn.execute("ALTER TABLE pipelines ADD COLUMN trackio_run_id TEXT")
@@ -79,7 +89,7 @@ class RFDatabase:
         num_actors: int,
         num_cpus: int = None,
         num_gpus: int = None,
-        mlflow_experiment_id: str = None,
+        metric_experiment_id: str = None,
         status: ExperimentStatus = ExperimentStatus.RUNNING,
         num_shards: int = 0,
     ) -> int:
@@ -91,7 +101,7 @@ class RFDatabase:
             num_actors: Number of query processing actors
             num_cpus: Number of CPUs allocated
             num_gpus: Number of GPUs allocated
-            mlflow_experiment_id: Optional MLflow experiment ID
+            metric_experiment_id: Optional MetricLogger experiment ID
             status: Initial status (default: ExperimentStatus.RUNNING)
             num_shards: Number of shards for the dataset (default: 0)
 
@@ -101,7 +111,7 @@ class RFDatabase:
         query = """
         INSERT INTO experiments (
             experiment_name, num_actors, num_shards, num_cpus, num_gpus,
-            mlflow_experiment_id, status, error
+            metric_experiment_id, status, error
         ) VALUES (?, ?, ?, ?, ?, ?, ?, '')
         """
         self.db.execute(
@@ -112,7 +122,7 @@ class RFDatabase:
                 num_shards,
                 num_cpus,
                 num_gpus,
-                mlflow_experiment_id,
+                metric_experiment_id,
                 status.value,
             ),
             commit=True,
@@ -253,7 +263,7 @@ class RFDatabase:
         """
         query = """
         SELECT experiment_id, experiment_name, num_actors, num_cpus, num_gpus,
-               mlflow_experiment_id, status, num_shards, error, created_at
+               metric_experiment_id, status, num_shards, error, created_at
         FROM experiments
         WHERE experiment_id = ?
         """
@@ -266,7 +276,7 @@ class RFDatabase:
                 "num_actors": row[2],
                 "num_cpus": row[3],
                 "num_gpus": row[4],
-                "mlflow_experiment_id": row[5],
+                "metric_experiment_id": row[5],
                 "status": row[6],
                 "num_shards": row[7],
                 "error": row[8],
@@ -307,7 +317,7 @@ class RFDatabase:
             Dictionary with all experiment fields, or None if no running experiment
         """
         query = """
-        SELECT experiment_id, experiment_name, mlflow_experiment_id, num_shards,
+        SELECT experiment_id, experiment_name, metric_experiment_id, num_shards,
                num_actors, num_cpus, num_gpus, status, error, created_at
         FROM experiments
         WHERE status = ?
@@ -320,7 +330,7 @@ class RFDatabase:
             return {
                 "experiment_id": row[0],
                 "experiment_name": row[1],
-                "mlflow_experiment_id": row[2],
+                "metric_experiment_id": row[2],
                 "num_shards": row[3],
                 "num_actors": row[4],
                 "num_cpus": row[5],
@@ -523,9 +533,9 @@ class RFDatabase:
         query = """
         INSERT INTO pipelines (
             context_id, pipeline_type,
-            pipeline_config, pipeline_config_json, flattened_config, status, error,
-            current_shard_id, shards_completed, total_samples_processed, mlflow_run_id, trackio_run_id
-        ) VALUES (?, ?, ?, ?, ?, ?, '', 0, 0, 0, NULL, NULL)
+            pipeline_config, pipeline_config_json, status, error,
+            current_shard_id, shards_completed, total_samples_processed, metric_run_id
+        ) VALUES (?, ?, ?, ?, ?, '', '', 0, 0, NULL)
         """
         self.db.execute(
             query,
@@ -554,7 +564,7 @@ class RFDatabase:
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
                pipeline_config, pipeline_config_json, status, current_shard_id,
-               shards_completed, total_samples_processed, mlflow_run_id, trackio_run_id, error, created_at
+               shards_completed, total_samples_processed, metric_run_id, error, created_at
         FROM pipelines
         WHERE pipeline_id = ?
         """
@@ -577,10 +587,9 @@ class RFDatabase:
                 "current_shard_id": row[6],
                 "shards_completed": row[7],
                 "total_samples_processed": row[8],
-                "mlflow_run_id": row[9],
-                "trackio_run_id": row[10],
-                "error": row[11],
-                "created_at": row[12],
+                "metric_run_id": row[9],
+                "error": row[10],
+                "created_at": row[11],
             }
         return None
 
@@ -596,8 +605,8 @@ class RFDatabase:
         """
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, flattened_config, status, current_shard_id,
-               shards_completed, total_samples_processed, mlflow_run_id, trackio_run_id, error, created_at
+               pipeline_config, pipeline_config_json, status, current_shard_id,
+               shards_completed, total_samples_processed, metric_run_id, error, created_at
         FROM pipelines
         WHERE pipeline_id = ?
         """
@@ -617,15 +626,13 @@ class RFDatabase:
                 "pipeline_type": row[2],
                 "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
                 "pipeline_config_json": json_config,  # JSON version for display/analytics
-                "flattened_config": flattened_config,  # Flattened config for IC Ops panel
-                "status": row[6],
-                "current_shard_id": row[7],
-                "shards_completed": row[8],
-                "total_samples_processed": row[9],
-                "mlflow_run_id": row[10],
-                "trackio_run_id": row[11],
-                "error": row[12],
-                "created_at": row[13],
+                "status": row[5],
+                "current_shard_id": row[6],
+                "shards_completed": row[7],
+                "total_samples_processed": row[8],
+                "metric_run_id": row[9],
+                "error": row[10],
+                "created_at": row[11],
             }
         return None
 
@@ -692,8 +699,8 @@ class RFDatabase:
         """
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, flattened_config, status, current_shard_id,
-               shards_completed, total_samples_processed, mlflow_run_id, trackio_run_id, error, created_at
+               pipeline_config, pipeline_config_json, status, current_shard_id,
+               shards_completed, total_samples_processed, metric_run_id, error, created_at
         FROM pipelines
         ORDER BY pipeline_id DESC
         """
@@ -715,15 +722,13 @@ class RFDatabase:
                         "pipeline_type": row[2],
                         "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
                         "pipeline_config_json": json_config,  # JSON version for display/analytics
-                        "flattened_config": flattened_config,  # Flattened config for IC Ops panel
-                        "status": row[6],
-                        "current_shard_id": row[7],
-                        "shards_completed": row[8],
-                        "total_samples_processed": row[9],
-                        "mlflow_run_id": row[10],
-                        "trackio_run_id": row[11],
-                        "error": row[12],
-                        "created_at": row[13],
+                        "status": row[5],
+                        "current_shard_id": row[6],
+                        "shards_completed": row[7],
+                        "total_samples_processed": row[8],
+                        "metric_run_id": row[9],
+                        "error": row[10],
+                        "created_at": row[11],
                     }
                 )
         return pipelines
@@ -788,16 +793,16 @@ class RFDatabase:
         query = "UPDATE pipelines SET error = ? WHERE pipeline_id = ?"
         self.db.execute(query, (error, pipeline_id), commit=True)
 
-    def set_pipeline_mlflow_run_id(self, pipeline_id: int, mlflow_run_id: str):
+    def set_pipeline_metric_run_id(self, pipeline_id: int, metric_run_id: str):
         """
-        Set MLflow run ID for a pipeline.
+        Set MetricLogger run ID for a pipeline.
 
         Args:
             pipeline_id: ID of the pipeline
-            mlflow_run_id: MLflow run ID
+            metric_run_id: MetricLogger run ID
         """
-        query = "UPDATE pipelines SET mlflow_run_id = ? WHERE pipeline_id = ?"
-        self.db.execute(query, (mlflow_run_id, pipeline_id), commit=True)
+        query = "UPDATE pipelines SET metric_run_id = ? WHERE pipeline_id = ?"
+        self.db.execute(query, (metric_run_id, pipeline_id), commit=True)
 
     def set_pipeline_trackio_run_id(self, pipeline_id: int, trackio_run_id: str):
         """

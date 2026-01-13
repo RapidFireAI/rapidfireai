@@ -1,25 +1,8 @@
 import os
 from enum import Enum
-from rapidfireai.utils.constants import RF_TRACKING_BACKEND, RF_TENSORBOARD_LOG_DIR, RF_TRAINING_LOG_FILENAME, RF_DB_PATH
-
-# Tracking Backend Configuration
-def get_tracking_backend() -> str:
-    """
-    Get the tracking backend from environment variable at runtime.
-
-    Returns:
-        str: The tracking backend ('mlflow', 'tensorboard', or 'both')
-
-    Note: This reads from os.environ at runtime to allow setting the env var
-    after module import (important for notebook environments like Colab).
-    """
-    backend = RF_TRACKING_BACKEND
-    return backend
-
+from rapidfireai.utils.constants import RF_TRAINING_LOG_FILENAME, RF_DB_PATH
 
 # Backwards compatibility: Keep constant but it will be stale if env var changes after import
-TRACKING_BACKEND = get_tracking_backend()  # Options: 'mlflow', 'tensorboard', 'both'
-TENSORBOARD_LOG_DIR = RF_TENSORBOARD_LOG_DIR  # Default set by experiment path
 
 # Shared Memory Constants
 SHM_WARN_THRESHOLD = 80

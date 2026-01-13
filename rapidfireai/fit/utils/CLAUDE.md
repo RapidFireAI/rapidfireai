@@ -127,18 +127,18 @@ logger.error("Failed to schedule", run_id=5)
 - `{log_dir}/worker_0.log`
 - `{log_dir}/dispatcher.log`
 
-### mlflow_manager.py
-**Purpose**: Wrapper around MLflow tracking API
+### metric_manager.py
+**Purpose**: Wrapper around metrics tracking API
 
 **Key Responsibilities**:
-- Creates and retrieves MLflow experiments
+- Creates and retrieves metric experiments
 - Logs metrics, parameters, and artifacts
-- Creates MLflow runs
-- Handles MLflow server communication
+- Creates metric runs
+- Handles metric server communication
 
 **Key Methods**:
-- `get_experiment(name)`: Get or create MLflow experiment
-- `create_run(experiment_id)`: Create MLflow run, return run_id
+- `get_experiment(name)`: Get or create metric experiment
+- `create_run(experiment_id)`: Create metric run, return run_id
 - `log_metric(run_id, key, value, step)`: Log metric
 - `log_param(run_id, key, value)`: Log parameter
 - `log_artifact(run_id, artifact_path)`: Log artifact file
@@ -146,9 +146,9 @@ logger.error("Failed to schedule", run_id=5)
 
 **Usage**:
 ```python
-from rapidfireai.utils.mlflow_manager import MLflowManager
+from rapidfireai.utils.metric_mlflow_manager import MLflowMetricLogger
 
-mlflow = MLflowManager("http://localhost:8852")
+mlflow = MLflowMetricLogger("http://localhost:8852")
 experiment = mlflow.get_experiment("my_experiment")
 run_id = mlflow.create_run(experiment.experiment_id)
 mlflow.log_metric(run_id, "loss", 0.5, step=100)
@@ -360,7 +360,7 @@ else:
 - `experiment_name`: Experiment name
 - `chunk_id`: Current chunk being trained
 - `epoch`: Current epoch
-- `mlflow_run_id`: MLflow run ID
+- `metric_run_id`: Metric logger run ID
 
 **Usage**:
 ```python
@@ -373,7 +373,7 @@ config = TrainerConfig(
     experiment_name="my_exp",
     chunk_id=2,
     epoch=0,
-    mlflow_run_id="abc123"
+    metric_run_id="abc123"
 )
 
 trainer = create_trainer_instance(config, shm_manager)

@@ -56,9 +56,12 @@ RF_PID_FILE="${RF_PID_FILE:=$RF_HOME/rapidfire_pids.txt}"
 # Directory paths for pip-installed package
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Navigate to rapidfireai/fit directory from setup/fit directory
-RAPIDFIRE_FIT_DIR="$SCRIPT_DIR/../../rapidfireai/fit"
+RAPIDFIRE_DIR="$SCRIPT_DIR/../../rapidfireai"
+RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
+RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
 DISPATCHER_DIR="$RAPIDFIRE_FIT_DIR/dispatcher"
-FRONTEND_DIR="$RAPIDFIRE_FIT_DIR/frontend"
+FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
+RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt)
 
 RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
 RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
@@ -374,6 +377,11 @@ start_mlflow() {
 
 # Function to start API server
 start_api_server() {
+    if [[ "$RAPIDFIRE_MODE" != "fit" ]]; then
+        print_status "Skipping API server (not in fit mode)"
+        return 0
+    fi
+
     print_status "Starting API server with Gunicorn..."
 
     # Check if dispatcher directory exists

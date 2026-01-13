@@ -32,14 +32,4 @@ datasets
 jupyter
 grpcio
 faiss-gpu-cu12
-
-# MLFlow dashboard dependencies
-mlflow>=3.2.0
-gunicorn>=23.0.0
-flask-cors>=5.0.1
-
-# TrackIO for experiment tracking
-trackio
-
-# Logging
-loguru
+# mlflow>=3.2.0
