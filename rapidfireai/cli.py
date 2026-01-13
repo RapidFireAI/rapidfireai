@@ -23,31 +23,35 @@ from rapidfireai.utils.gpu_info import get_compute_capability
 from .version import __version__
 
 
-def get_script_path():
-    """Get the path to the start.sh script.
+def get_script_path(mode: str = "fit"):
+    """Get the path to the start.sh script based on mode.
+
+    Args:
+        mode: "fit" or "evals" - determines which start.sh to use
     """
     # Get the directory where this package is installed
     package_dir = Path(__file__).parent
 
-    # Try setup directory relative to package directory
-    script_path = package_dir.parent / "setup" / "start.sh"
+    # Try setup/{mode} directory relative to package directory
+    script_path = package_dir.parent / "setup" / mode / "start.sh"
 
     if not script_path.exists():
         # Fallback: try to find it relative to the current working directory
-        script_path = Path.cwd() / "setup" / "start.sh"
+        script_path = Path.cwd() / "setup" / mode / "start.sh"
         if not script_path.exists():
             raise FileNotFoundError(f"Could not find start.sh script at {script_path}")
 
     return script_path
 
 
-def run_script(args):
+def run_script(args, mode: str = "fit"):
     """Run the start.sh script with the given arguments.
 
     Args:
         args: Command arguments (e.g., ["start"])
+        mode: "fit" or "evals" - determines which start.sh to use
     """
-    script_path = get_script_path()
+    script_path = get_script_path(mode)
 
     # Make sure the script is executable
     if not os.access(script_path, os.X_OK):

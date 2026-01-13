@@ -89,7 +89,7 @@ class Dispatcher:
         return {
             "run_id": pipeline.get("pipeline_id"),
             "status": self.STATUS_MAP.get(status.lower(), status),
-            "mlflow_run_id": pipeline.get("mlflow_run_id"),
+            "mlflow_run_id": pipeline.get("metric_run_id"),  # DB uses metric_run_id, frontend expects mlflow_run_id
             "config": pipeline.get("pipeline_config_json", {}),
             "flattened_config": pipeline.get("flattened_config", {}),
             "num_chunks_visited": pipeline.get("shards_completed", 0),
