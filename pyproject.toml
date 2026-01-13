@@ -264,9 +264,9 @@ include-package-data = true
 rapidfireai = [
     "automl/*.py",
     "fit/dispatcher/*.py",
-    "fit/frontend/build/**/*",
-    "fit/frontend/server.py",
-    "fit/frontend/proxy_middleware.py",
+    "frontend/build/**/*",
+    "frontend/server.py",
+    "frontend/proxy_middleware.py",
     "fit/ml/*.py",
     "fit/automl/*.py",
     "fit/backend/*.py",

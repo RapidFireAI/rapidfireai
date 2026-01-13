@@ -171,7 +171,7 @@ cleanup() {
         pkill -f "mlflow server" 2>/dev/null || true
         pkill -f "gunicorn.*rapidfireai.fit.dispatcher" 2>/dev/null || true
         # Only kill Flask server if we're not in Colab (frontend doesn't run in Colab)
-        pkill -f "python.*rapidfireai/fit/frontend/server.py" 2>/dev/null || true
+        pkill -f "python.*rapidfireai/frontend/server.py" 2>/dev/null || true
     fi
 
     print_success "All services stopped"
