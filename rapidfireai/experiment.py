@@ -10,6 +10,7 @@ import traceback
 from collections.abc import Callable
 from typing import Any
 from pathlib import Path
+from rapidfireai.utils.ping import ping_server
 
 import pandas as pd
 from rapidfireai.utils.constants import (

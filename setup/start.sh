@@ -639,13 +639,13 @@ show_status() {
     else
         print_error "🚨 RapidFire API server is not ready!"
     fi
-    if [[ "$rf_mode" == "evals" ]]; then
-        if ping_port $RF_RAY_HOST $RF_RAY_PORT; then
-            print_success "🚀 RapidFire Ray server is ready!"
-        else
-            print_error "🚨 RapidFire Ray server is not ready!"
-        fi
-    fi
+    # if [[ "$rf_mode" == "evals" ]]; then
+    #     if ping_port $RF_RAY_HOST $RF_RAY_PORT; then
+    #         print_success "🚀 RapidFire Ray server is ready!"
+    #     else
+    #         print_error "🚨 RapidFire Ray server is not ready!"
+    #     fi
+    # fi
 
     # Show log file status
     echo ""
