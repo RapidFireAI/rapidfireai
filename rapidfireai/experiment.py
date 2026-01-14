@@ -203,9 +203,8 @@ class Experiment:
             metric_experiment_id = self.metric_loggers.create_experiment(self.experiment_name)
             self.db.db.execute(
                 "UPDATE experiments SET metric_experiment_id = ? WHERE experiment_id = ?",
-                (metric_experiment_id, self.experiment_id),
+                (metric_experiment_id, self.experiment_id), commit=True
             )
-            self.db.db.conn.commit()
             self.logger.info(f"Initialized MetricLogger experiment: {metric_experiment_id}")
         except Exception as e:
             self.logger.warning(f"Failed to initialize MetricLogger: {e}. MetricLogger logging will be disabled.")

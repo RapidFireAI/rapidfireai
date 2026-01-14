@@ -60,9 +60,6 @@ class RFDatabase:
             if "metric_experiment_id" not in columns:
                 self.db.conn.execute("ALTER TABLE experiments ADD COLUMN metric_experiment_id TEXT")
                 self.db.conn.commit()
-            if "trackio_run_id" not in columns:
-                self.db.conn.execute("ALTER TABLE pipelines ADD COLUMN trackio_run_id TEXT")
-                self.db.conn.commit()
         except Exception:
             pass
 
@@ -803,62 +800,6 @@ class RFDatabase:
         """
         query = "UPDATE pipelines SET metric_run_id = ? WHERE pipeline_id = ?"
         self.db.execute(query, (metric_run_id, pipeline_id), commit=True)
-
-    def set_pipeline_trackio_run_id(self, pipeline_id: int, trackio_run_id: str):
-        """
-        Set TrackIO run ID for a pipeline.
-
-        Args:
-            pipeline_id: ID of the pipeline
-            trackio_run_id: TrackIO run ID
-        """
-        query = "UPDATE pipelines SET trackio_run_id = ? WHERE pipeline_id = ?"
-        self.db.execute(query, (trackio_run_id, pipeline_id), commit=True)
-
-    def get_pipeline_by_mlflow_run_id(self, mlflow_run_id: str) -> dict[str, Any] | None:
-        """
-        Get a pipeline by its MLflow run ID.
-
-        Args:
-            mlflow_run_id: MLflow run ID (UUID string)
-
-        Returns:
-            Pipeline dictionary, or None if not found
-        """
-        query = """
-        SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, flattened_config, status, current_shard_id,
-               shards_completed, total_samples_processed, mlflow_run_id, trackio_run_id, error, created_at
-        FROM pipelines
-        WHERE mlflow_run_id = ?
-        """
-        result = self.db.execute(query, params=(mlflow_run_id,), fetch=True)
-        if result and len(result) > 0:
-            row = result[0]
-            # Decode the pipeline config from the database (use pipeline_config column)
-            decoded_config = decode_db_payload(row[3]) if row[3] else None
-            # Parse JSON config for display/analytics
-            import json
-
-            json_config = json.loads(row[4]) if row[4] else None
-            flattened_config = json.loads(row[5]) if row[5] else {}
-            return {
-                "pipeline_id": row[0],
-                "context_id": row[1],
-                "pipeline_type": row[2],
-                "pipeline_config": decoded_config,
-                "pipeline_config_json": json_config,
-                "flattened_config": flattened_config,
-                "status": row[6],
-                "current_shard_id": row[7],
-                "shards_completed": row[8],
-                "total_samples_processed": row[9],
-                "mlflow_run_id": row[10],
-                "trackio_run_id": row[11],
-                "error": row[12],
-                "created_at": row[13],
-            }
-        return None
 
     # ============================================================================
     # ACTOR_TASKS TABLE METHODS

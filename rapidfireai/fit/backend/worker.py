@@ -87,14 +87,6 @@ class Worker:
             raise WorkerException("MetricLogger is not initialized. Please check the metric logger configuration.")
         self.metric_logger.get_experiment(self.experiment_name)
 
-        from rapidfireai.fit.utils.metric_logger import TrackIOMetricLogger
-        try:
-            self.trackio_logger = TrackIOMetricLogger(tracking_uri=None)
-            if hasattr(self.trackio_logger, "get_experiment"):
-                self.trackio_logger.get_experiment(self.experiment_name)
-        except Exception:
-            self.trackio_logger = None
-
         # load datasets
         self.train_dataset, self.eval_dataset, self.num_chunks = self.load_datasets()
         self.len_train_dataset = len(self.train_dataset)

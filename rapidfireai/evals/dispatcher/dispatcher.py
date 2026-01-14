@@ -89,7 +89,7 @@ class Dispatcher:
         return {
             "run_id": pipeline.get("pipeline_id"),
             "status": self.STATUS_MAP.get(status.lower(), status),
-            "mlflow_run_id": pipeline.get("metric_run_id"),  # DB uses metric_run_id, frontend expects mlflow_run_id
+            "metric_run_id": pipeline.get("metric_run_id"),
             "config": pipeline.get("pipeline_config_json", {}),
             "flattened_config": pipeline.get("flattened_config", {}),
             "num_chunks_visited": pipeline.get("shards_completed", 0),
@@ -607,7 +607,7 @@ class Dispatcher:
 
         Request body:
             {
-                "run_id": int or str (pipeline_id or mlflow_run_id)
+                "run_id": int or str (pipeline_id or metricrun_id)
             }
 
         Returns:
@@ -631,7 +631,7 @@ class Dispatcher:
                 pipeline = self.db.get_pipeline(run_id)
             elif isinstance(run_id, str):
                 # Try as MLflow run ID (UUID string)
-                pipeline = self.db.get_pipeline_by_mlflow_run_id(run_id)
+                pipeline = self.db.get_pipeline_by_metric_run_id(run_id)
                 # Fallback: try parsing as int
                 if not pipeline:
                     try:
