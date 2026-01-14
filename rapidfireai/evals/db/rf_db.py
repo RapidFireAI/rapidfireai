@@ -541,7 +541,6 @@ class RFDatabase:
                 pipeline_type,
                 encoded_config,
                 json_config_str,
-                flattened_config_str,
                 status.value,
             ),
             commit=True,

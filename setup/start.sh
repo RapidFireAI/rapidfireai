@@ -617,7 +617,7 @@ show_status() {
             print_status "   %tensorboard --logdir ~/experiments/{experiment_name}/tensorboard_logs"
         fi
     else
-        if [[ "$rf_mode" == "fit" ]]; then
+        # if [[ "$rf_mode" == "fit" ]]; then
             if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
                 print_success "🚀 RapidFire Frontend is ready!"
                 print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
@@ -625,7 +625,7 @@ show_status() {
             else
                 print_error "🚨 RapidFire Frontend is not ready!"
             fi
-        fi
+        # fi
     fi
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
