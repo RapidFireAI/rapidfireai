@@ -17,6 +17,8 @@ class Scheduler:
         # create data structures
         self.worker_running_current_run: dict[int, int] = dict.fromkeys(range(self.n_workers), -1)
         self.run_visited_num_chunks: dict[int, int] = dict.fromkeys(self.run_ids, 0)
+        # Track epochs completed per run for fair scheduling across epoch boundaries
+        self.run_epochs_completed: dict[int, int] = dict.fromkeys(self.run_ids, 0)
 
         # add runs to scheduler
         for run_id in run_ids:
@@ -25,7 +27,11 @@ class Scheduler:
     def reset_run(self, run_id: int) -> None:
         """Reset the scheduler for a specific run (used at epoch boundaries)"""
         if run_id in self.run_ids:
-            # Reset progress for this run
+            # Increment epoch counter before resetting chunk progress
+            # This ensures fair scheduling: runs that completed more epochs have lower priority
+            self.run_epochs_completed[run_id] = self.run_epochs_completed.get(run_id, 0) + 1
+
+            # Reset chunk progress for this run
             self.run_visited_num_chunks[run_id] = 0
 
             # If this run is currently assigned to a worker, free the worker
@@ -33,13 +39,14 @@ class Scheduler:
                 if self.worker_running_current_run[worker_id] == run_id:
                     self.worker_running_current_run[worker_id] = -1
 
-    def add_run(self, run_id: int, run_visited_num_chunks: int) -> None:
+    def add_run(self, run_id: int, run_visited_num_chunks: int, run_epochs_completed: int = 0) -> None:
         """Add a new run to the scheduler."""
         if run_id not in self.run_ids:
             self.run_ids.append(run_id)
             self.n_runs = len(self.run_ids)
 
         self.run_visited_num_chunks[run_id] = run_visited_num_chunks
+        self.run_epochs_completed[run_id] = run_epochs_completed
 
     def set_completed_task(self, worker_id: int) -> None:
         """Set a task as completed."""
@@ -64,6 +71,7 @@ class Scheduler:
 
         # Remove from all data structures
         self.run_visited_num_chunks.pop(run_id, None)
+        self.run_epochs_completed.pop(run_id, None)
 
         if run_id in self.run_ids:
             self.run_ids.remove(run_id)
@@ -101,11 +109,17 @@ class Scheduler:
         if not available_runs:
             return {"run_id": -1, "worker_id": -1, "chunk_id": -1, "is_last_chunk": None}
 
-        # Find the run with least progress, then lowest run_id for tie-breaking
-        # NOTE: any newly inserted clones will take priority
-        # NOTE: prioritize by run_id if run_visited_num_chunks is the same
+        # Find the run with least progress using epoch-aware priority:
+        # 1. First: fewest epochs completed (ensures runs complete current epoch before others start new ones)
+        # 2. Then: fewest chunks in current epoch (fair round-robin within an epoch)
+        # 3. Finally: lowest run_id for tie-breaking
+        # NOTE: newly inserted clones will have 0 epochs, so they get priority
 
-        run_id = min(available_runs, key=lambda run_id: (self.run_visited_num_chunks[run_id], run_id))
+        run_id = min(available_runs, key=lambda r: (
+            self.run_epochs_completed.get(r, 0),
+            self.run_visited_num_chunks[r],
+            r
+        ))
         worker_id = available_workers[0]  # Pick first available worker
         chunk_id = self.run_visited_num_chunks[run_id] % self.n_chunks  # Next chunk in sequence starting from 0
         is_last_chunk = chunk_id == self.n_chunks - 1
@@ -128,5 +142,8 @@ class Scheduler:
                 for w in range(self.n_workers)
                 if self.worker_running_current_run[w] != -1
             },
-            "run_progress": {r: f"{self.run_visited_num_chunks[r]}/{self.n_chunks}" for r in self.run_ids},
+            "run_progress": {
+                r: f"epoch {self.run_epochs_completed.get(r, 0)}, chunk {self.run_visited_num_chunks[r]}/{self.n_chunks}"
+                for r in self.run_ids
+            },
         }
