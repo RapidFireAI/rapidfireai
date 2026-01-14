@@ -530,9 +530,9 @@ class RFDatabase:
         query = """
         INSERT INTO pipelines (
             context_id, pipeline_type,
-            pipeline_config, pipeline_config_json, status, error,
+            pipeline_config, pipeline_config_json, flattened_config, status, error,
             current_shard_id, shards_completed, total_samples_processed, metric_run_id
-        ) VALUES (?, ?, ?, ?, ?, '', '', 0, 0, NULL)
+        ) VALUES (?, ?, ?, ?, ?, ?, '', '', 0, 0, NULL)
         """
         self.db.execute(
             query,
@@ -541,6 +541,7 @@ class RFDatabase:
                 pipeline_type,
                 encoded_config,
                 json_config_str,
+                flattened_config_str,
                 status.value,
             ),
             commit=True,
