@@ -377,10 +377,10 @@ start_mlflow() {
 
 # Function to start API server
 start_api_server() {
-    if [[ "$RAPIDFIRE_MODE" != "fit" ]]; then
-        print_status "Skipping API server (not in fit mode)"
-        return 0
-    fi
+    # if [[ "$RAPIDFIRE_MODE" != "fit" ]]; then
+    #     print_status "Skipping API server (not in fit mode)"
+    #     return 0
+    # fi
 
     print_status "Starting API server with Gunicorn..."
 
