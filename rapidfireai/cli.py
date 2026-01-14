@@ -24,12 +24,12 @@ from .version import __version__
 
 
 def get_script_path():
-    """Get the path to the start.sh script based on mode.
+    """Get the path to the start.sh script.
     """
     # Get the directory where this package is installed
     package_dir = Path(__file__).parent
 
-    # Try setup/{mode} directory relative to package directory
+    # Try setup directory relative to package directory
     script_path = package_dir.parent / "setup" / "start.sh"
 
     if not script_path.exists():
@@ -473,11 +473,8 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     if args.test_notebooks:
         return copy_test_notebooks()
 
-    # Determine mode for start/stop/status/restart commands
-    mode = "evals" if args.evals else "fit"
-
     # Run the script with the specified command and mode
-    return run_script([args.command], mode=mode)
+    return run_script([args.command])
 
 
 if __name__ == "__main__":
