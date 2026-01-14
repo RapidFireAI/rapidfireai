@@ -32,13 +32,9 @@ datasets
 jupyter
 grpcio
 faiss-gpu-cu12
-<<<<<<< HEAD
 
 # MLflow Dashboard dependencies
 mlflow>=3.2.0
 gunicorn>=23.0.0
 flask-cors>=5.0.1
 loguru
-=======
-# mlflow>=3.2.0
->>>>>>> main
