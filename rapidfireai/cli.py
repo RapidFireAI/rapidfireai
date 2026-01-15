@@ -473,7 +473,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     if args.test_notebooks:
         return copy_test_notebooks()
 
-    # Run the script with the specified command and mode
+    # Run the script with the specified command
     return run_script([args.command])
 
 

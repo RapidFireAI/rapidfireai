@@ -194,9 +194,7 @@ class MetricLoggingCallback(TrainerCallback):
         excluded_keys: list = None,
         completed_steps: int = 0,
         chunk_id: int = 0,
-        num_epochs_completed: int = 0,
-        trackio_logger=None,
-        trackio_run_id: str = None,
+        num_epochs_completed: int = 0
     ):
         self.metric_logger = metric_logger
         self.metric_run_id = metric_run_id

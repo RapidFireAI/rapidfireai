@@ -31,7 +31,6 @@ def create_trainer_instance(
     shm_manager: SharedMemoryManager,
     use_shared_memory: bool = False,
     metric_logger=None,
-    trackio_logger=None,
     chunk_id: int = 0,
 ) -> tuple[SFTTrainer | DPOTrainer | GRPOTrainer | None, str]:
     """
@@ -87,7 +86,6 @@ def create_trainer_instance(
 
     callbacks, additional_trainer_kwargs = _setup_callbacks(  # FIXME: avoid returning additional_trainer_kwargs
         metric_logger,
-        trackio_logger,
         trainer_config,
         chunk_id,
         compute_metrics,
@@ -291,7 +289,6 @@ def _prepare_trainer_kwargs(
 
 def _setup_callbacks(
     metric_logger,
-    trackio_logger,
     trainer_config,
     chunk_id,
     compute_metrics,
@@ -310,9 +307,7 @@ def _setup_callbacks(
             metric_run_id=trainer_config.metric_run_id,
             completed_steps=trainer_config.completed_steps,
             chunk_id=chunk_id,
-            num_epochs_completed=trainer_config.num_epochs_completed,
-            trackio_logger=trackio_logger,
-            trackio_run_id=trainer_config.trackio_run_id,
+            num_epochs_completed=trainer_config.num_epochs_completed
         )
         callbacks.append(metric_callback)
 
