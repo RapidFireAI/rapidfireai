@@ -305,7 +305,7 @@ class RfDb:
             INSERT INTO runs (status, metric_run_id, flattened_config, config_leaf,
             completed_steps, total_steps, num_chunks_visited_curr_epoch,
             num_epochs_completed, chunk_offset, error, source, ended_by, warm_started_from, cloned_from)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         self.db.execute(
             query,
