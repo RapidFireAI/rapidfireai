@@ -4,7 +4,7 @@ include LICENSE
 
 # Include setup scripts
 include setup/start.sh
-include setup/start_dev.sh
+include setup/fit/start_dev.sh
 include setup/evals/requirements-local.txt
 include setup/evals/requirements-colab.txt
 

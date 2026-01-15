@@ -216,7 +216,7 @@ wait_for_service() {
     if command -v nc &> /dev/null; then
         ping_command="$(command -v nc) -z $host $port"
     else
-        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.fit.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
+        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
     fi
     while [ $attempt -le $max_attempts ]; do
         if eval ${ping_command} &>/dev/null; then
