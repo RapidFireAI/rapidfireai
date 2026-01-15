@@ -4,6 +4,7 @@ RF-Inferno Database Manager.
 Provides high-level interface for CRUD operations on the experiment database.
 """
 
+import json
 import os
 from typing import Any
 
