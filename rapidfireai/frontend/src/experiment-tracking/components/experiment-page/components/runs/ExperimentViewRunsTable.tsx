@@ -75,6 +75,7 @@ export interface ExperimentViewRunsTableProps {
   compareRunsMode: ExperimentViewRunsCompareMode;
   showControllerNotification: (action: 'resume' | 'stop' | 'delete' | 'clone_modify', status: 'success' | 'error') => void;
   onOpenController?: (runUuid: string, runName: string) => void;
+  isExperimentEnded?: boolean;
 }
 
 export const ExperimentViewRunsTable = React.memo(
@@ -96,6 +97,7 @@ export const ExperimentViewRunsTable = React.memo(
     compareRunsMode,
     showControllerNotification,
     onOpenController,
+    isExperimentEnded,
   }: ExperimentViewRunsTableProps) => {
     const { theme } = useDesignSystemTheme();
     const updateUIState = useUpdateExperimentViewUIState();
@@ -213,7 +215,8 @@ export const ExperimentViewRunsTable = React.memo(
       expandRows,
       runsHiddenMode: uiState.runsHiddenMode,
       showControllerNotification,
-      onOpenController
+      onOpenController,
+      isExperimentEnded,
     });
 
     const gridSizeHandler = useCallback(

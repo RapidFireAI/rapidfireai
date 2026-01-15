@@ -46,6 +46,8 @@ import TerminalLogViewer from '../../../TerminalLogViewer';
 import { useExperimentLogs, useExperimentICLogs } from '../../../../hooks/useExperimentLogs';
 import { useDesignSystemTheme } from '@databricks/design-system';
 import { useUpdateExperimentViewUIState } from '../../contexts/ExperimentPageUIStateContext';
+import { useQuery } from '../../../../../common/utils/reactQueryHooks';
+import { DispatcherService } from '../../../../sdk/DispatcherService';
 
 export interface ExperimentViewRunsOwnProps {
   isLoading: boolean;
@@ -133,6 +135,22 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     experimentName,
     compareRunsMode === 'IC_LOGS'
   );
+
+  // Check if the experiment has ended (not running)
+  const { data: runningExperiment } = useQuery<{ status: string }>(
+    ['running-experiment-status'],
+    async () => {
+      const response = await DispatcherService.getRunningExperiment();
+      return response as { status: string };
+    },
+    {
+      staleTime: 10 * 1000, // 10 seconds
+      cacheTime: 30 * 1000, // 30 seconds
+      retry: 1,
+      refetchOnWindowFocus: false,
+    }
+  );
+  const isExperimentEnded = runningExperiment?.status !== 'RUNNING';
 
   const modelVersionsByRunUuid = useSelector(({ entities }: ReduxState) => entities.modelVersionsByRunUuid);
 
@@ -309,6 +327,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
         uiState={uiState}
         compareRunsMode={compareRunsMode}
         showControllerNotification={showControllerNotification}
+        isExperimentEnded={isExperimentEnded}
       />
     );
 
