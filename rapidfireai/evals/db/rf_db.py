@@ -591,50 +591,6 @@ class RFDatabase:
             }
         return None
 
-    def get_pipeline(self, pipeline_id: int) -> dict[str, Any] | None:
-        """
-        Get a single pipeline by ID.
-
-        Args:
-            pipeline_id: ID of the pipeline to retrieve
-
-        Returns:
-            Pipeline dictionary, or None if not found
-        """
-        query = """
-        SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, flattened_config,status, current_shard_id,
-               shards_completed, total_samples_processed, metric_run_id, error, created_at
-        FROM pipelines
-        WHERE pipeline_id = ?
-        """
-        result = self.db.execute(query, params=(pipeline_id,), fetch=True)
-        if result and len(result) > 0:
-            row = result[0]
-            # Decode the pipeline config from the database (use pipeline_config column)
-            decoded_config = decode_db_payload(row[3]) if row[3] else None
-            # Parse JSON config for display/analytics
-            import json
-
-            json_config = json.loads(row[4]) if row[4] else None
-            flattened_config = json.loads(row[5]) if row[5] else {}
-            return {
-                "pipeline_id": row[0],
-                "context_id": row[1],
-                "pipeline_type": row[2],
-                "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
-                "pipeline_config_json": json_config,  # JSON version for display/analytics
-                "flattened_config": flattened_config,  # Flattened configuration for IC Ops panel display
-                "status": row[6],
-                "current_shard_id": row[7],
-                "shards_completed": row[8],
-                "total_samples_processed": row[9],
-                "metric_run_id": row[10],
-                "error": row[11],
-                "created_at": row[12],
-            }
-        return None
-
     def get_pipeline_by_metric_run_id(self, metric_run_id: str) -> dict[str, Any] | None:
         """
         Get pipeline by its metric_run_id (MLflow/Trackio run UUID).
@@ -665,6 +621,56 @@ class RFDatabase:
                 "pipeline_config": decoded_config,
                 "pipeline_config_json": json_config,
                 "flattened_config": flattened_config,
+                "status": row[6],
+                "current_shard_id": row[7],
+                "shards_completed": row[8],
+                "total_samples_processed": row[9],
+                "metric_run_id": row[10],
+                "error": row[11],
+                "created_at": row[12],
+            }
+        return None
+
+    def get_pipeline(self, pipeline_id: int | str) -> dict[str, Any] | None:
+        """
+        Get a single pipeline by ID.
+
+        Args:
+            pipeline_id: ID of the pipeline to retrieve
+
+        Returns:
+            Pipeline dictionary, or None if not found
+        """
+        query = """
+        SELECT pipeline_id, context_id, pipeline_type,
+               pipeline_config, pipeline_config_json, flattened_config,status, current_shard_id,
+               shards_completed, total_samples_processed, metric_run_id, error, created_at
+        FROM pipelines
+        WHERE pipeline_id = ?
+        """
+        pipeline = None
+        if isinstance(pipeline_id, str):
+            # Try as MLflow run ID (UUID string)
+            pipeline = self.get_pipeline_by_metric_run_id(pipeline_id)
+            # Fallback: try parsing as int
+            if pipeline:
+                return pipeline
+        result = self.db.execute(query, params=(pipeline_id,), fetch=True)
+        if result and len(result) > 0:
+            row = result[0]
+            # Decode the pipeline config from the database (use pipeline_config column)
+            decoded_config = decode_db_payload(row[3]) if row[3] else None
+            # Parse JSON config for display/analytics
+
+            json_config = json.loads(row[4]) if row[4] else None
+            flattened_config = json.loads(row[5]) if row[5] else {}
+            return {
+                "pipeline_id": row[0],
+                "context_id": row[1],
+                "pipeline_type": row[2],
+                "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
+                "pipeline_config_json": json_config,  # JSON version for display/analytics
+                "flattened_config": flattened_config,  # Flattened configuration for IC Ops panel display
                 "status": row[6],
                 "current_shard_id": row[7],
                 "shards_completed": row[8],

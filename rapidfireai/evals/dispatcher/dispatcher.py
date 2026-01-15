@@ -626,22 +626,11 @@ class Dispatcher:
             if run_id is None:
                 return jsonify({"error": "run_id is required"}), 400
 
-            # Try to get pipeline by ID first (if numeric), otherwise by MLflow run ID
-            pipeline = None
-            if isinstance(run_id, int):
-                pipeline = self.db.get_pipeline(run_id)
-            elif isinstance(run_id, str):
-                # Try as MLflow run ID (UUID string)
-                pipeline = self.db.get_pipeline_by_metric_run_id(run_id)
-                # Fallback: try parsing as int
-                if not pipeline:
-                    try:
-                        pipeline = self.db.get_pipeline(int(run_id))
-                    except ValueError:
-                        pass
 
+            # Validate pipeline exists
+            pipeline = self.db.get_pipeline(run_id)
             if not pipeline:
-                return jsonify({"error": "Run not found"}), 404
+                return jsonify({"error": f"Run {run_id} not found"}), 40
 
             return jsonify(self._transform_pipeline_to_run(pipeline)), 200
 
@@ -848,7 +837,7 @@ class Dispatcher:
                 "experiment_id": experiment.get("experiment_id"),
                 "experiment_name": experiment.get("experiment_name"),
                 "status": experiment.get("status"),
-                "mlflow_experiment_id": experiment.get("mlflow_experiment_id"),
+                "metric_experiment_id": experiment.get("metric_experiment_id"),
             }), 200
 
         except Exception as e:
