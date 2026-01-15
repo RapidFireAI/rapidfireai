@@ -152,7 +152,7 @@ class Controller:
                     self.metric_logger.log_param(metric_run_id, "warm-start", str(warm_started_from))
                 if cloned_from:
                     self.metric_logger.log_param(metric_run_id, "parent-run", str(cloned_from))
-                self.logger.debug(f"Populated MetricLogger with model config info for run {run_id}.")       
+                self.logger.debug(f"Populated MetricLogger with model config info for run {run_id}.")
                 self.db.set_run_details(
                     run_id=run_id,
                     metric_run_id=metric_run_id,
@@ -292,7 +292,14 @@ class Controller:
                         batch_size=effective_batch_size,
                         offset=parent_run_details["chunk_offset"],
                     )
-                    clone_chunk_offset = chunker.get_clone_offset(parent_run_details["num_chunks_visited_curr_epoch"])
+                    # Convert count to chunk_id by subtracting 1, with edge case handling for 0 chunks visited
+                    num_chunks_visited = parent_run_details["num_chunks_visited_curr_epoch"]
+                    if num_chunks_visited == 0:
+                        # No chunks visited yet - warm-clone behaves like cold clone (start from beginning)
+                        clone_chunk_offset = 0
+                    else:
+                        last_completed_chunk_id = num_chunks_visited - 1
+                        clone_chunk_offset = chunker.get_clone_offset(last_completed_chunk_id)
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
                         "warm_started_from": parent_run_id,

@@ -1,7 +1,7 @@
 import pytest
 from datasets import Dataset
 
-from rapidfireai.backend.chunks import DatasetChunks
+from rapidfireai.fit.backend.chunks import DatasetChunks
 
 
 class TestDatasetChunks:
@@ -166,6 +166,95 @@ class TestDatasetChunks:
         # Test with negative chunk ID
         with pytest.raises(ValueError, match="Invalid chunk_id"):
             chunker.get_clone_offset(last_completed_chunk=-1)
+
+    def test_clone_offset_with_chunk_count_conversion(self):
+        """Test that clone offset works correctly when converting chunk count to chunk_id."""
+        num_chunks = 4
+        chunker = DatasetChunks(dataset_size=100, n_chunks=num_chunks, batch_size=8)
+
+        for chunks_completed in range(1, num_chunks + 1):
+            last_completed_chunk_id = chunks_completed - 1
+            clone_offset = chunker.get_clone_offset(last_completed_chunk_id)
+
+            _, chunk_end = chunker.get_chunk_indices(last_completed_chunk_id)
+            expected_offset = chunk_end % chunker.dataset_size
+            assert clone_offset == expected_offset, (
+                f"At chunks_completed={chunks_completed}: "
+                f"expected offset {expected_offset}, got {clone_offset}"
+            )
+
+    def test_clone_offset_zero_chunks_visited(self):
+        """Test clone offset when no chunks have been visited yet."""
+        chunker = DatasetChunks(dataset_size=100, n_chunks=4, batch_size=8)
+
+        num_chunks_visited = 0
+
+        if num_chunks_visited == 0:
+            clone_offset = 0
+        else:
+            last_completed_chunk_id = num_chunks_visited - 1
+            clone_offset = chunker.get_clone_offset(last_completed_chunk_id)
+
+        assert clone_offset == 0, "Zero chunks visited should result in offset 0"
+
+    def test_clone_offset_all_chunks_completed(self):
+        """Test clone offset wraps around when all chunks have been completed."""
+        dataset_size = 100
+        num_chunks = 4
+        chunker = DatasetChunks(dataset_size=dataset_size, n_chunks=num_chunks, batch_size=8)
+
+        num_chunks_visited = num_chunks
+        last_completed_chunk_id = num_chunks_visited - 1
+
+        clone_offset = chunker.get_clone_offset(last_completed_chunk_id)
+
+        _, last_chunk_end = chunker.get_chunk_indices(last_completed_chunk_id)
+        expected_offset = last_chunk_end % dataset_size
+
+        assert clone_offset == expected_offset
+
+    def test_warm_clone_offset_all_chunk_boundaries(self):
+        """Test warm clone offset calculation at all chunk boundaries."""
+        len_train_dataset = 100
+        num_chunks = 4
+        batch_size = 8
+        parent_chunk_offset = 0
+
+        for num_chunks_visited in range(1, num_chunks + 1):
+            chunker = DatasetChunks(
+                len_train_dataset,
+                num_chunks,
+                batch_size=batch_size,
+                offset=parent_chunk_offset,
+            )
+
+            if num_chunks_visited == 0:
+                clone_chunk_offset = 0
+            else:
+                last_completed_chunk_id = num_chunks_visited - 1
+                clone_chunk_offset = chunker.get_clone_offset(last_completed_chunk_id)
+
+            assert isinstance(clone_chunk_offset, int)
+            assert 0 <= clone_chunk_offset < len_train_dataset
+
+    def test_clone_offset_count_vs_chunk_id(self):
+        """Test that get_clone_offset expects chunk_id (0-indexed), not chunk count."""
+        chunker = DatasetChunks(dataset_size=100, n_chunks=4, batch_size=8)
+
+        # Chunk count after completing all 4 chunks
+        num_chunks_visited = 4
+
+        # Passing count directly should fail (chunk_id 4 doesn't exist)
+        try:
+            chunker.get_clone_offset(num_chunks_visited)
+            assert False, "Expected ValueError was not raised"
+        except ValueError as e:
+            print(f"Expected error when passing count as chunk_id: {e}")
+
+        # Converting count to chunk_id should work
+        last_completed_chunk_id = num_chunks_visited - 1
+        clone_offset = chunker.get_clone_offset(last_completed_chunk_id)
+        assert isinstance(clone_offset, int)
 
     def test_offset_batch_alignment(self):
         """Test that offset runs maintain good batch alignment."""
