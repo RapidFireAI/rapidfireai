@@ -602,7 +602,7 @@ class RFDatabase:
         """
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, status, current_shard_id,
+               pipeline_config, pipeline_config_json, flattened_config,status, current_shard_id,
                shards_completed, total_samples_processed, metric_run_id, error, created_at
         FROM pipelines
         WHERE pipeline_id = ?
@@ -623,13 +623,14 @@ class RFDatabase:
                 "pipeline_type": row[2],
                 "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
                 "pipeline_config_json": json_config,  # JSON version for display/analytics
-                "status": row[5],
-                "current_shard_id": row[6],
-                "shards_completed": row[7],
-                "total_samples_processed": row[8],
-                "metric_run_id": row[9],
-                "error": row[10],
-                "created_at": row[11],
+                "flattened_config": flattened_config,  # Flattened configuration for IC Ops panel display
+                "status": row[6],
+                "current_shard_id": row[7],
+                "shards_completed": row[8],
+                "total_samples_processed": row[9],
+                "metric_run_id": row[10],
+                "error": row[11],
+                "created_at": row[12],
             }
         return None
 
@@ -696,7 +697,7 @@ class RFDatabase:
         """
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
-               pipeline_config, pipeline_config_json, status, current_shard_id,
+               pipeline_config, pipeline_config_json, flattened_config, status, current_shard_id,
                shards_completed, total_samples_processed, metric_run_id, error, created_at
         FROM pipelines
         ORDER BY pipeline_id DESC
@@ -718,14 +719,15 @@ class RFDatabase:
                         "context_id": row[1],
                         "pipeline_type": row[2],
                         "pipeline_config": decoded_config,  # Use decoded config for actual pipeline object
-                        "pipeline_config_json": json_config,  # JSON version for display/analytics
-                        "status": row[5],
-                        "current_shard_id": row[6],
-                        "shards_completed": row[7],
-                        "total_samples_processed": row[8],
-                        "metric_run_id": row[9],
-                        "error": row[10],
-                        "created_at": row[11],
+                        "pipeline_config_json": json_config,     # JSON version for display/analytics
+                        "flattened_config": flattened_config,  # Flattened configuration for IC Ops panel display
+                        "status": row[6],
+                        "current_shard_id": row[7],
+                        "shards_completed": row[8],
+                        "total_samples_processed": row[9],
+                        "metric_run_id": row[10],
+                        "error": row[11],
+                        "created_at": row[12],
                     }
                 )
         return pipelines
