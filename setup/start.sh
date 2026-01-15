@@ -59,9 +59,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAPIDFIRE_DIR="$SCRIPT_DIR/../rapidfireai"
 RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
-DISPATCHER_DIR="$RAPIDFIRE_FIT_DIR/dispatcher"
 FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
 RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt)
+DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
 
 RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
 RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
@@ -172,7 +172,7 @@ cleanup() {
     if [[ "$RF_COLAB_MODE" != "true" ]]; then
         # Safe, specific patterns for non-Colab environments
         pkill -f "mlflow server" 2>/dev/null || true
-        pkill -f "gunicorn.*rapidfireai.fit.dispatcher" 2>/dev/null || true
+        pkill -f "gunicorn.*rapidfireai.$RAPIDFIRE_MODE.dispatcher" 2>/dev/null || true
         # Only kill Flask server if we're not in Colab (frontend doesn't run in Colab)
         pkill -f "python.*rapidfireai/frontend/server.py" 2>/dev/null || true
     fi
