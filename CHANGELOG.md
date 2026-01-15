@@ -172,7 +172,7 @@ The non-multiple chunk is positioned last to contain any partial batch [Issue 37
 
 ### Fixes
 - Added checks in create_warm_start_checkpoint method in shm_manager.py. This method is only triggered during clone-modify warm start operations.
-- Creates mlflow.db file in RF_DB_PATH or ~/db
+- Creates rapidfire_mlflow.db file in RF_DB_PATH or ~/db
 - If netcat's nc not found rapidfireai start now falls back to a python port checker
 - `rapidfireai start` now tries python3/pip3 if possible then falls back to python/pip
 

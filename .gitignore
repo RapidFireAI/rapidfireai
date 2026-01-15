@@ -215,6 +215,8 @@ __marimo__/
 # RapidFire Database
 rapidfireai/db/rapidfire.db
 db/*
+rapidfire_fit.db
+rapidfire_evals.db
 
 # trials
 trials/
@@ -222,6 +224,7 @@ rapidfireai/db/rapidfire.db-shm
 rapidfireai/db/rapidfire.db-wal
 
 # mlflow
+rapidfire_mlflow.db
 mlflow.db
 mlruns/
 
