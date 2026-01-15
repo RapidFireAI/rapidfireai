@@ -988,7 +988,7 @@ def run_dispatcher(host: str = "0.0.0.0", port: int = 8851) -> None:
         dispatcher = Dispatcher()
 
         # Enable verbose logging for waitress
-        logging.getLogger("waitress").setLevel(logging.DEBUG)
+        logging.getLogger("waitress").setLevel(logging.WARNING)
 
         # Use waitress to serve the Flask app
         serve(dispatcher.app, host=host, port=port, threads=6)
