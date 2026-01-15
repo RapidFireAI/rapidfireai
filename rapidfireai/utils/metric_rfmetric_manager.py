@@ -3,7 +3,7 @@ This module contains the RFMetricLogger class which is responsible for managing 
 """
 
 from typing import Optional
-
+from pathlib import Path
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerConfig, MetricLoggerType
 from rapidfireai.utils.metric_mlflow_manager import MLflowMetricLogger
 from rapidfireai.utils.metric_tensorboard_manager import TensorBoardMetricLogger
@@ -173,7 +173,7 @@ class RFMetricLogger(MetricLogger):
             metric_loggers["rf_tensorboard"] = {
                 "type": MetricLoggerType.TENSORBOARD,
                 "config": {
-                    "log_dir": RF_TENSORBOARD_LOG_DIR,
+                    "log_dir": Path(RF_TENSORBOARD_LOG_DIR) / experiment_name,
                 },
             }
         if RF_TRACKIO_ENABLED == "true":
