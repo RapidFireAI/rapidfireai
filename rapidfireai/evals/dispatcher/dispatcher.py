@@ -630,7 +630,7 @@ class Dispatcher:
             # Validate pipeline exists
             pipeline = self.db.get_pipeline(run_id)
             if not pipeline:
-                return jsonify({"error": f"Run {run_id} not found"}), 40
+                return jsonify({"error": f"Run {run_id} not found"}), 400
 
             return jsonify(self._transform_pipeline_to_run(pipeline)), 200
 
