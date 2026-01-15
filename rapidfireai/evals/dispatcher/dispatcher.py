@@ -7,6 +7,7 @@ FIXED: Now properly handles CORS preflight (OPTIONS) requests for VS Code/Cursor
 
 import json
 import logging
+import os
 import threading
 import traceback
 
@@ -15,7 +16,7 @@ from flask_cors import CORS
 from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
-from rapidfireai.utils.constants import DispatcherConfig, ColabConfig
+from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_LOG_PATH, RF_LOG_FILENAME
 from rapidfireai.evals.utils.constants import ICOperation
 
 CORS_ALLOWED_ORIGINS = "*" # Allow all origins
@@ -871,50 +872,106 @@ class Dispatcher:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
     # ============================================================
-    # Logging endpoints (placeholders)
+    # Logging endpoints
     # ============================================================
 
     def get_experiment_logs(self) -> tuple[Response, int]:
         """
         Get experiment logs.
 
-        This is a placeholder endpoint for frontend compatibility.
-        Actual log retrieval would require integration with the logging system.
+        Reads logs from the experiment log file and returns entries matching
+        the experiment name.
 
         Request body:
             {
-                "experiment_name": str (optional)
+                "experiment_name": str (optional) - if not provided, uses running experiment
             }
 
         Returns:
-            List of log entries (currently empty)
+            List of log entries for the experiment
         """
         if request.method == "OPTIONS":
             return jsonify({}), 200
 
-        # Placeholder - return empty logs for now
-        return jsonify([]), 200
+        try:
+            experiment_name = None
+            if request.is_json:
+                data = request.get_json()
+                if data and data.get("experiment_name"):
+                    experiment_name = data["experiment_name"]
+
+            if not experiment_name:
+                running_exp = self.db.get_running_experiment()
+                if running_exp:
+                    experiment_name = running_exp.get("experiment_name")
+
+            if not experiment_name:
+                return jsonify([]), 200
+
+            log_file_path = os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
+
+            if not os.path.exists(log_file_path):
+                return jsonify([]), 200
+
+            experiment_logs = []
+            with open(log_file_path, encoding="utf-8") as f:
+                for line in f:
+                    # Filter for lines containing the experiment name
+                    if f"[{experiment_name}:" in line or f"| {experiment_name} |" in line:
+                        experiment_logs.append(line.strip())
+
+            return jsonify(experiment_logs), 200
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
     def get_ic_logs(self) -> tuple[Response, int]:
         """
         Get interactive control logs.
 
-        This is a placeholder endpoint for frontend compatibility.
-        Actual log retrieval would require integration with the logging system.
+        Reads logs from the experiment log file and returns entries related
+        to interactive control operations.
 
         Request body:
             {
-                "experiment_name": str (optional)
+                "experiment_name": str (optional) - if not provided, uses running experiment
             }
 
         Returns:
-            List of IC log entries (currently empty)
+            List of IC log entries for the experiment
         """
         if request.method == "OPTIONS":
             return jsonify({}), 200
 
-        # Placeholder - return empty logs for now
-        return jsonify([]), 200
+        try:
+            experiment_name = None
+            if request.is_json:
+                data = request.get_json()
+                if data and data.get("experiment_name"):
+                    experiment_name = data["experiment_name"]
+
+            if not experiment_name:
+                running_exp = self.db.get_running_experiment()
+                if running_exp:
+                    experiment_name = running_exp.get("experiment_name")
+
+            if not experiment_name:
+                return jsonify([]), 200
+
+            log_file_path = os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
+
+            if not os.path.exists(log_file_path):
+                return jsonify([]), 200
+
+            # Read and filter logs for interactive-control entries
+            ic_logs = []
+            with open(log_file_path, encoding="utf-8") as f:
+                for line in f:
+                    if f"| {experiment_name} | interactive-control |" in line:
+                        ic_logs.append(line.strip())
+
+            return jsonify(ic_logs), 200
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 def run_dispatcher(host: str = "0.0.0.0", port: int = 8851) -> None:
