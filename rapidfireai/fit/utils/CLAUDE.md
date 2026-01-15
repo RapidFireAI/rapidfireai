@@ -384,7 +384,7 @@ trainer = create_trainer_instance(config, shm_manager)
 
 **Usage**:
 ```python
-python -m rapidfireai.fit.utils.ping
+python -m rapidfireai.utils.ping
 # Checks if dispatcher, mlflow, and frontend servers are running
 ```
 

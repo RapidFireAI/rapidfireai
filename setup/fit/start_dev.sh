@@ -224,12 +224,12 @@ start_mlflow() {
         setsid mlflow server \
             --host $RF_MLFLOW_HOST \
             --port $RF_MLFLOW_PORT \
-            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > /dev/null 2>&1 &
+            --backend-store-uri sqlite:///${RF_DB_PATH}/rapidfire_mlflow.db > /dev/null 2>&1 &
     else
         nohup mlflow server \
             --host $RF_MLFLOW_HOST \
             --port $RF_MLFLOW_PORT \
-            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > /dev/null 2>&1 &
+            --backend-store-uri sqlite:///${RF_DB_PATH}/rapidfire_mlflow.db > /dev/null 2>&1 &
     fi
 
     local mlflow_pid=$!
