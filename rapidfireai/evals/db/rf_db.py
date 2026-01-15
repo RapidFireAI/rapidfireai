@@ -634,6 +634,46 @@ class RFDatabase:
             }
         return None
 
+    def get_pipeline_by_metric_run_id(self, metric_run_id: str) -> dict[str, Any] | None:
+        """
+        Get pipeline by its metric_run_id (MLflow/Trackio run UUID).
+
+        Args:
+            metric_run_id: The metric tracking run ID (UUID string)
+
+        Returns:
+            Pipeline dictionary, or None if not found
+        """
+        query = """
+        SELECT pipeline_id, context_id, pipeline_type,
+               pipeline_config, pipeline_config_json, flattened_config, status, current_shard_id,
+               shards_completed, total_samples_processed, metric_run_id, error, created_at
+        FROM pipelines
+        WHERE metric_run_id = ?
+        """
+        result = self.db.execute(query, params=(metric_run_id,), fetch=True)
+        if result and len(result) > 0:
+            row = result[0]
+            decoded_config = decode_db_payload(row[3]) if row[3] else None
+            json_config = json.loads(row[4]) if row[4] else None
+            flattened_config = json.loads(row[5]) if row[5] else {}
+            return {
+                "pipeline_id": row[0],
+                "context_id": row[1],
+                "pipeline_type": row[2],
+                "pipeline_config": decoded_config,
+                "pipeline_config_json": json_config,
+                "flattened_config": flattened_config,
+                "status": row[6],
+                "current_shard_id": row[7],
+                "shards_completed": row[8],
+                "total_samples_processed": row[9],
+                "metric_run_id": row[10],
+                "error": row[11],
+                "created_at": row[12],
+            }
+        return None
+
     def get_all_pipeline_ids(self) -> list[dict[str, Any]]:
         """
         Get lightweight list of all pipelines with minimal info (no config).
