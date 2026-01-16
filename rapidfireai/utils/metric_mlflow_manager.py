@@ -46,7 +46,7 @@ class MLflowMetricLogger(MetricLogger):
         return self.experiment_id
 
     def create_run(self, run_name: str) -> str:
-        """Create a new run and return metric_run_id."""
+        """Create a new run and return mlflow_run_id."""
         if self.experiment_id is None:
             raise ValueError("No experiment set. Call create_experiment() or get_experiment() first.")
         run = self.client.create_run(self.experiment_id, run_name=run_name)

@@ -22,8 +22,11 @@ langchain-community>=0.4.1
 langchain-openai>=1.0.2
 langchain-huggingface>=1.0.0
 
+# Statistical Analysis
+
 # Data Manipulation & Display
 unstructured>=0.18.15
+
 
 # Other
 requests==2.32.5
@@ -32,14 +35,4 @@ faiss-gpu-cu12
 fsspec>=2023.1.0,<=2025.3.0
 flashinfer-python>=0.5.3
 flashinfer-cubin>=0.5.3
-
-# MLFlow dashboard dependencies
 mlflow>=3.2.0
-gunicorn>=23.0.0
-flask-cors>=5.0.1
-
-# TrackIO for experiment tracking
-trackio
-
-# Logging
-loguru
