@@ -46,8 +46,6 @@ import TerminalLogViewer from '../../../TerminalLogViewer';
 import { useExperimentLogs, useExperimentICLogs } from '../../../../hooks/useExperimentLogs';
 import { useDesignSystemTheme } from '@databricks/design-system';
 import { useUpdateExperimentViewUIState } from '../../contexts/ExperimentPageUIStateContext';
-import { useQuery } from '../../../../../common/utils/reactQueryHooks';
-import { DispatcherService } from '../../../../sdk/DispatcherService';
 
 export interface ExperimentViewRunsOwnProps {
   isLoading: boolean;
@@ -136,26 +134,9 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     compareRunsMode === 'IC_LOGS'
   );
 
-  // Check if the experiment has ended (not running)
-  // The API only returns data when there's a running experiment - if it fails or returns
-  // an error, it means no experiment is currently running
-  const { data: runningExperiment, isError: isRunningExperimentError } = useQuery<{ status: string; experiment_name?: string }>(
-    ['running-experiment'],
-    async () => {
-      const response = await DispatcherService.getRunningExperiment();
-      return response as { status: string; experiment_name?: string };
-    },
-    {
-      staleTime: 5 * 1000, // 5 seconds
-      cacheTime: 30 * 1000, // 30 seconds
-      refetchInterval: 10 * 1000, // Poll every 10 seconds to detect status changes
-      retry: false, // Don't retry - failure means no running experiment
-      refetchOnWindowFocus: false,
-    }
-  );
-  // Experiment has ended if the API returns an error (no running experiment found)
-  // or if somehow the status is not RUNNING
-  const isExperimentEnded = isRunningExperimentError || (Boolean(runningExperiment?.status) && runningExperiment?.status !== 'RUNNING');
+  // Check if the experiment has ended by looking at run statuses
+  // Experiment has ended if there are runs and none of them are currently running
+  const isExperimentEnded = runInfos.length > 0 && runInfos.every((run) => run.status !== 'RUNNING');
 
   const modelVersionsByRunUuid = useSelector(({ entities }: ReduxState) => entities.modelVersionsByRunUuid);
 
