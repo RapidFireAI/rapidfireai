@@ -46,6 +46,7 @@ import TerminalLogViewer from '../../../TerminalLogViewer';
 import { useExperimentLogs, useExperimentICLogs } from '../../../../hooks/useExperimentLogs';
 import { useDesignSystemTheme } from '@databricks/design-system';
 import { useUpdateExperimentViewUIState } from '../../contexts/ExperimentPageUIStateContext';
+import { DispatcherService } from '../../../../sdk/DispatcherService';
 
 export interface ExperimentViewRunsOwnProps {
   isLoading: boolean;
@@ -134,9 +135,29 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     compareRunsMode === 'IC_LOGS'
   );
 
+  const [hasRunningExperiment, setHasRunningExperiment] = useState<boolean>(true);
+
+  useEffect(() => {
+    const checkRunningExperiment = async () => {
+      try {
+        const response = await DispatcherService.getRunningExperiment();
+        // If response is null/undefined/empty, no experiment is running
+        const isRunning = response && typeof response === 'object' && Object.keys(response).length > 0;
+        setHasRunningExperiment(isRunning);
+      } catch (error) {
+        // If dispatcher returns error, experiment has ended
+        setHasRunningExperiment(false);
+      }
+    };
+
+    checkRunningExperiment();
+    const interval = setInterval(checkRunningExperiment, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Check if the experiment has ended by looking at run statuses
   // Experiment has ended if there are runs and none of them are currently running
-  const isExperimentEnded = runInfos.length > 0 && runInfos.every((run) => run.status !== 'RUNNING');
+  const isExperimentEnded = !hasRunningExperiment;
 
   const modelVersionsByRunUuid = useSelector(({ entities }: ReduxState) => entities.modelVersionsByRunUuid);
 
