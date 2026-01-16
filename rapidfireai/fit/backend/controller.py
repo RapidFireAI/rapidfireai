@@ -14,6 +14,7 @@ from torch.utils.data import Dataset
 
 from rapidfireai.automl import AutoMLAlgorithm
 from rapidfireai.utils.os_utils import mkdir_p
+from rapidfireai.automl import AutoMLAlgorithm
 from rapidfireai.fit.backend.chunks import DatasetChunks
 from rapidfireai.fit.backend.scheduler import Scheduler
 from rapidfireai.fit.db.rf_db import RfDb

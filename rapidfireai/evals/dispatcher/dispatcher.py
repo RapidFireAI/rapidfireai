@@ -7,7 +7,6 @@ FIXED: Now properly handles CORS preflight (OPTIONS) requests for VS Code/Cursor
 
 import json
 import logging
-import os
 import threading
 import traceback
 
@@ -16,7 +15,7 @@ from flask_cors import CORS
 from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
-from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_LOG_PATH, RF_LOG_FILENAME
+from rapidfireai.utils.constants import DispatcherConfig, ColabConfig
 from rapidfireai.evals.utils.constants import ICOperation
 
 CORS_ALLOWED_ORIGINS = "*" # Allow all origins
@@ -30,20 +29,7 @@ class Dispatcher:
     - Resume pipelines (continue from where stopped)
     - Delete pipelines (permanently remove)
     - Clone pipelines (create new pipeline with existing context)
-
-    Also provides frontend-compatible "run" aliases for pipeline endpoints
-    to support the MLflow dashboard IC Ops panel.
     """
-
-    # Status mapping from evals (lowercase) to fit (capitalized) format
-    STATUS_MAP = {
-        "new": "New",
-        "ongoing": "Ongoing",
-        "completed": "Completed",
-        "stopped": "Stopped",
-        "deleted": "Deleted",
-        "failed": "Failed",
-    }
 
     def __init__(self) -> None:
         """Initialize the Dispatcher with database connection and Flask app."""
@@ -71,32 +57,6 @@ class Dispatcher:
 
         # Register routes
         self.register_routes()
-
-    def _transform_pipeline_to_run(self, pipeline: dict) -> dict:
-        """
-        Transform pipeline data to run format for frontend compatibility.
-
-        The MLflow frontend expects run data in a specific format that differs
-        from the evals pipeline format. This method converts pipeline data
-        to match the expected run format.
-
-        Args:
-            pipeline: Pipeline data from database
-
-        Returns:
-            Run-formatted data for frontend consumption
-        """
-        status = pipeline.get("status", "")
-        return {
-            "run_id": pipeline.get("pipeline_id"),
-            "status": self.STATUS_MAP.get(status.lower(), status),
-            "metric_run_id": pipeline.get("metric_run_id"),
-            "config": pipeline.get("pipeline_config_json", {}),
-            "flattened_config": pipeline.get("flattened_config", {}),
-            "num_chunks_visited": pipeline.get("shards_completed", 0),
-            "total_samples_processed": pipeline.get("total_samples_processed", 0),
-            "error": pipeline.get("error", ""),
-        }
 
     def register_routes(self) -> None:
         """Register all REST API routes with OPTIONS support for CORS preflight."""
@@ -162,59 +122,6 @@ class Dispatcher:
         )
         self.app.add_url_rule(
             f"{route_prefix}/get-pipeline", "get_pipeline", self.get_pipeline, methods=["POST", "OPTIONS"]
-        )
-
-        # ============================================================
-        # Frontend-compatible "run" aliases (for MLflow dashboard IC Ops)
-        # These endpoints mirror the fit dispatcher API to allow the
-        # frontend to work with evals mode without modifications.
-        # ============================================================
-
-        # Run query aliases
-        self.app.add_url_rule(
-            f"{route_prefix}/get-all-runs", "get_all_runs", self.get_all_runs, methods=["GET", "OPTIONS"]
-        )
-        self.app.add_url_rule(
-            f"{route_prefix}/get-run", "get_run", self.get_run, methods=["POST", "OPTIONS"]
-        )
-
-        # IC Ops aliases (run → pipeline)
-        self.app.add_url_rule(
-            f"{route_prefix}/stop-run", "stop_run", self.stop_run, methods=["POST", "OPTIONS"]
-        )
-        self.app.add_url_rule(
-            f"{route_prefix}/resume-run", "resume_run", self.resume_run, methods=["POST", "OPTIONS"]
-        )
-        self.app.add_url_rule(
-            f"{route_prefix}/delete-run", "delete_run", self.delete_run, methods=["POST", "OPTIONS"]
-        )
-        self.app.add_url_rule(
-            f"{route_prefix}/clone-modify-run", "clone_modify_run", self.clone_modify_run, methods=["POST", "OPTIONS"]
-        )
-
-        # Experiment info endpoints (for frontend context)
-        self.app.add_url_rule(
-            f"{route_prefix}/get-running-experiment",
-            "get_running_experiment",
-            self.get_running_experiment,
-            methods=["GET", "OPTIONS"],
-        )
-        self.app.add_url_rule(
-            f"{route_prefix}/get-all-experiment-names",
-            "get_all_experiment_names",
-            self.get_all_experiment_names,
-            methods=["GET", "OPTIONS"],
-        )
-
-        # Logging endpoints (placeholders for frontend compatibility)
-        self.app.add_url_rule(
-            f"{route_prefix}/get-experiment-logs",
-            "get_experiment_logs",
-            self.get_experiment_logs,
-            methods=["POST", "OPTIONS"],
-        )
-        self.app.add_url_rule(
-            f"{route_prefix}/get-ic-logs", "get_ic_logs", self.get_ic_logs, methods=["POST", "OPTIONS"]
         )
 
     def health_check(self) -> tuple[Response, int]:
@@ -577,391 +484,6 @@ class Dispatcher:
         except Exception as e:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
-    # ============================================================
-    # Frontend-compatible "run" alias handlers
-    # ============================================================
-
-    def get_all_runs(self) -> tuple[Response, int]:
-        """
-        Get all runs (alias for get_all_pipelines with response transformation).
-
-        This endpoint provides frontend compatibility by returning pipeline data
-        in the "run" format expected by the MLflow dashboard.
-
-        Returns:
-            List of runs in frontend-compatible format
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
-        try:
-            pipelines = self.db.get_all_pipelines()
-            runs = [self._transform_pipeline_to_run(p) for p in pipelines]
-            return jsonify(runs), 200
-
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
-
-    def get_run(self) -> tuple[Response, int]:
-        """
-        Get a specific run (alias for get_pipeline with response transformation).
-
-        Request body:
-            {
-                "run_id": int or str (pipeline_id or metricrun_id)
-            }
-
-        Returns:
-            Run details in frontend-compatible format
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({"error": "No JSON data provided"}), 400
-
-            run_id = data.get("run_id")
-            if run_id is None:
-                return jsonify({"error": "run_id is required"}), 400
-
-
-            # Validate pipeline exists
-            pipeline = self.db.get_pipeline(run_id)
-            if not pipeline:
-                return jsonify({"error": f"Run {run_id} not found"}), 400
-
-            return jsonify(self._transform_pipeline_to_run(pipeline)), 200
-
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
-
-    def stop_run(self) -> tuple[Response, int]:
-        """
-        Stop a run (alias for stop_pipeline).
-
-        Request body:
-            {
-                "run_id": int
-            }
-
-        Returns:
-            IC operation result
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({"error": "No JSON data provided"}), 400
-
-            run_id = data.get("run_id")
-            if run_id is None:
-                return jsonify({"error": "run_id is required"}), 400
-
-            # Validate pipeline exists
-            pipeline = self.db.get_pipeline(run_id)
-            if not pipeline:
-                return jsonify({"error": f"Run {run_id} not found"}), 404
-
-            # Create IC operation
-            ic_id = self.db.create_ic_operation(
-                operation=ICOperation.STOP.value,
-                pipeline_id=run_id,
-            )
-
-            return jsonify({"ic_id": ic_id, "message": f"Stop request created for run {run_id}"}), 200
-
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
-
-    def resume_run(self) -> tuple[Response, int]:
-        """
-        Resume a run (alias for resume_pipeline).
-
-        Request body:
-            {
-                "run_id": int
-            }
-
-        Returns:
-            IC operation result
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({"error": "No JSON data provided"}), 400
-
-            run_id = data.get("run_id")
-            if run_id is None:
-                return jsonify({"error": "run_id is required"}), 400
-
-            # Validate pipeline exists
-            pipeline = self.db.get_pipeline(run_id)
-            if not pipeline:
-                return jsonify({"error": f"Run {run_id} not found"}), 404
-
-            # Create IC operation
-            ic_id = self.db.create_ic_operation(
-                operation=ICOperation.RESUME.value,
-                pipeline_id=run_id,
-            )
-
-            return jsonify({"ic_id": ic_id, "message": f"Resume request created for run {run_id}"}), 200
-
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
-
-    def delete_run(self) -> tuple[Response, int]:
-        """
-        Delete a run (alias for delete_pipeline).
-
-        Request body:
-            {
-                "run_id": int
-            }
-
-        Returns:
-            IC operation result
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({"error": "No JSON data provided"}), 400
-
-            run_id = data.get("run_id")
-            if run_id is None:
-                return jsonify({"error": "run_id is required"}), 400
-
-            # Validate pipeline exists
-            pipeline = self.db.get_pipeline(run_id)
-            if not pipeline:
-                return jsonify({"error": f"Run {run_id} not found"}), 404
-
-            # Create IC operation
-            ic_id = self.db.create_ic_operation(
-                operation=ICOperation.DELETE.value,
-                pipeline_id=run_id,
-            )
-
-            return jsonify({"ic_id": ic_id, "message": f"Delete request created for run {run_id}"}), 200
-
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
-
-    def clone_modify_run(self) -> tuple[Response, int]:
-        """
-        Clone and modify a run (alias for clone_pipeline with payload transformation).
-
-        Request body:
-            {
-                "run_id": int,           # ID of the run to clone (maps to parent_pipeline_id)
-                "config": dict,          # New configuration
-                "warm_start": bool       # Optional, passed through but may not apply to evals
-            }
-
-        Returns:
-            IC operation result
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({"error": "No JSON data provided"}), 400
-
-            run_id = data.get("run_id")
-            if run_id is None:
-                return jsonify({"error": "run_id is required"}), 400
-
-            config = data.get("config", {})
-            warm_start = data.get("warm_start", False)
-
-            # Validate parent pipeline exists
-            parent_pipeline = self.db.get_pipeline(run_id)
-            if not parent_pipeline:
-                return jsonify({"error": f"Run {run_id} not found"}), 404
-
-            # Get the parent's config to use as base if config is empty
-            if not config:
-                config = parent_pipeline.get("pipeline_config_json", {})
-
-            # Prepare request data for IC operation
-            request_data = {
-                "parent_pipeline_id": run_id,
-                "config_json": config,
-                "warm_start": warm_start,  # Passed through for potential future use
-            }
-
-            # Create IC operation
-            ic_id = self.db.create_ic_operation(
-                operation=ICOperation.CLONE.value,
-                pipeline_id=None,
-                request_data=json.dumps(request_data),
-            )
-
-            return jsonify({"ic_id": ic_id, "message": f"Clone request created from run {run_id}"}), 200
-
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
-
-    # ============================================================
-    # Experiment info endpoints
-    # ============================================================
-
-    def get_running_experiment(self) -> tuple[Response, int]:
-        """
-        Get the currently running experiment.
-
-        Returns:
-            Experiment details including ID, name, status, and MLflow experiment ID
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
-        try:
-            experiment = self.db.get_running_experiment()
-            if not experiment:
-                return jsonify({"error": "No running experiment found"}), 404
-
-            return jsonify({
-                "experiment_id": experiment.get("experiment_id"),
-                "experiment_name": experiment.get("experiment_name"),
-                "status": experiment.get("status"),
-                "metric_experiment_id": experiment.get("metric_experiment_id"),
-            }), 200
-
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
-
-    def get_all_experiment_names(self) -> tuple[Response, int]:
-        """
-        Get all experiment names.
-
-        Returns:
-            List of experiment names
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
-        try:
-            names = self.db.get_all_experiment_names()
-            return jsonify(names), 200
-
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
-
-    # ============================================================
-    # Logging endpoints
-    # ============================================================
-
-    def get_experiment_logs(self) -> tuple[Response, int]:
-        """
-        Get experiment logs.
-
-        Reads logs from the experiment log file and returns entries matching
-        the experiment name.
-
-        Request body:
-            {
-                "experiment_name": str (optional) - if not provided, uses running experiment
-            }
-
-        Returns:
-            List of log entries for the experiment
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
-        try:
-            experiment_name = None
-            if request.is_json:
-                data = request.get_json()
-                if data and data.get("experiment_name"):
-                    experiment_name = data["experiment_name"]
-
-            if not experiment_name:
-                running_exp = self.db.get_running_experiment()
-                if running_exp:
-                    experiment_name = running_exp.get("experiment_name")
-
-            if not experiment_name:
-                return jsonify([]), 200
-
-            log_file_path = os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
-
-            if not os.path.exists(log_file_path):
-                return jsonify([]), 200
-
-            experiment_logs = []
-            with open(log_file_path, encoding="utf-8") as f:
-                for line in f:
-                    # Filter for lines containing the experiment name
-                    if f"[{experiment_name}:" in line or f"| {experiment_name} |" in line:
-                        experiment_logs.append(line.strip())
-
-            return jsonify(experiment_logs), 200
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
-
-    def get_ic_logs(self) -> tuple[Response, int]:
-        """
-        Get interactive control logs.
-
-        Reads logs from the experiment log file and returns entries related
-        to interactive control operations.
-
-        Request body:
-            {
-                "experiment_name": str (optional) - if not provided, uses running experiment
-            }
-
-        Returns:
-            List of IC log entries for the experiment
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
-        try:
-            experiment_name = None
-            if request.is_json:
-                data = request.get_json()
-                if data and data.get("experiment_name"):
-                    experiment_name = data["experiment_name"]
-
-            if not experiment_name:
-                running_exp = self.db.get_running_experiment()
-                if running_exp:
-                    experiment_name = running_exp.get("experiment_name")
-
-            if not experiment_name:
-                return jsonify([]), 200
-
-            log_file_path = os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
-
-            if not os.path.exists(log_file_path):
-                return jsonify([]), 200
-
-            # Read and filter logs for interactive-control entries
-            ic_logs = []
-            with open(log_file_path, encoding="utf-8") as f:
-                for line in f:
-                    if f"| {experiment_name} | interactive-control |" in line:
-                        ic_logs.append(line.strip())
-
-            return jsonify(ic_logs), 200
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
-
 
 def run_dispatcher(host: str = "0.0.0.0", port: int = 8851) -> None:
     """
@@ -976,8 +498,9 @@ def run_dispatcher(host: str = "0.0.0.0", port: int = 8851) -> None:
     try:
         dispatcher = Dispatcher()
 
-        # Enable verbose logging for waitress
-        logging.getLogger("waitress").setLevel(logging.WARNING)
+        # Suppress Flask/werkzeug request logging
+        log = logging.getLogger("werkzeug")
+        log.setLevel(logging.ERROR)
 
         # Use waitress to serve the Flask app
         serve(dispatcher.app, host=host, port=port, threads=6)
@@ -1130,18 +653,6 @@ def start_dispatcher_thread(host: str = "0.0.0.0", port: int = 8851, logger=None
             else:
                 print(f"WARNING: {error_msg}")
             return None
-
-
-def serve_forever() -> Flask:
-    """Start the Dispatcher via Gunicorn.
-
-    This function is the entry point for Gunicorn WSGI server.
-    It returns the Flask app instance for Gunicorn to serve.
-
-    Returns:
-        Flask app instance
-    """
-    return Dispatcher().app
 
 
 if __name__ == "__main__":

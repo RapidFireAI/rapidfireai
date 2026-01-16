@@ -3,7 +3,7 @@
 set -e  # Exit on any error
 
 # Build the frontend
-cd rapidfireai/frontend
+cd rapidfireai/fit/frontend
 if [ "$1" != "build" ]; then
     node ./yarn/releases/yarn-4.9.1.cjs install
 fi

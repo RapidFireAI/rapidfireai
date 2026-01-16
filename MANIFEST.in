@@ -3,19 +3,14 @@ include README.md
 include LICENSE
 
 # Include setup scripts
-include setup/start.sh
+include setup/fit/start.sh
 include setup/fit/start_dev.sh
-include setup/evals/requirements-local.txt
-include setup/evals/requirements-colab.txt
 
 # Include frontend resources
-include rapidfireai/frontend/server.py
-include rapidfireai/frontend/proxy_middleware.py
-include rapidfireai/frontend/build/**/*
-include rapidfireai/frontend/package.json
-
-# Include Python modules - top-level automl (shared)
-recursive-include rapidfireai/automl *.py
+include rapidfireai/fit/frontend/server.py
+include rapidfireai/fit/frontend/proxy_middleware.py
+include rapidfireai/fit/frontend/build/**/*
+include rapidfireai/fit/frontend/package.json
 
 # Include Python modules - fit
 recursive-include rapidfireai/fit/dispatcher *.py
@@ -40,24 +35,24 @@ recursive-include rapidfireai/evals/utils *.py
 recursive-include tutorial_notebooks *
 
 # Explicitly exclude unwanted files and directories - be very specific
-exclude rapidfireai/frontend/node_modules
-exclude rapidfireai/frontend/node_modules/*
-exclude rapidfireai/frontend/.yarn
-exclude rapidfireai/frontend/.yarn/*
-exclude rapidfireai/frontend/dist
-exclude rapidfireai/frontend/dist/*
-exclude rapidfireai/frontend/coverage
-exclude rapidfireai/frontend/coverage/*
-exclude rapidfireai/frontend/.nyc_output
-exclude rapidfireai/frontend/.nyc_output/*
-exclude rapidfireai/frontend/.cache
-exclude rapidfireai/frontend/.cache/*
-exclude rapidfireai/frontend/.next
-exclude rapidfireai/frontend/.next/*
-exclude rapidfireai/frontend/out
-exclude rapidfireai/frontend/out/*
-exclude rapidfireai/frontend/.env*
-exclude rapidfireai/frontend/*.log
+exclude rapidfireai/fit/frontend/node_modules
+exclude rapidfireai/fit/frontend/node_modules/*
+exclude rapidfireai/fit/frontend/.yarn
+exclude rapidfireai/fit/frontend/.yarn/*
+exclude rapidfireai/fit/frontend/dist
+exclude rapidfireai/fit/frontend/dist/*
+exclude rapidfireai/fit/frontend/coverage
+exclude rapidfireai/fit/frontend/coverage/*
+exclude rapidfireai/fit/frontend/.nyc_output
+exclude rapidfireai/fit/frontend/.nyc_output/*
+exclude rapidfireai/fit/frontend/.cache
+exclude rapidfireai/fit/frontend/.cache/*
+exclude rapidfireai/fit/frontend/.next
+exclude rapidfireai/fit/frontend/.next/*
+exclude rapidfireai/fit/frontend/out
+exclude rapidfireai/fit/frontend/out/*
+exclude rapidfireai/fit/frontend/.env*
+exclude rapidfireai/fit/frontend/*.log
 
 # Exclude common unwanted files
 global-exclude *.pyc
