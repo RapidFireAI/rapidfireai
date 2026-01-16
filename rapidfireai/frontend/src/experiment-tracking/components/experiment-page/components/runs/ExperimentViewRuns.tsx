@@ -141,13 +141,14 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     const checkRunningExperiment = async () => {
       /* eslint-disable no-console */
       try {
-        const response = await DispatcherService.getRunningExperiment();
-        console.log('getRunningExperiment response:', response);
-        const isRunning = Boolean(response && typeof response === 'object' && Object.keys(response).length > 0);
-        console.log('isRunning:', isRunning);
-        setHasRunningExperiment(isRunning);
+        const response = await DispatcherService.getAllRuns();
+        console.log('getAllRuns response:', response);
+        // Check if there are any runs in the dispatcher
+        const hasRuns = Boolean(response && Array.isArray(response) && response.length > 0);
+        console.log('hasRuns:', hasRuns);
+        setHasRunningExperiment(hasRuns);
       } catch (error) {
-        console.log('getRunningExperiment error:', error);
+        console.log('getAllRuns error:', error);
         setHasRunningExperiment(false);
       }
       /* eslint-enable no-console */
