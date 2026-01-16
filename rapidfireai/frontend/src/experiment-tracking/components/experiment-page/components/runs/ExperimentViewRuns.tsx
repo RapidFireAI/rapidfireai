@@ -139,17 +139,20 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
 
   useEffect(() => {
     const checkRunningExperiment = async () => {
+      /* eslint-disable no-console */
       try {
         const response = await DispatcherService.getRunningExperiment();
-        // If response is null/undefined/empty, no experiment is running
+        console.log('getRunningExperiment response:', response);
         const isRunning = Boolean(response && typeof response === 'object' && Object.keys(response).length > 0);
+        console.log('isRunning:', isRunning);
         setHasRunningExperiment(isRunning);
       } catch (error) {
-        // If dispatcher returns error, experiment has ended
+        console.log('getRunningExperiment error:', error);
         setHasRunningExperiment(false);
       }
+      /* eslint-enable no-console */
     };
-
+  
     checkRunningExperiment();
     const interval = setInterval(checkRunningExperiment, 5000);
     return () => clearInterval(interval);
