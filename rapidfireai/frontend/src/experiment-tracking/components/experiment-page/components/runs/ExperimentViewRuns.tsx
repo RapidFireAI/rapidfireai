@@ -150,7 +150,8 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
       refetchOnWindowFocus: false,
     }
   );
-  const isExperimentEnded = runningExperiment?.status !== 'RUNNING';
+  // Only consider experiment ended when we have a status and it's explicitly not RUNNING
+  const isExperimentEnded = Boolean(runningExperiment?.status) && runningExperiment?.status !== 'RUNNING';
 
   const modelVersionsByRunUuid = useSelector(({ entities }: ReduxState) => entities.modelVersionsByRunUuid);
 
