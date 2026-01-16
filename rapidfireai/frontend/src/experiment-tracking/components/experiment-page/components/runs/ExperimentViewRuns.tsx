@@ -138,14 +138,15 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
 
   // Check if the experiment has ended (not running)
   const { data: runningExperiment } = useQuery<{ status: string }>(
-    ['running-experiment-status'],
+    ['running-experiment'],
     async () => {
       const response = await DispatcherService.getRunningExperiment();
       return response as { status: string };
     },
     {
-      staleTime: 10 * 1000, // 10 seconds
+      staleTime: 5 * 1000, // 5 seconds
       cacheTime: 30 * 1000, // 30 seconds
+      refetchInterval: 10 * 1000, // Poll every 10 seconds to detect status changes
       retry: 1,
       refetchOnWindowFocus: false,
     }
