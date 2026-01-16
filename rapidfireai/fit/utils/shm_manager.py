@@ -161,32 +161,8 @@ class SharedMemoryManager:
         else:
             return obj
 
-    def _clean_model_for_pickling(self, model):
-        """Remove unpicklable attributes (hooks, closures) from model before saving to shared memory.
-        """
-        # Remove forward hooks that might contain unpicklable closures
-        for module in model.modules():
-            # # Remove forward hooks - these may contain unpicklable closures
-            # if hasattr(module, "_forward_hooks"):
-            #     module._forward_hooks.clear()
-            
-            if hasattr(module, "make_inputs_require_grads"):
-                try:
-                    delattr(module, "make_inputs_require_grads")
-                except (AttributeError, TypeError):
-                    pass
-
-        if hasattr(model, "make_inputs_require_grads"):
-            try:
-                delattr(model, "make_inputs_require_grads")
-            except (AttributeError, TypeError):
-                pass
-        
-        return model
-
     def _move_model_to_shared_memory(self, model):
         """Move model to shared memory with proper BitsAndBytes handling"""
-        model = self._clean_model_for_pickling(model)
         model = model.cpu()
         for _, param in model.named_parameters():
             if param.data is not None:
