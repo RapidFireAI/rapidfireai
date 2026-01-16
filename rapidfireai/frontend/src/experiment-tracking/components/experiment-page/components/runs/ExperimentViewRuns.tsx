@@ -137,22 +137,25 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
   );
 
   // Check if the experiment has ended (not running)
-  const { data: runningExperiment } = useQuery<{ status: string }>(
+  // The API only returns data when there's a running experiment - if it fails or returns
+  // an error, it means no experiment is currently running
+  const { data: runningExperiment, isError: isRunningExperimentError } = useQuery<{ status: string; experiment_name?: string }>(
     ['running-experiment'],
     async () => {
       const response = await DispatcherService.getRunningExperiment();
-      return response as { status: string };
+      return response as { status: string; experiment_name?: string };
     },
     {
       staleTime: 5 * 1000, // 5 seconds
       cacheTime: 30 * 1000, // 30 seconds
       refetchInterval: 10 * 1000, // Poll every 10 seconds to detect status changes
-      retry: 1,
+      retry: false, // Don't retry - failure means no running experiment
       refetchOnWindowFocus: false,
     }
   );
-  // Only consider experiment ended when we have a status and it's explicitly not RUNNING
-  const isExperimentEnded = Boolean(runningExperiment?.status) && runningExperiment?.status !== 'RUNNING';
+  // Experiment has ended if the API returns an error (no running experiment found)
+  // or if somehow the status is not RUNNING
+  const isExperimentEnded = isRunningExperimentError || (Boolean(runningExperiment?.status) && runningExperiment?.status !== 'RUNNING');
 
   const modelVersionsByRunUuid = useSelector(({ entities }: ReduxState) => entities.modelVersionsByRunUuid);
 
