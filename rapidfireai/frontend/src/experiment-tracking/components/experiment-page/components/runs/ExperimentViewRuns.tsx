@@ -142,7 +142,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
       try {
         const response = await DispatcherService.getRunningExperiment();
         // If response is null/undefined/empty, no experiment is running
-        const isRunning = response && typeof response === 'object' && Object.keys(response).length > 0;
+        const isRunning = Boolean(response && typeof response === 'object' && Object.keys(response).length > 0);
         setHasRunningExperiment(isRunning);
       } catch (error) {
         // If dispatcher returns error, experiment has ended
