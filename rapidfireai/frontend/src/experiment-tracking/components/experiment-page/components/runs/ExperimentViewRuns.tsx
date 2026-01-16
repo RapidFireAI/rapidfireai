@@ -46,7 +46,6 @@ import TerminalLogViewer from '../../../TerminalLogViewer';
 import { useExperimentLogs, useExperimentICLogs } from '../../../../hooks/useExperimentLogs';
 import { useDesignSystemTheme } from '@databricks/design-system';
 import { useUpdateExperimentViewUIState } from '../../contexts/ExperimentPageUIStateContext';
-import { DispatcherService } from '../../../../sdk/DispatcherService';
 
 export interface ExperimentViewRunsOwnProps {
   isLoading: boolean;
@@ -134,34 +133,6 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     experimentName,
     compareRunsMode === 'IC_LOGS'
   );
-
-  const [hasRunningExperiment, setHasRunningExperiment] = useState<boolean>(true);
-
-  useEffect(() => {
-    const checkRunningExperiment = async () => {
-      /* eslint-disable no-console */
-      try {
-        const response = await DispatcherService.getAllExperimentNames();
-        console.log('getAllExperimentNames response:', response);
-        // Check if current experiment name is in the list of running experiments
-        const isRunning = Boolean(response && Array.isArray(response) && response.includes(experimentName));
-        console.log('isRunning:', isRunning, 'experimentName:', experimentName);
-        setHasRunningExperiment(isRunning);
-      } catch (error) {
-        console.log('getAllExperimentNames error:', error);
-        setHasRunningExperiment(false);
-      }
-      /* eslint-enable no-console */
-    };
-  
-    checkRunningExperiment();
-    const interval = setInterval(checkRunningExperiment, 5000);
-    return () => clearInterval(interval);
-  }, [experimentName]);
-
-  // Check if the experiment has ended by looking at run statuses
-  // Experiment has ended if there are runs and none of them are currently running
-  const isExperimentEnded = !hasRunningExperiment;
 
   const modelVersionsByRunUuid = useSelector(({ entities }: ReduxState) => entities.modelVersionsByRunUuid);
 
@@ -338,7 +309,6 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
         uiState={uiState}
         compareRunsMode={compareRunsMode}
         showControllerNotification={showControllerNotification}
-        isExperimentEnded={isExperimentEnded}
       />
     );
 

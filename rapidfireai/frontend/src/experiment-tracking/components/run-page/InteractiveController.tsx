@@ -34,7 +34,6 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
   const [warmStart, setWarmStart] = useState(false);
   const [runStatus, setRunStatus] = useState('');
   const [chunkNumber, setChunkNumber] = useState(0);
-  const [isRunAvailable, setIsRunAvailable] = useState(true);
 
   useEffect(() => {
     const fetchRunConfiguration = async () => {
@@ -45,13 +44,11 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
 
         if (!run_id) {
           console.error('Run not found');
-          setIsRunAvailable(false);
           return;
         }
 
         const response = await DispatcherService.getRunUi({ run_id: run_id });
         if (response && typeof response === 'object' && 'config' in response) {
-          setIsRunAvailable(true);
           const config = response.config;
           setTextareaContent(JSON.stringify(config, null, 2));
           setOriginalTextareaContent(JSON.stringify(config, null, 2));
@@ -63,7 +60,6 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
           }
         } else {
           console.error('Response does not contain a config object');
-          setIsRunAvailable(false);
         }
       } catch (error) {
         console.error('Error fetching run configuration:', error);
@@ -204,7 +200,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
             icon={<PlayIcon color='success' />}
             css={styles.iconButton}
             onClick={handleResumeRun}
-            disabled={!isRunAvailable || runStatus?.toLowerCase() === 'completed'}
+            disabled={runStatus?.toLowerCase() === 'completed'}
           >
             Resume
           </Button>
@@ -216,7 +212,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
             icon={<StopIcon color='danger' />}
             css={styles.iconButton}
             onClick={handleStopRun}
-            disabled={!isRunAvailable || runStatus?.toLowerCase() === 'completed'}
+            disabled={runStatus?.toLowerCase() === 'completed'}
           >
             Stop
           </Button>
@@ -230,7 +226,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
               setIsEditable(true);
               setWarmStart(false);
             }}
-            disabled={!isRunAvailable || runStatus?.toLowerCase() === 'completed'}
+            disabled={runStatus?.toLowerCase() === 'completed'}
           >
             Clone
           </Button>
@@ -241,7 +237,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
             size="middle"
             icon={<TrashIcon color='danger' />}
             onClick={handleDeleteRun}
-            disabled={!isRunAvailable || runStatus?.toLowerCase() === 'completed'}
+            disabled={runStatus?.toLowerCase() === 'completed'}
           >
             Delete
           </Button>
