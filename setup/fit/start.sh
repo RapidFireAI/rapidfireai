@@ -56,12 +56,9 @@ RF_PID_FILE="${RF_PID_FILE:=$RF_HOME/rapidfire_pids.txt}"
 # Directory paths for pip-installed package
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Navigate to rapidfireai/fit directory from setup/fit directory
-RAPIDFIRE_DIR="$SCRIPT_DIR/../rapidfireai"
-RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
-RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
-FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
-RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "fit")
-DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
+RAPIDFIRE_FIT_DIR="$SCRIPT_DIR/../../rapidfireai/fit"
+DISPATCHER_DIR="$RAPIDFIRE_FIT_DIR/dispatcher"
+FRONTEND_DIR="$RAPIDFIRE_FIT_DIR/frontend"
 
 RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
 RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
@@ -172,9 +169,9 @@ cleanup() {
     if [[ "$RF_COLAB_MODE" != "true" ]]; then
         # Safe, specific patterns for non-Colab environments
         pkill -f "mlflow server" 2>/dev/null || true
-        pkill -f "gunicorn.*rapidfireai.$RAPIDFIRE_MODE.dispatcher" 2>/dev/null || true
+        pkill -f "gunicorn.*rapidfireai.fit.dispatcher" 2>/dev/null || true
         # Only kill Flask server if we're not in Colab (frontend doesn't run in Colab)
-        pkill -f "python.*rapidfireai/frontend/server.py" 2>/dev/null || true
+        pkill -f "python.*rapidfireai/fit/frontend/server.py" 2>/dev/null || true
     fi
 
     print_success "All services stopped"
@@ -325,12 +322,12 @@ start_mlflow() {
         setsid mlflow server \
             --host $RF_MLFLOW_HOST \
             --port $RF_MLFLOW_PORT \
-            --backend-store-uri sqlite:///${RF_DB_PATH}/rapidfire_mlflow.db > "$RF_LOG_PATH/mlflow.log" 2>&1 &
+            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > "$RF_LOG_PATH/mlflow.log" 2>&1 &
     else
         nohup mlflow server \
             --host $RF_MLFLOW_HOST \
             --port $RF_MLFLOW_PORT \
-            --backend-store-uri sqlite:///${RF_DB_PATH}/rapidfire_mlflow.db > "$RF_LOG_PATH/mlflow.log" 2>&1 &
+            --backend-store-uri sqlite:///${RF_DB_PATH}/mlflow.db > "$RF_LOG_PATH/mlflow.log" 2>&1 &
     fi
 
     local mlflow_pid=$!
@@ -377,11 +374,6 @@ start_mlflow() {
 
 # Function to start API server
 start_api_server() {
-    # if [[ "$RAPIDFIRE_MODE" != "fit" ]]; then
-    #     print_status "Skipping API server (not in fit mode)"
-    #     return 0
-    # fi
-
     print_status "Starting API server with Gunicorn..."
 
     # Check if dispatcher directory exists
@@ -617,7 +609,7 @@ show_status() {
             print_status "   %tensorboard --logdir ~/experiments/{experiment_name}/tensorboard_logs"
         fi
     else
-        # if [[ "$rf_mode" == "fit" ]]; then
+        if [[ "$rf_mode" == "fit" ]]; then
             if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
                 print_success "🚀 RapidFire Frontend is ready!"
                 print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
@@ -625,7 +617,7 @@ show_status() {
             else
                 print_error "🚨 RapidFire Frontend is not ready!"
             fi
-        # fi
+        fi
     fi
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
@@ -639,13 +631,13 @@ show_status() {
     else
         print_error "🚨 RapidFire API server is not ready!"
     fi
-    # if [[ "$rf_mode" == "evals" ]]; then
-    #     if ping_port $RF_RAY_HOST $RF_RAY_PORT; then
-    #         print_success "🚀 RapidFire Ray server is ready!"
-    #     else
-    #         print_error "🚨 RapidFire Ray server is not ready!"
-    #     fi
-    # fi
+    if [[ "$rf_mode" == "evals" ]]; then
+        if ping_port $RF_RAY_HOST $RF_RAY_PORT; then
+            print_success "🚀 RapidFire Ray server is ready!"
+        else
+            print_error "🚨 RapidFire Ray server is not ready!"
+        fi
+    fi
 
     # Show log file status
     echo ""

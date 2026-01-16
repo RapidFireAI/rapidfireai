@@ -307,7 +307,7 @@ def _setup_callbacks(
             metric_run_id=trainer_config.metric_run_id,
             completed_steps=trainer_config.completed_steps,
             chunk_id=chunk_id,
-            num_epochs_completed=trainer_config.num_epochs_completed
+            num_epochs_completed=trainer_config.num_epochs_completed,
         )
         callbacks.append(metric_callback)
 
