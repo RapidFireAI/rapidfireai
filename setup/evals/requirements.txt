@@ -45,3 +45,6 @@ ipywidgets
 tensorboard
 
 jq
+
+# Logging
+loguru

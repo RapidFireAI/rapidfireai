@@ -38,12 +38,15 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
   useEffect(() => {
     const fetchRunConfiguration = async () => {
       try {
-        const run_id = Number(runName);
+        // Try numeric run_id first (fit mode), fallback to runUuid string (evals mode)
+        const numericId = Number(runName);
+        const run_id = !isNaN(numericId) && numericId > 0 ? numericId : runUuid;
+
         if (!run_id) {
           console.error('Run not found');
           return;
         }
-        
+
         const response = await DispatcherService.getRunUi({ run_id: run_id });
         if (response && typeof response === 'object' && 'config' in response) {
           const config = response.config;
@@ -64,11 +67,17 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
     };
 
     fetchRunConfiguration();
-  }, [runName]);
+  }, [runName, runUuid]);
+
+  // Helper to get run_id - use numeric runName for fit mode, fallback to runUuid for evals mode
+  const getRunId = (): number | string => {
+    const numericId = Number(runName);
+    return !isNaN(numericId) && numericId > 0 ? numericId : runUuid;
+  };
 
   const handleResumeRun = async () => {
     try {
-      const run_id = Number(runName);
+      const run_id = getRunId();
       const response = await DispatcherService.resumeRun({ run_id: run_id });
       const error_message = response && typeof response === 'object' && 'error' in response ? response.error : null;
       
@@ -85,7 +94,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
 
   const handleStopRun = async () => {
     try {
-      const run_id = Number(runName);
+      const run_id = getRunId();
       const response = await DispatcherService.stopRun({ run_id: run_id });
       const error_message = response && typeof response === 'object' && 'error' in response ? response.error : null;
       
@@ -102,7 +111,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
 
   const handleDeleteRun = async () => {
     try {
-      const run_id = Number(runName);
+      const run_id = getRunId();
       const response = await DispatcherService.deleteRun({ run_id: run_id });
       const error_message = response && typeof response === 'object' && 'error' in response ? response.error : null;
       
@@ -126,8 +135,8 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
 
   const handleCloneRun = async () => {
     try {
-      const run_id = Number(runName);
-      
+      const run_id = getRunId();
+
       // Parse the textareaContent as JSON to convert from string to object
       let parsedConfig;
       try {
