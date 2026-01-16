@@ -55,6 +55,7 @@ class InteractiveControlHandler:
         pipeline_results: dict,
         pipeline_id_to_config: dict,
         pipeline_to_rate_limiter: dict = None,
+        pipeline_to_max_completion_tokens: dict = None,
         progress_display=None,
     ) -> None:
         """
@@ -107,6 +108,7 @@ class InteractiveControlHandler:
                         pipeline_results,
                         pipeline_id_to_config,
                         pipeline_to_rate_limiter,
+                        pipeline_to_max_completion_tokens,
                         progress_display,
                     )
 
@@ -233,6 +235,7 @@ class InteractiveControlHandler:
         pipeline_results: dict,
         pipeline_id_to_config: dict,
         pipeline_to_rate_limiter: dict = None,
+        pipeline_to_max_completion_tokens: dict = None,
         progress_display=None,
     ) -> int:
         """
@@ -457,6 +460,11 @@ class InteractiveControlHandler:
                     f"Cannot clone OpenAI pipeline {new_pipeline_id}: no experiment-wide rate limiter found. "
                     "This suggests the experiment was not properly configured with OpenAI rate limits."
                 )
+
+            # Register max_completion_tokens for the cloned OpenAI pipeline
+            if pipeline_to_max_completion_tokens is not None:
+                max_completion_tokens = model_config.model_config.get("max_completion_tokens", 150)
+                pipeline_to_max_completion_tokens[new_pipeline_id] = max_completion_tokens
 
         # Initialize aggregator for the new pipeline
         aggregator = Aggregator()
