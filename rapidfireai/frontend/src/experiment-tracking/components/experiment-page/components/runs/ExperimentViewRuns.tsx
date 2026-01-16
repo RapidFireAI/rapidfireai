@@ -141,14 +141,14 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     const checkRunningExperiment = async () => {
       /* eslint-disable no-console */
       try {
-        const response = await DispatcherService.getRunsByStatus({ status: 'active' });
-        console.log('getRunsByStatus response:', response);
-        // Check if there are any active runs in the dispatcher
-        const hasRuns = Boolean(response && Array.isArray(response) && response.length > 0);
-        console.log('hasRuns:', hasRuns);
-        setHasRunningExperiment(hasRuns);
+        const response = await DispatcherService.getAllExperimentNames();
+        console.log('getAllExperimentNames response:', response);
+        // Check if current experiment name is in the list of running experiments
+        const isRunning = Boolean(response && Array.isArray(response) && response.includes(experimentName));
+        console.log('isRunning:', isRunning, 'experimentName:', experimentName);
+        setHasRunningExperiment(isRunning);
       } catch (error) {
-        console.log('getRunsByStatus error:', error);
+        console.log('getAllExperimentNames error:', error);
         setHasRunningExperiment(false);
       }
       /* eslint-enable no-console */
@@ -157,7 +157,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     checkRunningExperiment();
     const interval = setInterval(checkRunningExperiment, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [experimentName]);
 
   // Check if the experiment has ended by looking at run statuses
   // Experiment has ended if there are runs and none of them are currently running
