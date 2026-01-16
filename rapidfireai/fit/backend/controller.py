@@ -102,7 +102,6 @@ class Controller:
         runs = {}
         for config_leaf in config_leafs:
             flattened_config = get_flattened_config_leaf(config_leaf)
-            # print("flattened_config: ",flattened_config)
             total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks)
 
             # get clone modify info
