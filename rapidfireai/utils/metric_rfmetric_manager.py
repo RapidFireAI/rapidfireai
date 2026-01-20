@@ -36,7 +36,7 @@ class RFMetricLogger(MetricLogger):
             metric_loggers: Dictionary of metric loggers to use:
             - "name": {"type": MetricLoggerType.MLFLOW, "config": {"tracking_uri": "http://localhost:8852"}}
             - "name": {"type": MetricLoggerType.TENSORBOARD, "config": {"log_dir": "logs/tensorboard"}}
-            - "name": {"type": MetricLoggerType.TRACKIO, "config": {"tracking_uri": None}}
+            - "name": {"type": MetricLoggerType.TRACKIO, "config": {"experiment_name": None}}
         """
         self.type = MetricLoggerType.MULTIPLE
         self.logger = logger if logger is not None else RFLogger() 
@@ -58,7 +58,7 @@ class RFMetricLogger(MetricLogger):
                 self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(
                     experiment_name=metric_logger_config["config"]["experiment_name"],
                     logger=self.logger,
-                    init_kwargs=metric_logger_config["config"].get("init_kwargs")
+                    init_kwargs=metric_logger_config["config"].get("init_kwargs", {"embed": False})
                 )
                 self.logger.info(f"Initialized TrackIOMetricLogger: {metric_logger_name}")
             else:
@@ -75,7 +75,7 @@ class RFMetricLogger(MetricLogger):
         elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
             self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(
                 experiment_name=metric_logger_config["config"]["experiment_name"],
-                init_kwargs=metric_logger_config["config"].get("init_kwargs")
+                init_kwargs=metric_logger_config["config"].get("init_kwargs", {"embed": metric_logger_config["config"].get("embed", False)})
             )
         else:
             raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
@@ -181,6 +181,7 @@ class RFMetricLogger(MetricLogger):
                 "type": MetricLoggerType.TRACKIO,
                 "config": {
                     "experiment_name": experiment_name,
+                    "embed": False,
                 },
             }
         return metric_loggers

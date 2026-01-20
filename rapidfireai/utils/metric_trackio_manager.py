@@ -17,7 +17,7 @@ class TrackIOMetricLogger(MetricLogger):
         self.init_kwargs = init_kwargs
         self.type = MetricLoggerType.TRACKIO
         if self.init_kwargs is None:
-            self.init_kwargs = {"embed": False}
+            self.init_kwargs = {"embed": init_kwargs.get("embed", False)}
         if not isinstance(self.init_kwargs, dict):
             raise ValueError("init_kwargs must be a dictionary")
         self.experiment_name = experiment_name
@@ -51,10 +51,10 @@ class TrackIOMetricLogger(MetricLogger):
         
         # TrackIO uses run names directly, so we use run_name as the run_id
         # Try to finish any existing run first
-        try:
-            trackio.finish()
-        except Exception:
-            pass  # No active run to finish
+        # try:
+        #     trackio.finish()
+        # except Exception:
+        #     pass  # No active run to finish
         
         # Initialize a new run with the run name
         try:
@@ -62,6 +62,7 @@ class TrackIOMetricLogger(MetricLogger):
         except Exception:
             # If init doesn't accept name, try without it
             trackio.init(project=self.experiment_name, **self.init_kwargs)
+        self._initialized = True
         
         self.active_runs[run_name] = run_name
         # Log any pending params for this run

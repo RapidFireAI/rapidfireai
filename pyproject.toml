@@ -57,6 +57,7 @@ dependencies = [
     # "pytest>=8.4.2",
     "uv",
     "trackio",
+    "trackio[gpu]",
     "mlflow",
     "fsspec<=2025.10.0",
 ]
