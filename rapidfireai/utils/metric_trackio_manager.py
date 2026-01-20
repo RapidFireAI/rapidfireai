@@ -30,7 +30,7 @@ class TrackIOMetricLogger(MetricLogger):
     def _ensure_initialized(self) -> None:
         """Ensure TrackIO is initialized with the experiment."""
         if not self._initialized and self.experiment_name:
-            trackio.init(project=self.experiment_name, group=self.experiment_name, **self.init_kwargs)
+            trackio.init(project=self.experiment_name, group=self.experiment_name, resume="allow", **self.init_kwargs)
             self._initialized = True
 
     def create_experiment(self, experiment_name: str) -> str:
@@ -58,10 +58,10 @@ class TrackIOMetricLogger(MetricLogger):
         
         # Initialize a new run with the run name
         try:
-            trackio.init(project=self.experiment_name, name=run_name, group=self.experiment_name,**self.init_kwargs)
+            trackio.init(project=self.experiment_name, name=run_name, group=self.experiment_name, resume="allow", **self.init_kwargs)
         except Exception:
             # If init doesn't accept name, try without it
-            trackio.init(project=self.experiment_name, group=self.experiment_name, **self.init_kwargs)
+            trackio.init(project=self.experiment_name, group=self.experiment_name, resume="allow", **self.init_kwargs)
         self._initialized = True
         
         self.active_runs[run_name] = run_name
@@ -77,7 +77,7 @@ class TrackIOMetricLogger(MetricLogger):
         # TrackIO logs params via the log() method
         # Try to log immediately, or store for later if run not active
         try:
-            trackio.init(project=self.experiment_name, name=run_id, group=self.experiment_name,**self.init_kwargs)
+            trackio.init(project=self.experiment_name, name=run_id, group=self.experiment_name, resume="allow", **self.init_kwargs)
             # self._ensure_initialized()
             trackio.log({key: value})
         except Exception:
@@ -92,7 +92,7 @@ class TrackIOMetricLogger(MetricLogger):
         log_dict = {key: value}
         if step is not None:
             log_dict["step"] = step
-        trackio.init(project=self.experiment_name, name=run_name, group=self.experiment_name,**self.init_kwargs)
+        trackio.init(project=self.experiment_name, name=run_name, group=self.experiment_name, resume="allow", **self.init_kwargs)
         # self._ensure_initialized()
         trackio.log(log_dict)
 
