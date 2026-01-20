@@ -601,7 +601,7 @@ class Controller:
                 status=PipelineStatus.NEW,
                 flattened_config=flattened_config,
             )
-            
+
             # Create MetricLogger run for this pipeline
             metric_run_id = None
             if self.metric_manager:
@@ -609,13 +609,13 @@ class Controller:
                     pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
                     metric_run_id = self.metric_manager.create_run(f"{pipeline_name}_{pipeline_id}")
                     db.set_pipeline_metric_run_id(pipeline_id, metric_run_id)
-                    
+
                     pipeline = pipeline_config.get("pipeline")
                     if pipeline:
                         if hasattr(pipeline, "model_config") and pipeline.model_config:
                             model_name = pipeline.model_config.get("model", "unknown")
                             self.metric_manager.log_param(metric_run_id, "model", model_name)
-                        
+
                         if hasattr(pipeline, "rag") and pipeline.rag:
                             if hasattr(pipeline.rag, "search_type"):
                                 self.metric_manager.log_param(metric_run_id, "rag_search_type", str(pipeline.rag.search_type))
@@ -623,17 +623,17 @@ class Controller:
                                 k = pipeline.rag.search_kwargs.get("k")
                                 if k is not None:
                                     self.metric_manager.log_param(metric_run_id, "rag_k", str(k))
-                        
+
                         # Extract sampling params
                         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:
                             import json
                             sampling_str = json.dumps(pipeline.sampling_params) if isinstance(pipeline.sampling_params, dict) else str(pipeline.sampling_params)
                             self.metric_manager.log_param(metric_run_id, "sampling_params", sampling_str)
-                    
+
                     self.logger.debug(f"Created Metrics run {metric_run_id} for pipeline {pipeline_id}")
                 except Exception as e:
                     self.logger.warning(f"Failed to create Metrics run for pipeline {pipeline_id}: {e}")
-                        
+
             pipeline_ids.append(pipeline_id)
             pipeline_id_to_config[pipeline_id] = pipeline_config
 
@@ -774,7 +774,7 @@ class Controller:
                     status="COMPLETED",
                     metrics=display_metrics
                 )
-            
+
             # Log final metrics to MetricLogger
             if self.metric_manager:
                 try:
@@ -787,11 +787,11 @@ class Controller:
                         else:
                             percentage_processed = 100  # Assume complete if dataset size unknown
                         step = int(percentage_processed)
-                        
+
                         for metric_name, metric_data in ordered_metrics.items():
                             if metric_name in ["run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second"]:
                                 continue
-                            
+
                             if isinstance(metric_data, dict):
                                 metric_value = metric_data.get("value", 0)
                                 lower_bound = metric_data.get("lower_bound")
@@ -800,35 +800,35 @@ class Controller:
                                 metric_value = metric_data
                                 lower_bound = None
                                 upper_bound = None
-                            
+
                             # Log main metric value
                             if isinstance(metric_value, (int, float)):
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
                                 except Exception as e:
                                     self.logger.debug(f"Failed to log final metric {metric_name} to MetricLogger: {e}")
-                            
+
                             # Log lower_bound if available
                             if lower_bound is not None and isinstance(lower_bound, (int, float)):
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_lower_bound", float(lower_bound), step=step)
                                 except Exception as e:
                                     self.logger.debug(f"Failed to log final metric {metric_name}_lower_bound to MetricLogger: {e}")
-                            
+
                             # Log upper_bound if available
                             if upper_bound is not None and isinstance(upper_bound, (int, float)):
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_upper_bound", float(upper_bound), step=step)
                                 except Exception as e:
                                     self.logger.debug(f"Failed to log final metric {metric_name}_upper_bound to MetricLogger: {e}")
-                        
+
                         try:
                             self.metric_manager.end_run(metric_run_id)
                         except Exception as e:
                             self.logger.debug(f"Failed to end MetricLogger run {metric_run_id}: {e}")
                 except Exception as e:
                     self.logger.debug(f"Failed to log final metrics to MetricLogger for pipeline {pipeline_id}: {e}")
-            
+
             self.logger.info(f"Pipeline {pipeline_id} ({pipeline_name}) completed successfully")
 
         if progress_display:
@@ -1183,20 +1183,20 @@ class Controller:
                                 if elapsed_time > 0:
                                     throughput = samples_processed / elapsed_time
                                     display_metrics["Throughput"] = {"value": throughput}
-                                
+
                                 pipeline = db.get_pipeline(pipeline_id)
                                 metric_run_id = pipeline.get("metric_run_id") if pipeline else None
-                                
+
                                 if self.metric_manager and metric_run_id:
                                     try:
                                         actual_samples_processed = pipeline.get("total_samples_processed", samples_processed)
                                         percentage_processed = (actual_samples_processed / total_dataset_size * 100) if total_dataset_size > 0 else 0
-                                        step = int(percentage_processed)  
-                                        
+                                        step = int(percentage_processed)
+
                                         for metric_name, metric_data in metrics_with_ci.items():
                                             if metric_name in ["run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second"]:
                                                 continue
-                                            
+
                                             if isinstance(metric_data, dict):
                                                 metric_value = metric_data.get("value", 0)
                                                 lower_bound = metric_data.get("lower_bound")
@@ -1205,28 +1205,28 @@ class Controller:
                                                 metric_value = metric_data
                                                 lower_bound = None
                                                 upper_bound = None
-                                            
+
                                             # Log main metric value
                                             if isinstance(metric_value, (int, float)):
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
                                                 except Exception as e:
                                                     self.logger.debug(f"Failed to log metric {metric_name} to MetricLogger: {e}")
-                                            
+
                                             # Log lower_bound if available
                                             if lower_bound is not None and isinstance(lower_bound, (int, float)):
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_lower_bound", float(lower_bound), step=step)
                                                 except Exception as e:
                                                     self.logger.debug(f"Failed to log metric {metric_name}_lower_bound to MetricLogger: {e}")
-                                            
+
                                             # Log upper_bound if available
                                             if upper_bound is not None and isinstance(upper_bound, (int, float)):
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_upper_bound", float(upper_bound), step=step)
                                                 except Exception as e:
                                                     self.logger.debug(f"Failed to log metric {metric_name}_upper_bound to MetricLogger: {e}")
-                                        
+
                                         if "Throughput" in display_metrics:
                                             throughput_value = display_metrics["Throughput"]["value"]
                                             if isinstance(throughput_value, (int, float)):
@@ -1304,6 +1304,7 @@ class Controller:
                 pipeline_results=pipeline_results,
                 pipeline_id_to_config=pipeline_id_to_config,
                 pipeline_to_rate_limiter=pipeline_to_rate_limiter,
+                pipeline_to_max_completion_tokens=pipeline_to_max_completion_tokens,
                 # online_strategy_kwargs=online_strategy_kwargs,
                 progress_display=progress_display,
             )
