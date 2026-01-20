@@ -162,7 +162,8 @@ export interface UseRunsColumnDefinitionsParams {
   usingCustomVisibility?: boolean;
   runsHiddenMode?: RUNS_VISIBILITY_MODE;
   showControllerNotification: (action: 'resume' | 'stop' | 'delete' | 'clone_modify', status: 'success' | 'error') => void;
-  onOpenController?: (runUuid: string, runName: string) => void
+  onOpenController?: (runUuid: string, runName: string) => void;
+  isExperimentRunning?: boolean;
 }
 
 /**
@@ -254,6 +255,7 @@ export const useRunsColumnDefinitions = ({
   runsHiddenMode,
   showControllerNotification,
   onOpenController,
+  isExperimentRunning,
 }: UseRunsColumnDefinitionsParams) => {
   const { theme } = useDesignSystemTheme();
 
@@ -299,6 +301,7 @@ export const useRunsColumnDefinitions = ({
       cellRenderer: 'InteractiveControllerCellRenderer',
       cellRendererParams: {
         onOpenController,
+        isExperimentRunning,
       },
       suppressMenu: true,
       resizable: false,
@@ -588,6 +591,7 @@ export const useRunsColumnDefinitions = ({
     usingCompactViewport,
     selectedColumns,
     onOpenController,
+    isExperimentRunning,
   ]);
 
   const canonicalSortKeys = useMemo(

@@ -43,7 +43,7 @@ import { useControllerNotification } from '../../hooks/useInteractiveControllerN
 import InteractiveControllerComponent from '../../../run-page/InteractiveController';
 import RightSlidingDrawer from '../../../../../rapidfire-ui/components/RightSlidingDrawer';
 import TerminalLogViewer from '../../../TerminalLogViewer';
-import { useExperimentLogs, useExperimentICLogs } from '../../../../hooks/useExperimentLogs';
+import { useExperimentLogs, useExperimentICLogs, useRunningExperiment } from '../../../../hooks/useExperimentLogs';
 import { useDesignSystemTheme } from '@databricks/design-system';
 import { useUpdateExperimentViewUIState } from '../../contexts/ExperimentPageUIStateContext';
 
@@ -133,6 +133,9 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     experimentName,
     compareRunsMode === 'IC_LOGS'
   );
+
+  // Check if experiment is currently running for IC Ops button state
+  const { isExperimentRunning } = useRunningExperiment();
 
   const modelVersionsByRunUuid = useSelector(({ entities }: ReduxState) => entities.modelVersionsByRunUuid);
 
@@ -309,6 +312,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
         uiState={uiState}
         compareRunsMode={compareRunsMode}
         showControllerNotification={showControllerNotification}
+        isExperimentRunning={isExperimentRunning}
       />
     );
 

@@ -17,9 +17,10 @@ const styles = {
 export const InteractiveControllerCellRenderer = (props: {
   data: { runUuid: string; runName: string };
   onOpenController?: (runUuid: string, runName: string) => void;
+  isExperimentRunning?: boolean;
 }) => {
   const { runUuid, runName } = props.data;
-  const { onOpenController } = props;
+  const { onOpenController, isExperimentRunning } = props;
 
   if (!onOpenController) {
     return <div css={styles.cellWrapper}>-</div>;
@@ -29,8 +30,9 @@ export const InteractiveControllerCellRenderer = (props: {
     <div css={styles.cellWrapper}>
       <Button
         icon={<InteractiveControllerIcon />}
-        onClick={() => onOpenController(runUuid, runName)} 
-        componentId={'interactive-controller-button'}      
+        onClick={() => onOpenController(runUuid, runName)}
+        componentId={'interactive-controller-button'}
+        disabled={isExperimentRunning === false}
       />
     </div>
   );

@@ -1,10 +1,37 @@
 import { useQuery } from '@mlflow/mlflow/src/common/utils/reactQueryHooks';
 import { DispatcherService } from '../sdk/DispatcherService';
 
-interface RunningExperimentResponse {
+export interface RunningExperimentResponse {
   status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
   experiment_name?: string;
 }
+
+/**
+ * Hook to check if there's currently a running experiment.
+ * Returns the running experiment data and status.
+ */
+export const useRunningExperiment = (enabled = true) => {
+  const query = useQuery<RunningExperimentResponse>(
+    ['running-experiment-for-icops'],
+    async () => {
+      const response = await DispatcherService.getRunningExperiment();
+      return response as RunningExperimentResponse;
+    },
+    {
+      enabled,
+      staleTime: 10 * 1000, // 10 seconds - check experiment status frequently
+      cacheTime: 30 * 1000, // 30 seconds
+      retry: 1,
+      refetchOnWindowFocus: false,
+      refetchInterval: 10 * 1000, // Poll every 10 seconds
+    }
+  );
+
+  return {
+    ...query,
+    isExperimentRunning: query.data?.status === 'RUNNING',
+  };
+};
 
 /**
  * Gets the appropriate stale time based on whether the experiment is currently running
