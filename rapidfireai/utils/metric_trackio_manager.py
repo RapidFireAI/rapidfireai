@@ -47,7 +47,7 @@ class TrackIOMetricLogger(MetricLogger):
 
     def create_run(self, run_name: str) -> str:
         """Create a new run and return run_name as there is no run_id in TrackIO"""
-        self._ensure_initialized()
+        # self._ensure_initialized()
         
         # TrackIO uses run names directly, so we use run_name as the run_id
         # Try to finish any existing run first
