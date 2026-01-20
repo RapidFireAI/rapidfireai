@@ -109,7 +109,7 @@ class TrackIOMetricLogger(MetricLogger):
     def end_run(self, run_id: str) -> None:
         """End a specific run."""
         try:
-            trackio.finish()
+            # trackio.finish()
             if run_id in self.active_runs:
                 del self.active_runs[run_id]
         except Exception as e:
