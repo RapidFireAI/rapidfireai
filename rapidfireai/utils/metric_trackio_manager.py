@@ -77,7 +77,8 @@ class TrackIOMetricLogger(MetricLogger):
         # TrackIO logs params via the log() method
         # Try to log immediately, or store for later if run not active
         try:
-            self._ensure_initialized()
+            trackio.init(project=self.experiment_name, name=run_id, group=self.experiment_name,**self.init_kwargs)
+            # self._ensure_initialized()
             trackio.log({key: value})
         except Exception:
             # Run not active, store for later when run is created
@@ -85,13 +86,14 @@ class TrackIOMetricLogger(MetricLogger):
                 self.run_params[run_id] = {}
             self.run_params[run_id][key] = value
 
-    def log_metric(self, _: str, key: str, value: float, step: int = None) -> None:
+    def log_metric(self, run_name: str, key: str, value: float, step: int = None) -> None:
         """Log a metric to a specific run."""
         # TrackIO uses log() with step in the dict
         log_dict = {key: value}
         if step is not None:
             log_dict["step"] = step
-        self._ensure_initialized()
+        trackio.init(project=self.experiment_name, name=run_name, group=self.experiment_name,**self.init_kwargs)
+        # self._ensure_initialized()
         trackio.log(log_dict)
 
     def get_run_metrics(self, run_id: str) -> dict[str, list[tuple[int, float]]]:
