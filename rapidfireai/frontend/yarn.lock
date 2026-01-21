@@ -4227,8 +4227,6 @@ __metadata:
     "@types/react-dom": "npm:^17.0.25"
     "@types/react-plotly.js": "npm:^2.5.0"
     "@types/react-resizable": "npm:^3.0.3"
-    "@types/react-router": "npm:^5.1.20"
-    "@types/react-router-dom": "npm:^5.3.3"
     "@types/react-transition-group": "npm:^4.4.4"
     "@types/react-virtualized": "npm:^9.21.9"
     "@types/stylis": "npm:^4.0.1"
@@ -8852,13 +8850,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/history@npm:^4.7.11":
-  version: 4.7.11
-  resolution: "@types/history@npm:4.7.11"
-  checksum: 10c0/3facf37c2493d1f92b2e93a22cac7ea70b06351c2ab9aaceaa3c56aa6099fb63516f6c4ec1616deb5c56b4093c026a043ea2d3373e6c0644d55710364d02c934
-  languageName: node
-  linkType: hard
-
 "@types/hoist-non-react-statics@npm:3, @types/hoist-non-react-statics@npm:^3.3.0":
   version: 3.3.7
   resolution: "@types/hoist-non-react-statics@npm:3.3.7"
@@ -9213,27 +9204,6 @@ __metadata:
   dependencies:
     "@types/react": "npm:*"
   checksum: 10c0/77d7896703531a32e8efdf0c7208c0f6af8eadf3d8dc5fd2b5e6032ed834f4d8ea52f14ebee8b39af6fb63642bbaacf785dd9962b1f284f070a63143251315fb
-  languageName: node
-  linkType: hard
-
-"@types/react-router-dom@npm:^5.3.3":
-  version: 5.3.3
-  resolution: "@types/react-router-dom@npm:5.3.3"
-  dependencies:
-    "@types/history": "npm:^4.7.11"
-    "@types/react": "npm:*"
-    "@types/react-router": "npm:*"
-  checksum: 10c0/a9231a16afb9ed5142678147eafec9d48582809295754fb60946e29fcd3757a4c7a3180fa94b45763e4c7f6e3f02379e2fcb8dd986db479dcab40eff5fc62a91
-  languageName: node
-  linkType: hard
-
-"@types/react-router@npm:*, @types/react-router@npm:^5.1.20":
-  version: 5.1.20
-  resolution: "@types/react-router@npm:5.1.20"
-  dependencies:
-    "@types/history": "npm:^4.7.11"
-    "@types/react": "npm:*"
-  checksum: 10c0/1f7eee61981d2f807fa01a34a0ef98ebc0774023832b6611a69c7f28fdff01de5a38cabf399f32e376bf8099dcb7afaf724775bea9d38870224492bea4cb5737
   languageName: node
   linkType: hard
 
