@@ -2,6 +2,8 @@
 
 import time
 import trackio
+import io
+from contextlib import redirect_stdout
 from typing import Any
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.evals.utils.logger import RFLogger
@@ -28,8 +30,19 @@ class TrackioMetricLogger(MetricLogger):
         self.logger = logger if logger is not None else RFLogger()
         self.active_runs = {}  # Map run_id -> run_name
         self.run_params = {}  # Map run_id -> dict of params to log on init
-        
+
         self._initialized = False
+
+    def _capture_trackio_output(self, func, *args, **kwargs):
+        """Execute a trackio function while capturing and logging its stdout output."""
+        captured_output = io.StringIO()
+        with redirect_stdout(captured_output):
+            result = func(*args, **kwargs)
+        output = captured_output.getvalue().strip()
+        if output:
+            for line in output.split('\n'):
+                self.logger.info(f"[trackio] {line}")
+        return result
 
     def create_experiment(self, experiment_name: str) -> str:
         """Create a new experiment and set it as active."""
@@ -46,20 +59,23 @@ class TrackioMetricLogger(MetricLogger):
     def create_run(self, run_name: str) -> str:
         """Create a new run and return run_name as there is no run_id in Trackio"""
         self.logger.info(f"Creating a run for Trackio: {run_name}")
-        # Initialize a new run with the run name 
+        # Initialize a new run with the run name
+        # Capture stdout to redirect trackio's print statements to the logger
         try:
-            self.active_runs[run_name] = trackio.init(project=self.experiment_name, name=run_name, **self.init_kwargs)
+            self.active_runs[run_name] = self._capture_trackio_output(
+                trackio.init, project=self.experiment_name, name=run_name, **self.init_kwargs
+            )
         except Exception as exc:
             raise ValueError(
                 f"Exception in calling trackio.init() to create new run: {run_name} "
                 f"with self.init_kwargs={self.init_kwargs!r}"
             ) from exc
-        
+
         # Log any pending params for this run
         if run_name in self.run_params:
-            trackio.log(self.run_params[run_name])
+            self.active_runs[run_name].log(self.run_params[run_name])
             del self.run_params[run_name]
-        
+
         return run_name
 
     def log_param(self, run_id: str, key: str, value: str) -> None:
@@ -104,7 +120,7 @@ class TrackioMetricLogger(MetricLogger):
         """End a specific run."""
         try:
             self.logger.info(f"Ending Trackio run: {run_id}")
-            self.active_runs[run_id].finish()
+            self._capture_trackio_output(self.active_runs[run_id].finish)
             # Allow background thread to complete sending data before program exit
             time.sleep(0.5)
             if run_id in self.active_runs:
