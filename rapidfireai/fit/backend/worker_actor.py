@@ -19,8 +19,8 @@ from typing import Any
 import ray
 import torch
 
+from rapidfireai.db import RfDb
 from rapidfireai.fit.backend.chunks import DatasetChunks
-from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.ml.checkpoint_utils import (
     flush_cuda_cache,
     purge_model_kv_caches,
@@ -30,8 +30,11 @@ from rapidfireai.fit.ml.checkpoint_utils import (
     save_model_to_shared_memory,
 )
 from rapidfireai.fit.ml.trainer import create_trainer_instance
-from rapidfireai.fit.utils.constants import (
-    USE_SHARED_MEMORY,
+from rapidfireai.fit.utils.datapaths import DataPath
+from rapidfireai.fit.utils.shm_manager import SharedMemoryManager, USE_SHARED_MEMORY
+from rapidfireai.fit.utils.trainer_config import TrainerConfig
+from rapidfireai.utils.constants import (
+    MLFlowConfig,
     RunStatus,
     SHMObjectType,
     TaskStatus,
@@ -45,10 +48,10 @@ from rapidfireai.utils.distributed_utils import (
     setup_distributed_environment,
     find_free_port,
 )
-from rapidfireai.fit.utils.exceptions import WorkerException
-from rapidfireai.fit.utils.logging import RFLogger, TrainingLogger
+from rapidfireai.utils.exceptions import WorkerException
+from rapidfireai.utils.logging import RFLogger, TrainingLogger
 from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
-from rapidfireai.fit.utils.serialize import decode_db_payload
+from rapidfireai.utils.serialize import decode_db_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
 from rapidfireai.utils.constants import MLflowConfig
@@ -99,27 +102,21 @@ class TeeOutput:
         self.buffer = buffer
 
     def write(self, text):
-        """Write only to the buffer, not to the original stream (to suppress notebook output)."""
         self.buffer.write(text)
 
     def flush(self):
-        """Flush the buffer only."""
         self.buffer.flush()
 
     def fileno(self):
-        """Return the original stream's file descriptor (required by vLLM)."""
         return self.original_stream.fileno()
 
     def isatty(self):
-        """Check if the original stream is a TTY."""
         return self.original_stream.isatty()
 
     def getvalue(self):
-        """Get the captured buffer content."""
         return self.buffer.getvalue()
 
     def __getattr__(self, name):
-        """Delegate other attributes to the original stream."""
         return getattr(self.original_stream, name)
 
 
@@ -620,7 +617,7 @@ class WorkerActor:
                         self.run_fit(run_id, chunk_id, multi_worker_details, create_model_fn)
                         self.db.set_worker_task_status(self.worker_id, TaskStatus.COMPLETED)
                     except Exception as e:
-                        self.logger.opt(exception=True).error(
+                        self.logger.exception(
                             f"Error while running run_fit for run {run_id} and chunk {chunk_id}: {e}"
                         )
                         self.db.set_run_details(
@@ -635,7 +632,7 @@ class WorkerActor:
                     cleanup_distributed()
                     self.logger.debug(f"Worker {self.worker_id} distributed training cleaned up")
             except Exception as e:
-                self.logger.opt(exception=True).error(f"WorkerActor {self.worker_id} error: {e}")
+                self.logger.exception(f"WorkerActor {self.worker_id} error: {e}")
                 self.db.set_experiment_error(str(e) + "\n" + traceback.format_exc())
                 break
 

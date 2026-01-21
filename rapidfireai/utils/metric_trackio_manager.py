@@ -6,7 +6,7 @@ import io
 from contextlib import redirect_stdout
 from typing import Any
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.logging import RFLogger
 import warnings
 
 warnings.filterwarnings("ignore", message="Reserved keys renamed")

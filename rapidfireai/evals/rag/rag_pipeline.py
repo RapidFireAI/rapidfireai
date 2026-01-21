@@ -12,7 +12,7 @@ import hashlib
 import json
 import os
 
-from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
+from rapidfireai.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
 
 import faiss
 from pinecone import Pinecone, ServerlessSpec, PodSpec, ByocSpec
@@ -159,7 +159,7 @@ class LangChainRagSpec:
             cfg = dict(reranker_cfg)
             cls_value = cfg.pop("class", None)
             if isinstance(cls_value, str):
-                from rapidfireai.evals.utils.constants import RERANKER_CLASS_REGISTRY
+                from rapidfireai.utils.constants import RERANKER_CLASS_REGISTRY
                 resolved = RERANKER_CLASS_REGISTRY.get(cls_value)
                 if resolved is None:
                     raise ValueError(

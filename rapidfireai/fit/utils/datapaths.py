@@ -4,7 +4,7 @@ This module contains the DatasetLocators class which encapsulates the filepaths 
 
 from pathlib import Path
 
-from rapidfireai.fit.utils.exceptions import DataPathException
+from rapidfireai.utils.exceptions import DataPathException
 from rapidfireai.utils.os_utils import mkdir_p
 
 

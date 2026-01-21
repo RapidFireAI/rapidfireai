@@ -5,29 +5,32 @@ from typing import Any
 
 import ray
 
-from rapidfireai.automl import RFGridSearch, RFRandomSearch, get_runs
+from rapidfireai.automl import RFGridSearch, RFRandomSearch, get_flattened_config_leaf, get_runs
+from rapidfireai.db import RfDb
 from rapidfireai.evals.actors.doc_actor import DocProcessingActor
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.actors.query_actor import QueryProcessingActor
 from rapidfireai.evals.data.dataset import DataLoader
-from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.interactive_control import InteractiveControlHandler
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.evals.scheduling.scheduler import Scheduler
-from rapidfireai.evals.utils.constants import (
+from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
+from rapidfireai.utils.constants import (
+    ContextStatus,
     NUM_CPUS_PER_DOC_ACTOR,
     NUM_QUERY_PROCESSING_ACTORS,
     SEARCH_TYPE_KEYS,
-    ContextStatus,
     PipelineStatus,
+    RF_EXPERIMENT_PATH,
     TaskStatus,
 )
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.logging import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 from rapidfireai.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.automl import get_runs, get_flattened_config_leaf
-from rapidfireai.evals.utils.serialize import extract_pipeline_config_json, extract_pipeline_display_metadata
+from rapidfireai.utils.serialize import extract_pipeline_config_json
+from rapidfireai.evals.utils.serialize import extract_pipeline_display_metadata
 
 class Controller:
     """
@@ -268,7 +271,7 @@ class Controller:
     def _setup_context_generators(
         self,
         config_leaves: Any,
-        db: RFDatabase,
+        db: RfDb,
     ) -> None:
         """
         Setup RAG contexts: build if needed and cache in Ray object store.
@@ -351,7 +354,7 @@ class Controller:
     def build_rag_components(
         self,
         contexts_to_build: list[dict],
-        db: RFDatabase,
+        db: RfDb,
     ) -> None:
         """
         Build multiple RAG components in parallel using DocProcessingActors.
@@ -562,7 +565,7 @@ class Controller:
     def _register_pipelines(
         self,
         config_leaves: list[Any],
-        db: RFDatabase,
+        db: RfDb,
     ) -> tuple[list[int], dict[int, dict]]:
         """
         Register pipelines in database.
@@ -668,7 +671,7 @@ class Controller:
         pipeline_id_to_config: dict[int, dict],
         pipeline_aggregators: dict[int, Aggregator],
         pipeline_results: dict[int, dict],
-        db: RFDatabase,
+        db: RfDb,
         progress_display=None,
         pipeline_id_to_info: dict[int, dict] = None,
         total_dataset_size: int = None,
@@ -890,7 +893,7 @@ class Controller:
             Dict mapping pipeline_id to (aggregated_results, cumulative_metrics) tuple
         """
         # Initialize database
-        db = RFDatabase()
+        db = RfDb()
 
         # PHASE 1: Shard the dataset
         shards = self.dataloader.get_shards_from_data(dataset, num_shards)
