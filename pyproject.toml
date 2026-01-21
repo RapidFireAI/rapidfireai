@@ -52,13 +52,15 @@ dependencies = [
     # "protobuf==5.29.5",
 
     # Other
-    "dill",
+    "dill==0.4.1",
     "jedi",
     # "pytest>=8.4.2",
     "uv",
     "trackio",
+    "trackio[gpu]",
     "mlflow",
     "fsspec<=2025.10.0",
+    "numpy<2.3",
 ]
 
 [project.optional-dependencies]

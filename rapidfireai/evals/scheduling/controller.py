@@ -129,12 +129,12 @@ class Controller:
         manager_name: str = "tracking",
     ) -> None:
         """
-        Log comprehensive pipeline parameters to MLflow/TrackIO.
+        Log comprehensive pipeline parameters to MLflow/Trackio.
 
         Args:
             pipeline_config: The pipeline configuration dict
-            run_id: The MLflow/TrackIO run ID
-            manager: The MLflow or TrackIO manager instance
+            run_id: The MLflow/Trackio run ID
+            manager: The MLflow or Trackio manager instance
             manager_name: Name of the manager for logging (default: "tracking")
         """
         pipeline = pipeline_config.get("pipeline")

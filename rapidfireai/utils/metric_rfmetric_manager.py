@@ -7,7 +7,7 @@ from pathlib import Path
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerConfig, MetricLoggerType
 from rapidfireai.utils.metric_mlflow_manager import MLflowMetricLogger
 from rapidfireai.utils.metric_tensorboard_manager import TensorBoardMetricLogger
-from rapidfireai.utils.metric_trackio_manager import TrackIOMetricLogger
+from rapidfireai.utils.metric_trackio_manager import TrackioMetricLogger
 from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.utils.constants import (
     MLFlowConfig,
@@ -25,7 +25,7 @@ class RFMetricLogger(MetricLogger):
          This allows users to benefit from multiple tracking systems simultaneously:
          - MLflow for experiment comparison and model registry
          - TensorBoard for real-time training visualization (especially useful in Colab)
-         - TrackIO for local-first experiment tracking
+         - Trackio for local-first experiment tracking
     """
 
     def __init__(self, metric_loggers: dict[str, MetricLoggerConfig], logger: RFLogger = None):
@@ -53,17 +53,17 @@ class RFMetricLogger(MetricLogger):
                     self.metric_loggers[metric_logger_name] = MLflowMetricLogger(metric_logger_config["config"]["tracking_uri"], logger=self.logger)
                     self.logger.info(f"Initialized MLflowMetricLogger: {metric_logger_name}")
                 except ConnectionRefusedError as e:
-                    self.logger.warning(f"Failed to initialize MLflowMetricLogger: {e}. MLflow logging is disabled.")
+                    self.logger.warning(f"Failed to initialize MLflowMetricLogger: {e}")
             elif metric_logger_config.get("type") == MetricLoggerType.TENSORBOARD:
                 self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"], logger=self.logger)
                 self.logger.info(f"Initialized TensorBoardMetricLogger: {metric_logger_name}")
             elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
-                self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(
+                self.metric_loggers[metric_logger_name] = TrackioMetricLogger(
                     experiment_name=metric_logger_config["config"]["experiment_name"],
                     logger=self.logger,
                     init_kwargs=metric_logger_config["config"].get("init_kwargs")
                 )
-                self.logger.info(f"Initialized TrackIOMetricLogger: {metric_logger_name}")
+                self.logger.info(f"Initialized TrackioMetricLogger: {metric_logger_name}")
             else:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
     
@@ -76,7 +76,7 @@ class RFMetricLogger(MetricLogger):
         elif metric_logger_config.get("type") == MetricLoggerType.TENSORBOARD:
             self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"])
         elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
-            self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(
+            self.metric_loggers[metric_logger_name] = TrackioMetricLogger(
                 experiment_name=metric_logger_config["config"]["experiment_name"],
                 init_kwargs=metric_logger_config["config"].get("init_kwargs")
             )
