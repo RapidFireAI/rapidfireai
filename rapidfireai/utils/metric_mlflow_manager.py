@@ -7,7 +7,7 @@ from typing import Any
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.utils.ping import ping_server
 from rapidfireai.utils.constants import MLFlowConfig
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.logging import RFLogger
 
 
 class MLflowMetricLogger(MetricLogger):

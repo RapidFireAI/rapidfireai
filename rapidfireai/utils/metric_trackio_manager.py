@@ -3,7 +3,7 @@
 import trackio
 from typing import Any
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.logging import RFLogger
 
 
 class TrackIOMetricLogger(MetricLogger):

@@ -1,4 +1,8 @@
-"""Interface for the database."""
+"""
+RapidFire AI Database Interface
+
+Provides low-level SQLite database connection and query execution.
+"""
 
 import functools
 import os
@@ -7,27 +11,57 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from rapidfireai.evals.utils.constants import DBConfig
+from rapidfireai.utils.constants import RF_DB_PATH
+
+
+class DBConfig:
+    """Database configuration for SQLite."""
+
+    # Database path - single unified database
+    DB_PATH: str = os.path.join(RF_DB_PATH, "rapidfire.db")
+
+    # Connection settings
+    CONNECTION_TIMEOUT: float = 30.0
+
+    # Performance optimizations
+    CACHE_SIZE: int = 10000
+    MMAP_SIZE: int = 268435456  # 256MB
+    PAGE_SIZE: int = 4096
+    BUSY_TIMEOUT: int = 30000
+
+    # Retry settings for locked database
+    DEFAULT_MAX_RETRIES: int = 3
+    DEFAULT_BASE_DELAY: float = 0.1
+    DEFAULT_MAX_DELAY: float = 1.0
 
 
 class DatabaseInterface:
-    """Interface for the database."""
+    """Low-level interface for SQLite database operations."""
 
-    def __init__(self):
+    def __init__(self, db_path: str = None):
+        """
+        Initialize database connection.
+
+        Args:
+            db_path: Path to the database file. Defaults to DBConfig.DB_PATH.
+        """
+        self.db_path = db_path or DBConfig.DB_PATH
+
         try:
-            if not os.path.exists(DBConfig.DB_PATH):
-                path = os.path.dirname(DBConfig.DB_PATH)
+            # Ensure directory exists
+            if not os.path.exists(self.db_path):
+                path = os.path.dirname(self.db_path)
                 os.makedirs(path, exist_ok=True)
                 print(f"Created directory for database at {path}")
 
             self.conn: sqlite3.Connection = sqlite3.connect(
-                DBConfig.DB_PATH,
+                self.db_path,
                 timeout=DBConfig.CONNECTION_TIMEOUT,
                 check_same_thread=False,
                 isolation_level=None,
             )
 
-            # Configure database with all PRAGMA settings
+            # Configure database with performance optimizations
             pragma_sql = f"""
             PRAGMA cache_size={DBConfig.CACHE_SIZE};
             PRAGMA mmap_size={DBConfig.MMAP_SIZE};
@@ -53,7 +87,7 @@ class DatabaseInterface:
         base_delay: float = DBConfig.DEFAULT_BASE_DELAY,
         max_delay: float = DBConfig.DEFAULT_MAX_DELAY,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Decorator to retry operations when database is locked"""
+        """Decorator to retry operations when database is locked."""
 
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             @functools.wraps(func)
@@ -84,7 +118,7 @@ class DatabaseInterface:
         return decorator
 
     def close(self) -> None:
-        """Close the database connection properly"""
+        """Close the database connection properly."""
         try:
             if self.conn:
                 self.conn.close()
@@ -94,7 +128,7 @@ class DatabaseInterface:
             raise Exception(f"Unexpected error closing database connection: {e}") from e
 
     def optimize_periodically(self) -> None:
-        """Run periodic optimization - call this occasionally, not on every query"""
+        """Run periodic optimization - call this occasionally, not on every query."""
         try:
             _ = self.conn.execute("PRAGMA optimize")
         except sqlite3.Error as e:
@@ -110,7 +144,22 @@ class DatabaseInterface:
         fetch: bool = False,
         commit: bool = False,
     ) -> list[Any] | tuple[Any] | None:
-        """Execute a query with automatic retry on database locked errors"""
+        """
+        Execute a query with automatic retry on database locked errors.
+
+        Args:
+            query: SQL query to execute
+            params: Query parameters (dict or tuple)
+            fetch: If True, return fetched results
+            commit: If True, commit the transaction
+
+        Returns:
+            Query results if fetch=True, otherwise None
+
+        Raises:
+            ValueError: If neither fetch nor commit is True
+            Exception: On database errors
+        """
         # Validate that either fetch or commit is True
         if not fetch and not commit:
             raise ValueError("Either fetch or commit must be True")

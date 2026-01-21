@@ -18,7 +18,7 @@ from rapidfireai.fit.ml.checkpoint_utils import (
     restore_trainer_from_disk,
     restore_trainer_from_shared_memory,
 )
-from rapidfireai.fit.utils.constants import SHMObjectType
+from rapidfireai.utils.constants import SHMObjectType
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig

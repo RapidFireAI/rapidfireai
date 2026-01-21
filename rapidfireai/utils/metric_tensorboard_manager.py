@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional, Any
 import os
 from rapidfireai.utils.os_utils import mkdir_p
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.logging import RFLogger
 
 class TensorBoardMetricLogger(MetricLogger):
     """

@@ -8,7 +8,7 @@ from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerConfig, Me
 from rapidfireai.utils.metric_mlflow_manager import MLflowMetricLogger
 from rapidfireai.utils.metric_tensorboard_manager import TensorBoardMetricLogger
 from rapidfireai.utils.metric_trackio_manager import TrackIOMetricLogger
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.logging import RFLogger
 from rapidfireai.utils.constants import (
     MLFlowConfig,
     RF_MLFLOW_ENABLED,

@@ -19,29 +19,28 @@ from typing import Any
 import ray
 import torch
 
+from rapidfireai.db import RfDb
 from rapidfireai.fit.backend.chunks import DatasetChunks
-from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.ml.checkpoint_utils import (
     save_checkpoint_to_disk,
     save_checkpoint_to_shared_memory,
     save_model_to_shared_memory,
 )
 from rapidfireai.fit.ml.trainer import create_trainer_instance
-from rapidfireai.fit.utils.constants import (
-    USE_SHARED_MEMORY,
+from rapidfireai.fit.utils.datapaths import DataPath
+from rapidfireai.fit.utils.shm_manager import SharedMemoryManager, USE_SHARED_MEMORY
+from rapidfireai.fit.utils.trainer_config import TrainerConfig
+from rapidfireai.utils.constants import (
+    MLFlowConfig,
     RunStatus,
     SHMObjectType,
     TaskStatus,
     WorkerTask,
 )
-from rapidfireai.fit.utils.datapaths import DataPath
-from rapidfireai.fit.utils.exceptions import WorkerException
-from rapidfireai.fit.utils.logging import RFLogger, TrainingLogger
+from rapidfireai.utils.exceptions import WorkerException
+from rapidfireai.utils.logging import RFLogger, TrainingLogger
 from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
-from rapidfireai.fit.utils.serialize import decode_db_payload
-from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
-from rapidfireai.fit.utils.trainer_config import TrainerConfig
-from rapidfireai.utils.constants import MLFlowConfig
+from rapidfireai.utils.serialize import decode_db_payload
 
 
 @ray.remote
@@ -298,7 +297,7 @@ class WorkerActor:
                         self.run_fit(run_id, chunk_id, create_model_fn)
                         self.db.set_worker_task_status(self.worker_id, TaskStatus.COMPLETED)
                     except Exception as e:
-                        self.logger.opt(exception=True).error(
+                        self.logger.exception(
                             f"Error while running run_fit for run {run_id} and chunk {chunk_id}: {e}"
                         )
                         self.db.set_run_details(
@@ -310,7 +309,7 @@ class WorkerActor:
                 else:
                     raise WorkerException(f"Invalid task type: {task_type}")
             except Exception as e:
-                self.logger.opt(exception=True).error(f"WorkerActor {self.worker_id} error: {e}")
+                self.logger.exception(f"WorkerActor {self.worker_id} error: {e}")
                 self.db.set_experiment_error(str(e) + "\n" + traceback.format_exc())
                 break
 
