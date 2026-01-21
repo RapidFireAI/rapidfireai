@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from rapidfireai.automl.datatypes import List
-from rapidfireai.fit.utils.exceptions import AutoMLException
+from rapidfireai.utils.exceptions import AutoMLException
 
 
 class AutoMLAlgorithm(ABC):

@@ -8,7 +8,7 @@ from typing import Any
 from rapidfireai.automl.base import AutoMLAlgorithm
 from rapidfireai.automl.datatypes import List, Range
 from rapidfireai.automl.automl_utils import _is_valid_reranker_top_n_vs_k
-from rapidfireai.fit.utils.exceptions import AutoMLException
+from rapidfireai.utils.exceptions import AutoMLException
 
 
 def encode_payload(payload: dict[str, Any]) -> str:
