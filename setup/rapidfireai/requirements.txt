@@ -1,0 +1,46 @@
+# RapidFire AI - Base Dependencies
+# Used for pip install without environment-specific packages
+
+# Core ML/AI Framework
+torch>=2.5.1
+transformers>=4.56.1
+sentence-transformers>=5.1.0
+datasets>=3.6.0
+
+# Distributed Computing
+ray>=2.49.0
+
+# Fine-tuning
+peft>=0.17.0
+trl>=0.21.0
+bitsandbytes>=0.47.0
+evaluate>=0.4.5
+
+# OpenAI API
+openai>=1.106.1
+tiktoken>=0.12.0
+
+# LangChain Ecosystem
+langchain>=1.0.5
+langchain-core>=1.0.4
+langchain-community>=0.4.1
+langchain-openai>=1.0.2
+langchain-huggingface>=1.0.0
+
+# Data Manipulation
+pandas>=2.0.0
+numpy>=1.26.4
+
+# Notebook
+jupyter>=1.1.1
+ipywidgets>=7.3.4,<9.0.0
+
+# Experiment Tracking & API
+mlflow>=3.2.0
+gunicorn>=23.0.0
+flask-cors>=5.0.1
+
+# Utilities
+psutil>=5.9.0
+requests>=2.32.0
+dill
