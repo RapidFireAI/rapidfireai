@@ -1,6 +1,9 @@
-# Colab Packages
-# evals dependencies
+# RapidFire AI - Google Colab Dependencies
+# Supports both training (fit) and inference (evals) modes
+
 # Core ML/AI Framework
+torch>=2.8.0
+transformers>=4.56.1
 sentence-transformers>=5.1.0
 
 # Distributed Computing
@@ -9,6 +12,15 @@ ray[default]>=2.51.0
 
 # LLM Inference
 transformers>=4.56.1,<5.0.0
+
+# Fine-tuning (fit mode)
+peft>=0.17.0
+trl>=0.21.0
+bitsandbytes>=0.47.0
+evaluate>=0.4.5
+rouge-score>=0.1.2
+nltk>=3.9.1
+sentencepiece>=0.2.1
 
 # OpenAI API
 openai>=1.106.1
@@ -24,26 +36,40 @@ langchain-huggingface>=1.0.0
 langchain-pinecone>=0.2.13
 langchain-postgres>=0.0.17
 
-# Data Manipulation & Display
-unstructured>=0.18.15
-
-# Other
-requests==2.32.5
+# LLM Inference (evals mode)
 vllm==0.11.0
-faiss-gpu-cu12
-fsspec>=2023.1.0,<=2025.3.0
 # flashinfer excluded: v0.5.x requires compute capability >= 8.0 (sm_80+)
 # Colab T4 is sm_75; flashinfer's CUTLASS CuTE DSL also JIT-compiles at import
 # time inside vLLM's MP subprocess before CUDA is initialized, causing NVVM errors.
 # vLLM 0.11.0 falls back to built-in implementations without flashinfer.
 
-# MLflow dashboard dependencies
+# Data Manipulation & Display
+unstructured>=0.18.15
+
+# Vector Search
+faiss-gpu-cu12
+
+# Data Manipulation & Display
+pandas>=2.0.0,<2.3.0
+fsspec>=2023.1.0,<=2025.3.0
+
+# Notebook & Visualization
+jupyter>=1.1.1
+ipywidgets>=7.3.4,<9.0.0
+tensorboard>=2.11.0
+ipython>=7.34.0
+
+# Experiment Tracking & API
 mlflow>=3.2.0
 gunicorn>=23.0.0
 flask-cors>=5.0.1
+trackio
 
 # Logging
 loguru
 
-
-numpy==2.0.1
+# Utilities
+psutil>=5.9.0
+requests>=2.32.0
+pytest>=8.4.1
+dill
