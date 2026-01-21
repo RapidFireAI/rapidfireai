@@ -134,8 +134,9 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     compareRunsMode === 'IC_LOGS'
   );
 
-  // Check if experiment is currently running for IC Ops button state
-  const { isExperimentRunning } = useRunningExperiment();
+  // Check if THIS specific experiment is currently running for IC Ops button state
+  const { runningExperimentName } = useRunningExperiment();
+  const isExperimentRunning = runningExperimentName === experimentName;
 
   const modelVersionsByRunUuid = useSelector(({ entities }: ReduxState) => entities.modelVersionsByRunUuid);
 

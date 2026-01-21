@@ -17,10 +17,13 @@ const styles = {
 export const InteractiveControllerCellRenderer = (props: {
   data: { runUuid: string; runName: string };
   onOpenController?: (runUuid: string, runName: string) => void;
-  isExperimentRunning?: boolean;
+  context?: { isExperimentRunning?: boolean };
 }) => {
   const { runUuid, runName } = props.data;
-  const { onOpenController, isExperimentRunning } = props;
+  const { onOpenController, context } = props;
+  const isExperimentRunning = context?.isExperimentRunning;
+  // eslint-disable-next-line no-console
+  console.log('[ICOpsCellRenderer] context:', context, 'isExperimentRunning:', isExperimentRunning);
 
   if (!onOpenController) {
     return <div css={styles.cellWrapper}>-</div>;

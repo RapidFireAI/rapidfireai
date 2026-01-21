@@ -2,7 +2,7 @@ import { useQuery } from '@mlflow/mlflow/src/common/utils/reactQueryHooks';
 import { DispatcherService } from '../sdk/DispatcherService';
 
 export interface RunningExperimentResponse {
-  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
   experiment_name?: string;
 }
 
@@ -27,9 +27,13 @@ export const useRunningExperiment = (enabled = true) => {
     }
   );
 
+  const runningExperimentName = query.data?.status === 'running' ? query.data?.experiment_name : null;
+  // eslint-disable-next-line no-console
+  console.log('[useRunningExperiment] data:', query.data, 'runningExperimentName:', runningExperimentName);
+
   return {
     ...query,
-    isExperimentRunning: query.data?.status === 'RUNNING',
+    runningExperimentName,
   };
 };
 
@@ -86,7 +90,7 @@ export const useExperimentICLogs = (experimentName: string, enabled = true) => {
     }
   );
 
-  const isExperimentRunning = runningExperiment?.status === 'RUNNING';
+  const isExperimentRunning = runningExperiment?.status === 'running';
 
   return useQuery(
     ['experiment-ic-logs', experimentName],

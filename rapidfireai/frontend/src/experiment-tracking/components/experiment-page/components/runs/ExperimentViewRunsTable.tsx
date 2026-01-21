@@ -344,7 +344,7 @@ export const ExperimentViewRunsTable = React.memo(
     const displayStatusBar = !runListHidden;
     const displayEmptyState = rowsData.length < 1 && !isLoading && displayRunsTable;
 
-    const tableContext = useMemo(() => ({ orderByAsc, orderByKey }), [orderByAsc, orderByKey]);
+    const tableContext = useMemo(() => ({ orderByAsc, orderByKey, isExperimentRunning }), [orderByAsc, orderByKey, isExperimentRunning]);
 
     const { cellMouseOverHandler, cellMouseOutHandler } = useRunsHighlightTableRow(containerElement);
 

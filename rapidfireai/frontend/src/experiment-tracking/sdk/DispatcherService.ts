@@ -34,7 +34,7 @@ export class DispatcherService {
   static getRunUi = (data: any) => postJson({ relativeUrl: this.getApiUrl('get-run'), data });
 
   // Experiment routes
-  static getRunningExperiment = () => getBigIntJson({ url: this.getApiUrl('get-running-experiment') });
+  static getRunningExperiment = () => getBigIntJson({ relativeUrl: this.getApiUrl('get-running-experiment') });
   static createExperiment = (data: any) => postJson({ relativeUrl: this.getApiUrl('create-experiment'), data });
   static getAllExperimentNames = () => getBigIntJson({ url: this.getApiUrl('get-all-experiment-names') });
   static getExperimentError = () => getBigIntJson({ url: this.getApiUrl('get-experiment-error') });
