@@ -4289,7 +4289,6 @@ __metadata:
     pako: "npm:0.2.7"
     papaparse: "npm:^5.3.2"
     parcoord-es: "npm:^2.2.10"
-    pdfjs-dist: "npm:^5.3.31"
     plotly.js: "npm:2.5.1"
     prettier: "npm:^2.8.0"
     prop-types: "npm:^15.8.1"
@@ -4461,7 +4460,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@napi-rs/canvas@npm:^0.1.80, @napi-rs/canvas@npm:^0.1.84":
+"@napi-rs/canvas@npm:^0.1.80":
   version: 0.1.88
   resolution: "@napi-rs/canvas@npm:0.1.88"
   dependencies:
@@ -25602,18 +25601,6 @@ __metadata:
     "@napi-rs/canvas":
       optional: true
   checksum: 10c0/a9e438f12771963f7c29934b4d5e58d508fa43954e4e4cbf951b040c6c89891d048e3d9d3799ed9ec6ceade677628a25f88062b300c5425777ce0b522e457532
-  languageName: node
-  linkType: hard
-
-"pdfjs-dist@npm:^5.3.31":
-  version: 5.4.530
-  resolution: "pdfjs-dist@npm:5.4.530"
-  dependencies:
-    "@napi-rs/canvas": "npm:^0.1.84"
-  dependenciesMeta:
-    "@napi-rs/canvas":
-      optional: true
-  checksum: 10c0/18c9d0a34340d6a50c1118a86870a86e91784a39854a6866eb30ebacfba929284930225b1ce1ec0cbd6a29bfb457ed4a01a3b85d853e67e989f2919b6cb67788
   languageName: node
   linkType: hard
 
