@@ -5,13 +5,13 @@ from multiprocessing import Lock, Manager
 
 import torch
 
-from rapidfireai.fit.utils.constants import (
-    SHM_MIN_FREE_SPACE,
-    SHM_WARN_THRESHOLD,
-    SHMObjectType,
-)
-from rapidfireai.fit.utils.exceptions import InsufficientSharedMemoryException
-from rapidfireai.fit.utils.logging import RFLogger
+from rapidfireai.utils.constants import SHMObjectType
+from rapidfireai.utils.exceptions import InsufficientSharedMemoryException
+from rapidfireai.utils.logging import RFLogger
+
+SHM_WARN_THRESHOLD = 80
+SHM_MIN_FREE_SPACE = 1.0
+USE_SHARED_MEMORY = True
 
 
 def _get_shm_usage():

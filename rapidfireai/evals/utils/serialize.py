@@ -4,7 +4,7 @@ from typing import Any
 
 import dill
 from rapidfireai.automl.model_config import RFvLLMModelConfig, RFOpenAIAPIModelConfig
-from rapidfireai.evals.utils.constants import SEARCH_TYPE_KEYS
+from rapidfireai.utils.constants import SEARCH_TYPE_KEYS
 
 
 def extract_pipeline_display_metadata(pipeline_config: dict[str, Any]) -> dict[str, Any]:
