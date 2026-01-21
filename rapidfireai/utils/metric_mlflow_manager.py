@@ -24,7 +24,7 @@ class MLflowMetricLogger(MetricLogger):
         self.logger = logger if logger is not None else RFLogger()
         self.init_kwargs = init_kwargs # Not currently used
         if not ping_server(MLFlowConfig.HOST, MLFlowConfig.PORT, 2):
-            raise ConnectionRefusedError(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled.")
+            raise ConnectionRefusedError(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled")
         else:
             mlflow.set_tracking_uri(tracking_uri)
             self.client = MlflowClient(tracking_uri=tracking_uri)
