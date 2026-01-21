@@ -58,12 +58,14 @@ dependencies = [
     "tensorboard",
 
     # Other
-    "dill==0.4.1",
+    "dill<0.4.1",
     "jedi",
+    "setuptools<80",
     # "pytest>=8.4.2",
     "uv",
     "fsspec<=2025.10.0",
     "numpy<2.3",
+    "huggingface-hub<1.0.0",
 ]
 
 [project.optional-dependencies]
