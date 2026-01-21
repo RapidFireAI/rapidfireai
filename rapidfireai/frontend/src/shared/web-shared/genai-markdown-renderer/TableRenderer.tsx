@@ -146,7 +146,7 @@ const VirtualizedTable = ({ header, rows }: { header: React.ReactNode; rows: Rea
 };
 
 export const VirtualizedTableRow = ({ children, node }: ReactMarkdownProps<'tr'>) => {
-  const isHeader = node?.children.some((child) => child.tagName === 'th');
+  const isHeader = node?.children.some((child) => 'tagName' in child && child.tagName === 'th');
   const { theme } = useDesignSystemTheme();
   return (
     <TableRow

@@ -1,5 +1,6 @@
 """This module contains the TrackIOManager class which is responsible for managing the TrackIO runs."""
 
+import time
 import trackio
 from typing import Any
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
@@ -109,6 +110,8 @@ class TrackIOMetricLogger(MetricLogger):
         """End a specific run."""
         try:
             trackio.finish()
+            # Allow background thread to complete sending data before program exit
+            time.sleep(0.5)
             if run_id in self.active_runs:
                 del self.active_runs[run_id]
         except Exception as e:
@@ -130,6 +133,8 @@ class TrackIOMetricLogger(MetricLogger):
         """Clear the TrackIO context by ending any active run."""
         try:
             trackio.finish()
+            # Allow background thread to complete sending data before program exit
+            time.sleep(0.5)
             print("TrackIO context cleared successfully")
         except Exception:
             print("No active TrackIO run to clear")

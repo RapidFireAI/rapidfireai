@@ -13,7 +13,7 @@ interface GenAiTracesTableBodyRowsProps {
   rows: Row<EvalTraceComparisonEntry>[];
   isComparing: boolean;
   enableRowSelection?: boolean;
-  virtualItems: VirtualItem<Element>[];
+  virtualItems: VirtualItem[];
   virtualizerTotalSize: number;
   virtualizerMeasureElement: (node: HTMLDivElement | null) => void;
   // eslint-disable-next-line react/no-unused-prop-types
@@ -44,7 +44,7 @@ export const GenAiTracesTableBodyRows = React.memo(
           const exportableTrace = row.original.currentRunValue && !isComparing;
           return (
             <div
-              key={virtualRow.key}
+              key={String(virtualRow.key)}
               data-index={virtualRow.index}
               ref={(node) => virtualizerMeasureElement(node)}
               style={{

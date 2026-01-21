@@ -400,6 +400,11 @@ module.exports = function () {
           }),
         );
 
+        // Suppress source map warnings from node_modules
+        webpackConfig.ignoreWarnings = [
+          /Failed to parse source map/,
+        ];
+
         console.log('Webpack config:', webpackConfig);
         return webpackConfig;
       },
