@@ -12,11 +12,11 @@ import json
 import time
 
 from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig
-from rapidfireai.evals.db import RFDatabase
+from rapidfireai.db import RfDb
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
-from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.constants import ICOperation, ICStatus, PipelineStatus
+from rapidfireai.utils.logging import RFLogger
 
 
 class InteractiveControlHandler:
@@ -50,7 +50,7 @@ class InteractiveControlHandler:
     def check_and_process_requests(
         self,
         scheduler: PipelineScheduler,
-        db: RFDatabase,
+        db: RfDb,
         num_shards: int,
         dataset,
         pipeline_aggregators: dict,
@@ -133,7 +133,7 @@ class InteractiveControlHandler:
                 time.sleep(0.5)
 
     def _handle_stop(
-        self, pipeline_id: int, scheduler: PipelineScheduler, db: RFDatabase, progress_display=None
+        self, pipeline_id: int, scheduler: PipelineScheduler, db: RfDb, progress_display=None
     ) -> None:
         """
         Stop a pipeline (remove from scheduling, save progress).
@@ -157,7 +157,7 @@ class InteractiveControlHandler:
         self.logger.info(f"Stopped pipeline {pipeline_id} at {shards_completed} shards completed")
 
     def _handle_resume(
-        self, pipeline_id: int, scheduler: PipelineScheduler, db: RFDatabase, num_shards: int, progress_display=None
+        self, pipeline_id: int, scheduler: PipelineScheduler, db: RfDb, num_shards: int, progress_display=None
     ) -> None:
         """
         Resume a stopped pipeline (re-add to scheduler with saved progress).
@@ -197,7 +197,7 @@ class InteractiveControlHandler:
         self,
         pipeline_id: int,
         scheduler: PipelineScheduler,
-        db: RFDatabase,
+        db: RfDb,
         pipeline_results: dict,
         progress_display=None,
     ) -> None:
@@ -240,7 +240,7 @@ class InteractiveControlHandler:
         self,
         request_data: str,
         scheduler: PipelineScheduler,
-        db: RFDatabase,
+        db: RfDb,
         num_shards: int,
         dataset,
         pipeline_aggregators: dict,
