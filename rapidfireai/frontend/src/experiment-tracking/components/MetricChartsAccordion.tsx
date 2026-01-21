@@ -60,7 +60,7 @@ const MetricChartsAccordion = ({
 
         '&:focus-visible': {
           outlineColor: `${theme.colors.primary} !important`,
-          outlineStyle: 'auto !important',
+          outlineStyle: 'auto !important' as any,
         },
       },
 

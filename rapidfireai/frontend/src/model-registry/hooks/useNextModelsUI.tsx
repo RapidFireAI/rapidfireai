@@ -43,14 +43,15 @@ export const withNextModelsUIContext =
     }, [usingNextModelsUI]);
 
     const contextValue = useMemo(() => ({ usingNextModelsUI, setUsingNextModelsUI }), [usingNextModelsUI]);
+    const ComponentWithContext = Component as React.ComponentType<any>;
 
     if (!shouldShowModelsNextUI()) {
-      return <Component {...props} usingNextModelsUI={false} />;
+      return <ComponentWithContext {...props} usingNextModelsUI={false} />;
     }
 
     return (
       <NextModelsUIContext.Provider value={contextValue}>
-        <Component {...props} usingNextModelsUI={contextValue.usingNextModelsUI} />
+        <ComponentWithContext {...props} usingNextModelsUI={contextValue.usingNextModelsUI} />
       </NextModelsUIContext.Provider>
     );
   };
