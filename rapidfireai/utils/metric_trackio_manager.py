@@ -49,8 +49,11 @@ class TrackioMetricLogger(MetricLogger):
         # Initialize a new run with the run name 
         try:
             self.active_runs[run_name] = trackio.init(project=self.experiment_name, name=run_name, **self.init_kwargs)
-        except Exception:
-            raise ValueError(f"Exception in calling trackio.init() to create new run: {run_name} with {self.init_kwargs=}")
+        except Exception as exc:
+            raise ValueError(
+                f"Exception in calling trackio.init() to create new run: {run_name} "
+                f"with self.init_kwargs={self.init_kwargs!r}"
+            ) from exc
         
         # Log any pending params for this run
         if run_name in self.run_params:
@@ -59,28 +62,31 @@ class TrackioMetricLogger(MetricLogger):
         
         return run_name
 
-    def log_param(self, run_name: str, key: str, value: str) -> None:
+    def log_param(self, run_id: str, key: str, value: str) -> None:
         """Log parameters to a specific run."""
         # Trackio logs params via the log() method
         # Try to log immediately, or store for later if run not active
         try:
-            self.active_runs[run_name].log({key: value})
+            self.active_runs[run_id].log({key: value})
         except Exception:
             # Run not active, store for later when run is created
-            if run_name not in self.run_params:
-                self.run_params[run_name] = {}
-            self.run_params[run_name][key] = value
+            if run_id not in self.run_params:
+                self.run_params[run_id] = {}
+            self.run_params[run_id][key] = value
 
-    def log_metric(self, run_name: str, key: str, value: float, step: int = None) -> None:
+    def log_metric(self, run_id: str, key: str, value: float, step: int = None) -> None:
         """Log a metric to a specific run."""
         # Trackio uses log() with step in the dict
         log_dict = {key: value}
         if step is not None:
             log_dict["step"] = step
         try:
-            self.active_runs[run_name].log(log_dict)
-        except Exception:
-            raise ValueError(f"Error logging metric in log_metric, is there not an active run?: {run_name=}, {key} = {value}, {step=}")
+            self.active_runs[run_id].log(log_dict)
+        except Exception as exc:
+            raise ValueError(
+                f"Error logging metric in log_metric, is there not an active run?: "
+                f"run_id={run_id!r}, {key} = {value}, step={step!r}"
+            ) from exc
 
     def get_run_metrics(self, run_id: str) -> dict[str, list[tuple[int, float]]]:
         """
@@ -94,32 +100,32 @@ class TrackioMetricLogger(MetricLogger):
         # Metrics are stored locally and can be viewed via trackio.show()
         return {}
 
-    def end_run(self, run_name: str) -> None:
+    def end_run(self, run_id: str) -> None:
         """End a specific run."""
         try:
-            self.logger.info(f"Ending Trackio run: {run_name}")
-            self.active_runs[run_name].finish()
+            self.logger.info(f"Ending Trackio run: {run_id}")
+            self.active_runs[run_id].finish()
             # Allow background thread to complete sending data before program exit
             time.sleep(0.5)
-            if run_name in self.active_runs:
-                del self.active_runs[run_name]
+            if run_id in self.active_runs:
+                del self.active_runs[run_id]
         except Exception as e:
-            self.logger.error(f"Error ending Trackio run {run_name}: {e}")
+            self.logger.error(f"Error ending Trackio run {run_id}: {e}")
 
-    def delete_run(self, run_name: str) -> None:
+    def delete_run(self, run_id: str) -> None:
         """Delete a specific run."""
         try:
             runs = self.api.runs(self.experiment_name)
             for run in runs:
-                if run.name == run_name:
+                if run.name == run_id:
                     run.delete()
                     break
             else:
-                self.logger.warning(f"Trackio run '{run_name}' not found")
-            if run_name in self.active_runs:
-                del self.active_runs[run_name]
-        except Exception as e:
-            raise ValueError(f"Trackio run '{run_name}' not found: {e}")
+                self.logger.warning(f"Trackio run '{run_id}' not found")
+            if run_id in self.active_runs:
+                del self.active_runs[run_id]
+        except Exception as exc:
+            raise ValueError(f"Trackio run '{run_id}' not found: {exc}") from exc
 
     def clear_context(self) -> None:
         """Clear the Trackio context by ending all active runs."""
