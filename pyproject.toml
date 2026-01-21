@@ -55,6 +55,7 @@ dependencies = [
     "trackio",
     "trackio[gpu]",
     "mlflow",
+    "tensorboard",
 
     # Other
     "dill==0.4.1",
