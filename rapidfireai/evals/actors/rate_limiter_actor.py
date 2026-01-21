@@ -7,7 +7,7 @@ distributed query processing actors.
 
 import ray
 
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.logging import RFLogger
 from rapidfireai.evals.utils.ratelimiter import OpenAIRateLimiter, RequestStatus
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 

@@ -15,7 +15,7 @@ import ray
 
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.logging import RFLogger
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 
 

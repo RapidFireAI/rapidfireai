@@ -1,5 +1,8 @@
 """
-This module contains the unified Experiment class for both fit and evals modes.
+RapidFire AI Experiment Module
+
+The Experiment class is the main entry point for running training (fit) or
+inference (evals) experiments.
 """
 
 import logging
@@ -14,18 +17,28 @@ import pandas as pd
 
 from rapidfireai.utils.constants import (
     ColabConfig,
+    DispatcherConfig,
+    ExperimentStatus,
     RayConfig,
     RF_EXPERIMENT_PATH,
     RF_LOG_FILENAME,
     RF_LOG_PATH,
     RF_MLFLOW_ENABLED,
     RF_TRAINING_LOG_FILENAME,
+    get_dispatcher_url,
+    get_dispatcher_headers,
 )
 from rapidfireai.utils.ping import ping_server
 
 
 class Experiment:
-    """Unified Experiment class for both fit and evals modes."""
+    """
+    Main experiment class for RapidFire AI.
+    
+    Supports two modes:
+    - fit: Training experiments with hyperparameter search
+    - evals: Inference experiments with pipeline management
+    """
 
     def __init__(
         self,
@@ -61,13 +74,14 @@ class Experiment:
 
     def _init_fit_mode(self) -> None:
         """Initialize fit-specific components."""
-        # Import fit-specific modules
+        # Import Ray
         import ray
 
-        from rapidfireai.fit.db.rf_db import RfDb
-        from rapidfireai.fit.utils.exceptions import ExperimentException
-        from rapidfireai.fit.utils.experiment_utils import ExperimentUtils
-        from rapidfireai.fit.utils.logging import RFLogger
+        # Import unified modules
+        from rapidfireai.db.rf_db import RfDb
+        from rapidfireai.utils.exceptions import ExperimentException
+        from rapidfireai.utils.experiment_utils import ExperimentUtils
+        from rapidfireai.utils.logging import RFLogger
         from rapidfireai.version import __version__
 
         # Store exception class for use in methods
@@ -110,7 +124,11 @@ class Experiment:
 
         # Create logger
         try:
-            self.logger = RFLogger().create_logger("experiment")
+            self.logging_manager = RFLogger(
+                experiment_name=self.experiment_name,
+                experiment_path=self.experiment_path,
+            )
+            self.logger = self.logging_manager.get_logger("Experiment")
             for msg in log_messages:
                 self.logger.info(msg)
             # Log the version of rapidfireai that is running
@@ -159,19 +177,20 @@ class Experiment:
 
     def _init_evals_mode(self) -> None:
         """Initialize evals-specific components."""
-        # Import evals-specific modules
+        # Import Ray
         import ray
 
-        from rapidfireai.evals.db import RFDatabase
-        from rapidfireai.evals.dispatcher import start_dispatcher_thread
-        from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.evals.utils.constants import get_dispatcher_url
-        from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
-        from rapidfireai.evals.utils.logger import RFLogger
-        from rapidfireai.evals.utils.notebook_ui import NotebookUI
+        # Import unified modules
+        from rapidfireai.db.rf_db import RfDb
+        from rapidfireai.dispatcher import start_dispatcher_thread
+        from rapidfireai.utils.experiment_utils import ExperimentUtils
+        from rapidfireai.utils.logging import RFLogger
         from rapidfireai.utils.colab import get_colab_auth_token
-        from rapidfireai.utils.constants import DispatcherConfig, MLFlowConfig
         from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+
+        # Import evals-specific modules
+        from rapidfireai.evals.scheduling.controller import Controller
+        from rapidfireai.evals.utils.notebook_ui import NotebookUI
 
         # Store ray reference for later use
         self._ray = ray
@@ -236,7 +255,7 @@ class Experiment:
                 print(f"⚠️ Colab detected but failed to get proxy URL: {e}")
 
         # Create database reference
-        self.db = RFDatabase()
+        self.db = RfDb()
 
         try:
             metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
@@ -251,8 +270,6 @@ class Experiment:
             self.logger.warning(f"Failed to initialize MetricLogger: {e}. MetricLogger logging will be disabled.")
             self.metric_loggers = None
 
-
-        
         # Initialize the controller
         self.controller = Controller(
             experiment_name=self.experiment_name,
@@ -304,8 +321,7 @@ class Experiment:
             raise ValueError("run_fit() is only available in 'fit' mode")
 
         from rapidfireai.fit.backend.controller import Controller
-
-        ExperimentException = self._ExperimentException
+        from rapidfireai.utils.exceptions import ExperimentException
 
         # Check if training is already running
         if self._training_thread is not None and self._training_thread.is_alive():
@@ -356,7 +372,7 @@ class Experiment:
                     # Restore stdout for error logging
                     sys.stdout = old_stdout
                     if hasattr(self, "logger"):
-                        self.logger.opt(exception=True).error(f"Error in background training: {e}")
+                        self.logger.exception(f"Error in background training: {e}")
                     display(HTML(f'<p style="color: red; font-weight: bold;">❌ Error in background training: {e}</p>'))
                 finally:
                     # Restore stdout
@@ -399,7 +415,7 @@ class Experiment:
                 controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed)
             except Exception as e:
                 if hasattr(self, "logger"):
-                    self.logger.opt(exception=True).error(f"Error running fit: {e}")
+                    self.logger.exception(f"Error running fit: {e}")
                 raise ExperimentException(f"Error running fit: {e}, traceback: {traceback.format_exc()}") from e
 
     def run_evals(
@@ -433,8 +449,6 @@ class Experiment:
         """
         if self.mode != "evals":
             raise ValueError("run_evals() is only available in 'evals' mode")
-
-        from rapidfireai.evals.utils.constants import ExperimentStatus
 
         # Auto-detect resources if not provided
         available_gpus = self._ray.cluster_resources().get("GPU", 0)
@@ -512,7 +526,7 @@ class Experiment:
         if self.mode != "fit":
             raise ValueError("get_results() is only available in 'fit' mode")
 
-        ExperimentException = self._ExperimentException
+        from rapidfireai.utils.exceptions import ExperimentException
 
         try:
             runs_info_df = self.experiment_utils.get_runs_info()
@@ -563,7 +577,7 @@ class Experiment:
 
         except Exception as e:
             if hasattr(self, "logger"):
-                self.logger.opt(exception=True).error(f"Error getting results: {e}")
+                self.logger.exception(f"Error getting results: {e}")
             raise ExperimentException(f"Error getting results: {e}, traceback: {traceback.format_exc()}") from e
 
     def get_runs_info(self) -> pd.DataFrame:
@@ -579,13 +593,13 @@ class Experiment:
         if self.mode != "fit":
             raise ValueError("get_runs_info() is only available in 'fit' mode")
 
-        ExperimentException = self._ExperimentException
+        from rapidfireai.utils.exceptions import ExperimentException
 
         try:
             return self.experiment_utils.get_runs_info()
         except Exception as e:
             if hasattr(self, "logger"):
-                self.logger.opt(exception=True).error(f"Error getting run info: {e}")
+                self.logger.exception(f"Error getting run info: {e}")
             raise ExperimentException(f"Error getting run info: {e}, traceback: {traceback.format_exc()}") from e
 
     def cancel_current(self) -> None:
@@ -594,19 +608,16 @@ class Experiment:
 
         Works in both fit and evals modes.
         """
-        if self.mode == "fit":
-            ExperimentException = self._ExperimentException
-            try:
-                self.experiment_utils.cancel_current(internal=False)
-            except Exception as e:
-                if hasattr(self, "logger"):
-                    self.logger.opt(exception=True).error(f"Error canceling current task: {e}")
-                raise ExperimentException(
-                    f"Error canceling current task: {e}, traceback: {traceback.format_exc()}"
-                ) from e
-        else:
-            # Eval mode
+        from rapidfireai.utils.exceptions import ExperimentException
+
+        try:
             self.experiment_utils.cancel_current(internal=False)
+        except Exception as e:
+            if hasattr(self, "logger"):
+                self.logger.exception(f"Error canceling current task: {e}")
+            raise ExperimentException(
+                f"Error canceling current task: {e}, traceback: {traceback.format_exc()}"
+            ) from e
 
     def end(self) -> None:
         """
@@ -614,33 +625,25 @@ class Experiment:
 
         Works in both fit and evals modes with mode-specific cleanup.
         """
-        if self.mode == "fit":
-            ExperimentException = self._ExperimentException
+        from rapidfireai.utils.exceptions import ExperimentException
 
-            try:
-                self.experiment_utils.end_experiment(internal=False)
-            except Exception as e:
-                if hasattr(self, "logger"):
-                    self.logger.opt(exception=True).error(f"Error ending experiment: {e}")
-                raise ExperimentException(f"Error ending experiment: {e}, traceback: {traceback.format_exc()}") from e
-
-            # Shutdown Ray (handles actor cleanup)
-            try:
-                self._ray.shutdown()
-                self.logger.info("Ray shutdown complete - all actors terminated")
-            except Exception as e:
-                if hasattr(self, "logger"):
-                    self.logger.opt(exception=True).error(f"Error shutting down Ray: {e}")
-                raise ExperimentException(f"Error shutting down Ray: {e}, traceback: {traceback.format_exc()}") from e
-        else:
-            # Eval mode
-            # Use experiment_utils to end the experiment properly
+        try:
             self.experiment_utils.end_experiment(internal=False)
+        except Exception as e:
+            if hasattr(self, "logger"):
+                self.logger.exception(f"Error ending experiment: {e}")
+            raise ExperimentException(f"Error ending experiment: {e}, traceback: {traceback.format_exc()}") from e
 
-            # Clean shutdown Ray
+        # Shutdown Ray (handles actor cleanup)
+        try:
             self._ray.shutdown()
-            self.logger.info("All actors shut down")
-            self.logger.info("Dispatcher will automatically shut down (daemon thread)")
+            self.logger.info("Ray shutdown complete - all actors terminated")
+            if self.mode == "evals":
+                self.logger.info("Dispatcher will automatically shut down (daemon thread)")
+        except Exception as e:
+            if hasattr(self, "logger"):
+                self.logger.exception(f"Error shutting down Ray: {e}")
+            raise ExperimentException(f"Error shutting down Ray: {e}, traceback: {traceback.format_exc()}") from e
 
     def get_log_file_path(self, log_type: str | None = None) -> Path:
         """

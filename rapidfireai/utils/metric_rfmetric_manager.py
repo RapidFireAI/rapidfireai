@@ -7,8 +7,8 @@ from pathlib import Path
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerConfig, MetricLoggerType
 from rapidfireai.utils.metric_mlflow_manager import MLflowMetricLogger
 from rapidfireai.utils.metric_tensorboard_manager import TensorBoardMetricLogger
-from rapidfireai.utils.metric_trackio_manager import TrackioMetricLogger
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.metric_trackio_manager import TrackIOMetricLogger
+from rapidfireai.utils.logging import RFLogger
 from rapidfireai.utils.constants import (
     MLFlowConfig,
     RF_MLFLOW_ENABLED,
@@ -58,7 +58,7 @@ class RFMetricLogger(MetricLogger):
                 self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"], logger=self.logger)
                 self.logger.info(f"Initialized TensorBoardMetricLogger: {metric_logger_name}")
             elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
-                self.metric_loggers[metric_logger_name] = TrackioMetricLogger(
+                self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(
                     experiment_name=metric_logger_config["config"]["experiment_name"],
                     logger=self.logger,
                     init_kwargs=metric_logger_config["config"].get("init_kwargs")
@@ -76,7 +76,7 @@ class RFMetricLogger(MetricLogger):
         elif metric_logger_config.get("type") == MetricLoggerType.TENSORBOARD:
             self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"])
         elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
-            self.metric_loggers[metric_logger_name] = TrackioMetricLogger(
+            self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(
                 experiment_name=metric_logger_config["config"]["experiment_name"],
                 init_kwargs=metric_logger_config["config"].get("init_kwargs")
             )
