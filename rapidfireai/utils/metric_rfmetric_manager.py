@@ -53,7 +53,7 @@ class RFMetricLogger(MetricLogger):
                     self.metric_loggers[metric_logger_name] = MLflowMetricLogger(metric_logger_config["config"]["tracking_uri"], logger=self.logger)
                     self.logger.info(f"Initialized MLflowMetricLogger: {metric_logger_name}")
                 except ConnectionRefusedError as e:
-                    self.logger.warning(f"Failed to initialize MLflowMetricLogger: {e}")
+                    self.logger.warning(f"Failed to initialize MLflowMetricLogger: {e}. MLflow logging is disabled.")
             elif metric_logger_config.get("type") == MetricLoggerType.TENSORBOARD:
                 self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"], logger=self.logger)
                 self.logger.info(f"Initialized TensorBoardMetricLogger: {metric_logger_name}")
