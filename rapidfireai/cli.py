@@ -108,41 +108,27 @@ def get_cuda_version():
     return 0, 0
 
 
-def install_packages(evals: bool = False, init_packages: list[str] | None = None):
+def install_packages(init_packages: list[str] | None = None):
     """Install packages for the RapidFire AI project."""
     packages = []
-    # Generate CUDA requirements file
-    mode_file = Path(RF_HOME) / "rf_mode.txt"
-    if evals:
-        mode_file.write_text("evals")
-    else:
-        mode_file.write_text("fit")
     cuda_major, cuda_minor = get_cuda_version()
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
     setup_directory = None
     for site_package in site_packages.split(",") + ["."]:
-        if os.path.exists(os.path.join(site_package.strip(), "setup", "fit")):
+        if os.path.exists(os.path.join(site_package.strip(), "setup", "rapidfireai")):
             setup_directory = Path(site_package) / "setup"
             break
     if not setup_directory:
         print("❌ Setup directory not found, skipping package installation")
         return 1
-    if ColabConfig.ON_COLAB and evals:
-        print("Colab environment detected, installing evals packages")
-        requirements_file = setup_directory / "evals" / "requirements-colab.txt"
-    elif ColabConfig.ON_COLAB and not evals:
-        print("Colab environment detected, installing fit packages")
-        requirements_file = setup_directory / "fit" / "requirements-colab.txt"
-    elif not ColabConfig.ON_COLAB and evals:
-        print("Non-Colab environment detected, installing evals packages")
-        requirements_file = setup_directory / "evals" / "requirements-local.txt"
-    elif not ColabConfig.ON_COLAB and not evals:
-        print("Non-Colab environment detected, installing fit packages")
-        requirements_file = setup_directory / "fit" / "requirements-local.txt"
+    
+    if ColabConfig.ON_COLAB:
+        print("Colab environment detected, installing packages")
+        requirements_file = setup_directory / "rapidfireai" / "requirements-colab.txt"
     else:
-        print("❌ Unknown environment detected, skipping package installation")
-        return 1
+        print("Local/server environment detected, installing packages")
+        requirements_file = setup_directory / "rapidfireai" / "requirements-local.txt"
 
     try:
         print(f"Installing packages from {requirements_file.absolute()}...")
@@ -225,13 +211,6 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     if ColabConfig.ON_COLAB:
         flash_cuda = "cu128"
 
-    if not evals:
-        pass
-
-    if evals and ColabConfig.ON_COLAB:
-        pass
-
-    ## TODO: re-enable for fit once trl has fix
     if not ColabConfig.ON_COLAB and cuda_major >= 12:
         print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
 
@@ -253,27 +232,26 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
                 "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
             }
         )
-        if evals:
-            packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
-            packages.append({"package": "flashinfer-python", "extra_args": ["--upgrade"]})
-            packages.append({"package": "flashinfer-cubin", "extra_args": ["--upgrade"]})
-            if cuda_major + (cuda_minor / 10.0) >= 12.8:
-                packages.append(
-                    {
-                        "package": "flashinfer-jit-cache",
-                        "extra_args": ["--upgrade", "--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"],
-                    }
-                )
-            packages.append({"package": "transformers>=4.56.1,<5.0.0", "extra_args": ["--upgrade"]})
+        packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
+        packages.append({"package": "flashinfer-python", "extra_args": ["--upgrade"]})
+        packages.append({"package": "flashinfer-cubin", "extra_args": ["--upgrade"]})
+        if cuda_major + (cuda_minor / 10.0) >= 12.8:
+            packages.append(
+                {
+                    "package": "flashinfer-jit-cache",
+                    "extra_args": ["--upgrade", "--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"],
+                }
+            )
+        packages.append({"package": "transformers>=4.56.1,<5.0.0", "extra_args": ["--upgrade"]})
+        packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+        if get_compute_capability() >= 8.0:
+            packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
+            # Re-install torch after flash-attn to ensure compatibility
             packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-            if get_compute_capability() >= 8.0:
-                packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
-                # Re-install torch, torchvision, and torchaudio to ensure compatibility as flash-attn requires an old version of torch but will upgrade torch to an incompatible version
-                packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-                packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-                packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
 
         packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
 
@@ -314,14 +292,14 @@ def copy_tutorial_notebooks():
     return 0
 
 
-def run_init(evals: bool = False):
+def run_init():
     """Run the init command to initialize the project."""
     print("🔧 Initializing RapidFire AI project...")
     print("-" * 30)
-    print("Initializing project...")
-    install_packages(evals)
+    install_packages()
     copy_tutorial_notebooks()
-
+    print("-" * 30)
+    print("✅ RapidFire AI initialization complete!")
     return 0
 
 
@@ -428,17 +406,17 @@ def main():
         prog="rapidfireai",
         epilog="""
 Examples:
-  # Basic initialization for training
+  # Initialize RapidFire AI (installs all dependencies)
   rapidfireai init
-  #or
-  # Basic Initialize with evaluation dependencies
-  rapidfireai init --evals
 
   # Start services
   rapidfireai start
 
   # Stop services
   rapidfireai stop
+
+  # Diagnose issues
+  rapidfireai doctor
 
 For more information, visit: https://github.com/RapidFireAI/rapidfireai
         """,
@@ -483,9 +461,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     parser.add_argument("--force", "-f", action="store_true", help="Force action without confirmation")
 
-    parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
-
-    parser.add_argument("--log-lines", type=int, default=10, help="Number of lines to log to the console")
+    parser.add_argument("--log-lines", type=int, default=10, help="Number of log lines to show in doctor command")
 
     parser.add_argument(
         "--converge",
@@ -526,7 +502,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     # Handle init command separately
     if args.command == "init":
-        return run_init(args.evals)
+        return run_init()
 
     if args.command == "jupyter":
         return run_jupyter()
