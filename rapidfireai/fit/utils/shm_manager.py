@@ -140,7 +140,7 @@ class SharedMemoryManager:
         # initialize thread lock for operations within a single process
         self._thread_lock = threading.Lock()
 
-        self.logger = RFLogger().create_logger(name)
+        self.logger = RFLogger().get_logger(name)
 
     # shared memory operations
     def _safe_tensor_to_shared_memory(
