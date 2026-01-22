@@ -118,8 +118,7 @@ class RFMetricLogger(MetricLogger):
         # Create runs in other loggers using the canonical ID
         for metric_logger in self.metric_loggers.values():
             if metric_logger.type != MetricLoggerType.MLFLOW:
-                # metric_logger.create_run(canonical_run_id, display_name=run_name)
-                metric_logger.create_run(run_name)
+                metric_logger.create_run(canonical_run_id)
 
         return canonical_run_id
     
