@@ -42,7 +42,7 @@ class TrackioMetricLogger(MetricLogger):
         if output:
             for line in output.split('\n'):
                 self.logger.info(f"[trackio] {line}")
-                if "Running on public URL" in line:
+                if "Running on public URL" in line or "trackio show --project" in line:
                     print(f"Trackio: {line}")
         return result
 
