@@ -4,10 +4,7 @@ This module contains the RFMetricLogger class which is responsible for managing 
 
 from typing import Optional
 from pathlib import Path
-from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerConfig, MetricLoggerType
-from rapidfireai.utils.metric_mlflow_manager import MLflowMetricLogger
-from rapidfireai.utils.metric_tensorboard_manager import TensorBoardMetricLogger
-from rapidfireai.utils.metric_trackio_manager import TrackIOMetricLogger
+from rapidfireai.metrics.metric_logger import MetricLogger, MetricLoggerConfig, MetricLoggerType
 from rapidfireai.utils.logging import RFLogger
 from rapidfireai.utils.constants import (
     MLFlowConfig,
@@ -16,6 +13,26 @@ from rapidfireai.utils.constants import (
     RF_TRACKIO_ENABLED,
     RF_TENSORBOARD_LOG_DIR
 )
+
+# Optional imports - these may fail if dependencies aren't installed
+MLflowMetricLogger = None
+TensorBoardMetricLogger = None
+TrackIOMetricLogger = None
+
+try:
+    from rapidfireai.metrics.metric_mlflow_manager import MLflowMetricLogger
+except ImportError:
+    pass
+
+try:
+    from rapidfireai.metrics.metric_tensorboard_manager import TensorBoardMetricLogger
+except ImportError:
+    pass
+
+try:
+    from rapidfireai.metrics.metric_trackio_manager import TrackIOMetricLogger
+except ImportError:
+    pass
 
 class RFMetricLogger(MetricLogger):
     """
@@ -39,7 +56,7 @@ class RFMetricLogger(MetricLogger):
             - "name": {"type": MetricLoggerType.TRACKIO, "config": {"tracking_uri": None}}
         """
         self.type = MetricLoggerType.MULTIPLE
-        self.logger = logger if logger is not None else RFLogger() 
+        self.logger = logger if logger is not None else RFLogger()
         if not isinstance(metric_loggers, dict):
             raise ValueError("metric_loggers must be a dictionary")
         if len(metric_loggers) == 0:
@@ -49,15 +66,24 @@ class RFMetricLogger(MetricLogger):
             if metric_logger_config.get("type") not in MetricLoggerType:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
             if metric_logger_config.get("type") == MetricLoggerType.MLFLOW:
+                if MLflowMetricLogger is None:
+                    self.logger.warning(f"MLflow not available, skipping {metric_logger_name}")
+                    continue
                 try:
                     self.metric_loggers[metric_logger_name] = MLflowMetricLogger(metric_logger_config["config"]["tracking_uri"], logger=self.logger)
                     self.logger.info(f"Initialized MLflowMetricLogger: {metric_logger_name}")
                 except ConnectionRefusedError as e:
                     self.logger.warning(f"Failed to initialize MLflowMetricLogger: {e}. MLflow logging is disabled.")
             elif metric_logger_config.get("type") == MetricLoggerType.TENSORBOARD:
+                if TensorBoardMetricLogger is None:
+                    self.logger.warning(f"TensorBoard not available, skipping {metric_logger_name}")
+                    continue
                 self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"], logger=self.logger)
                 self.logger.info(f"Initialized TensorBoardMetricLogger: {metric_logger_name}")
             elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
+                if TrackIOMetricLogger is None:
+                    self.logger.warning(f"TrackIO not available, skipping {metric_logger_name}")
+                    continue
                 self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(
                     experiment_name=metric_logger_config["config"]["experiment_name"],
                     logger=self.logger,
@@ -66,16 +92,22 @@ class RFMetricLogger(MetricLogger):
                 self.logger.info(f"Initialized TrackioMetricLogger: {metric_logger_name}")
             else:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
-    
+
     def add_logger(self, metric_logger_name: str, metric_logger_config: MetricLoggerConfig) -> None:
         """Add a metric logger to the dictionary."""
         if metric_logger_config.get("type") not in MetricLoggerType:
             raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
         if metric_logger_config.get("type") == MetricLoggerType.MLFLOW:
+            if MLflowMetricLogger is None:
+                raise ImportError("MLflow is not installed. Install with: pip install mlflow")
             self.metric_loggers[metric_logger_name] = MLflowMetricLogger(metric_logger_config["config"]["tracking_uri"])
         elif metric_logger_config.get("type") == MetricLoggerType.TENSORBOARD:
+            if TensorBoardMetricLogger is None:
+                raise ImportError("TensorBoard is not installed. Install with: pip install tensorboard")
             self.metric_loggers[metric_logger_name] = TensorBoardMetricLogger(metric_logger_config["config"]["log_dir"])
         elif metric_logger_config.get("type") == MetricLoggerType.TRACKIO:
+            if TrackIOMetricLogger is None:
+                raise ImportError("TrackIO is not installed. Install with: pip install trackio")
             self.metric_loggers[metric_logger_name] = TrackIOMetricLogger(
                 experiment_name=metric_logger_config["config"]["experiment_name"],
                 init_kwargs=metric_logger_config["config"].get("init_kwargs")
@@ -90,14 +122,14 @@ class RFMetricLogger(MetricLogger):
                 self.logger.info(f"Creating MLflow experiment: {experiment_name}")
                 return metric_logger.create_experiment(experiment_name)
         return experiment_name
-    
+
     def get_experiment(self, experiment_name: str) -> str:
         """Get experiment from MetricLogger(TensorBoard doesn't have experiments)."""
         for metric_logger in self.metric_loggers.values():
             if metric_logger.type == MetricLoggerType.MLFLOW:
                 return metric_logger.get_experiment(experiment_name)
         return experiment_name
-    
+
     def create_run(self, run_name: str) -> str:
         """Create run in MetricLogger.
 
@@ -121,7 +153,7 @@ class RFMetricLogger(MetricLogger):
                 metric_logger.create_run(canonical_run_id)
 
         return canonical_run_id
-    
+
     def log_param(self, run_id: str, key: str, value: str) -> None:
         """Log parameter to MetricLogger."""
         for metric_logger_name, metric_logger in self.metric_loggers.items():
@@ -129,7 +161,7 @@ class RFMetricLogger(MetricLogger):
                 metric_logger.log_param(run_id, key, value)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support log_param")
-    
+
     def log_metric(self, run_id: str, key: str, value: float, step: Optional[int] = None) -> None:
         """Log metric to MetricLogger."""
         for metric_logger_name, metric_logger in self.metric_loggers.items():
@@ -137,7 +169,7 @@ class RFMetricLogger(MetricLogger):
                 metric_logger.log_metric(run_id, key, value, step=step)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support log_metric")
-    
+
     def get_run_metrics(self, run_id: str) -> dict:
         """Get metrics from MetricLogger."""
         for metric_logger in self.metric_loggers.values():
@@ -162,16 +194,16 @@ class RFMetricLogger(MetricLogger):
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support delete_run")
         return None
-    
+
     def clear_context(self) -> None:
         """Clear context in MetricLogger."""
         for metric_logger_name, metric_logger in self.metric_loggers.items():
             if hasattr(metric_logger, "clear_context"):
                 metric_logger.clear_context()
             else:
-                raise ValueError(f"metric_logger for {metric_logger_name} does not support clear_context")  
+                raise ValueError(f"metric_logger for {metric_logger_name} does not support clear_context")
         return None
-    
+
     @classmethod
     def get_default_metric_loggers(cls, experiment_name: str) -> dict[str, MetricLoggerConfig]:
         """Get default metric loggers."""

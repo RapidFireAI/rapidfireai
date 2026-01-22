@@ -4,7 +4,7 @@ TensorBoard implementation of MetricLogger.
 Uses torch.utils.tensorboard.SummaryWriter to log metrics to TensorBoard.
 """
 
-from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
+from rapidfireai.metrics.metric_logger import MetricLogger, MetricLoggerType
 from pathlib import Path
 from typing import Optional, Any
 import os
@@ -113,7 +113,7 @@ class TensorBoardMetricLogger(MetricLogger):
         This returns an empty dict. For viewing metrics, use TensorBoard UI.
         """
         return {}
-    
+
     def end_run(self, run_id: str) -> None:
         """End a TensorBoard run by closing the writer."""
         if run_id in self.writers:
@@ -156,7 +156,7 @@ class TensorBoardMetricLogger(MetricLogger):
             destination = os.path.join(deleted_dir, f"{run_id}_{timestamp}")
 
             shutil.move(run_log_dir, destination)
-    
+
     def __del__(self):
         """Clean up all writers on deletion."""
         for writer in self.writers.values():

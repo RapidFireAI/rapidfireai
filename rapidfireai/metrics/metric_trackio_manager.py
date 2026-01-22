@@ -5,7 +5,7 @@ import trackio
 import io
 from contextlib import redirect_stdout
 from typing import Any
-from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
+from rapidfireai.metrics.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.utils.logging import RFLogger
 import warnings
 
@@ -30,6 +30,7 @@ class TrackioMetricLogger(MetricLogger):
         self.logger = logger if logger is not None else RFLogger()
         self.active_runs = {}  # Map run_id -> runs
         self.run_params = {}  # Map run_id -> dict of params to log on init
+        self._initialized = False
 
     def _capture_trackio_output(self, func, *args, **kwargs):
         """Execute a trackio function while capturing and logging its stdout output."""
@@ -80,7 +81,7 @@ class TrackioMetricLogger(MetricLogger):
                 f"with self.init_kwargs={self.init_kwargs!r}: {exc}"
             ) from exc
 
-        # Log any pending params for this run 
+        # Log any pending params for this run
         if run_name in self.run_params:
             self.active_runs[run_name].log(self.run_params[run_name])
             del self.run_params[run_name]
@@ -121,7 +122,7 @@ class TrackioMetricLogger(MetricLogger):
     def get_run_metrics(self, run_id: str) -> dict[str, list[tuple[int, float]]]:
         """
         Get all metrics for a specific run.
-        
+
         Note: Trackio stores metrics locally. This method returns an empty dict
         as Trackio doesn't provide a direct API to retrieve historical metrics.
         Metrics can be viewed using `trackio.show()`.

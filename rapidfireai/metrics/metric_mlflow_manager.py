@@ -4,8 +4,8 @@ import os
 import mlflow
 from mlflow.tracking import MlflowClient
 from typing import Any
-from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
-from rapidfireai.utils.ping import ping_server
+from rapidfireai.metrics.metric_logger import MetricLogger, MetricLoggerType
+from rapidfireai.platform.ping import ping_server
 from rapidfireai.utils.constants import MLFlowConfig
 from rapidfireai.utils.logging import RFLogger
 

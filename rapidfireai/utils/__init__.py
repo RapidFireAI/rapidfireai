@@ -4,7 +4,7 @@ RapidFire AI Utility functions and helpers.
 This module provides unified utilities for both fit and evals modes.
 """
 
-from .colab import get_colab_auth_token, is_running_in_colab
+from rapidfireai.platform.colab import get_colab_auth_token, is_running_in_colab
 from .constants import (
     # Configs
     DispatcherConfig,

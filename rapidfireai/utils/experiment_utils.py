@@ -77,7 +77,7 @@ class ExperimentUtils:
     ) -> tuple[int, str, list[str]]:
         """
         Create a new experiment. Returns the experiment id, name, and log messages.
-        
+
         This method handles:
         - Checking for already running experiments
         - Generating unique experiment names
@@ -358,7 +358,7 @@ class ExperimentUtils:
                 try:
                     import mlflow
 
-                    from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+                    from rapidfireai.metrics import RFMetricLogger
 
                     logger = RFLogger(
                         experiment_name=experiment_name,

@@ -30,7 +30,7 @@ from rapidfireai.utils.constants import (
 )
 from rapidfireai.utils.exceptions import ControllerException
 from rapidfireai.utils.logging import RFLogger
-from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+from rapidfireai.metrics import RFMetricLogger
 from rapidfireai.utils.os_utils import mkdir_p
 from rapidfireai.utils.serialize import encode_payload
 
@@ -67,9 +67,9 @@ class Controller:
 
         # Create controller logger
         logging = RFLogger()
-        self.logger: Logger = logging.create_logger("controller")
-        self.user_logger: Logger = logging.create_logger("user")
-        self.ic_logger: Logger = logging.create_logger("interactive-control")
+        self.logger: Logger = logging.get_logger("controller")
+        self.user_logger: Logger = logging.get_logger("user")
+        self.ic_logger: Logger = logging.get_logger("interactive-control")
 
         # Validate GPU availability
         if self.num_workers == 0 or (self.gpus_per_worker == 0 and self.num_workers > 0):

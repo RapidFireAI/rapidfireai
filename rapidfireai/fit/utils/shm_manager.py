@@ -141,7 +141,7 @@ class SharedMemoryManager:
         # initialize thread lock for operations within a single process
         self._thread_lock = threading.Lock()
 
-        self.logger = RFLogger().create_logger(name)
+        self.logger = RFLogger().get_logger(name)
 
     # shared memory operations
     def _safe_tensor_to_shared_memory(self, tensor: torch.Tensor | None) -> torch.Tensor | None:
@@ -174,23 +174,23 @@ class SharedMemoryManager:
                 model.disable_input_require_grads()
             except Exception:
                 pass
-        
+
         for module in model.modules():
             if hasattr(module, "_forward_hooks"):
                 module._forward_hooks.clear()
-            
+
             if hasattr(module, "make_inputs_require_grads"):
                 try:
                     delattr(module, "make_inputs_require_grads")
                 except (AttributeError, TypeError):
                     pass
-        
+
         if hasattr(model, "make_inputs_require_grads"):
             try:
                 delattr(model, "make_inputs_require_grads")
             except (AttributeError, TypeError):
                 pass
-        
+
         return model
 
     def _move_model_to_shared_memory(self, model):

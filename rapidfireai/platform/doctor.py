@@ -24,9 +24,9 @@ from rapidfireai.utils.constants import (
     RF_TRACKIO_ENABLED,
     RF_TRAINING_LOG_FILENAME,
 )
-from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
-from rapidfireai.utils.ping import ping_server
-from rapidfireai.utils.python_info import get_pip_packages, get_python_info
+from rapidfireai.platform.gpu_info import get_gpu_info, get_torch_version
+from rapidfireai.platform.ping import ping_server
+from rapidfireai.platform.python_info import get_pip_packages, get_python_info
 
 
 def get_doctor_info(log_lines: int = 10):
