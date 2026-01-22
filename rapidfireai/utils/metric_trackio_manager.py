@@ -4,7 +4,7 @@ import time
 import trackio
 import io
 from contextlib import redirect_stdout
-from typing import Any, Optional
+from typing import Any
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.evals.utils.logger import RFLogger
 import warnings
@@ -30,7 +30,6 @@ class TrackioMetricLogger(MetricLogger):
         self.logger = logger if logger is not None else RFLogger()
         self.active_runs = {}  # Map run_id -> runs
         self.run_params = {}  # Map run_id -> dict of params to log on init
-        self.run_mappings = {}  # Map run_id -> display_name
 
     def _capture_trackio_output(self, func, *args, **kwargs):
         """Execute a trackio function while capturing and logging its stdout output."""
@@ -45,12 +44,10 @@ class TrackioMetricLogger(MetricLogger):
                     print(f"Trackio: {line}")
         return result
 
-    def _ensure_initialized(self, run_id: str, display_name: Optional[str] = None) -> bool:
+    def _ensure_initialized(self, run_id: str) -> bool:
         """Check if a run is initialized."""
-        if run_id in self.active_runs:
-            return run_id, display_name
-        self.logger.info(f"[trackio] Could not find run {run_id} initializing...")
-        return self.create_run(run_id, display_name)
+        self.logger.info(f"Could not find run {run_id} initializing...")
+        return self.create_run(run_id)
 
     def create_experiment(self, experiment_name: str) -> str:
         """Create a new experiment and set it as active."""
@@ -64,19 +61,16 @@ class TrackioMetricLogger(MetricLogger):
         self.experiment_name = experiment_name
         return experiment_name
 
-    def create_run(self, run_name: str, display_name: Optional[str] = None) -> str:
+    def create_run(self, run_name: str) -> str:
         """Create a new run and return run_name as there is no run_id in Trackio"""
-        if display_name is None:
-            display_name = run_name
-        self.logger.info(f"Creating a run for Trackio: {run_name} with display_name: {display_name}")
+        self.logger.info(f"Creating a run for Trackio: {run_name}")
         # Initialize a new run with the run name
         # Capture stdout to redirect trackio's print statements to the logger
         try:
             self.active_runs[run_name] = self._capture_trackio_output(
-                trackio.init, project=self.experiment_name, name=display_name, resume="allow", **self.init_kwargs
+                trackio.init, project=self.experiment_name, name=run_name, resume="allow", **self.init_kwargs
             )
             time.sleep(1)
-            self.run_mappings[run_name] = display_name if display_name is not None else run_name
             self.logger.debug(f"Trackio run {self.active_runs[run_name].name} created successfully")
         except Exception as exc:
             raise ValueError(
