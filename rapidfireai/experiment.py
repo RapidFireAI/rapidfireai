@@ -28,13 +28,13 @@ from rapidfireai.utils.constants import (
     get_dispatcher_url,
     get_dispatcher_headers,
 )
-from rapidfireai.utils.ping import ping_server
+from rapidfireai.platform.ping import ping_server
 
 
 class Experiment:
     """
     Main experiment class for RapidFire AI.
-    
+
     Supports two modes:
     - fit: Training experiments with hyperparameter search
     - evals: Inference experiments with pipeline management
@@ -185,8 +185,8 @@ class Experiment:
         from rapidfireai.dispatcher import start_dispatcher_thread
         from rapidfireai.utils.experiment_utils import ExperimentUtils
         from rapidfireai.utils.logging import RFLogger
-        from rapidfireai.utils.colab import get_colab_auth_token
-        from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+        from rapidfireai.platform.colab import get_colab_auth_token
+        from rapidfireai.metrics import RFMetricLogger
 
         # Import evals-specific modules
         from rapidfireai.evals.scheduling.controller import Controller
@@ -541,7 +541,7 @@ class Experiment:
                 return pd.DataFrame(columns=["run_id", "step"])
 
             # Lazy import - only import when we actually have metric runs to fetch
-            from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+            from rapidfireai.metrics import RFMetricLogger
             try:
                 metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
                 self.metric_loggers = RFMetricLogger(metric_loggers, logger=self.logger)

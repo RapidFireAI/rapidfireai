@@ -61,7 +61,7 @@ RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
 FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
 RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "fit")
-DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
+DISPATCHER_DIR="$RAPIDFIRE_DIR/dispatcher"
 
 RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
 RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
@@ -201,7 +201,7 @@ ping_port() {
     if command -v nc &> /dev/null; then
         ping_command="$(command -v nc) -z $host $port"
     else
-        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
+        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.platform.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
     fi
     eval $ping_command
     return $?
@@ -292,7 +292,7 @@ wait_for_service() {
     if command -v nc &> /dev/null; then
         ping_command="$(command -v nc) -z $host $port"
     else
-        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.utils.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
+        ping_command="$RF_PYTHON_EXECUTABLE -c 'from rapidfireai.platform.ping import ping_server; checker=ping_server(\"${host}\", ${port}); exit(1) if not checker else exit(0)'"
     fi
     while [ $attempt -le $max_attempts ]; do
         if eval ${ping_command} &>/dev/null; then

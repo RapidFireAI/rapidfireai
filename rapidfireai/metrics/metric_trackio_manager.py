@@ -2,7 +2,7 @@
 
 import trackio
 from typing import Any
-from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
+from rapidfireai.metrics.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.utils.logging import RFLogger
 
 
@@ -24,7 +24,7 @@ class TrackIOMetricLogger(MetricLogger):
         self.logger = logger if logger is not None else RFLogger()
         self.active_runs = {}  # Map run_id -> run_name
         self.run_params = {}  # Map run_id -> dict of params to log on init
-        
+
         self._initialized = False
 
     def _ensure_initialized(self) -> None:
@@ -48,27 +48,27 @@ class TrackIOMetricLogger(MetricLogger):
     def create_run(self, run_name: str) -> str:
         """Create a new run and return run_name as there is no run_id in TrackIO"""
         self._ensure_initialized()
-        
+
         # TrackIO uses run names directly, so we use run_name as the run_id
         # Try to finish any existing run first
         try:
             trackio.finish()
         except Exception:
             pass  # No active run to finish
-        
+
         # Initialize a new run with the run name
         try:
             trackio.init(project=self.experiment_name, name=run_name, **self.init_kwargs)
         except Exception:
             # If init doesn't accept name, try without it
             trackio.init(project=self.experiment_name, **self.init_kwargs)
-        
+
         self.active_runs[run_name] = run_name
         # Log any pending params for this run
         if run_name in self.run_params:
             trackio.log(self.run_params[run_name])
             del self.run_params[run_name]
-        
+
         return run_name
 
     def log_param(self, run_id: str, key: str, value: str) -> None:
@@ -96,7 +96,7 @@ class TrackIOMetricLogger(MetricLogger):
     def get_run_metrics(self, run_id: str) -> dict[str, list[tuple[int, float]]]:
         """
         Get all metrics for a specific run.
-        
+
         Note: TrackIO stores metrics locally. This method returns an empty dict
         as TrackIO doesn't provide a direct API to retrieve historical metrics.
         Metrics can be viewed using `trackio.show()`.
