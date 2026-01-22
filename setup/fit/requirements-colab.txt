@@ -20,5 +20,3 @@ jupyter>=1.1.1
 ipywidgets>=7.3.4,<9.0.0  # Support both v7 (Colab) and v8 (Jupyter)
 tensorboard>=2.11.0
 
-# TrackIO for experiment tracking
-trackio

@@ -614,7 +614,7 @@ show_status() {
         if [[ "$rf_mode" == "fit" ]]; then
             print_status "📊 Use TensorBoard for metrics visualization:"
             print_status "   In a Colab notebook cell, run:"
-            print_status "   %tensorboard --logdir ~/experiments/{experiment_name}/tensorboard_logs"
+            print_status "   %tensorboard --logdir $RF_HOME/rapidfire_experiments/tensorboard_logs/{experiment_name}"
         fi
     else
         # if [[ "$rf_mode" == "fit" ]]; then
