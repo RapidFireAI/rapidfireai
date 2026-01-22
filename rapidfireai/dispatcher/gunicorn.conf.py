@@ -1,13 +1,13 @@
 """Gunicorn configuration file for the RapidFire dispatcher"""
 
-from rapidfireai.fit.db.rf_db import RfDb
+from rapidfireai.db import RfDb
 from rapidfireai.utils.constants import DispatcherConfig
 
 # Other Gunicorn settings...
 bind = f"{DispatcherConfig.HOST}:{DispatcherConfig.PORT}"
 workers = 1  # Single worker for Colab/single-user environments to save memory
 
-wsgi_app = "rapidfireai.fit.dispatcher.dispatcher:serve_forever()"
+wsgi_app = "rapidfireai.dispatcher.dispatcher:serve_forever()"
 
 
 def on_starting(server):
