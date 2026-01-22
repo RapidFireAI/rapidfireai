@@ -25,6 +25,7 @@ langchain-huggingface>=1.0.0
 
 # Data Manipulation & Display
 unstructured>=0.18.15
+numpy>=1.26.4,<2.3
 
 # Other
 requests==2.32.5

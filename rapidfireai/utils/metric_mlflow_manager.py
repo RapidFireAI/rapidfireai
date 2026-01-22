@@ -24,7 +24,7 @@ class MLflowMetricLogger(MetricLogger):
         self.logger = logger if logger is not None else RFLogger()
         self.init_kwargs = init_kwargs # Not currently used
         if not ping_server(MLFlowConfig.HOST, MLFlowConfig.PORT, 2):
-            raise ConnectionRefusedError(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled.")
+            raise ConnectionRefusedError(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled")
         else:
             mlflow.set_tracking_uri(tracking_uri)
             self.client = MlflowClient(tracking_uri=tracking_uri)
@@ -76,11 +76,11 @@ class MLflowMetricLogger(MetricLogger):
                     metric_history = self.client.get_metric_history(run_id, metric_key)
                     metric_dict[metric_key] = [(metric.step, metric.value) for metric in metric_history]
                 except Exception as e:
-                    print(f"Error getting metric history for {metric_key}: {e}")
+                    self.logger.error(f"Error getting metric history for {metric_key}: {e}")
                     continue
             return metric_dict
         except Exception as e:
-            print(f"Error getting metrics for run {run_id}: {e}")
+            self.logger.error(f"Error getting metrics for run {run_id}: {e}")
             return {}
 
     def end_run(self, run_id: str) -> None:
@@ -98,11 +98,11 @@ class MLflowMetricLogger(MetricLogger):
                 if current_run and current_run.info.run_id == run_id:
                     mlflow.end_run()
                 else:
-                    print(f"Run {run_id} is not the active run, no local context to clear")
+                    self.logger.warning(f"Run {run_id} is not the active run, no local context to clear")
             except Exception as e:
-                print(f"Error clearing local MLflow context: {e}")
+                self.logger.error(f"Error clearing local MLflow context: {e}")
         else:
-            print(f"MLflow run {run_id} not found, cannot terminate")
+            self.logger.warning(f"MLflow run {run_id} not found, cannot terminate")
 
     def delete_run(self, run_id: str) -> None:
         """Delete a specific run."""
@@ -126,10 +126,10 @@ class MLflowMetricLogger(MetricLogger):
                 except Exception:
                     # Fallback to global mlflow.end_run()
                     mlflow.end_run()
-                    print(f"Run {run_id} ended using global mlflow.end_run")
+                    self.logger.info(f"Run {run_id} ended using global mlflow.end_run")
 
-                print("MLflow context cleared successfully")
+                self.logger.info("MLflow context cleared successfully")
             else:
-                print("No active MLflow run to clear")
+                self.logger.info("No active MLflow run to clear")
         except Exception as e:
-            print(f"Error clearing MLflow context: {e}")
+            self.logger.error(f"Error clearing MLflow context: {e}")

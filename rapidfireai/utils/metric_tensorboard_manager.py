@@ -35,7 +35,7 @@ class TensorBoardMetricLogger(MetricLogger):
         try:
             mkdir_p(self.log_dir, notify=False)
         except (PermissionError, OSError) as e:
-            print(f"Error creating directory: {e}")
+            self.logger.error(f"Error creating directory: {e}")
             raise
         self.writers = {}  # Map run_id -> SummaryWriter
 
@@ -64,7 +64,7 @@ class TensorBoardMetricLogger(MetricLogger):
         try:
             mkdir_p(run_log_dir, notify=False)
         except (PermissionError, OSError) as e:
-            print(f"Error creating directory: {e}")
+            self.logger.error(f"Error creating directory: {e}")
             raise
 
         # Create SummaryWriter for this run
@@ -148,7 +148,7 @@ class TensorBoardMetricLogger(MetricLogger):
             try:
                 mkdir_p(deleted_dir, notify=False)
             except (PermissionError, OSError) as e:
-                print(f"Error creating directory: {e}")
+                self.logger.error(f"Error creating directory: {e}")
                 raise
 
             # Add timestamp to avoid name collisions
@@ -169,9 +169,5 @@ class TensorBoardMetricLogger(MetricLogger):
             for run_id in list(self.writers):
                 self.end_run(run_id)
         else:
-            print("No active TensorBoard runs to clear")
-
-
-
-
+            self.logger.info("No active TensorBoard runs to clear")
 
