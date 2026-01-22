@@ -7,7 +7,7 @@ This module contains constants, configuration classes, and enums.
 import os
 from enum import Enum
 
-from rapidfireai.utils.colab import is_running_in_colab
+from rapidfireai.platform.colab import is_running_in_colab
 from rapidfireai.utils.os_utils import mkdir_p
 
 
@@ -303,7 +303,7 @@ def get_dispatcher_headers() -> dict[str, str]:
     Returns:
         Dictionary with required headers, including Authorization header in Colab
     """
-    from rapidfireai.utils.colab import get_colab_auth_token
+    from rapidfireai.platform.colab import get_colab_auth_token
 
     headers = {"Content-Type": "application/json"}
 

@@ -50,7 +50,7 @@ from rapidfireai.utils.distributed_utils import (
 )
 from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
-from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+from rapidfireai.metrics import RFMetricLogger
 from rapidfireai.utils.serialize import decode_db_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
@@ -158,8 +158,8 @@ class WorkerActor:
             multiprocess_lock=process_lock,
         )
 
-        self.logger: Logger = RFLogger().create_logger(f"worker_{worker_id}")
-        self.training_logger: Logger = TrainingLogger().create_logger(f"worker_{worker_id}")
+        self.logger: Logger = RFLogger().get_logger(f"worker_{worker_id}")
+        self.training_logger: Logger = TrainingLogger().get_logger(f"worker_{worker_id}")
         self.logger.debug(f"WorkerActor {self.worker_id} initialized with PID {os.getpid()}")
 
         self.db: RfDb = RfDb()
