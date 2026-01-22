@@ -44,10 +44,12 @@ class TrackioMetricLogger(MetricLogger):
                     print(f"Trackio: {line}")
         return result
 
-    def _ensure_initialized(self, run_id: str) -> bool:
+    def _ensure_initialized(self, run_name: str) -> bool:
         """Check if a run is initialized."""
-        self.logger.info(f"Could not find run {run_id} initializing...")
-        return self.create_run(run_id)
+        if run_name in self.active_runs:
+            return run_name
+        self.logger.info(f"Could not find run {run_name} initializing...")
+        return self.create_run(run_name)
 
     def create_experiment(self, experiment_name: str) -> str:
         """Create a new experiment and set it as active."""
