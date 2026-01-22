@@ -30,7 +30,6 @@ class TrackioMetricLogger(MetricLogger):
         self.logger = logger if logger is not None else RFLogger()
         self.active_runs = {}  # Map run_id -> run_name
         self.run_params = {}  # Map run_id -> dict of params to log on init
-        self._initialized = False
 
     def _capture_trackio_output(self, func, *args, **kwargs):
         """Execute a trackio function while capturing and logging its stdout output."""
