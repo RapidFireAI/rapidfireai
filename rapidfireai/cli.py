@@ -14,10 +14,10 @@ import sys
 from pathlib import Path
 
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME, ColabConfig, DispatcherConfig, JupyterConfig
-from rapidfireai.utils.doctor import get_doctor_info
-from rapidfireai.utils.get_ip_address import get_ip_address
-from rapidfireai.utils.gpu_info import get_compute_capability
-from rapidfireai.utils.python_info import get_python_info
+from rapidfireai.platform.doctor import get_doctor_info
+from rapidfireai.platform.get_ip_address import get_ip_address
+from rapidfireai.platform.gpu_info import get_compute_capability
+from rapidfireai.platform.python_info import get_python_info
 
 from .version import __version__
 
@@ -122,7 +122,7 @@ def install_packages(init_packages: list[str] | None = None):
     if not setup_directory:
         print("❌ Setup directory not found, skipping package installation")
         return 1
-    
+
     if ColabConfig.ON_COLAB:
         print("Colab environment detected, installing packages")
         requirements_file = setup_directory / "rapidfireai" / "requirements-colab.txt"
@@ -488,7 +488,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
     if args.colab or ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
         os.environ["RF_COLAB_MODE"] = "true"
-    
+
     # Handle force command separately
     if args.force:
         os.environ["RF_FORCE"] = "true"
