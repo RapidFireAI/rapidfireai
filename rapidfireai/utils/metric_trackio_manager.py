@@ -42,6 +42,8 @@ class TrackioMetricLogger(MetricLogger):
         if output:
             for line in output.split('\n'):
                 self.logger.info(f"[trackio] {line}")
+                if "Running on public URL" in line:
+                    print(line)
         return result
 
     def create_experiment(self, experiment_name: str) -> str:
