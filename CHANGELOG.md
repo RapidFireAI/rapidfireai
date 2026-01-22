@@ -13,6 +13,27 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.12.9]
+
+### Changes
+- Added mlflow logging to evals
+- Added Trackio logging to both fit and evals
+- Deprecated RF_TRACKING_BACKEND environment variable for backends
+- Environment variable RF_MLFLOW_ENABLED to enable MLFLOW tracking (default to true for non-Colab environments)
+- Environment variable RF_TENSORBOARD_ENABLED to enable TENSORBOARD tracking (default to true for Colab environments)
+- Environment variable RF_TRACKIO_ENABLED to enable TRACKIO tracking (default to false for all environments)
+- `--tracking-backend` flag for `rapidfireai start` changed to `--tracking-backends` to now allow multiple flags with one of the following: mlflow, tensorboard, trackio
+- Remove more pinning of dependent modules
+- Rename `mlflow_run_id` column in database to `metric_run_id` to be more generic for metrics logger
+- Rename `mlflow_experiment_id` column in databasse to `metric_experment_id` to be more generic for metrics logger
+- Consolidated mlflow_manager, tensorboard_manager, and trackio_manager for both `evals` and `fit`
+- New default `metric_rfmetric_manager` as Metrics manager that accepts one or more Metrics loggers
+- Added more documentation to `rf-colab-rag-fiqa-tutorial.ipynb` notebook to help beginners
+
+### Fixes
+- Fix issue when triggering a warm-clone (IC_CLONE_MODIFY_WARM) on a run that has completed its last chunk, the controller throws: ValueError: Invalid chunk_id 4
+- (#132) Fix when a run completes an epoch before other runs, it gets scheduled repeatedly while other runs are starved. This causes trials to run sequentially instead of in parallel after the first epoch. This is because num_checks get reset after the epoch completes, causing that run to get repeatedly rescheduled till it catches up.
+
 ## [v0.12.8]
 
 ### Fixes
@@ -172,7 +193,7 @@ The non-multiple chunk is positioned last to contain any partial batch [Issue 37
 
 ### Fixes
 - Added checks in create_warm_start_checkpoint method in shm_manager.py. This method is only triggered during clone-modify warm start operations.
-- Creates mlflow.db file in RF_DB_PATH or ~/db
+- Creates rapidfire_mlflow.db file in RF_DB_PATH or ~/db
 - If netcat's nc not found rapidfireai start now falls back to a python port checker
 - `rapidfireai start` now tries python3/pip3 if possible then falls back to python/pip
 

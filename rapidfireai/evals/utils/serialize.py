@@ -99,12 +99,16 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
         elif isinstance(pipeline, RFOpenAIAPIModelConfig):
             json_config["pipeline_type"] = "openai"
 
-            # Extract client_config (dict)
+            # Extract client_config (dict) - filter out sensitive keys
             if (
                 hasattr(pipeline, "client_config")
                 and pipeline.client_config is not None
             ):
-                json_config["client_config"] = pipeline.client_config
+                sensitive_keys = {"api_key", "secret", "token", "password", "key"}
+                json_config["client_config"] = {
+                    k: v for k, v in pipeline.client_config.items()
+                    if k.lower() not in sensitive_keys
+                }
 
             # Extract model_config (dict)
             if hasattr(pipeline, "model_config") and pipeline.model_config is not None:

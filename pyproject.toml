@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rapidfireai"
-version = "0.12.8"
+version = "0.12.9"
 authors = [
     {name = "RapidFire AI Inc.", email = "support@rapidfire.ai"},
 ]
@@ -241,6 +241,7 @@ local_fit = [
     "loguru>=0.7.3",
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
     "jupyter>=1.1.1",
+    "trackio",
 ]
 
 [project.urls]
@@ -261,10 +262,11 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 rapidfireai = [
+    "automl/*.py",
     "fit/dispatcher/*.py",
-    "fit/frontend/build/**/*",
-    "fit/frontend/server.py",
-    "fit/frontend/proxy_middleware.py",
+    "frontend/build/**/*",
+    "frontend/server.py",
+    "frontend/proxy_middleware.py",
     "fit/ml/*.py",
     "fit/automl/*.py",
     "fit/backend/*.py",
@@ -283,7 +285,7 @@ rapidfireai = [
     "evals/utils/*.py",
     "evals/*.py",
     "utils/*.py",
-    "../setup/fit/start.sh",
+    "../setup/start.sh",
     "../setup/fit/start_dev.sh",
     "../setup/fit/requirements-*.txt",
     "../setup/evals/requirements-*.txt",

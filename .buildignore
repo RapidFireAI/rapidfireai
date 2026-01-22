@@ -1,14 +1,14 @@
 # Frontend build artifacts
-rapidfireai/fit/frontend/node_modules/
-rapidfireai/fit/frontend/.yarn/
-rapidfireai/fit/frontend/build/
-rapidfireai/fit/frontend/dist/
-rapidfireai/fit/frontend/coverage/
-rapidfireai/fit/frontend/.nyc_output/
-rapidfireai/fit/frontend/.cache/
-rapidfireai/fit/frontend/.next/
-rapidfireai/fit/frontend/out/
-rapidfireai/fit/frontend/.env*
+rapidfireai/frontend/node_modules/
+rapidfireai/frontend/.yarn/
+rapidfireai/frontend/build/
+rapidfireai/frontend/dist/
+rapidfireai/frontend/coverage/
+rapidfireai/frontend/.nyc_output/
+rapidfireai/frontend/.cache/
+rapidfireai/frontend/.next/
+rapidfireai/frontend/out/
+rapidfireai/frontend/.env*
 
 # Python artifacts
 **/__pycache__/
