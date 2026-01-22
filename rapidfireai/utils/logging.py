@@ -59,7 +59,7 @@ THIRD_PARTY_LOGGERS = [
 class RFLogger:
     """
     RapidFire logger using Python standard logging.
-    
+
     Features:
     - Ray worker detection (avoids file handler conflicts)
     - Thread-safe initialization
@@ -87,9 +87,9 @@ class RFLogger:
         os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
         os.environ.setdefault("RAY_LOG_TO_STDERR", "0")
 
-        # Only set up file handlers on main process (not Ray workers)
+        # Only set up file handlers on main process (not Ray workers) and when experiment name is known
         is_ray_worker = os.environ.get("RAY_WORKER_MODE") == "WORKER"
-        if not is_ray_worker:
+        if not is_ray_worker and experiment_name != "unknown":
             self._setup_file_handler()
 
     def _get_log_file_path(self) -> str:
@@ -102,9 +102,14 @@ class RFLogger:
         """Set up file handler for this logger (thread-safe)."""
         with RFLogger._lock:
             handler_key = f"{self.log_type.value}_{self._experiment_name}"
+            root_logger = logging.getLogger()
 
-            # Skip if already initialized
+            # Check if handler already exists
             if handler_key in RFLogger._file_handlers:
+                file_handler = RFLogger._file_handlers[handler_key]
+                # Ensure handler is attached to root logger (may have been removed during notebook re-runs)
+                if file_handler not in root_logger.handlers:
+                    root_logger.addHandler(file_handler)
                 return
 
             # Create log directory
@@ -125,8 +130,6 @@ class RFLogger:
             if self._experiment_name not in RFLogger._initialized_experiments:
                 RFLogger._initialized_experiments.add(self._experiment_name)
 
-                root_logger = logging.getLogger()
-
                 # Remove existing handlers (prevent console output)
                 for handler in root_logger.handlers[:]:
                     root_logger.removeHandler(handler)
@@ -145,7 +148,7 @@ class RFLogger:
                     logging.getLogger(logger_name).propagate = False
 
             # Add handler to root logger
-            logging.getLogger().addHandler(file_handler)
+            root_logger.addHandler(file_handler)
 
     def get_logger(self, name: str = "unknown") -> logging.Logger:
         """
