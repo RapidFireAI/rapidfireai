@@ -21,6 +21,8 @@ from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.utils.constants import (
     ControllerTask,
     ExperimentTask,
+    ICOperation,
+    ICStatus,
     MLFlowConfig,
     RunEndedBy,
     RunSource,
@@ -65,8 +67,11 @@ class Controller:
         # Create database object
         self.db: RfDb = RfDb()
 
+        # Initialize data paths
+        DataPath.initialize(experiment_name, self.db.get_experiments_path(experiment_id))
+
         # Create controller logger
-        logging = RFLogger()
+        logging = RFLogger(experiment_name=experiment_name)
         self.logger: Logger = logging.get_logger("controller")
         self.user_logger: Logger = logging.get_logger("user")
         self.ic_logger: Logger = logging.get_logger("interactive-control")
@@ -227,7 +232,7 @@ class Controller:
                     status=RunStatus.STOPPED,
                     ended_by=RunEndedBy.INTERACTIVE_CONTROL,
                 )
-                self.db.set_ic_ops_task_status(run_state["task_id"], TaskStatus.COMPLETED)
+                self.db.update_ic_operation_status(run_state["ic_id"], ICStatus.COMPLETED)
                 self.ic_logger.info(f"Stopping run {run_id} by Interactive Control")
             elif run_state["status"] == RunStatus.DELETED:
                 # process deleted tasks
@@ -244,7 +249,7 @@ class Controller:
                     status=RunStatus.DELETED,
                     ended_by=RunEndedBy.INTERACTIVE_CONTROL,
                 )
-                self.db.set_ic_ops_task_status(run_state["task_id"], TaskStatus.COMPLETED)
+                self.db.update_ic_operation_status(run_state["ic_id"], ICStatus.COMPLETED)
                 self.ic_logger.info(f"Deleting run {run_id} by Interactive Control")
             elif run_state["status"] == RunStatus.ONGOING:
                 # process ongoing tasks
@@ -253,22 +258,20 @@ class Controller:
                     status=RunStatus.ONGOING,
                     ended_by="",
                 )
-                self.db.set_ic_ops_task_status(run_state["task_id"], TaskStatus.COMPLETED)
+                self.db.update_ic_operation_status(run_state["ic_id"], ICStatus.COMPLETED)
                 self.ic_logger.info(f"Resuming run {run_id} by Interactive Control")
             elif run_state["status"] == RunStatus.COMPLETED:
                 # process completed tasks
                 self.logger.warning(f"Run {run_id} is already completed. Skipping Interactive Control task.")
-                self.db.set_ic_ops_task_status(run_state["task_id"], TaskStatus.SKIPPED)
+                self.db.update_ic_operation_status(run_state["ic_id"], ICStatus.SKIPPED)
             else:
                 raise ValueError(f"Unsupported run status {run_state['status']}")
 
         # process clone_modify tasks from the collected list
         for task in clone_modify_tasks:
-            parent_run_id, ic_op, config_leaf = (
-                task["run_id"],
-                task["ic_op"],
-                task["config_leaf"],
-            )
+            parent_run_id = task["target_id"]
+            operation = task["operation"]
+            config_leaf = task["config_data"]
 
             # add additional_kwargs to config_leaf if it exists in the parent run
             parent_run_details = self.db.get_run(parent_run_id)
@@ -277,7 +280,7 @@ class Controller:
 
             # create model for the new run
             try:
-                if ic_op == ControllerTask.IC_CLONE_MODIFY:
+                if operation == ICOperation.CLONE.value:
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
                     }
@@ -289,7 +292,7 @@ class Controller:
                         num_chunks=num_chunks,
                         clone_modify_info=clone_modify_info,
                     )
-                elif ic_op == ControllerTask.IC_CLONE_MODIFY_WARM:
+                elif operation == ICOperation.CLONE_WARM.value:
                     # calculate clone chunk offset
                     effective_batch_size = parent_run_details["config_leaf"]["training_args"].get(
                         "per_device_train_batch_size", 1
@@ -322,15 +325,15 @@ class Controller:
                         clone_modify_info,
                     )
                 else:
-                    raise ValueError(f"Unsupported IC operation {ic_op}")
+                    raise ValueError(f"Unsupported IC operation {operation}")
 
                 # mark task as completed
-                self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.COMPLETED)
+                self.db.update_ic_operation_status(task["ic_id"], ICStatus.COMPLETED)
                 self.ic_logger.info(
-                    f"Cloned run {parent_run_id} by Interactive Control with {ic_op.value} into runs - {run_ids}"
+                    f"Cloned run {parent_run_id} by Interactive Control with {operation} into runs - {run_ids}"
                 )
             except Exception as e:
-                self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.FAILED)
+                self.db.update_ic_operation_status(task["ic_id"], ICStatus.FAILED)
                 self.ic_logger.error(f"Error creating model for run {parent_run_id}: {e}")
                 raise ControllerException(f"Error creating model for run {parent_run_id}: {e}") from e
 
@@ -340,22 +343,22 @@ class Controller:
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Process the interactive control."""
         # get IC Ops scheduled tasks
-        ic_scheduled_tasks = self.db.get_scheduled_ic_ops_tasks()
+        ic_scheduled_tasks = self.db.get_pending_ic_operations()
 
         # track states for each task(run) and collect clone_modify tasks separately
         run_states = {}
         clone_modify_tasks = []
         for task in ic_scheduled_tasks:
-            run_id = task["run_id"]
+            run_id = task["target_id"]  # target_id is the run_id for run-targeted operations
 
             # skip if run is currently scheduled (we process IC ops only at chunk boundaries)
             if run_id in currently_scheduled_runs:
                 # self.logger.debug(f"Skipping IC op for run {run_id} as it is currently scheduled")
                 continue
 
-            is_clone_modify_task = task["ic_op"] in (
-                ControllerTask.IC_CLONE_MODIFY,
-                ControllerTask.IC_CLONE_MODIFY_WARM,
+            is_clone_modify_task = task["operation"] in (
+                ICOperation.CLONE.value,
+                ICOperation.CLONE_WARM.value,
             )
 
             if is_clone_modify_task:
@@ -366,59 +369,59 @@ class Controller:
                 # track clone_modify tasks only for non-deleted runs
                 if run_status != RunStatus.DELETED:
                     clone_modify_tasks.append(task)
-                    self.ic_logger.info(f"Added {task['ic_op']} task for run {run_id}.")
+                    self.ic_logger.info(f"Added {task['operation']} task for run {run_id}.")
                 else:
-                    self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
-                    self.ic_logger.warning(f"Skipping {task['ic_op']} task for deleted run {run_id}.")
+                    self.db.update_ic_operation_status(task["ic_id"], ICStatus.SKIPPED)
+                    self.ic_logger.warning(f"Skipping {task['operation']} task for deleted run {run_id}.")
             else:
                 # Non clone_modify tasks
                 if run_id not in run_states:
                     run_states[run_id] = {
-                        "task_id": None,
+                        "ic_id": None,
                         "task": None,
                         "status": self.db.get_run(run_id)["status"],
                     }
 
                 # update run states based on existing status and task
                 current_status = run_states[run_id]["status"]
-                if current_status == RunStatus.COMPLETED and task["ic_op"] in [
-                    ControllerTask.IC_RESUME,
-                    ControllerTask.IC_STOP,
+                if current_status == RunStatus.COMPLETED and task["operation"] in [
+                    ICOperation.RESUME.value,
+                    ICOperation.STOP.value,
                 ]:
                     # ignore RESUME/STOP tasks for completed runs
                     self.ic_logger.warning(f"Ignoring RESUME/STOP task for run {run_id} as it is already completed")
-                    self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
-                elif current_status == RunStatus.FAILED and task["ic_op"] != ControllerTask.IC_DELETE:
+                    self.db.update_ic_operation_status(task["ic_id"], ICStatus.SKIPPED)
+                elif current_status == RunStatus.FAILED and task["operation"] != ICOperation.DELETE.value:
                     # ignore all tasks except DELETE for failed runs
-                    self.ic_logger.warning(f"Ignoring task {task['ic_op'].value} for failed run {run_id}")
-                    self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
+                    self.ic_logger.warning(f"Ignoring task {task['operation']} for failed run {run_id}")
+                    self.db.update_ic_operation_status(task["ic_id"], ICStatus.SKIPPED)
                 elif current_status == RunStatus.DELETED:
                     # ignore all tasks for deleted runs
-                    self.ic_logger.warning(f"Ignoring task {task['ic_op'].value} for deleted run {run_id}")
-                    self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
+                    self.ic_logger.warning(f"Ignoring task {task['operation']} for deleted run {run_id}")
+                    self.db.update_ic_operation_status(task["ic_id"], ICStatus.SKIPPED)
                 else:
                     # valid ic_op for this run
                     # mark prev task as completed
-                    if run_states[run_id]["task_id"] is not None:
-                        self.db.set_ic_ops_task_status(run_states[run_id]["task_id"], TaskStatus.COMPLETED)
+                    if run_states[run_id]["ic_id"] is not None:
+                        self.db.update_ic_operation_status(run_states[run_id]["ic_id"], ICStatus.COMPLETED)
 
                     # add new task to run states
-                    if task["ic_op"] == ControllerTask.IC_STOP:
+                    if task["operation"] == ICOperation.STOP.value:
                         updated_status = RunStatus.STOPPED
                         info_msg = f"Received STOP task for run {run_id}"
-                    elif task["ic_op"] == ControllerTask.IC_DELETE:
+                    elif task["operation"] == ICOperation.DELETE.value:
                         updated_status = RunStatus.DELETED
                         info_msg = f"Received DELETE task for run {run_id}"
-                    elif task["ic_op"] == ControllerTask.IC_RESUME:
+                    elif task["operation"] == ICOperation.RESUME.value:
                         updated_status = RunStatus.ONGOING
                         info_msg = f"Received RESUME task for run {run_id}"
                     else:
-                        self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.FAILED)
-                        raise ValueError(f"Unsupported task {task['ic_op']}")
+                        self.db.update_ic_operation_status(task["ic_id"], ICStatus.FAILED)
+                        raise ValueError(f"Unsupported task {task['operation']}")
                     run_states[run_id].update(
                         {
-                            "task_id": task["task_id"],
-                            "task": task["ic_op"],
+                            "ic_id": task["ic_id"],
+                            "task": task["operation"],
                             "status": (updated_status if updated_status else current_status),
                         }
                     )
@@ -514,7 +517,7 @@ class Controller:
             # Start all workers' serve_forever loops (fire-and-forget, runs in background)
             for worker in self.worker_actors:
                 worker.serve_forever.remote()
-            print(f"Created {self.num_workers} Ray worker actors")
+            self.logger.info(f"Created {self.num_workers} Ray worker actors")
             self.logger.debug(f"Created {self.num_workers} Ray worker actors.")
         except Exception as e:
             raise ControllerException(f"Error creating Ray worker actors: {e}") from e
@@ -537,7 +540,7 @@ class Controller:
 
             while not all_done:
                 # check for errors
-                exp_error = self.db.get_experiment_error()
+                exp_error = self.db.get_experiment_error(self.experiment_id)
                 if exp_error:
                     print(f"Error in experiment: {exp_error}")
                     self.logger.error(f"Error in experiment: {exp_error}")
