@@ -22,8 +22,6 @@ export const InteractiveControllerCellRenderer = (props: {
   const { runUuid, runName } = props.data;
   const { onOpenController, context } = props;
   const isExperimentRunning = context?.isExperimentRunning;
-  // eslint-disable-next-line no-console
-  console.log('[ICOpsCellRenderer] context:', context, 'isExperimentRunning:', isExperimentRunning);
 
   if (!onOpenController) {
     return <div css={styles.cellWrapper}>-</div>;

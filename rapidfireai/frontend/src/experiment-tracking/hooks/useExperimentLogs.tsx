@@ -28,8 +28,6 @@ export const useRunningExperiment = (enabled = true) => {
   );
 
   const runningExperimentName = query.data?.status === 'running' ? query.data?.experiment_name : null;
-  // eslint-disable-next-line no-console
-  console.log('[useRunningExperiment] data:', query.data, 'runningExperimentName:', runningExperimentName);
 
   return {
     ...query,
