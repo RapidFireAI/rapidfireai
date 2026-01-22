@@ -135,38 +135,40 @@ class WorkerActor:
     def __init__(
         self,
         worker_id: int,
-        model_registry: dict[int, Any],
-        process_lock: Any,
+        model_registry: dict[int, Any] = None,
+        process_lock: Any = None,
     ):
         """
         Initialize the WorkerActor.
 
         Args:
             worker_id: Unique identifier for this worker
-            model_registry: Shared dictionary for model storage across workers
-            process_lock: Lock for synchronizing access to shared resources
+            model_registry: (Ignored in Ray mode) - workers use local storage
+            process_lock: (Ignored in Ray mode) - workers use local locks
         """
         self.worker_id: int = worker_id
         self._shutdown_requested: bool = False
 
-        self.model_registry: dict[int, Any] = model_registry
-        self.process_lock = process_lock
-
+        # In Ray mode, each worker has its own local registry and lock
+        # (multiprocessing.Manager() proxies don't work across Ray actors)
         self.shm_manager = SharedMemoryManager(
             name=f"worker-{worker_id}-shm",
-            registry=model_registry,
-            multiprocess_lock=process_lock,
+            registry=None,  # Create local registry
+            multiprocess_lock=None,  # Create local lock
         )
-
-        self.logger: Logger = RFLogger().get_logger(f"worker_{worker_id}")
-        self.training_logger: Logger = TrainingLogger().get_logger(f"worker_{worker_id}")
-        self.logger.debug(f"WorkerActor {self.worker_id} initialized with PID {os.getpid()}")
+        self.model_registry, self.process_lock = self.shm_manager.get_shm_objects()
 
         self.db: RfDb = RfDb()
 
-        self.experiment_name: str = self.db.get_running_experiment()["experiment_name"]
+        running_experiment = self.db.get_running_experiment()
+        self.experiment_name: str = running_experiment["experiment_name"]
+        self.experiment_id: int = running_experiment["experiment_id"]
 
-        DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_name))
+        self.logger: Logger = RFLogger(experiment_name=self.experiment_name).get_logger(f"worker_{worker_id}")
+        self.training_logger: Logger = TrainingLogger(experiment_name=self.experiment_name).get_logger(f"worker_{worker_id}")
+        self.logger.debug(f"WorkerActor {self.worker_id} initialized with PID {os.getpid()}")
+
+        DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_id))
 
         default_metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
         self.metric_logger = RFMetricLogger(default_metric_loggers, logger=self.logger)
