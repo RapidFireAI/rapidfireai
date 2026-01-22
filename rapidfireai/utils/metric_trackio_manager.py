@@ -68,7 +68,7 @@ class TrackioMetricLogger(MetricLogger):
         except Exception as exc:
             raise ValueError(
                 f"Exception in calling trackio.init() to create new run: {run_name} "
-                f"with self.init_kwargs={self.init_kwargs!r}"
+                f"with self.init_kwargs={self.init_kwargs!r}: {exc}"
             ) from exc
 
         # Log any pending params for this run
@@ -84,7 +84,7 @@ class TrackioMetricLogger(MetricLogger):
         # Try to log immediately, or store for later if run not active
         try:
             self.active_runs[run_id].log({key: value})
-        except Exception:
+        except Exception as _:
             # Run not active, store for later when run is created
             if run_id not in self.run_params:
                 self.run_params[run_id] = {}
@@ -101,7 +101,7 @@ class TrackioMetricLogger(MetricLogger):
         except Exception as exc:
             raise ValueError(
                 f"Error logging metric in log_metric, is there not an active run?: "
-                f"run_id={run_id!r}, {key} = {value}, step={step!r}"
+                f"run_id={run_id!r}, {key} = {value}, step={step!r}: {exc}"
             ) from exc
 
     def get_run_metrics(self, run_id: str) -> dict[str, list[tuple[int, float]]]:
@@ -125,8 +125,8 @@ class TrackioMetricLogger(MetricLogger):
             time.sleep(0.5)
             if run_id in self.active_runs:
                 del self.active_runs[run_id]
-        except Exception as e:
-            self.logger.error(f"Error ending Trackio run {run_id}: {e}")
+        except Exception as exc:
+            self.logger.error(f"Error ending Trackio run {run_id}: {exc}")
 
     def delete_run(self, run_id: str) -> None:
         """Delete a specific run."""
