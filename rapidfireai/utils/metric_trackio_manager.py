@@ -30,7 +30,6 @@ class TrackioMetricLogger(MetricLogger):
         self.logger = logger if logger is not None else RFLogger()
         self.active_runs = {}  # Map run_id -> run_name
         self.run_params = {}  # Map run_id -> dict of params to log on init
-
         self._initialized = False
 
     def _capture_trackio_output(self, func, *args, **kwargs):
@@ -45,6 +44,13 @@ class TrackioMetricLogger(MetricLogger):
                 if "Running on public URL" in line or "trackio show --project" in line:
                     print(f"Trackio: {line}")
         return result
+
+    def _ensure_initialized(self, run_name: str) -> bool:
+        """Check if a run is initialized."""
+        if run_name in self.active_runs:
+            return run_name
+        self.logger.info(f"[trackio] Could not find run {run_name} initializing...")
+        return self.create_run(run_name)
 
     def create_experiment(self, experiment_name: str) -> str:
         """Create a new experiment and set it as active."""
@@ -99,6 +105,7 @@ class TrackioMetricLogger(MetricLogger):
         if step is not None:
             log_dict["step"] = step
         try:
+            self._ensure_initialized(run_id)
             self.active_runs[run_id].log(log_dict)
         except Exception as exc:
             raise ValueError(

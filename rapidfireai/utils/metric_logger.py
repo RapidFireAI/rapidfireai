@@ -34,7 +34,7 @@ class MetricLogger(ABC):
         pass
 
     @abstractmethod
-    def create_run(self, run_name: str) -> str:
+    def create_run(self, run_name: str, display_name: Optional[str] = None) -> str:
         """
         Create a new run and return run_id.
 
