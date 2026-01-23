@@ -101,13 +101,10 @@ class TrackioMetricLogger(MetricLogger):
 
     def log_metric(self, run_id: str, key: str, value: float, step: int = None) -> None:
         """Log a metric to a specific run."""
-        # Trackio uses log() with step in the dict
         log_dict = {key: value}
-        if step is not None:
-            log_dict["step"] = step
-        try:
+        try: 
             self._ensure_initialized(run_id)
-            self.active_runs[run_id].log(log_dict)
+            self.active_runs[run_id].log(log_dict, step=step)
         except Exception as exc:
             raise ValueError(
                 f"Error logging metric in log_metric, is there not an active run?: "
