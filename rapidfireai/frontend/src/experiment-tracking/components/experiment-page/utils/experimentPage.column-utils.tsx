@@ -301,7 +301,6 @@ export const useRunsColumnDefinitions = ({
       cellRenderer: 'InteractiveControllerCellRenderer',
       cellRendererParams: {
         onOpenController,
-        runningExperimentName,
       },
       suppressMenu: true,
       resizable: false,

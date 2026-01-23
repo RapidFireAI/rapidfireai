@@ -17,13 +17,12 @@ const styles = {
 export const InteractiveControllerCellRenderer = (props: {
   data: { runUuid: string; runName: string; experimentName?: { name: string } };
   onOpenController?: (runUuid: string, runName: string) => void;
-  runningExperimentName?: string;
   context?: { runningExperimentName?: string };
 }) => {
   const { runUuid, runName, experimentName: rowExperiment } = props.data;
   const { onOpenController, context } = props;
-  // Get running experiment name from either direct prop or context (context is used by ag-grid)
-  const runningExperimentName = props.runningExperimentName ?? context?.runningExperimentName;
+  // Get running experiment name from context (ag-grid context is reactive, cellRendererParams are not)
+  const runningExperimentName = context?.runningExperimentName;
   const rowExperimentName = rowExperiment?.name;
 
   if (!onOpenController) {
