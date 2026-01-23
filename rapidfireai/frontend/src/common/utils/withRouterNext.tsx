@@ -44,8 +44,9 @@ export const withRouterNext =
     const navigate = useNavigate();
     const params = useParams<Params>();
     const [searchParams, setSearchParams] = useSearchParams();
+    const ComponentWithRouter = Component as React.ComponentType<any>;
     return (
-      <Component
+      <ComponentWithRouter
         /* prettier-ignore */
         params={params as Params}
         location={location}

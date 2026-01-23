@@ -2,7 +2,7 @@
 Metric Logger abstraction layer for RapidFire AI.
 
 This module provides a unified interface for logging metrics to different backends
-(MLflow, TensorBoard, TrackIO, or combinations). This abstraction allows minimal changes to core ML code
+(MLflow, TensorBoard, Trackio, or combinations). This abstraction allows minimal changes to core ML code
 while supporting multiple tracking systems.
 """
 
@@ -34,7 +34,7 @@ class MetricLogger(ABC):
         pass
 
     @abstractmethod
-    def create_run(self, run_name: str) -> str:
+    def create_run(self, run_name: str, display_name: Optional[str] = None) -> str:
         """
         Create a new run and return run_id.
 

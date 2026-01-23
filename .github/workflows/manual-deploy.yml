@@ -137,7 +137,7 @@ jobs:
       - name: Install frontend dependencies
         run: |
           cd rapidfireai/frontend
-          node ./yarn/releases/yarn-4.9.1.cjs install --frozen-lockfile
+          node ./yarn/releases/yarn-4.9.1.cjs install --immutable
 
       - name: Build frontend
         run: |
