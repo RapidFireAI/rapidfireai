@@ -75,7 +75,7 @@ export interface ExperimentViewRunsTableProps {
   compareRunsMode: ExperimentViewRunsCompareMode;
   showControllerNotification: (action: 'resume' | 'stop' | 'delete' | 'clone_modify', status: 'success' | 'error') => void;
   onOpenController?: (runUuid: string, runName: string) => void;
-  isExperimentRunning?: boolean;
+  runningExperimentName?: string;
 }
 
 export const ExperimentViewRunsTable = React.memo(
@@ -97,7 +97,7 @@ export const ExperimentViewRunsTable = React.memo(
     compareRunsMode,
     showControllerNotification,
     onOpenController,
-    isExperimentRunning,
+    runningExperimentName,
   }: ExperimentViewRunsTableProps) => {
     const { theme } = useDesignSystemTheme();
     const updateUIState = useUpdateExperimentViewUIState();
@@ -216,7 +216,7 @@ export const ExperimentViewRunsTable = React.memo(
       runsHiddenMode: uiState.runsHiddenMode,
       showControllerNotification,
       onOpenController,
-      isExperimentRunning,
+      runningExperimentName,
     });
 
     const gridSizeHandler = useCallback(
@@ -344,7 +344,7 @@ export const ExperimentViewRunsTable = React.memo(
     const displayStatusBar = !runListHidden;
     const displayEmptyState = rowsData.length < 1 && !isLoading && displayRunsTable;
 
-    const tableContext = useMemo(() => ({ orderByAsc, orderByKey, isExperimentRunning }), [orderByAsc, orderByKey, isExperimentRunning]);
+    const tableContext = useMemo(() => ({ orderByAsc, orderByKey, runningExperimentName }), [orderByAsc, orderByKey, runningExperimentName]);
 
     const { cellMouseOverHandler, cellMouseOutHandler } = useRunsHighlightTableRow(containerElement);
 

@@ -15,13 +15,16 @@ const styles = {
 };
 
 export const InteractiveControllerCellRenderer = (props: {
-  data: { runUuid: string; runName: string };
+  data: { runUuid: string; runName: string; experimentName?: { name: string } };
   onOpenController?: (runUuid: string, runName: string) => void;
-  context?: { isExperimentRunning?: boolean };
+  runningExperimentName?: string;
+  context?: { runningExperimentName?: string };
 }) => {
-  const { runUuid, runName } = props.data;
+  const { runUuid, runName, experimentName: rowExperiment } = props.data;
   const { onOpenController, context } = props;
-  const isExperimentRunning = context?.isExperimentRunning;
+  // Get running experiment name from either direct prop or context (context is used by ag-grid)
+  const runningExperimentName = props.runningExperimentName ?? context?.runningExperimentName;
+  const rowExperimentName = rowExperiment?.name;
 
   if (!onOpenController) {
     return <div css={styles.cellWrapper}>-</div>;
@@ -33,7 +36,7 @@ export const InteractiveControllerCellRenderer = (props: {
         icon={<InteractiveControllerIcon />}
         onClick={() => onOpenController(runUuid, runName)}
         componentId={'interactive-controller-button'}
-        disabled={isExperimentRunning === false}
+        disabled={!runningExperimentName || (rowExperimentName && runningExperimentName !== rowExperimentName)}
       />
     </div>
   );
