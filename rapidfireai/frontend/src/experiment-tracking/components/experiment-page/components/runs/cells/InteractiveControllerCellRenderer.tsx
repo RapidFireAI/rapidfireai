@@ -36,7 +36,7 @@ export const InteractiveControllerCellRenderer = (props: {
         icon={<InteractiveControllerIcon />}
         onClick={() => onOpenController(runUuid, runName)}
         componentId={'interactive-controller-button'}
-        disabled={!runningExperimentName || (rowExperimentName && runningExperimentName !== rowExperimentName)}
+        disabled={!runningExperimentName || Boolean(rowExperimentName && runningExperimentName !== rowExperimentName)}
       />
     </div>
   );
