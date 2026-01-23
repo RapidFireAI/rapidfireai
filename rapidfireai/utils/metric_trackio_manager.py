@@ -28,7 +28,7 @@ class TrackioMetricLogger(MetricLogger):
         self.api = trackio.Api()
         self.experiment_name = experiment_name
         self.logger = logger if logger is not None else RFLogger()
-        self.active_runs = {}  # Map run_id -> run_name
+        self.active_runs = {}  # Map run_id -> runs
         self.run_params = {}  # Map run_id -> dict of params to log on init
 
     def _capture_trackio_output(self, func, *args, **kwargs):
@@ -48,7 +48,7 @@ class TrackioMetricLogger(MetricLogger):
         """Check if a run is initialized."""
         if run_name in self.active_runs:
             return run_name
-        self.logger.info(f"[trackio] Could not find run {run_name} initializing...")
+        self.logger.info(f"Could not find run {run_name} initializing...")
         return self.create_run(run_name)
 
     def create_experiment(self, experiment_name: str) -> str:
@@ -70,8 +70,10 @@ class TrackioMetricLogger(MetricLogger):
         # Capture stdout to redirect trackio's print statements to the logger
         try:
             self.active_runs[run_name] = self._capture_trackio_output(
-                trackio.init, project=self.experiment_name, name=run_name, **self.init_kwargs
+                trackio.init, project=self.experiment_name, name=run_name, resume="allow", **self.init_kwargs
             )
+            time.sleep(1)
+            self.logger.debug(f"Trackio run {self.active_runs[run_name].name} created successfully")
         except Exception as exc:
             raise ValueError(
                 f"Exception in calling trackio.init() to create new run: {run_name} "
