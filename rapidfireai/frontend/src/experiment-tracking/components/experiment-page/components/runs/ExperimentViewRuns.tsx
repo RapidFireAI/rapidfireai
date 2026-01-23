@@ -312,7 +312,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
         uiState={uiState}
         compareRunsMode={compareRunsMode}
         showControllerNotification={showControllerNotification}
-        runningExperimentName={runningExperimentName}
+        runningExperimentName={runningExperimentName ?? undefined}
       />
     );
 
