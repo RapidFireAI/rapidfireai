@@ -80,19 +80,18 @@ class TrackioMetricLogger(MetricLogger):
                 f"with self.init_kwargs={self.init_kwargs!r}: {exc}"
             ) from exc
 
-        # Log any pending params for this run
+        # Log any pending params for this run 
         if run_name in self.run_params:
-            self.active_runs[run_name].log(self.run_params[run_name])
+            for key, value in self.run_params[run_name].items():
+                self.active_runs[run_name].config[key] = value
             del self.run_params[run_name]
 
         return run_name
 
     def log_param(self, run_id: str, key: str, value: str) -> None:
-        """Log parameters to a specific run."""
-        # Trackio logs params via the log() method
-        # Try to log immediately, or store for later if run not active
         try:
-            self.active_runs[run_id].log({key: value})
+            self._ensure_initialized(run_id)
+            self.active_runs[run_id].config[key] = value
         except Exception as _:
             # Run not active, store for later when run is created
             if run_id not in self.run_params:
@@ -101,6 +100,15 @@ class TrackioMetricLogger(MetricLogger):
 
     def log_metric(self, run_id: str, key: str, value: float, step: int = None) -> None:
         """Log a metric to a specific run."""
+
+        step = step if step is not None else 0
+        try:
+            step = int(step)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"step must be an integer, got {step!r} (type: {type(step).__name__})"
+            ) from exc
+        
         log_dict = {key: value}
         try: 
             self._ensure_initialized(run_id)
