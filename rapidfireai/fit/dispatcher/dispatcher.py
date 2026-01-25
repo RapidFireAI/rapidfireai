@@ -217,16 +217,19 @@ class Dispatcher:
 
             experiment_name = data["experiment_name"]
 
-            # Get the currently running experiment
-            running_experiment = self.db.get_running_experiment()
-            running_name = running_experiment.get("experiment_name") if running_experiment else None
-            running_status = running_experiment.get("status") if running_experiment else None
+            # Get the currently running experiment (may raise DBException if none running)
+            try:
+                running_experiment = self.db.get_running_experiment()
+                running_name = running_experiment.get("experiment_name")
+                running_status = running_experiment.get("status")
+            except Exception:
+                # No running experiment found
+                running_name = None
+                running_status = None
 
             # Check if this specific experiment is running
-            is_running = (
-                running_name == experiment_name and
-                running_status == "running"
-            )
+            # Note: status is "running" (lowercase) from shared ExperimentStatus.RUNNING.value
+            is_running = running_name == experiment_name and running_status == "running"
 
             # Log for debugging
             logger = self._get_logger()
