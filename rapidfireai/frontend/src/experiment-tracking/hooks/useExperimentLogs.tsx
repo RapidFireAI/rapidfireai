@@ -80,7 +80,12 @@ export const useIsExperimentRunning = (experimentName: string, enabled = true) =
     ['is-experiment-running', experimentName],
     async () => {
       const response = await DispatcherService.isExperimentRunning({ experiment_name: experimentName });
-      return response as { is_running: boolean };
+      const result = response as { is_running: boolean };
+
+      // eslint-disable-next-line no-console
+      console.log(`[IC Ops] isExperimentRunning: "${experimentName}" → ${result.is_running ? '✅ RUNNING' : '❌ NOT RUNNING'}`);
+
+      return result;
     },
     {
       enabled: enabled && !!experimentName,
