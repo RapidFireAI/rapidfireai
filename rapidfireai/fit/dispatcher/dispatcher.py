@@ -231,20 +231,10 @@ class Dispatcher:
             # Note: status is "running" (lowercase) from shared ExperimentStatus.RUNNING.value
             is_running = running_name == experiment_name and running_status == "running"
 
-            # Log for debugging
-            logger = self._get_logger()
-            if logger:
-                logger.debug(
-                    f"is_experiment_running check: "
-                    f"requested='{experiment_name}', "
-                    f"running='{running_name}', "
-                    f"status='{running_status}', "
-                    f"result={is_running}"
-                )
-
             return jsonify({"is_running": is_running}), 200
-        except Exception as e:
-            return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
+        except Exception:
+            # If anything fails, assume experiment is not running (safer to disable button)
+            return jsonify({"is_running": False}), 200
 
     # Interactive Control routes
     def clone_modify_run(self) -> tuple[Response, int]:

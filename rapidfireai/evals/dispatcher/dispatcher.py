@@ -904,19 +904,11 @@ class Dispatcher:
             # Note: status is "running" (lowercase) from ExperimentStatus.RUNNING.value in evals
             is_running = running_name == experiment_name and running_status == "running"
 
-            # Log for debugging (print since evals dispatcher doesn't have logger setup like fit)
-            print(
-                f"[Dispatcher] is_experiment_running check: "
-                f"requested='{experiment_name}', "
-                f"running='{running_name}', "
-                f"status='{running_status}', "
-                f"result={is_running}"
-            )
-
             return jsonify({"is_running": is_running}), 200
 
-        except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+        except Exception:
+            # If anything fails, assume experiment is not running (safer to disable button)
+            return jsonify({"is_running": False}), 200
 
     # ============================================================
     # Logging endpoints
