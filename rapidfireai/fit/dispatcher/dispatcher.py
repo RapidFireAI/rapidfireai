@@ -71,6 +71,12 @@ class Dispatcher:
                 self.get_running_experiment,
                 methods=["GET"],
             )
+            self.app.add_url_rule(
+                f"{route_prefix}/is-experiment-running",
+                "is_experiment_running",
+                self.is_experiment_running,
+                methods=["POST"],
+            )
 
             # Interactive Control routes
             self.app.add_url_rule(
@@ -188,6 +194,52 @@ class Dispatcher:
         try:
             result = self.db.get_running_experiment()
             return jsonify(result), 200
+        except Exception as e:
+            return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
+
+    def is_experiment_running(self) -> tuple[Response, int]:
+        """Check if a specific experiment is currently running.
+
+        Request body:
+            {
+                "experiment_name": str - The experiment name to check
+            }
+
+        Returns:
+            {
+                "is_running": bool - True if the experiment is currently running
+            }
+        """
+        try:
+            data = request.get_json()
+            if not data or "experiment_name" not in data:
+                return jsonify({"error": "experiment_name is required"}), 400
+
+            experiment_name = data["experiment_name"]
+
+            # Get the currently running experiment
+            running_experiment = self.db.get_running_experiment()
+            running_name = running_experiment.get("experiment_name") if running_experiment else None
+            running_status = running_experiment.get("status") if running_experiment else None
+
+            # Check if this specific experiment is running
+            is_running = (
+                running_name == experiment_name and
+                running_status == "running"
+            )
+
+            # Log for debugging
+            logger = self._get_logger()
+            if logger:
+                logger.debug(
+                    f"is_experiment_running check: "
+                    f"requested='{experiment_name}', "
+                    f"running='{running_name}', "
+                    f"status='{running_status}', "
+                    f"result={is_running}"
+                )
+
+            return jsonify({"is_running": is_running}), 200
         except Exception as e:
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 

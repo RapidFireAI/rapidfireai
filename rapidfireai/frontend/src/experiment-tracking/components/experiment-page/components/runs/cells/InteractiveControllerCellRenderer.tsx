@@ -1,6 +1,7 @@
 import { Button } from '@databricks/design-system';
 import { css } from '@emotion/react';
 import { InteractiveControllerIcon } from '../../../../../../common/components/InteractiveControllerIcon';
+import { useIsExperimentRunning } from '../../../../../hooks/useExperimentLogs';
 
 const styles = {
   cellWrapper: css`
@@ -17,13 +18,14 @@ const styles = {
 export const InteractiveControllerCellRenderer = (props: {
   data: { runUuid: string; runName: string; experimentName?: { name: string } };
   onOpenController?: (runUuid: string, runName: string) => void;
-  context?: { runningExperimentName?: string };
 }) => {
   const { runUuid, runName, experimentName: rowExperiment } = props.data;
-  const { onOpenController, context } = props;
-  // Get running experiment name from context (ag-grid context is reactive, cellRendererParams are not)
-  const runningExperimentName = context?.runningExperimentName;
-  const rowExperimentName = rowExperiment?.name;
+  const { onOpenController } = props;
+  const rowExperimentName = rowExperiment?.name ?? '';
+
+  // Use the new per-experiment check - this calls the API for THIS row's experiment
+  const { data: experimentStatus, isLoading } = useIsExperimentRunning(rowExperimentName, !!rowExperimentName);
+  const isThisExperimentRunning = experimentStatus?.is_running ?? false;
 
   if (!onOpenController) {
     return <div css={styles.cellWrapper}>-</div>;
@@ -35,7 +37,7 @@ export const InteractiveControllerCellRenderer = (props: {
         icon={<InteractiveControllerIcon />}
         onClick={() => onOpenController(runUuid, runName)}
         componentId={'interactive-controller-button'}
-        disabled={!runningExperimentName || Boolean(rowExperimentName && runningExperimentName !== rowExperimentName)}
+        disabled={isLoading || !isThisExperimentRunning}
       />
     </div>
   );

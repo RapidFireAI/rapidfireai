@@ -75,7 +75,6 @@ export interface ExperimentViewRunsTableProps {
   compareRunsMode: ExperimentViewRunsCompareMode;
   showControllerNotification: (action: 'resume' | 'stop' | 'delete' | 'clone_modify', status: 'success' | 'error') => void;
   onOpenController?: (runUuid: string, runName: string) => void;
-  runningExperimentName?: string;
 }
 
 export const ExperimentViewRunsTable = React.memo(
@@ -97,7 +96,6 @@ export const ExperimentViewRunsTable = React.memo(
     compareRunsMode,
     showControllerNotification,
     onOpenController,
-    runningExperimentName,
   }: ExperimentViewRunsTableProps) => {
     const { theme } = useDesignSystemTheme();
     const updateUIState = useUpdateExperimentViewUIState();
@@ -216,7 +214,6 @@ export const ExperimentViewRunsTable = React.memo(
       runsHiddenMode: uiState.runsHiddenMode,
       showControllerNotification,
       onOpenController,
-      runningExperimentName,
     });
 
     const gridSizeHandler = useCallback(
@@ -344,7 +341,7 @@ export const ExperimentViewRunsTable = React.memo(
     const displayStatusBar = !runListHidden;
     const displayEmptyState = rowsData.length < 1 && !isLoading && displayRunsTable;
 
-    const tableContext = useMemo(() => ({ orderByAsc, orderByKey, runningExperimentName }), [orderByAsc, orderByKey, runningExperimentName]);
+    const tableContext = useMemo(() => ({ orderByAsc, orderByKey }), [orderByAsc, orderByKey]);
 
     const { cellMouseOverHandler, cellMouseOutHandler } = useRunsHighlightTableRow(containerElement);
 
@@ -548,15 +545,15 @@ const styles = {
         // Padding fixes for the header (if custom header component is used)
         '.ag-header-cell': usingCustomHeaderComponent
           ? {
-              padding: 0,
-            }
+            padding: 0,
+          }
           : undefined,
 
         '.ag-header-cell .ag-checkbox': usingCustomHeaderComponent
           ? {
-              padding: '0 7px',
-              borderLeft: '1px solid transparent', // to match it with the cell sizing
-            }
+            padding: '0 7px',
+            borderLeft: '1px solid transparent', // to match it with the cell sizing
+          }
           : undefined,
 
         '.ag-cell.is-ordered-by, .ag-header-cell > .is-ordered-by': {

@@ -163,7 +163,6 @@ export interface UseRunsColumnDefinitionsParams {
   runsHiddenMode?: RUNS_VISIBILITY_MODE;
   showControllerNotification: (action: 'resume' | 'stop' | 'delete' | 'clone_modify', status: 'success' | 'error') => void;
   onOpenController?: (runUuid: string, runName: string) => void;
-  runningExperimentName?: string;
 }
 
 /**
@@ -255,7 +254,6 @@ export const useRunsColumnDefinitions = ({
   runsHiddenMode,
   showControllerNotification,
   onOpenController,
-  runningExperimentName,
 }: UseRunsColumnDefinitionsParams) => {
   const { theme } = useDesignSystemTheme();
 
@@ -590,7 +588,6 @@ export const useRunsColumnDefinitions = ({
     usingCompactViewport,
     selectedColumns,
     onOpenController,
-    runningExperimentName,
   ]);
 
   const canonicalSortKeys = useMemo(
