@@ -80,16 +80,7 @@ export const useIsExperimentRunning = (experimentName: string, enabled = true) =
     ['is-experiment-running', experimentName],
     async () => {
       const response = await DispatcherService.isExperimentRunning({ experiment_name: experimentName });
-      const result = response as { is_running: boolean };
-
-      // Clear logging of API result for debugging
-      console.log(
-        `[IC Ops] isExperimentRunning API Result:\n` +
-        `  └─ Experiment Name: "${experimentName}"\n` +
-        `  └─ Is Running: ${result.is_running ? '✅ YES' : '❌ NO'}`
-      );
-
-      return result;
+      return response as { is_running: boolean };
     },
     {
       enabled: enabled && !!experimentName,
