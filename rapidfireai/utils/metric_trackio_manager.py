@@ -82,8 +82,7 @@ class TrackioMetricLogger(MetricLogger):
 
         # Log any pending params for this run 
         if run_name in self.run_params:
-            for key, value in self.run_params[run_name].items():
-                self.active_runs[run_name].config[key] = value
+            self.active_runs[run_name].log(self.run_params[run_name])
             del self.run_params[run_name]
 
         return run_name
