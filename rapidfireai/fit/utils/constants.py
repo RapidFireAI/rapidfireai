@@ -1,6 +1,6 @@
 import os
 from enum import Enum
-from rapidfireai.utils.constants import RF_TRAINING_LOG_FILENAME, RF_DB_PATH
+from rapidfireai.utils.constants import RF_TRAINING_LOG_FILENAME, RF_DB_PATH, ExperimentStatus
 
 # Backwards compatibility: Keep constant but it will be stale if env var changes after import
 
@@ -55,13 +55,7 @@ class ExperimentTask(Enum):
     RUN_FIT = "Training and Validation"
 
 
-class ExperimentStatus(Enum):
-    """Enum class for experiment status"""
-
-    RUNNING = "Running"
-    COMPLETED = "Completed"
-    FAILED = "Failed"
-    CANCELLED = "Cancelled"
+# Note: ExperimentStatus is imported from rapidfireai.utils.constants (shared)
 
 
 # Task Constants

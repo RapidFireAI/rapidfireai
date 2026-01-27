@@ -1,10 +1,39 @@
 import { useQuery } from '@mlflow/mlflow/src/common/utils/reactQueryHooks';
 import { DispatcherService } from '../sdk/DispatcherService';
 
-interface RunningExperimentResponse {
-  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export interface RunningExperimentResponse {
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
   experiment_name?: string;
 }
+
+/**
+ * Hook to check if there's currently a running experiment.
+ * Returns the running experiment data and status.
+ */
+export const useRunningExperiment = (enabled = true) => {
+  const query = useQuery<RunningExperimentResponse>(
+    ['running-experiment-for-icops'],
+    async () => {
+      const response = await DispatcherService.getRunningExperiment();
+      return response as RunningExperimentResponse;
+    },
+    {
+      enabled,
+      staleTime: 10 * 1000, // 10 seconds - check experiment status frequently
+      cacheTime: 30 * 1000, // 30 seconds
+      retry: 1,
+      refetchOnWindowFocus: false,
+      refetchInterval: 10 * 1000, // Poll every 10 seconds
+    }
+  );
+
+  const runningExperimentName = query.data?.status === 'running' ? query.data?.experiment_name : null;
+
+  return {
+    ...query,
+    runningExperimentName,
+  };
+};
 
 /**
  * Gets the appropriate stale time based on whether the experiment is currently running
@@ -41,6 +70,34 @@ export const useExperimentLogs = (experimentName: string, enabled = true) => {
  * there's an active running experiment, so we check the experiment status first
  * and adjust caching strategy accordingly.
  */
+/**
+ * Hook to check if a specific experiment is currently running.
+ * This is useful for per-row checks in multi-experiment views.
+ * Logs the API result clearly for debugging.
+ */
+export const useIsExperimentRunning = (experimentName: string, enabled = true) => {
+  return useQuery<{ is_running: boolean }>(
+    ['is-experiment-running', experimentName],
+    async () => {
+      const response = await DispatcherService.isExperimentRunning({ experiment_name: experimentName });
+      const result = response as { is_running: boolean };
+
+      // eslint-disable-next-line no-console
+      console.log(`[IC Ops] isExperimentRunning: "${experimentName}" → ${result.is_running ? '✅ RUNNING' : '❌ NOT RUNNING'}`);
+
+      return result;
+    },
+    {
+      enabled: enabled && !!experimentName,
+      staleTime: 10 * 1000, // 10 seconds
+      cacheTime: 30 * 1000, // 30 seconds
+      retry: 1,
+      refetchOnWindowFocus: false,
+      refetchInterval: 10 * 1000, // Poll every 10 seconds
+    }
+  );
+};
+
 export const useExperimentICLogs = (experimentName: string, enabled = true) => {
   // IC logs are only relevant when there's an active running experiment
   // First, check if the experiment is currently running
@@ -59,7 +116,7 @@ export const useExperimentICLogs = (experimentName: string, enabled = true) => {
     }
   );
 
-  const isExperimentRunning = runningExperiment?.status === 'RUNNING';
+  const isExperimentRunning = runningExperiment?.status === 'running';
 
   return useQuery(
     ['experiment-ic-logs', experimentName],

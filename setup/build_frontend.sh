@@ -2,6 +2,9 @@
 
 set -e  # Exit on any error
 
+# Increase Node.js memory limit for webpack build
+export NODE_OPTIONS="--max-old-space-size=8192"
+
 # Build the frontend
 cd rapidfireai/frontend
 if [ "$1" != "build" ]; then

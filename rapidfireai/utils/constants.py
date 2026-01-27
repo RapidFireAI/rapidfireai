@@ -2,8 +2,19 @@
 Constants for the RapidFire AI package
 """
 import os
+from enum import Enum
 from rapidfireai.utils.colab import is_running_in_colab
 from rapidfireai.utils.os_utils import mkdir_p
+
+
+class ExperimentStatus(str, Enum):
+    """Shared status values for experiments (used by both fit and evals)."""
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
 
 if is_running_in_colab():
     RF_HOME = "/content/rapidfireai"
