@@ -675,7 +675,7 @@ class Dispatcher:
             # Create IC operation
             ic_id = self.db.create_ic_operation(
                 operation=ICOperation.STOP.value,
-                pipeline_id=run_id,
+                pipeline_id=pipeline["pipeline_id"],
             )
 
             return jsonify({"ic_id": ic_id, "message": f"Stop request created for run {run_id}"}), 200
@@ -715,7 +715,7 @@ class Dispatcher:
             # Create IC operation
             ic_id = self.db.create_ic_operation(
                 operation=ICOperation.RESUME.value,
-                pipeline_id=run_id,
+                pipeline_id=pipeline["pipeline_id"],
             )
 
             return jsonify({"ic_id": ic_id, "message": f"Resume request created for run {run_id}"}), 200
@@ -755,7 +755,7 @@ class Dispatcher:
             # Create IC operation
             ic_id = self.db.create_ic_operation(
                 operation=ICOperation.DELETE.value,
-                pipeline_id=run_id,
+                pipeline_id=pipeline["pipeline_id"],
             )
 
             return jsonify({"ic_id": ic_id, "message": f"Delete request created for run {run_id}"}), 200
