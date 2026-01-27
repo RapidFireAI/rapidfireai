@@ -216,6 +216,16 @@ class InteractiveControlHandler:
         # Remove from scheduler
         scheduler.remove_pipeline(pipeline_id)
 
+        # Delete run from MetricLogger (MLflow) - mirrors fit mode behavior
+        if self.metric_manager:
+            try:
+                pipeline = db.get_pipeline(pipeline_id)
+                if pipeline and pipeline.get("metric_run_id"):
+                    self.metric_manager.delete_run(pipeline["metric_run_id"])
+                    self.logger.info(f"Deleted MLflow run {pipeline['metric_run_id']} for pipeline {pipeline_id}")
+            except Exception as e:
+                self.logger.warning(f"Failed to delete MLflow run for pipeline {pipeline_id}: {e}")
+
         # Update database status
         db.set_pipeline_status(pipeline_id, PipelineStatus.DELETED)
 
