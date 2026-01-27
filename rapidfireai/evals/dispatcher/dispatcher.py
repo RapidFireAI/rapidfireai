@@ -17,6 +17,7 @@ from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_LOG_PATH, RF_LOG_FILENAME
+from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.evals.utils.constants import ICOperation
 
 CORS_ALLOWED_ORIGINS = "*" # Allow all origins
@@ -888,22 +889,7 @@ class Dispatcher:
             if not data or "experiment_name" not in data:
                 return jsonify({"error": "experiment_name is required"}), 400
 
-            experiment_name = data["experiment_name"]
-
-            # Get the currently running experiment (returns None if none running)
-            try:
-                running_experiment = self.db.get_running_experiment()
-                running_name = running_experiment.get("experiment_name") if running_experiment else None
-                running_status = running_experiment.get("status") if running_experiment else None
-            except Exception:
-                # No running experiment found
-                running_name = None
-                running_status = None
-
-            # Check if this specific experiment is running
-            # Note: status is "running" (lowercase) from ExperimentStatus.RUNNING.value in evals
-            is_running = running_name == experiment_name and running_status == "running"
-
+            is_running = check_experiment_running(self.db, data["experiment_name"])
             return jsonify({"is_running": is_running}), 200
 
         except Exception:

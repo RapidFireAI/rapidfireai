@@ -10,6 +10,7 @@ from flask_cors import CORS
 
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.utils.constants import DispatcherConfig, FrontendConfig, MLFlowConfig, RF_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.fit.utils.constants import ControllerTask
 from rapidfireai.fit.utils.exceptions import DispatcherException
 from rapidfireai.fit.utils.logging import RFLogger
@@ -210,27 +211,15 @@ class Dispatcher:
                 "is_running": bool - True if the experiment is currently running
             }
         """
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+
         try:
             data = request.get_json()
             if not data or "experiment_name" not in data:
                 return jsonify({"error": "experiment_name is required"}), 400
 
-            experiment_name = data["experiment_name"]
-
-            # Get the currently running experiment (may raise DBException if none running)
-            try:
-                running_experiment = self.db.get_running_experiment()
-                running_name = running_experiment.get("experiment_name")
-                running_status = running_experiment.get("status")
-            except Exception:
-                # No running experiment found
-                running_name = None
-                running_status = None
-
-            # Check if this specific experiment is running
-            # Note: status is "running" (lowercase) from shared ExperimentStatus.RUNNING.value
-            is_running = running_name == experiment_name and running_status == "running"
-
+            is_running = check_experiment_running(self.db, data["experiment_name"])
             return jsonify({"is_running": is_running}), 200
         except Exception:
             # If anything fails, assume experiment is not running (safer to disable button)
