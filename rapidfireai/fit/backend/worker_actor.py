@@ -13,7 +13,6 @@ from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from logging import Logger
-from multiprocessing import Manager
 from typing import Any
 
 import ray
@@ -58,29 +57,24 @@ class WorkerActor:
     def __init__(
         self,
         worker_id: int,
-        model_registry: dict[int, Any] = None,
-        process_lock: Any = None,
+        registry_actor,
     ):
         """
         Initialize the WorkerActor.
 
         Args:
             worker_id: Unique identifier for this worker
-            model_registry: (Ignored in Ray mode) - workers use local storage
-            process_lock: (Ignored in Ray mode) - workers use local locks
+            registry_actor: Ray actor handle for the shared RegistryActor
         """
         self.worker_id: int = worker_id
         self._shutdown_requested: bool = False
 
-        # In Ray mode, each worker has its own local registry and lock
-        # (multiprocessing.Manager() proxies don't work across Ray actors)
-        # Workers communicate through the database, not shared memory
+        # Create shared memory manager using the registry actor
+        # The registry actor is shared across all workers for coordination
         self.shm_manager = SharedMemoryManager(
             name=f"worker-{worker_id}-shm",
-            registry=None,  # Create local registry
-            multiprocess_lock=None,  # Create local lock
+            registry_actor=registry_actor,
         )
-        self.model_registry, self.process_lock = self.shm_manager.get_shm_objects()
 
         # Create database connection
         self.db: RfDb = RfDb()
@@ -357,8 +351,7 @@ def create_worker_actors(
     num_workers: int,
     gpus_per_worker: int,
     cpus_per_worker: int,
-    model_registry: dict,
-    process_lock: Any,
+    registry_actor,
 ) -> list:
     """
     Create WorkerActor instances with proper GPU allocation.
@@ -367,8 +360,7 @@ def create_worker_actors(
         num_workers: Number of workers to create
         gpus_per_worker: Number of GPUs per worker (typically 1)
         cpus_per_worker: Number of CPUs per worker
-        model_registry: Shared dictionary for model storage
-        process_lock: Lock for synchronizing shared memory access
+        registry_actor: Ray actor handle for the shared RegistryActor
 
     Returns:
         List of WorkerActor handles
@@ -383,8 +375,7 @@ def create_worker_actors(
             name=f"fit_worker_{worker_id}",
         ).remote(
             worker_id=worker_id,
-            model_registry=model_registry,
-            process_lock=process_lock,
+            registry_actor=registry_actor,
         )
         workers.append(worker)
 

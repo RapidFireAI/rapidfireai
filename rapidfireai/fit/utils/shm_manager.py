@@ -1,8 +1,20 @@
+"""
+Shared Memory Manager for PyTorch models and checkpoints.
+
+This module provides:
+- RegistryActor: A Ray actor that serves as a shared registry for model metadata
+- SharedMemoryManager: Manages PyTorch tensors in /dev/shm with zero-copy semantics
+
+The actual tensor data is stored in /dev/shm via torch.Tensor.share_memory_().
+The RegistryActor provides coordination between workers (which models exist, locks, etc.).
+"""
+
 import copy
 import gc
 import threading
-from multiprocessing import Lock, Manager
+from typing import Any
 
+import ray
 import torch
 
 from rapidfireai.utils.constants import SHMObjectType
@@ -13,6 +25,66 @@ from rapidfireai.utils.logging import RFLogger
 SHM_WARN_THRESHOLD = 80  # Warn when SHM usage exceeds this percentage
 SHM_MIN_FREE_SPACE = 1.0  # Minimum free space in GiB required
 USE_SHARED_MEMORY = True  # Enable shared memory for model storage
+
+
+@ray.remote
+class RegistryActor:
+    """
+    Ray Actor that serves as a shared registry for model metadata.
+
+    This replaces multiprocessing.Manager().dict() with a Ray-native solution.
+    Ray actors are single-threaded, so method calls are automatically serialized
+    (no explicit locking needed).
+
+    The registry stores model objects whose tensors are in /dev/shm.
+    When these objects are returned to callers, the tensors remain zero-copy
+    because PyTorch preserves shared memory handles during serialization.
+    """
+
+    def __init__(self):
+        self._data: dict[str, Any] = {}
+
+    def get(self, key: str) -> Any:
+        """Get a value from the registry."""
+        return self._data.get(key)
+
+    def set(self, key: str, value: Any) -> None:
+        """Set a value in the registry."""
+        self._data[key] = value
+
+    def delete(self, key: str) -> bool:
+        """Delete a key from the registry. Returns True if key existed."""
+        if key in self._data:
+            del self._data[key]
+            return True
+        return False
+
+    def contains(self, key: str) -> bool:
+        """Check if a key exists in the registry."""
+        return key in self._data
+
+    def keys(self) -> list[str]:
+        """Get all keys in the registry."""
+        return list(self._data.keys())
+
+    def set_entry_field(self, key: str, field: SHMObjectType, value: Any) -> None:
+        """Set a specific field in a registry entry, creating entry if needed."""
+        if key not in self._data:
+            self._data[key] = {}
+        self._data[key][field] = value
+
+    def delete_entry_field(self, key: str, field: SHMObjectType) -> bool:
+        """Delete a specific field from a registry entry."""
+        if key in self._data and field in self._data[key]:
+            del self._data[key][field]
+            return True
+        return False
+
+    def get_or_create_entry(self, key: str, default: dict) -> dict:
+        """Get an entry, creating it with default value if it doesn't exist."""
+        if key not in self._data:
+            self._data[key] = default
+        return self._data[key]
 
 
 def _get_shm_usage():
@@ -121,27 +193,41 @@ def _verify_sufficient_ref_state_dict_size(ref_state_dict: dict, logger: RFLogge
 
 
 class SharedMemoryManager:
-    """Manages PyTorch models and checkpoints in shared memory across multiple processes."""
+    """
+    Manages PyTorch models and checkpoints in shared memory across multiple processes.
 
-    def __init__(self, name: str, registry=None, multiprocess_lock=None):
-        """Initialize the shared memory manager with process-safe registry and locks"""
-        # initialize registry
-        if registry is None:
-            self._manager = Manager()
-            self._registry = self._manager.dict()
+    This class handles:
+    - Moving tensors to /dev/shm via torch.Tensor.share_memory_()
+    - BitsAndBytes quantization state handling
+    - Coordinating with RegistryActor for model metadata
+
+    The actual tensor data is zero-copy shared between all workers on the same machine.
+    """
+
+    def __init__(self, name: str, registry_actor=None):
+        """
+        Initialize the shared memory manager.
+
+        Args:
+            name: Name for logging purposes
+            registry_actor: Ray actor handle for RegistryActor. If None, creates a new one.
+        """
+        # Initialize or use provided registry actor
+        if registry_actor is None:
+            self._registry_actor = RegistryActor.remote()
+            self._owns_registry = True
         else:
-            self._registry = registry
+            self._registry_actor = registry_actor
+            self._owns_registry = False
 
-        # initialize multiprocess lock
-        if multiprocess_lock is None:
-            self._process_lock = self._manager.Lock()
-        else:
-            self._process_lock = multiprocess_lock
-
-        # initialize thread lock for operations within a single process
+        # Thread lock for operations within a single process
         self._thread_lock = threading.Lock()
 
         self.logger = RFLogger().get_logger(name)
+
+    def get_registry_actor(self):
+        """Get the registry actor handle (for passing to workers)."""
+        return self._registry_actor
 
     # shared memory operations
     def _safe_tensor_to_shared_memory(self, tensor: torch.Tensor | None) -> torch.Tensor | None:
@@ -283,17 +369,17 @@ class SharedMemoryManager:
     # model object operations
     def _save_full_model(self, model_id: str, model_data: dict, model_object_type: SHMObjectType):
         """Save the full model in shared memory. model_id can be either run_id or name of a base model"""
-        with self._process_lock if self._process_lock else self._thread_lock:
-            if model_id in self._registry and model_object_type != SHMObjectType.FULL_MODEL:
+        with self._thread_lock:
+            # Check if model already exists (skip if not FULL_MODEL type)
+            if ray.get(self._registry_actor.contains.remote(model_id)) and model_object_type != SHMObjectType.FULL_MODEL:
                 self.logger.debug(f"Model {model_id} already exists in shared memory. Skipping save.")
                 return
 
             # verify sufficient shared memory space before saving model
             _verify_sufficient_model_size(model_data[model_object_type.value], self.logger)
 
-            # create model entry in registry
-            if model_id not in self._registry:
-                self._registry[model_id] = {model_object_type: {}}
+            # create model entry in registry if needed
+            ray.get(self._registry_actor.get_or_create_entry.remote(model_id, {model_object_type: {}}))
 
             # move model to shared memory
             model_cpu = model_data[model_object_type.value]
@@ -304,9 +390,9 @@ class SharedMemoryManager:
                 "tokenizer": tokenizer,
                 "bnb_modules": self._move_tensors_to_shared_memory(bnb_modules),
             }
-            model_entry = dict(self._registry[model_id])
-            model_entry[model_object_type] = shared_model
-            self._registry[model_id] = model_entry
+
+            # Update the entry
+            ray.get(self._registry_actor.set_entry_field.remote(model_id, model_object_type, shared_model))
 
             self.logger.debug(f"Saved {model_object_type.value} for run {model_id}")
 
@@ -316,26 +402,28 @@ class SharedMemoryManager:
             # verify sufficient shared memory space before saving ref_state_dict
             _verify_sufficient_ref_state_dict_size(ref_state_dict, self.logger)
 
-            # create model entry in registry
-            if model_id not in self._registry:
-                self._registry[model_id] = {SHMObjectType.REF_STATE_DICT: {}}
+            # create model entry in registry if needed
+            ray.get(self._registry_actor.get_or_create_entry.remote(model_id, {SHMObjectType.REF_STATE_DICT: {}}))
 
             # move ref_state_dict to shared memory
             shared_ref_state_dict = self._move_tensors_to_shared_memory(ref_state_dict)
-            model_entry = dict(self._registry[model_id])
-            model_entry[SHMObjectType.REF_STATE_DICT] = shared_ref_state_dict
-            self._registry[model_id] = model_entry
+
+            # Update the entry
+            ray.get(self._registry_actor.set_entry_field.remote(model_id, SHMObjectType.REF_STATE_DICT, shared_ref_state_dict))
 
             self.logger.debug(f"Saved ref_state_dict for {model_id}")
 
     def _update_checkpoints(self, model_id: str, checkpoint_updates: dict):
         """Update checkpoints in-place when possible, add new keys when needed."""
         with self._thread_lock:
-            # create model entry in registry
-            if model_id not in self._registry:
-                self._registry[model_id] = {SHMObjectType.CHECKPOINTS: {}}
+            # Get or create entry with checkpoints
+            ray.get(self._registry_actor.get_or_create_entry.remote(model_id, {SHMObjectType.CHECKPOINTS: {}}))
 
-            model_entry = self._registry[model_id]
+            # Get current checkpoints
+            model_entry = ray.get(self._registry_actor.get.remote(model_id))
+            if model_entry is None:
+                model_entry = {}
+
             if SHMObjectType.CHECKPOINTS not in model_entry:
                 model_entry[SHMObjectType.CHECKPOINTS] = {}
             current_checkpoints = model_entry[SHMObjectType.CHECKPOINTS]
@@ -392,20 +480,15 @@ class SharedMemoryManager:
             # Update the checkpoints
             update_nested_dict(current_checkpoints, checkpoint_updates)
 
-            # Update the registry entry to ensure Manager sees changes
-            updated_entry = dict(model_entry)
-            updated_entry[SHMObjectType.CHECKPOINTS] = current_checkpoints
-            self._registry[model_id] = updated_entry
+            # Update the registry
+            model_entry[SHMObjectType.CHECKPOINTS] = current_checkpoints
+            ray.get(self._registry_actor.set.remote(model_id, model_entry))
 
             self.logger.debug(f"Checkpoint update:{updates_made['in_place']} in-place, {updates_made['new_keys']} new")
 
-    def get_shm_objects(self) -> tuple[dict, Lock]:
-        """Get the shared registry and process lock"""
-        return self._registry, self._process_lock
-
     def load_model_object(self, model_id: str, model_object_type: SHMObjectType):
         """Load a model object from shared memory."""
-        model_entry = self._registry.get(model_id)
+        model_entry = ray.get(self._registry_actor.get.remote(model_id))
         if model_entry is None:
             self.logger.warning(f"Model {model_id} not found in shared memory")
             return None
@@ -428,52 +511,41 @@ class SharedMemoryManager:
 
     def delete_model_object(self, model_id: str, base_model_name: str | None = None):
         """Delete model object from shared memory registry and clean up resources."""
-        with self._process_lock if self._process_lock else self._thread_lock:
-            if model_id not in self._registry:
+        with self._thread_lock:
+            if not ray.get(self._registry_actor.contains.remote(model_id)):
                 self.logger.warning(f"Model '{model_id}' not found in shared memory during delete")
                 return
 
+            # Get the model entry
+            model_entry = ray.get(self._registry_actor.get.remote(model_id))
+
             # remove checkpoints
-            # TODO: add code to save to disk before deleting
-            if (
-                SHMObjectType.CHECKPOINTS in self._registry[model_id]
-                and self._registry[model_id][SHMObjectType.CHECKPOINTS]
-            ):
-                del self._registry[model_id][SHMObjectType.CHECKPOINTS]
+            if model_entry and SHMObjectType.CHECKPOINTS in model_entry and model_entry[SHMObjectType.CHECKPOINTS]:
+                ray.get(self._registry_actor.delete_entry_field.remote(model_id, SHMObjectType.CHECKPOINTS))
                 self.logger.debug(f"Deleted checkpoints for model {model_id} from shared memory")
 
             # remove full_model
-            # TODO: add code to save to disk before deleting
-            if (
-                SHMObjectType.FULL_MODEL in self._registry[model_id]
-                and self._registry[model_id][SHMObjectType.FULL_MODEL]
-            ):
-                del self._registry[model_id][SHMObjectType.FULL_MODEL]
+            if model_entry and SHMObjectType.FULL_MODEL in model_entry and model_entry[SHMObjectType.FULL_MODEL]:
+                ray.get(self._registry_actor.delete_entry_field.remote(model_id, SHMObjectType.FULL_MODEL))
                 self.logger.debug(f"Deleted full_model for model {model_id} from shared memory")
 
             # remove ref_state_dict
-            if (
-                SHMObjectType.REF_STATE_DICT in self._registry[model_id]
-                and self._registry[model_id][SHMObjectType.REF_STATE_DICT]
-            ):
-                del self._registry[model_id][SHMObjectType.REF_STATE_DICT]
+            if model_entry and SHMObjectType.REF_STATE_DICT in model_entry and model_entry[SHMObjectType.REF_STATE_DICT]:
+                ray.get(self._registry_actor.delete_entry_field.remote(model_id, SHMObjectType.REF_STATE_DICT))
                 self.logger.debug(f"Deleted ref_state_dict for model {model_id} from shared memory")
 
             # remove ref_full_model
-            if (
-                SHMObjectType.REF_FULL_MODEL in self._registry[model_id]
-                and self._registry[model_id][SHMObjectType.REF_FULL_MODEL]
-            ):
-                del self._registry[model_id][SHMObjectType.REF_FULL_MODEL]
+            if model_entry and SHMObjectType.REF_FULL_MODEL in model_entry and model_entry[SHMObjectType.REF_FULL_MODEL]:
+                ray.get(self._registry_actor.delete_entry_field.remote(model_id, SHMObjectType.REF_FULL_MODEL))
                 self.logger.debug(f"Deleted ref_full_model for model {model_id} from shared memory")
 
-            # remove shared objects (entire registry entry is deleted for base_model, not just SHMObjectType.BASE_MODEL key)
-            if base_model_name and base_model_name in self._registry:
-                del self._registry[base_model_name]
+            # remove shared objects (entire registry entry is deleted for base_model)
+            if base_model_name:
+                ray.get(self._registry_actor.delete.remote(base_model_name))
                 self.logger.debug(f"Deleted base_model for model {model_id} from shared memory")
 
             # remove registry entry
-            del self._registry[model_id]
+            ray.get(self._registry_actor.delete.remote(model_id))
             self.logger.debug(f"Deleted model registry entry for {model_id} from shared memory")
 
             # Force garbage collection
@@ -486,40 +558,34 @@ class SharedMemoryManager:
     def create_warm_start_checkpoint(self, model_id: str, warm_started_from: str):
         """Copy warm start checkpoint from model_id to warm_started_from"""
         with self._thread_lock:
-            if warm_started_from not in self._registry:
+            if not ray.get(self._registry_actor.contains.remote(warm_started_from)):
                 raise KeyError(f"Run '{warm_started_from}' not found in shared memory")
 
-            # create model entry in registry
-            if model_id not in self._registry:
-                self._registry[model_id] = {
-                    SHMObjectType.FULL_MODEL: {},
-                    SHMObjectType.REF_STATE_DICT: {},
-                    SHMObjectType.CHECKPOINTS: {},
-                }
+            # Get source entry
+            source_entry = ray.get(self._registry_actor.get.remote(warm_started_from))
 
-            # copy full_model, ref_state_dict, and checkpoints from warm_started_from to model_id
-            model_entry = dict(self._registry[model_id])
-            if SHMObjectType.FULL_MODEL in self._registry[warm_started_from]:
-                model_entry[SHMObjectType.FULL_MODEL] = copy.deepcopy(
-                    dict(self._registry[warm_started_from])[SHMObjectType.FULL_MODEL]
-                )
-            if SHMObjectType.REF_STATE_DICT in self._registry[warm_started_from]:
-                model_entry[SHMObjectType.REF_STATE_DICT] = copy.deepcopy(
-                    dict(self._registry[warm_started_from])[SHMObjectType.REF_STATE_DICT]
-                )
-            if SHMObjectType.CHECKPOINTS in self._registry[warm_started_from]:
-                model_entry[SHMObjectType.CHECKPOINTS] = copy.deepcopy(
-                    dict(self._registry[warm_started_from])[SHMObjectType.CHECKPOINTS]
-                )
-            self._registry[model_id] = model_entry
+            # Create new entry with deep copies
+            new_entry = {
+                SHMObjectType.FULL_MODEL: {},
+                SHMObjectType.REF_STATE_DICT: {},
+                SHMObjectType.CHECKPOINTS: {},
+            }
+
+            if source_entry:
+                if SHMObjectType.FULL_MODEL in source_entry:
+                    new_entry[SHMObjectType.FULL_MODEL] = copy.deepcopy(source_entry[SHMObjectType.FULL_MODEL])
+                if SHMObjectType.REF_STATE_DICT in source_entry:
+                    new_entry[SHMObjectType.REF_STATE_DICT] = copy.deepcopy(source_entry[SHMObjectType.REF_STATE_DICT])
+                if SHMObjectType.CHECKPOINTS in source_entry:
+                    new_entry[SHMObjectType.CHECKPOINTS] = copy.deepcopy(source_entry[SHMObjectType.CHECKPOINTS])
+
+            ray.get(self._registry_actor.set.remote(model_id, new_entry))
             self.logger.debug(f"Copied warm start checkpoint from run {warm_started_from} to run {model_id}")
 
     def list_models(self):
         """Get list of all model IDs currently in shared memory."""
-        with self._process_lock if self._process_lock else self._thread_lock:
-            return list(self._registry.keys())
+        return ray.get(self._registry_actor.keys.remote())
 
     def model_exists(self, model_id: str):
         """Check if a model exists in shared memory."""
-        with self._process_lock if self._process_lock else self._thread_lock:
-            return model_id in self._registry
+        return ray.get(self._registry_actor.contains.remote(model_id))
