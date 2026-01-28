@@ -187,10 +187,11 @@ class WorkerActor:
             save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
 
         # Write logs to user logger
+        # Note: stderr often contains progress bars (tqdm), not errors
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
         if stderr_buffer.getvalue():
-            self.training_logger.error(stderr_buffer.getvalue())
+            self.training_logger.info(stderr_buffer.getvalue())
 
         self.logger.debug(f"Beginning training for run {run_id} on chunk {chunk_id}")
 
@@ -201,10 +202,11 @@ class WorkerActor:
             trainer_instance.train()
 
         # Write logs to user logger
+        # Note: stderr often contains progress bars (tqdm), not errors
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
         if stderr_buffer.getvalue():
-            self.training_logger.error(stderr_buffer.getvalue())
+            self.training_logger.info(stderr_buffer.getvalue())
 
         # Update completed steps
         new_completed_steps = completed_steps + trainer_instance.state.global_step
