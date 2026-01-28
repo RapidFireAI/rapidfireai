@@ -72,6 +72,7 @@ class Controller:
             experiment_name=self.experiment_name,
             experiment_path=self.experiment_path,
             context_cache=self._context_cache,
+            metric_manager=self.metric_manager,
         )
 
     @staticmethod
