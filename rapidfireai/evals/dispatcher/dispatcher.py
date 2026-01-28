@@ -661,14 +661,10 @@ class Dispatcher:
             # get pipeline from db
             pipeline = self.db.get_pipeline(run_id)
 
-            # get pipeline config from db
-            pipeline_config = pipeline["pipeline_config"]
-
             # create ic ops task
             _ = self.db.create_ic_operation(
                 operation=task.value,
                 pipeline_id=pipeline["pipeline_id"],
-                request_data=json.dumps(pipeline_config) if pipeline_config else None,
             )
 
             # log the task
@@ -692,14 +688,10 @@ class Dispatcher:
             # get pipeline from db
             pipeline = self.db.get_pipeline(run_id)
 
-            # get pipeline config from db
-            pipeline_config = pipeline["pipeline_config"]
-
             # set resume run task
             _ = self.db.create_ic_operation(
                 operation=task.value,
                 pipeline_id=pipeline["pipeline_id"],
-                request_data=json.dumps(pipeline_config) if pipeline_config else None,
             )
 
             # log the task
@@ -723,14 +715,10 @@ class Dispatcher:
             # get pipeline from db
             pipeline = self.db.get_pipeline(run_id)
 
-            # get pipeline config from db
-            pipeline_config = pipeline["pipeline_config"]
-
             # set delete run task
             _ = self.db.create_ic_operation(
                 operation=task.value,
                 pipeline_id=pipeline["pipeline_id"],
-                request_data=json.dumps(pipeline_config) if pipeline_config else None,
             )
 
             # log the task
