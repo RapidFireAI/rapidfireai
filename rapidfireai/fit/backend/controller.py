@@ -90,8 +90,8 @@ class Controller:
         self.default_req_workers: int = 1
 
         # Initialize shared memory manager (used for model/checkpoint sharing between workers)
+        # SharedMemoryManager creates a RegistryActor internally for coordination
         self.shm_manager: SharedMemoryManager = SharedMemoryManager(name="controller-shm")
-        self._model_registry, self._process_lock = self.shm_manager.get_shm_objects()
 
         # Worker actors (created in run_fit)
         self.worker_actors: list = []
@@ -612,12 +612,12 @@ class Controller:
 
         # Create Ray worker actors
         try:
+            # Pass registry actor handle - workers use this for shared state coordination
             self.worker_actors = create_worker_actors(
                 num_workers=self.num_workers,
                 gpus_per_worker=self.gpus_per_worker,
                 cpus_per_worker=self.cpus_per_worker,
-                model_registry=self._model_registry,
-                process_lock=self._process_lock,
+                registry_actor=self.shm_manager.get_registry_actor(),
             )
             # Start all workers' serve_forever loops (fire-and-forget, runs in background)
             for worker in self.worker_actors:
