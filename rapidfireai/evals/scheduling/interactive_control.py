@@ -37,7 +37,7 @@ class InteractiveControlHandler:
             experiment_name: Name of the experiment
             experiment_path: Path to experiment logs/artifacts
             context_cache: Controller's context cache (maps context_hash -> (context_id, ObjectRef))
-            metric_manager: Optional MetricLogger instance for creating MLflow runs on clone
+            metric_manager: Optional MetricLogger instance for creating metric runs on clone
         """
         # Initialize logger
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
@@ -46,7 +46,7 @@ class InteractiveControlHandler:
         # Reference to controller's context cache
         self._context_cache = context_cache
 
-        # Store metric manager for creating MLflow runs on clone
+        # Store metric manager for creating metric runs on clone
         self.metric_manager = metric_manager
 
     def check_and_process_requests(

@@ -10,14 +10,12 @@ import logging
 import os
 import threading
 import traceback
-from logging import Logger
-
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.evals.utils.logger import RFLogger, SafeLoggerAdapter
 from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_LOG_PATH, RF_LOG_FILENAME
 from rapidfireai.evals.utils.constants import ICOperation
 
@@ -51,7 +49,7 @@ class Dispatcher:
         """Initialize the Dispatcher with database connection and Flask app."""
         # initialize loggers
         self.logger_experiment_name: str | None = None
-        self.logger: Logger | None = None
+        self.logger: SafeLoggerAdapter | None = None
 
         # Create database handle
         self.db: RFDatabase = RFDatabase()
@@ -78,7 +76,7 @@ class Dispatcher:
         # Register routes
         self.register_routes()
 
-    def _get_logger(self) -> Logger | None:
+    def _get_logger(self) -> SafeLoggerAdapter:
         """Get the latest logger for the dispatcher"""
         current_experiment_name = self.db.get_running_experiment()["experiment_name"]
         if self.logger is None or self.logger_experiment_name != current_experiment_name:
@@ -669,13 +667,11 @@ class Dispatcher:
 
             # log the task
             logger = self._get_logger()
-            if logger:
-                logger.info(f"Received stop task for run_id: {run_id}")
+            logger.info(f"Received stop task for run_id: {run_id}")
             return jsonify({}), 200
         except Exception as e:
             logger = self._get_logger()
-            if logger:
-                logger.error(f"Error in stop_run: {e}", exc_info=True)
+            logger.error(f"Error in stop_run: {e}", exc_info=True)
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def resume_run(self) -> tuple[Response, int]:
@@ -696,13 +692,11 @@ class Dispatcher:
 
             # log the task
             logger = self._get_logger()
-            if logger:
-                logger.info(f"Received resume task for run_id: {run_id}")
+            logger.info(f"Received resume task for run_id: {run_id}")
             return jsonify({}), 200
         except Exception as e:
             logger = self._get_logger()
-            if logger:
-                logger.error(f"Error in resume_run: {e}", exc_info=True)
+            logger.error(f"Error in resume_run: {e}", exc_info=True)
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def delete_run(self) -> tuple[Response, int]:
@@ -723,13 +717,11 @@ class Dispatcher:
 
             # log the task
             logger = self._get_logger()
-            if logger:
-                logger.info(f"Received delete task for run_id: {run_id}")
+            logger.info(f"Received delete task for run_id: {run_id}")
             return jsonify({}), 200
         except Exception as e:
             logger = self._get_logger()
-            if logger:
-                logger.error(f"Error in delete_run: {e}", exc_info=True)
+            logger.error(f"Error in delete_run: {e}", exc_info=True)
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def clone_modify_run(self) -> tuple[Response, int]:
