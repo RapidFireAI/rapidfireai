@@ -402,12 +402,18 @@ def _configure_training_args(training_args: dict, trainer_config: TrainerConfig,
 
 def _create_trainer_config_object(trainer_type: str, training_args: dict):
     """Create the appropriate trainer config object based on trainer type."""
+    # Filter out parameters that are not accepted by TRL config classes
+    # no_cuda is a TrainingArguments parameter but not accepted by DPOConfig/GRPOConfig
+    filtered_args = training_args.copy()
+    if trainer_type in ["DPO", "GRPO"]:
+        filtered_args.pop("no_cuda", None)
+    
     if trainer_type == "SFT":
-        return SFTConfig(**training_args)
+        return SFTConfig(**filtered_args)
     elif trainer_type == "DPO":
-        return DPOConfig(**training_args)
+        return DPOConfig(**filtered_args)
     elif trainer_type == "GRPO":
-        return GRPOConfig(**training_args)
+        return GRPOConfig(**filtered_args)
     else:
         raise ValueError(f"Unsupported trainer type: {trainer_type}")
 

@@ -30,7 +30,7 @@ dependencies = [
     "torch>=2.8.0",
     "transformers>=4.55.2",
     "peft>=0.17.0",
-    "trl==0.21.0",
+    "trl==0.27.1",
     "bitsandbytes>=0.47.0",
     "nltk>=3.9.1",
     "evaluate>=0.4.5",
@@ -62,7 +62,7 @@ full = [
     "torch>=1.9.0",
     "transformers>=4.20.0",
     "peft>=0.3.0",
-    "trl==0.21.0",
+    "trl==0.27.1",
     "bitsandbytes>=0.39.0",
 ]
 

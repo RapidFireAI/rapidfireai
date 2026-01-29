@@ -2,10 +2,10 @@
 
 import gc
 import os
+import sys
 import time
 import traceback
 from collections.abc import Callable
-from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from logging import Logger
 from multiprocessing import Process
@@ -39,6 +39,41 @@ from rapidfireai.utils.mlflow_manager import MLflowManager
 from rapidfireai.utils.serialize import decode_db_payload
 from rapidfireai.utils.shm_manager import SharedMemoryManager
 from rapidfireai.utils.trainer_config import TrainerConfig
+
+
+class TeeOutput:
+    """A file-like object that captures output to a buffer while providing fileno() for vLLM compatibility.
+    Output is NOT written to the original stream to prevent it from appearing in the notebook."""
+    
+    def __init__(self, original_stream, buffer):
+        self.original_stream = original_stream
+        self.buffer = buffer
+    
+    def write(self, text):
+        """Write only to the buffer, not to the original stream (to suppress notebook output)."""
+        self.buffer.write(text)
+        # Don't write to original_stream to prevent output in notebook
+    
+    def flush(self):
+        """Flush the buffer only."""
+        self.buffer.flush()
+        # Don't flush original_stream to prevent output in notebook
+    
+    def fileno(self):
+        """Return the original stream's file descriptor (required by vLLM)."""
+        return self.original_stream.fileno()
+    
+    def isatty(self):
+        """Check if the original stream is a TTY."""
+        return self.original_stream.isatty()
+    
+    def getvalue(self):
+        """Get the captured buffer content."""
+        return self.buffer.getvalue()
+    
+    def __getattr__(self, name):
+        """Delegate other attributes to the original stream."""
+        return getattr(self.original_stream, name)
 
 
 class Worker:
@@ -121,6 +156,24 @@ class Worker:
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
         os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 
+        # Clean up any stale vLLM parallel state before initializing distributed environment
+        # This is critical when training multiple models sequentially with GRPO
+        if config_leaf.get("trainer_type", "SFT") == "GRPO":
+            try:
+                from vllm.distributed import parallel_state
+                if hasattr(parallel_state, "destroy_model_parallel"):
+                    try:
+                        parallel_state.destroy_model_parallel()
+                    except Exception:
+                        pass  # Ignore if not initialized
+                if hasattr(parallel_state, "destroy_distributed_environment"):
+                    try:
+                        parallel_state.destroy_distributed_environment()
+                    except Exception:
+                        pass  # Ignore if not initialized
+            except (ImportError, AttributeError):
+                pass  # vLLM parallel state cleanup not available
+
         # Initialize distributed training if FSDP is enabled for this run
         if use_fsdp:
             try:
@@ -129,6 +182,7 @@ class Worker:
                 master_port = multi_worker_details["master_port"]
                 world_size = multi_worker_details["world_size"]
                 rank = multi_worker_details["local_rank"]
+                self.logger.debug(f"Worker {self.worker_id} initializing distributed training for run {run_id} with master_addr {master_addr}, master_port {master_port}, world_size {world_size}, rank {rank}")
                 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, multi_worker_details["worker_ids"]))
                 setup_distributed_environment(
                     rank=rank, world_size=world_size, master_addr=master_addr, master_port=master_port
@@ -184,9 +238,34 @@ class Worker:
             barrier()
             
         # create trainer instance and write logs to user logger
+        # Redirect stdout/stderr to /dev/null at OS level to suppress all output (Python and C-level)
+        # Then use TeeOutput to capture Python-level output for logging while maintaining fileno() for vLLM
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        
+        # Redirect to /dev/null to suppress all output from appearing in notebook
+        devnull_fd = None
+        try:
+            with open(os.devnull, 'w') as devnull:
+                devnull_fd = devnull.fileno()
+                if hasattr(sys.stdout, 'fileno'):
+                    os.dup2(devnull_fd, sys.stdout.fileno())
+                if hasattr(sys.stderr, 'fileno'):
+                    os.dup2(devnull_fd, sys.stderr.fileno())
+        except Exception as e:
+            self.logger.debug(f"Could not redirect stdout/stderr to /dev/null: {e}")
+        
+        # Create TeeOutput wrappers that capture to buffer but don't write to original stream
+        # fileno() will return the /dev/null fd which is fine for vLLM
+        tee_stdout = TeeOutput(original_stdout, stdout_buffer)
+        tee_stderr = TeeOutput(original_stderr, stderr_buffer)
+        
+        try:
+            sys.stdout = tee_stdout
+            sys.stderr = tee_stderr
+            
             trainer_instance, base_model_name = create_trainer_instance(
                 trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id, use_fsdp=use_fsdp
             )
@@ -274,6 +353,37 @@ class Worker:
             if use_fsdp and is_distributed_initialized():
                 barrier()
 
+            # Clean up vLLM engine before deleting trainer to avoid stale process group references
+            # This is critical for GRPO with FSDP when training multiple models sequentially
+            if hasattr(trainer_instance, "llm"):
+                try:
+                    # Shutdown vLLM engine to clean up its process groups
+                    if hasattr(trainer_instance.llm, "shutdown"):
+                        trainer_instance.llm.shutdown()
+                    elif hasattr(trainer_instance.llm, "llm_engine"):
+                        # Try to clean up the engine core if shutdown method doesn't exist
+                        if hasattr(trainer_instance.llm.llm_engine, "engine_core"):
+                            if hasattr(trainer_instance.llm.llm_engine.engine_core, "shutdown"):
+                                trainer_instance.llm.llm_engine.engine_core.shutdown()
+                    
+                    # Clean up vLLM's parallel state if it exists
+                    try:
+                        from vllm.distributed import parallel_state
+                        if hasattr(parallel_state, "destroy_model_parallel"):
+                            parallel_state.destroy_model_parallel()
+                        if hasattr(parallel_state, "destroy_distributed_environment"):
+                            parallel_state.destroy_distributed_environment()
+                    except (ImportError, AttributeError):
+                        pass  # vLLM parallel state cleanup not available
+                    
+                    # Delete the llm instance explicitly
+                    del trainer_instance.llm
+                except Exception as e:
+                    self.logger.debug(f"Error cleaning up vLLM engine: {e}")
+                    # Force delete even if shutdown fails
+                    if hasattr(trainer_instance, "llm"):
+                        del trainer_instance.llm
+
             if hasattr(trainer_instance, "model"):
                 del trainer_instance.model
             if use_fsdp:
@@ -292,11 +402,18 @@ class Worker:
             # run garbage collection
             gc.collect()
             if torch.cuda.is_available():
+                torch.cuda.synchronize()
                 torch.cuda.empty_cache()
-
+                torch.cuda.ipc_collect() 
             if use_fsdp and is_distributed_initialized():
                 barrier()
             self.logger.debug(f"Completed training for run {run_id} on chunk {chunk_id}")
+        finally:
+            # Restore original stdout/stderr
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            
+        # Write captured output to training logger
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
         if stderr_buffer.getvalue():
@@ -375,5 +492,4 @@ class Worker:
 
     def is_alive(self):
         """Check if the worker process is alive"""
-        return self.process and self.process.is_alive()
         return self.process and self.process.is_alive()
