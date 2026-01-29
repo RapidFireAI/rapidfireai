@@ -49,7 +49,21 @@ class TrackioMetricLogger(MetricLogger):
         if run_name in self.active_runs:
             return run_name
         self.logger.info(f"Could not find run {run_name} initializing...")
-        return self.create_run(run_name)
+        return self.create_run(self._translate_run_name(run_name))
+
+    def _translate_run_name(self, run_name: str) -> str:
+        """Get the run name from a mlflow run id."""
+        if len(run_name) == 32:
+            # Run is a mlflow run id, so we need to get the run name from the mlflow run id
+            try:
+                from mlflow.client import MlflowClient
+                client = MlflowClient()
+                run = client.get_run(run_name)
+                return run.info.run_name
+            except Exception as e:
+                self.logger.warning(f"Error getting run name from mlflow run id {run_name}: {e}, using run id as run name")
+                return run_name
+        return run_name
 
     def create_experiment(self, experiment_name: str) -> str:
         """Create a new experiment and set it as active."""

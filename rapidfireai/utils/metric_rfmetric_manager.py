@@ -45,6 +45,7 @@ class RFMetricLogger(MetricLogger):
         if len(metric_loggers) == 0:
             raise ValueError("metric_loggers must contain at least one metric logger")
         self.metric_loggers = {}
+        self.run_id_map = {} # Map of run_ids -> run_names
         for metric_logger_name, metric_logger_config in metric_loggers.items():
             if metric_logger_config.get("type") not in MetricLoggerType:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
