@@ -29,14 +29,15 @@ class InteractiveControlHandler:
     keeping the Controller class focused on its core orchestration responsibilities.
     """
 
-    def __init__(self, experiment_name: str, experiment_path: str, context_cache: dict):
+    def __init__(self, experiment_name: str, experiment_path: str, context_cache: dict, metric_manager=None):
         """
         Initialize the IC handler.
 
         Args:
             experiment_name: Name of the experiment
             experiment_path: Path to experiment logs/artifacts
-            context_cache: Controller's context cache (maps Need to ensure that -> (context_id, ObjectRef)
+            context_cache: Controller's context cache (maps context_hash -> (context_id, ObjectRef))
+            metric_manager: Optional MetricLogger instance for creating metric runs on clone
         """
         # Initialize logger
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
@@ -44,6 +45,9 @@ class InteractiveControlHandler:
 
         # Reference to controller's context cache
         self._context_cache = context_cache
+
+        # Store metric manager for creating metric runs on clone
+        self.metric_manager = metric_manager
 
     def check_and_process_requests(
         self,
@@ -211,6 +215,16 @@ class InteractiveControlHandler:
         """
         # Remove from scheduler
         scheduler.remove_pipeline(pipeline_id)
+
+        # Delete run from MetricLogger (MLflow) - mirrors fit mode behavior
+        if self.metric_manager:
+            try:
+                pipeline = db.get_pipeline(pipeline_id)
+                if pipeline and pipeline.get("metric_run_id"):
+                    self.metric_manager.delete_run(pipeline["metric_run_id"])
+                    self.logger.info(f"Deleted MLflow run {pipeline['metric_run_id']} for pipeline {pipeline_id}")
+            except Exception as e:
+                self.logger.warning(f"Failed to delete MLflow run for pipeline {pipeline_id}: {e}")
 
         # Update database status
         db.set_pipeline_status(pipeline_id, PipelineStatus.DELETED)
@@ -439,6 +453,38 @@ class InteractiveControlHandler:
 
         # Add to pipeline_id_to_config mapping
         pipeline_id_to_config[new_pipeline_id] = pipeline_config_dict
+
+        # Create metric run for the cloned pipeline (mirrors _register_pipelines and fit mode's _create_models)
+        if self.metric_manager:
+            try:
+                pipeline_name = edited_json.get("pipeline_name", f"Pipeline {new_pipeline_id}")
+                metric_run_id = self.metric_manager.create_run(f"{pipeline_name}_{new_pipeline_id}")
+                db.set_pipeline_metric_run_id(new_pipeline_id, metric_run_id)
+
+                # Log parent-run param (consistent with fit mode)
+                self.metric_manager.log_param(metric_run_id, "parent-run", str(parent_pipeline_id))
+
+                # Log model param
+                if hasattr(model_config, "model_config") and model_config.model_config:
+                    model_name = model_config.model_config.get("model", "unknown")
+                    self.metric_manager.log_param(metric_run_id, "model", model_name)
+
+                # Log RAG params
+                if rag and hasattr(rag, "search_type"):
+                    self.metric_manager.log_param(metric_run_id, "rag_search_type", str(rag.search_type))
+                if rag and hasattr(rag, "search_kwargs") and rag.search_kwargs:
+                    k = rag.search_kwargs.get("k")
+                    if k is not None:
+                        self.metric_manager.log_param(metric_run_id, "rag_k", str(k))
+
+                # Log sampling params
+                if hasattr(model_config, "sampling_params") and model_config.sampling_params:
+                    sampling_str = json.dumps(model_config.sampling_params) if isinstance(model_config.sampling_params, dict) else str(model_config.sampling_params)
+                    self.metric_manager.log_param(metric_run_id, "sampling_params", sampling_str)
+
+                self.logger.info(f"Created metric run {metric_run_id} for cloned pipeline {new_pipeline_id}")
+            except Exception as e:
+                self.logger.warning(f"Failed to create MLflow run for cloned pipeline {new_pipeline_id}: {e}")
 
         # Reuse experiment-wide rate limiter actor for OpenAI pipelines
         # Since rate limiting is now at the experiment level, all OpenAI pipelines share the same rate limiter
