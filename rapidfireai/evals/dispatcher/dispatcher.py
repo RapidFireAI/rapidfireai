@@ -17,6 +17,7 @@ from waitress import serve
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.utils.logger import RFLogger, SafeLoggerAdapter
 from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_LOG_PATH, RF_LOG_FILENAME
+from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.evals.utils.constants import ICOperation
 
 CORS_ALLOWED_ORIGINS = "*" # Allow all origins
@@ -216,6 +217,12 @@ class Dispatcher:
             "get_all_experiment_names",
             self.get_all_experiment_names,
             methods=["GET", "OPTIONS"],
+        )
+        self.app.add_url_rule(
+            f"{route_prefix}/is-experiment-running",
+            "is_experiment_running",
+            self.is_experiment_running,
+            methods=["POST", "OPTIONS"],
         )
 
         # Logging endpoints (placeholders for frontend compatibility)
@@ -826,6 +833,35 @@ class Dispatcher:
 
         except Exception as e:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+    def is_experiment_running(self) -> tuple[Response, int]:
+        """
+        Check if a specific experiment is currently running.
+
+        Request body:
+            {
+                "experiment_name": str - The experiment name to check
+            }
+
+        Returns:
+            {
+                "is_running": bool - True if the experiment is currently running
+            }
+        """
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+
+        try:
+            data = request.get_json()
+            if not data or "experiment_name" not in data:
+                return jsonify({"error": "experiment_name is required"}), 400
+
+            is_running = check_experiment_running(self.db, data["experiment_name"])
+            return jsonify({"is_running": is_running}), 200
+
+        except Exception:
+            # If anything fails, assume experiment is not running (safer to disable button)
+            return jsonify({"is_running": False}), 200
 
     # ============================================================
     # Logging endpoints
