@@ -454,7 +454,7 @@ class InteractiveControlHandler:
         # Add to pipeline_id_to_config mapping
         pipeline_id_to_config[new_pipeline_id] = pipeline_config_dict
 
-        # Create MLflow run for the cloned pipeline (mirrors _register_pipelines and fit mode's _create_models)
+        # Create metric run for the cloned pipeline (mirrors _register_pipelines and fit mode's _create_models)
         if self.metric_manager:
             try:
                 pipeline_name = edited_json.get("pipeline_name", f"Pipeline {new_pipeline_id}")
@@ -482,7 +482,7 @@ class InteractiveControlHandler:
                     sampling_str = json.dumps(model_config.sampling_params) if isinstance(model_config.sampling_params, dict) else str(model_config.sampling_params)
                     self.metric_manager.log_param(metric_run_id, "sampling_params", sampling_str)
 
-                self.logger.info(f"Created MLflow run {metric_run_id} for cloned pipeline {new_pipeline_id}")
+                self.logger.info(f"Created metric run {metric_run_id} for cloned pipeline {new_pipeline_id}")
             except Exception as e:
                 self.logger.warning(f"Failed to create MLflow run for cloned pipeline {new_pipeline_id}: {e}")
 
