@@ -3,7 +3,7 @@
 # ml
 pandas>=2.0.0,<2.3.0  # Colab compatibility (2.2.2) and cudf constraint
 torch>=2.7.0
-transformers>=4.55.2
+transformers>=4.55.2,<5.0.0
 peft>=0.17.0
 trl>=0.21.0
 bitsandbytes>=0.47.0
