@@ -357,7 +357,6 @@ class Dispatcher:
                 target_id=run_id,
                 target_type="run",
                 operation=ICOperation.STOP,
-                config_data=self.db.get_run(run_id).get("config_leaf", {}),
             )
             return jsonify({"ic_id": ic_id}), 200
         except Exception as e:
@@ -375,7 +374,6 @@ class Dispatcher:
                 target_id=run_id,
                 target_type="run",
                 operation=ICOperation.RESUME,
-                config_data=self.db.get_run(run_id).get("config_leaf", {}),
             )
             return jsonify({"ic_id": ic_id}), 200
         except Exception as e:
@@ -393,7 +391,6 @@ class Dispatcher:
                 target_id=run_id,
                 target_type="run",
                 operation=ICOperation.DELETE,
-                config_data=self.db.get_run(run_id).get("config_leaf", {}),
             )
             return jsonify({"ic_id": ic_id}), 200
         except Exception as e:
