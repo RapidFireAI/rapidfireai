@@ -221,7 +221,7 @@ class Controller:
 
         # process non-clone_modify tasks
         for run_id, run_state in run_states.items():
-            if not run_state["task_id"]:
+            if not run_state["task"]:
                 continue
 
             if run_state["status"] == RunStatus.STOPPED:

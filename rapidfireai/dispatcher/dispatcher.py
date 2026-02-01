@@ -27,6 +27,7 @@ from rapidfireai.utils.constants import (
     RF_LOG_PATH,
     RunStatus,
 )
+from rapidfireai.utils.dispatcher_utils import check_experiment_running
 
 CORS_ALLOWED_ORIGINS = ["http://localhost", DispatcherConfig.URL, MLFlowConfig.URL, FrontendConfig.URL, "*"]
 
@@ -34,7 +35,6 @@ CORS_ALLOWED_ORIGINS = ["http://localhost", DispatcherConfig.URL, MLFlowConfig.U
 class Dispatcher:
     """
     REST API server for interactive control of experiments.
-    
     Provides endpoints for:
     - Run management: /dispatcher/get-all-runs, /dispatcher/stop-run, etc.
     - Pipeline management: /dispatcher/get-all-pipelines, /dispatcher/stop-pipeline, etc.
@@ -115,6 +115,12 @@ class Dispatcher:
             f"{route_prefix}/get-ic-logs",
             "get_ic_logs",
             self.get_ic_logs,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            f"{route_prefix}/is-experiment-running",
+            "is_experiment_running",
+            self.is_experiment_running,
             methods=["POST"],
         )
 
@@ -226,6 +232,19 @@ class Dispatcher:
             return jsonify(names), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+    def is_experiment_running(self) -> tuple[Response, int]:
+        """Check if a specific experiment is currently running."""
+        try:
+            data = request.get_json()
+            if not data or "experiment_name" not in data:
+                return jsonify({"error": "experiment_name is required"}), 400
+
+            is_running = check_experiment_running(self.db, data["experiment_name"])
+            return jsonify({"is_running": is_running}), 200
+        except Exception:
+            # If anything fails, assume experiment is not running (safer to disable button)
+            return jsonify({"is_running": False}), 200
 
     def get_experiment_logs(self) -> tuple[Response, int]:
         """Get experiment logs."""
