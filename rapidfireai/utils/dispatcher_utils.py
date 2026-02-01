@@ -4,6 +4,8 @@ Shared utilities for fit and evals dispatchers.
 
 from typing import Any, Protocol
 
+from rapidfireai.utils.constants import ExperimentStatus
+
 
 class DatabaseWithExperiment(Protocol):
     """Protocol for database classes that support get_running_experiment."""
@@ -26,8 +28,12 @@ def check_experiment_running(db: DatabaseWithExperiment, experiment_name: str) -
     """
     try:
         running_experiment = db.get_running_experiment()
-        running_name = running_experiment.get("experiment_name") if running_experiment else None
-        running_status = running_experiment.get("status") if running_experiment else None
-        return running_name == experiment_name and running_status == "running"
+        if not running_experiment:
+            return False
+        running_name = running_experiment.get("experiment_name")
+        running_status = running_experiment.get("status")
+        # Compare with enum - works for both enum values and strings due to str inheritance
+        is_running = running_status == ExperimentStatus.RUNNING
+        return running_name == experiment_name and is_running
     except Exception:
         return False
