@@ -12,7 +12,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME, ColabConfig, DispatcherConfig, JupyterConfig
+from rapidfireai.utils.constants import (
+    RF_DB_PATH,
+    RF_EXPERIMENT_PATH,
+    RF_HOME,
+    RF_LOG_PATH,
+    ColabConfig,
+    DispatcherConfig,
+    JupyterConfig,
+)
 from rapidfireai.platform.doctor import get_doctor_info
 from rapidfireai.platform.get_ip_address import get_ip_address
 from rapidfireai.platform.gpu_info import get_compute_capability
@@ -313,6 +321,36 @@ def copy_test_notebooks():
     return 0
 
 
+def run_clear():
+    """Clear the database and all log files."""
+    print("🧹 Clearing RapidFire AI data...")
+    print("-" * 30)
+
+    paths_to_clear = [
+        ("Database", RF_DB_PATH),
+        ("Logs", RF_LOG_PATH),
+        ("Experiments", RF_EXPERIMENT_PATH),
+    ]
+
+    # Delete existing directories
+    deleted_any = False
+    for name, path in paths_to_clear:
+        if os.path.exists(path):
+            try:
+                shutil.rmtree(path)
+                print(f"✅ Deleted {name}: {path}")
+                deleted_any = True
+            except Exception as e:
+                print(f"❌ Failed to delete {name}: {e}")
+
+    if not deleted_any:
+        print("✅ Nothing to clear - all directories are already empty or don't exist.")
+
+    print("-" * 30)
+    print("✅ RapidFire AI data cleared!")
+    return 0
+
+
 def run_jupyter():
     """Run the Jupyter notebook server."""
     import io
@@ -409,6 +447,9 @@ Examples:
   # Diagnose issues
   rapidfireai doctor
 
+  # Clear database and log files
+  rapidfireai clear
+
 For more information, visit: https://github.com/RapidFireAI/rapidfireai
         """,
     )
@@ -417,7 +458,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         "command",
         nargs="?",
         default="start",
-        choices=["start", "stop", "status", "restart", "setup", "doctor", "init", "jupyter"],
+        choices=["start", "stop", "status", "restart", "setup", "doctor", "init", "jupyter", "clear"],
         help="Command to execute (default: start)",
     )
 
@@ -487,6 +528,9 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     if args.command == "jupyter":
         return run_jupyter()
+
+    if args.command == "clear":
+        return run_clear()
 
     if args.test_notebooks:
         return copy_test_notebooks()
