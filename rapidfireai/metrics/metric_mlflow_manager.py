@@ -31,10 +31,11 @@ class MLflowMetricLogger(MetricLogger):
         self.experiment_id = None
 
     def create_experiment(self, experiment_name: str) -> str:
-        """Create a new experiment and set it as active."""
-        self.experiment_id = self.client.create_experiment(experiment_name)
+        """Create a new experiment or get existing one, and set it as active."""
         # IMPORTANT: Set this as the active experiment in MLflow context
-        mlflow.set_experiment(experiment_name)
+        # mlflow.set_experiment automatically creates if it doesn't exist
+        experiment = mlflow.set_experiment(experiment_name)
+        self.experiment_id = experiment.experiment_id
         return self.experiment_id
 
     def get_experiment(self, experiment_name: str) -> str:
