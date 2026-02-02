@@ -47,7 +47,7 @@ class MetricLogger(ABC):
         pass
 
     @abstractmethod
-    def log_param(self, run_id: str, key: str, value: str) -> None:
+    def log_param(self, run_id: str, key: str, value: str, run_name: Optional[str] = None) -> None:
         """
         Log a parameter to a specific run.
 
@@ -55,11 +55,12 @@ class MetricLogger(ABC):
             run_id: Run identifier
             key: Parameter name
             value: Parameter value
+            run_name: Optional run name
         """
         pass
 
     @abstractmethod
-    def log_metric(self, run_id: str, key: str, value: float, step: Optional[int] = None) -> None:
+    def log_metric(self, run_id: str, key: str, value: float, step: Optional[int] = None, run_name: Optional[str] = None) -> None:
         """
         Log a metric to a specific run.
 
@@ -68,39 +69,42 @@ class MetricLogger(ABC):
             key: Metric name
             value: Metric value
             step: Optional step number for the metric
+            run_name: Optional run name
         """
         pass
 
     @abstractmethod
-    def get_run_metrics(self, run_id: str) -> dict:
+    def get_run_metrics(self, run_id: str, run_name: Optional[str] = None) -> dict:
         """
         Get all metrics for a specific run.
 
         Args:
             run_id: Run identifier
-
+            run_name: Optional run name
         Returns:
             Dictionary of metrics
         """
         pass
 
     @abstractmethod
-    def end_run(self, run_id: str) -> None:
+    def end_run(self, run_id: str, run_name: Optional[str] = None) -> None:
         """
         End a specific run.
 
         Args:
             run_id: Run identifier
+            run_name: Optional run name
         """
         pass
 
     @abstractmethod
-    def delete_run(self, run_id: str) -> None:
+    def delete_run(self, run_id: str, run_name: Optional[str] = None) -> None:
         """
         Delete a specific run (optional, not all backends support this).
 
         Args:
             run_id: Run identifier
+            run_name: Optional run name
         """
         pass
 

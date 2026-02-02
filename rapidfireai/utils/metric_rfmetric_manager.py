@@ -67,7 +67,21 @@ class RFMetricLogger(MetricLogger):
                 self.logger.info(f"Initialized TrackioMetricLogger: {metric_logger_name}")
             else:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
-    
+                
+    def _translate_run_name(self, run_id: str) -> str:
+        """Get the run name from a mlflow run id."""
+        if len(run_id) == 32:
+            # Run is a mlflow run id, so we need to get the run name from the mlflow run id
+            try:
+                from mlflow.client import MlflowClient
+                client = MlflowClient()
+                run = client.get_run(run_id)
+                return run.info.run_id
+            except Exception as e:
+                self.logger.warning(f"Error getting run name from mlflow run id {run_id}: {e}, using run id as run name")
+                return run_id
+        return run_id
+
     def add_logger(self, metric_logger_name: str, metric_logger_config: MetricLoggerConfig) -> None:
         """Add a metric logger to the dictionary."""
         if metric_logger_config.get("type") not in MetricLoggerType:
@@ -99,7 +113,7 @@ class RFMetricLogger(MetricLogger):
                 return metric_logger.get_experiment(experiment_name)
         return experiment_name
     
-    def create_run(self, run_name: str) -> str:
+    def create_run(self, run_name: str, display_name: Optional[str] = None) -> str:
         """Create run in MetricLogger.
 
         When MLflow is enabled, we first create the MLflow run to get its ID,
@@ -110,56 +124,62 @@ class RFMetricLogger(MetricLogger):
         for metric_logger in self.metric_loggers.values():
             if metric_logger.type == MetricLoggerType.MLFLOW:
                 mlflow_run_id = metric_logger.create_run(run_name)
-                self.logger.info(f"Created MLflow run: {mlflow_run_id}")
+                self.logger.info(f"Created MLflow run: {mlflow_run_id}, {run_name}")
                 break
 
         # Use MLflow run ID for all other loggers, or fall back to run_name
         canonical_run_id = mlflow_run_id if mlflow_run_id is not None else run_name
+        self.run_id_map[canonical_run_id] = run_name
 
-        # Create runs in other loggers using the canonical ID
+        # Create runs in other loggers using the run_name
         for metric_logger in self.metric_loggers.values():
             if metric_logger.type != MetricLoggerType.MLFLOW:
-                metric_logger.create_run(canonical_run_id)
+                metric_logger.create_run(run_name, run_name)
 
         return canonical_run_id
     
-    def log_param(self, run_id: str, key: str, value: str) -> None:
+    def log_param(self, run_id: str, key: str, value: str, run_name: Optional[str] = None) -> None:
         """Log parameter to MetricLogger."""
+        run_name = self.run_id_map.setdefault(run_id, self._translate_run_name(run_id))
         for metric_logger_name, metric_logger in self.metric_loggers.items():
             if hasattr(metric_logger, "log_param"):
-                metric_logger.log_param(run_id, key, value)
+                metric_logger.log_param(run_id, key, value, run_name=run_name)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support log_param")
     
-    def log_metric(self, run_id: str, key: str, value: float, step: Optional[int] = None) -> None:
+    def log_metric(self, run_id: str, key: str, value: float, step: Optional[int] = None, run_name: Optional[str] = None) -> None:
         """Log metric to MetricLogger."""
+        run_name = self.run_id_map.setdefault(run_id, self._translate_run_name(run_id))
         for metric_logger_name, metric_logger in self.metric_loggers.items():
             if hasattr(metric_logger, "log_metric"):
-                metric_logger.log_metric(run_id, key, value, step=step)
+                metric_logger.log_metric(run_id, key, value, step=step, run_name=run_name)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support log_metric")
     
-    def get_run_metrics(self, run_id: str) -> dict:
+    def get_run_metrics(self, run_id: str, run_name: Optional[str] = None) -> dict:
         """Get metrics from MetricLogger."""
+        run_name = self.run_id_map.setdefault(run_id, self._translate_run_name(run_id))
         for metric_logger in self.metric_loggers.values():
             if metric_logger.type == MetricLoggerType.MLFLOW:
-                return metric_logger.get_run_metrics(run_id)
+                return metric_logger.get_run_metrics(run_id, run_name=run_name)
         return {}
 
-    def end_run(self, run_id: str) -> None:
+    def end_run(self, run_id: str, run_name: Optional[str] = None) -> None:
         """End run in MetricLogger."""
+        run_name = self.run_id_map.setdefault(run_id, self._translate_run_name(run_id))
         for metric_logger_name, metric_logger in self.metric_loggers.items():
-            self.logger.info(f"Ending run: {run_id} in {metric_logger_name}")
+            self.logger.info(f"Ending run: {run_id}, {run_name} in {metric_logger_name}")
             if hasattr(metric_logger, "end_run"):
-                metric_logger.end_run(run_id)
+                metric_logger.end_run(run_id, run_name=run_name)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support end_run")
 
-    def delete_run(self, run_id: str) -> None:
+    def delete_run(self, run_id: str, run_name: Optional[str] = None) -> None:
         """Delete run from MetricLogger."""
+        run_name = self.run_id_map.setdefault(run_id, self._translate_run_name(run_id))
         for metric_logger_name, metric_logger in self.metric_loggers.items():
             if hasattr(metric_logger, "delete_run"):
-                metric_logger.delete_run(run_id)
+                metric_logger.delete_run(run_id, run_name=run_name)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support delete_run")
         return None
