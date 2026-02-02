@@ -10,6 +10,7 @@ from flask_cors import CORS
 
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.utils.constants import DispatcherConfig, FrontendConfig, MLFlowConfig, RF_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.fit.utils.constants import ControllerTask
 from rapidfireai.fit.utils.exceptions import DispatcherException
 from rapidfireai.fit.utils.logging import RFLogger
@@ -70,6 +71,12 @@ class Dispatcher:
                 "get_running_experiment",
                 self.get_running_experiment,
                 methods=["GET"],
+            )
+            self.app.add_url_rule(
+                f"{route_prefix}/is-experiment-running",
+                "is_experiment_running",
+                self.is_experiment_running,
+                methods=["POST"],
             )
 
             # Interactive Control routes
@@ -190,6 +197,33 @@ class Dispatcher:
             return jsonify(result), 200
         except Exception as e:
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
+
+    def is_experiment_running(self) -> tuple[Response, int]:
+        """Check if a specific experiment is currently running.
+
+        Request body:
+            {
+                "experiment_name": str - The experiment name to check
+            }
+
+        Returns:
+            {
+                "is_running": bool - True if the experiment is currently running
+            }
+        """
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+
+        try:
+            data = request.get_json()
+            if not data or "experiment_name" not in data:
+                return jsonify({"error": "experiment_name is required"}), 400
+
+            is_running = check_experiment_running(self.db, data["experiment_name"])
+            return jsonify({"is_running": is_running}), 200
+        except Exception:
+            # If anything fails, assume experiment is not running (safer to disable button)
+            return jsonify({"is_running": False}), 200
 
     # Interactive Control routes
     def clone_modify_run(self) -> tuple[Response, int]:

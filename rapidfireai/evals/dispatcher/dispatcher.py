@@ -10,13 +10,14 @@ import logging
 import os
 import threading
 import traceback
-
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from waitress import serve
 
 from rapidfireai.evals.db import RFDatabase
+from rapidfireai.evals.utils.logger import RFLogger, SafeLoggerAdapter
 from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_LOG_PATH, RF_LOG_FILENAME
+from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.evals.utils.constants import ICOperation
 
 CORS_ALLOWED_ORIGINS = "*" # Allow all origins
@@ -47,6 +48,10 @@ class Dispatcher:
 
     def __init__(self) -> None:
         """Initialize the Dispatcher with database connection and Flask app."""
+        # initialize loggers
+        self.logger_experiment_name: str | None = None
+        self.logger: SafeLoggerAdapter | None = None
+
         # Create database handle
         self.db: RFDatabase = RFDatabase()
 
@@ -71,6 +76,14 @@ class Dispatcher:
 
         # Register routes
         self.register_routes()
+
+    def _get_logger(self) -> SafeLoggerAdapter:
+        """Get the latest logger for the dispatcher"""
+        current_experiment_name = self.db.get_running_experiment()["experiment_name"]
+        if self.logger is None or self.logger_experiment_name != current_experiment_name:
+            self.logger = RFLogger(experiment_name=current_experiment_name).get_logger("dispatcher")
+            self.logger_experiment_name = current_experiment_name
+        return self.logger
 
     def _transform_pipeline_to_run(self, pipeline: dict) -> dict:
         """
@@ -204,6 +217,12 @@ class Dispatcher:
             "get_all_experiment_names",
             self.get_all_experiment_names,
             methods=["GET", "OPTIONS"],
+        )
+        self.app.add_url_rule(
+            f"{route_prefix}/is-experiment-running",
+            "is_experiment_running",
+            self.is_experiment_running,
+            methods=["POST", "OPTIONS"],
         )
 
         # Logging endpoints (placeholders for frontend compatibility)
@@ -638,124 +657,79 @@ class Dispatcher:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
     def stop_run(self) -> tuple[Response, int]:
-        """
-        Stop a run (alias for stop_pipeline).
-
-        Request body:
-            {
-                "run_id": int
-            }
-
-        Returns:
-            IC operation result
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
+        """Stop the run"""
         try:
             data = request.get_json()
-            if not data:
-                return jsonify({"error": "No JSON data provided"}), 400
+            run_id = data["run_id"]
+            task = ICOperation.STOP
 
-            run_id = data.get("run_id")
-            if run_id is None:
-                return jsonify({"error": "run_id is required"}), 400
-
-            # Validate pipeline exists
+            # get pipeline from db
             pipeline = self.db.get_pipeline(run_id)
-            if not pipeline:
-                return jsonify({"error": f"Run {run_id} not found"}), 404
 
-            # Create IC operation
-            ic_id = self.db.create_ic_operation(
-                operation=ICOperation.STOP.value,
-                pipeline_id=run_id,
+            # create ic ops task
+            _ = self.db.create_ic_operation(
+                operation=task.value,
+                pipeline_id=pipeline["pipeline_id"],
             )
 
-            return jsonify({"ic_id": ic_id, "message": f"Stop request created for run {run_id}"}), 200
-
+            # log the task
+            logger = self._get_logger()
+            logger.info(f"Received stop task for run_id: {run_id}")
+            return jsonify({}), 200
         except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+            logger = self._get_logger()
+            logger.error(f"Error in stop_run: {e}", exc_info=True)
+            return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def resume_run(self) -> tuple[Response, int]:
-        """
-        Resume a run (alias for resume_pipeline).
-
-        Request body:
-            {
-                "run_id": int
-            }
-
-        Returns:
-            IC operation result
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
+        """Resume the run"""
         try:
             data = request.get_json()
-            if not data:
-                return jsonify({"error": "No JSON data provided"}), 400
+            run_id = data["run_id"]
+            task = ICOperation.RESUME
 
-            run_id = data.get("run_id")
-            if run_id is None:
-                return jsonify({"error": "run_id is required"}), 400
-
-            # Validate pipeline exists
+            # get pipeline from db
             pipeline = self.db.get_pipeline(run_id)
-            if not pipeline:
-                return jsonify({"error": f"Run {run_id} not found"}), 404
 
-            # Create IC operation
-            ic_id = self.db.create_ic_operation(
-                operation=ICOperation.RESUME.value,
-                pipeline_id=run_id,
+            # set resume run task
+            _ = self.db.create_ic_operation(
+                operation=task.value,
+                pipeline_id=pipeline["pipeline_id"],
             )
 
-            return jsonify({"ic_id": ic_id, "message": f"Resume request created for run {run_id}"}), 200
-
+            # log the task
+            logger = self._get_logger()
+            logger.info(f"Received resume task for run_id: {run_id}")
+            return jsonify({}), 200
         except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+            logger = self._get_logger()
+            logger.error(f"Error in resume_run: {e}", exc_info=True)
+            return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def delete_run(self) -> tuple[Response, int]:
-        """
-        Delete a run (alias for delete_pipeline).
-
-        Request body:
-            {
-                "run_id": int
-            }
-
-        Returns:
-            IC operation result
-        """
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
-
+        """Delete the run"""
         try:
             data = request.get_json()
-            if not data:
-                return jsonify({"error": "No JSON data provided"}), 400
+            run_id = data["run_id"]
+            task = ICOperation.DELETE
 
-            run_id = data.get("run_id")
-            if run_id is None:
-                return jsonify({"error": "run_id is required"}), 400
-
-            # Validate pipeline exists
+            # get pipeline from db
             pipeline = self.db.get_pipeline(run_id)
-            if not pipeline:
-                return jsonify({"error": f"Run {run_id} not found"}), 404
 
-            # Create IC operation
-            ic_id = self.db.create_ic_operation(
-                operation=ICOperation.DELETE.value,
-                pipeline_id=run_id,
+            # set delete run task
+            _ = self.db.create_ic_operation(
+                operation=task.value,
+                pipeline_id=pipeline["pipeline_id"],
             )
 
-            return jsonify({"ic_id": ic_id, "message": f"Delete request created for run {run_id}"}), 200
-
+            # log the task
+            logger = self._get_logger()
+            logger.info(f"Received delete task for run_id: {run_id}")
+            return jsonify({}), 200
         except Exception as e:
-            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+            logger = self._get_logger()
+            logger.error(f"Error in delete_run: {e}", exc_info=True)
+            return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def clone_modify_run(self) -> tuple[Response, int]:
         """
@@ -859,6 +833,35 @@ class Dispatcher:
 
         except Exception as e:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+    def is_experiment_running(self) -> tuple[Response, int]:
+        """
+        Check if a specific experiment is currently running.
+
+        Request body:
+            {
+                "experiment_name": str - The experiment name to check
+            }
+
+        Returns:
+            {
+                "is_running": bool - True if the experiment is currently running
+            }
+        """
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+
+        try:
+            data = request.get_json()
+            if not data or "experiment_name" not in data:
+                return jsonify({"error": "experiment_name is required"}), 400
+
+            is_running = check_experiment_running(self.db, data["experiment_name"])
+            return jsonify({"is_running": is_running}), 200
+
+        except Exception:
+            # If anything fails, assume experiment is not running (safer to disable button)
+            return jsonify({"is_running": False}), 200
 
     # ============================================================
     # Logging endpoints

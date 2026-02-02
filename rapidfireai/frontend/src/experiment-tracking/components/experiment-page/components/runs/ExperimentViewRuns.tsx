@@ -85,7 +85,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
   const [compareRunsMode] = useExperimentPageViewMode();
   const { theme } = useDesignSystemTheme();
   const updateUIState = useUpdateExperimentViewUIState();
-  
+
   const {
     experiments,
     runsData,
@@ -185,7 +185,7 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
 
   const [isDatasetDrawerOpen, setIsDatasetDrawerOpen] = useState<boolean>(false);
   const [selectedDatasetWithRun, setSelectedDatasetWithRun] = useState<DatasetWithRunType>();
-  
+
   // Drawer state
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [selectedRun, setSelectedRun] = useState<{ runUuid: string; runName: string } | null>(null);
@@ -266,8 +266,8 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
     setIsDrawerOpen(true);
   }, []);
 
-   // Function to hide a run
-   const handleHideRun = (runUuid: string) => {
+  // Function to hide a run
+  const handleHideRun = (runUuid: string) => {
     updateUIState((existingState: ExperimentPageUIState) => ({
       ...existingState,
       runsHidden: !existingState.runsHidden.includes(runUuid)
@@ -353,14 +353,14 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
         >
           {compareRunsMode === 'LOGS' ? (
             <div css={{ width: '100%', height: '100%' }}>
-              <TerminalLogViewer 
+              <TerminalLogViewer
                 logs={isLoadingLogs ? ['Loading experiment logs...'] : logsError ? ['Error fetching experiment logs...'] : logs}
                 emptyStateMessage="No experiment logs available yet..."
               />
             </div>
           ) : compareRunsMode === 'IC_LOGS' ? (
             <div css={{ width: '100%', height: '100%' }}>
-              <TerminalLogViewer 
+              <TerminalLogViewer
                 logs={isLoadingICLogs ? ['Loading interactive control logs...'] : icLogsError ? ['Error fetching interactive control logs...'] : icLogs}
                 emptyStateMessage="No interactive control logs available yet..."
               />
@@ -422,16 +422,16 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
             closeOnBackdropClick
             closeOnEscape
             customHeader={
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
                 width: '100%',
                 padding: '0 20px'
               }}>
-                <div style={{ 
-                  fontSize: '18px', 
-                  fontWeight: '600', 
+                <div style={{
+                  fontSize: '18px',
+                  fontWeight: '600',
                   color: theme.colors.textPrimary
                 }}>
                   Interactive Controller

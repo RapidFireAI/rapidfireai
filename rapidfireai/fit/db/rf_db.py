@@ -177,7 +177,7 @@ class RfDb:
             experiment_details = {
                 "experiment_id": experiment_details[0],
                 "experiment_name": experiment_details[1],
-                "status": ExperimentStatus(experiment_details[2]),
+                "status": experiment_details[2],  # Return string value, not enum (for JSON serialization)
                 "error": experiment_details[3],
                 "metric_experiment_id": experiment_details[4],
                 "config_options": decode_db_payload(experiment_details[5]),

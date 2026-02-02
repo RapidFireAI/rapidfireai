@@ -1,7 +1,7 @@
 import os
 from enum import Enum
 from rapidfireai.utils.colab import get_colab_auth_token
-from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_DB_PATH
+from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_DB_PATH, ExperimentStatus
 
 # Actor Constants
 NUM_QUERY_PROCESSING_ACTORS = 4
@@ -57,15 +57,7 @@ def get_dispatcher_headers() -> dict[str, str]:
 
 # TODO: Merge multiple Statuses into a single Status enum
 
-
-# Status Enums
-class ExperimentStatus(str, Enum):
-    """Status values for experiments."""
-
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+# Note: ExperimentStatus is imported from rapidfireai.utils.constants (shared)
 
 
 class ContextStatus(str, Enum):
