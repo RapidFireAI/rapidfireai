@@ -607,8 +607,7 @@ class Controller:
             metric_run_id = None
             if self.metric_manager:
                 try:
-                    pipeline_name = pipeline_config.get("pipeline_name", f"Pipeline {pipeline_id}")
-                    metric_run_id = self.metric_manager.create_run(f"{pipeline_name}_{pipeline_id}")
+                    metric_run_id = self.metric_manager.create_run(str(pipeline_id))
                     db.set_pipeline_metric_run_id(pipeline_id, metric_run_id)
 
                     pipeline = pipeline_config.get("pipeline")

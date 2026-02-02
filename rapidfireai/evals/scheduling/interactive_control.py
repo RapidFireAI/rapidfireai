@@ -457,8 +457,7 @@ class InteractiveControlHandler:
         # Create metric run for the cloned pipeline (mirrors _register_pipelines and fit mode's _create_models)
         if self.metric_manager:
             try:
-                pipeline_name = edited_json.get("pipeline_name", f"Pipeline {new_pipeline_id}")
-                metric_run_id = self.metric_manager.create_run(f"{pipeline_name}_{new_pipeline_id}")
+                metric_run_id = self.metric_manager.create_run(str(new_pipeline_id))
                 db.set_pipeline_metric_run_id(new_pipeline_id, metric_run_id)
 
                 # Log parent-run param (consistent with fit mode)
