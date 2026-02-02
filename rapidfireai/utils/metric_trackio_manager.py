@@ -4,7 +4,7 @@ import time
 import trackio
 import io
 from contextlib import redirect_stdout
-from typing import Any
+from typing import Any, Optional
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.evals.utils.logger import RFLogger
 import warnings
