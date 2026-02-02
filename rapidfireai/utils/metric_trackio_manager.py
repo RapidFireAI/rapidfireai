@@ -49,7 +49,7 @@ class TrackioMetricLogger(MetricLogger):
         if run_name in self.active_runs:
             return run_name
         self.logger.info(f"Could not find run {run_name} initializing...")
-        return self.create_run(self._translate_run_name(run_name))
+        return self.create_run(run_name, run_name)
 
     def create_experiment(self, experiment_name: str) -> str:
         """Create a new experiment and set it as active."""
