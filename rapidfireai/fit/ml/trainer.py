@@ -332,14 +332,11 @@ def _configure_training_args(training_args: dict, trainer_config: TrainerConfig,
     per_device_train_batch_size = training_args.get("per_device_train_batch_size", 1)
     gradient_accumulation_steps = training_args.get("gradient_accumulation_steps", 1)
     len_dataloader = math.ceil(trainer_config.train_dataset.num_rows / per_device_train_batch_size)
-    len_dataloader = math.ceil(trainer_config.train_dataset.num_rows / per_device_train_batch_size)
     steps_per_epoch = max(
-        len_dataloader // gradient_accumulation_steps + int(len_dataloader % gradient_accumulation_steps > 0),
         len_dataloader // gradient_accumulation_steps + int(len_dataloader % gradient_accumulation_steps > 0),
         1,
     )
 
-    if trainer_config.config_leaf.get("trainer_type", "SFT") == "GRPO":
     if trainer_config.config_leaf.get("trainer_type", "SFT") == "GRPO":
         num_generations = training_args.get("num_generations", 8)
         steps_per_epoch = (num_generations * trainer_config.train_dataset.num_rows) // (
@@ -575,7 +572,7 @@ def _create_trainer_by_type(trainer_type, trainer_kwargs, trainer_config, use_sh
         trainer_type, trainer_config=trainer_config, shm_manager=shm_manager, use_fsdp=use_fsdp, **trainer_kwargs
     )
 
-    if trainer_config.completed_steps > 0 or trainer_config.warm_started:
+    if trainer_config.completed_steps > 0:
         if use_shared_memory:
             trainer = restore_trainer_from_shared_memory(trainer, trainer_config, shm_manager, use_fsdp=use_fsdp)
         else:

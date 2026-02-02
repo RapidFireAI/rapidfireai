@@ -234,7 +234,7 @@ class Worker:
             create_model_fn=create_model_fn,
             train_dataset=train_dataset_chunk,
             eval_dataset=self.eval_dataset,
-            warm_started=run_details["warm_started"],
+            warm_started_from=run_details["warm_started_from"],
             cloned_from=run_details["cloned_from"],
             num_epochs_completed=run_details["num_epochs_completed"],
         )

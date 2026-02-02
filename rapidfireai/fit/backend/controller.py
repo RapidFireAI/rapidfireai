@@ -655,7 +655,7 @@ class Controller:
 
                 # Process and execute interactive control tasks (this fetches latest run states internally)
                 try:
-                    currently_scheduled_runs = list(scheduler.worker_running_current_run.values())
+                    currently_scheduled_runs = list(active_runs.keys())
                     run_states, clone_modify_tasks = self._process_interm_ic_ops_states(currently_scheduled_runs)
                     self._process_interactive_control(
                         run_states,

@@ -66,7 +66,6 @@ class Scheduler:
             # Increment epoch counter before resetting chunk progress
             # This ensures fair scheduling: runs that completed more epochs have lower priority
             self.run_epochs_completed[run_id] = self.run_epochs_completed.get(run_id, 0) + 1
-
             # Reset chunk progress for this run
             self.run_visited_num_chunks[run_id] = 0
         if run_id not in self.run_ids:
@@ -93,19 +92,7 @@ class Scheduler:
         if run_id not in self.run_ids:
             self.run_ids.append(run_id)
             self.n_runs = len(self.run_ids)
-
-        self.run_visited_num_chunks[run_id] = run_visited_num_chunks
-        self.run_epochs_completed[run_id] = run_epochs_completed
-
-    def set_completed_task(self, worker_id: int) -> None:
-        """Set a task as completed."""
-        run_id = self.worker_running_current_run[worker_id]
-
-        if run_id != -1:
-            self.worker_running_current_run[worker_id] = -1
-            self.run_visited_num_chunks[run_id] += 1
             self.state.run_assigned_workers[run_id] = set()
-
         # Update run parameters
         req_workers = run_info.get("req_workers", 1)
         if req_workers > self.n_workers:
@@ -113,7 +100,7 @@ class Scheduler:
                 f"Run {run_id} requires {req_workers} workers but only {self.n_workers} workers are available"
             )
         self.run_req_workers[run_id] = req_workers
-        self.run_estimated_runtime[run_id] = run_info.get("estimated_runtime", 1.0)
+        self.run_estimated_runtime[run_id] = run_info.get("estimated_runtime", 1.0) 
 
         # Set the progress
         self.state.run_visited_num_chunks[run_id] = run_visited_num_chunks
@@ -124,7 +111,29 @@ class Scheduler:
             min_gen = min(self.state.run_scheduling_generation.values())
             self.state.run_scheduling_generation[run_id] = min_gen
         else:
-            self.state.run_scheduling_generation[run_id] = 0
+            self.state.run_scheduling_generation[run_id] = 0       
+
+    def set_completed_task(self, run_id: int, state: SchedulerState = None) -> None:
+        """Set a task as completed."""
+        if state is None:
+            state = self.state
+
+        if run_id not in self.run_ids:
+            return
+
+        for worker_id in list(state.run_assigned_workers[run_id]):
+            if state.worker_running_current_run[worker_id] == run_id:
+                state.worker_running_current_run[worker_id] = -1
+
+        # Clear the run's assigned workers
+        state.run_assigned_workers[run_id].clear()
+
+        # Increment progress for this run
+        state.run_visited_num_chunks[run_id] += 1
+
+        # Clear completion time (only relevant in simulation)
+        if run_id in state.run_completion_time:
+            del state.run_completion_time[run_id]
 
     def remove_run(self, run_id: int) -> int:
         """Remove a run from the scheduler and return its progress."""

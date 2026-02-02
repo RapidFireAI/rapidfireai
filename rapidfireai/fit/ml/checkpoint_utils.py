@@ -215,11 +215,11 @@ def load_checkpoint_from_shared_memory(
     model_id = trainer_config.config_leaf.get("model_name")
     rank = trainer_config.local_rank if use_fsdp else 0
     is_quantized = bool(trainer_config.config_leaf.get("model_kwargs", {}).get("quantization_config", {}))
-    if trainer_config.warm_started and not shm_manager.model_exists(run_id):
+    if trainer_config.warm_started_from and not shm_manager.model_exists(run_id):
         shm_manager.create_warm_start_checkpoint(run_id, trainer_config.cloned_from)
 
     if is_peft:
-        if not shm_manager.model_exists(model_id) or is_quantized:
+        if not shm_manager.model_exists(model_id) or (is_quantized and use_fsdp):
             base_model, tokenizer = create_model_instance(
                 trainer_config.config_leaf,
                 trainer_config.create_model_fn,
@@ -264,7 +264,7 @@ def load_checkpoint_from_shared_memory(
         else:   
             model = get_peft_model(model, peft_config)
     # Load weights from shared memory
-    if trainer_config.completed_steps > 0 or trainer_config.warm_started:
+    if trainer_config.completed_steps > 0 or trainer_config.warm_started_from:
         checkpoint = shm_manager.load_model_object(run_id, SHMObjectType.CHECKPOINTS)
 
         if "adapter_config" in checkpoint and trainer_config.config_leaf.get("trainer_type") == "DPO" and is_peft:
@@ -586,7 +586,7 @@ def load_checkpoint_from_disk(
 ) -> tuple[nn.Module, AutoTokenizer, dict]:
     """Load checkpoint from disk"""
     checkpoint_path = None
-    if trainer_config.warm_started and trainer_config.completed_steps == 0:
+    if trainer_config.warm_started_from and trainer_config.completed_steps == 0:
         base_run_path = DataPath.base_run_path(trainer_config.cloned_from)
         checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"
     elif trainer_config.completed_steps > 0:
