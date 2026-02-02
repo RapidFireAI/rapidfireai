@@ -77,14 +77,14 @@ class InteractiveControlHandler:
             online_strategy_kwargs: Optional online aggregation strategy parameters
             progress_display: Optional PipelineProgressDisplay instance for updating UI
         """
-        pending_ops = db.get_pending_ic_operations()
+        pending_ops = db.get_pending_ic_operations(target_type="pipeline")
         if not pending_ops:
             return
 
         for op in pending_ops:
             ic_id = op["ic_id"]
             operation = op["operation"]
-            pipeline_id = op["pipeline_id"]
+            pipeline_id = op["target_id"]  # Unified schema uses target_id for both runs and pipelines
 
             try:
                 # Mark as processing
@@ -101,7 +101,7 @@ class InteractiveControlHandler:
 
                 elif operation == ICOperation.CLONE.value:
                     self._handle_clone(
-                        op["request_data"],
+                        op["config_data"],  # Unified schema uses config_data
                         scheduler,
                         db,
                         num_shards,
@@ -238,7 +238,7 @@ class InteractiveControlHandler:
 
     def _handle_clone(
         self,
-        request_data: str,
+        request_data: dict | str,
         scheduler: PipelineScheduler,
         db: RfDb,
         num_shards: int,
@@ -257,7 +257,7 @@ class InteractiveControlHandler:
         Only the JSON-editable parameters (model config, sampling params, etc.) are modified.
 
         Args:
-            request_data: JSON string with {"parent_pipeline_id": int, "config_json": {...}}
+            request_data: Dict or JSON string with {"parent_pipeline_id": int, "config_json": {...}}
             scheduler: PipelineScheduler instance
             db: Database instance
             num_shards: Total number of shards
@@ -271,8 +271,11 @@ class InteractiveControlHandler:
         Returns:
             pipeline_id of the newly created pipeline
         """
-        # Parse request data
-        data = json.loads(request_data)
+        # Parse request data (handle both dict and JSON string)
+        if isinstance(request_data, str):
+            data = json.loads(request_data)
+        else:
+            data = request_data
         parent_pipeline_id = data["parent_pipeline_id"]
         edited_json = data["config_json"]
 

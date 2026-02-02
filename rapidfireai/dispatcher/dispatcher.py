@@ -216,11 +216,18 @@ class Dispatcher:
         """Get the currently running experiment."""
         try:
             experiment = self.db.get_running_experiment()
+
+            # Detect mode by checking if we have runs or pipelines
+            has_runs = len(self.db.get_all_runs()) > 0
+            has_pipelines = len(self.db.get_all_pipelines()) > 0
+            mode = "fit" if has_runs else ("evals" if has_pipelines else "unknown")
+
             return jsonify({
                 "experiment_id": experiment["experiment_id"],
                 "experiment_name": experiment["experiment_name"],
                 "status": experiment["status"].value if hasattr(experiment["status"], "value") else experiment["status"],
                 "metric_experiment_id": experiment.get("metric_experiment_id"),
+                "mode": mode,
             }), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -452,12 +459,22 @@ class Dispatcher:
         status = pipeline.get("status", "")
         status_value = status.value if hasattr(status, "value") else status
 
+        # Parse flattened_config to use as 'config' field for IC compatibility
+        flattened_config = pipeline.get("flattened_config", {})
+        if isinstance(flattened_config, str):
+            try:
+                import json
+                flattened_config = json.loads(flattened_config)
+            except (json.JSONDecodeError, ValueError):
+                flattened_config = {}
+
         return {
             "pipeline_id": pipeline.get("pipeline_id"),
             "context_id": pipeline.get("context_id"),
             "pipeline_type": pipeline.get("pipeline_type"),
             "pipeline_config_json": pipeline.get("pipeline_config_json", {}),
-            "flattened_config": pipeline.get("flattened_config", {}),
+            "flattened_config": flattened_config,
+            "config": flattened_config,  # Add 'config' field for InteractiveController compatibility
             "status": status_value,
             "current_shard_id": pipeline.get("current_shard_id", 0),
             "shards_completed": pipeline.get("shards_completed", 0),
