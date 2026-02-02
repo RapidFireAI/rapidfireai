@@ -143,8 +143,7 @@ class SharedMemoryManager:
         """Safely convert a tensor to shared memory format"""
         if tensor is None:
             return None
-        tensor = tensor.cpu()
-        tensor = tensor.detach().contiguous().clone()
+        tensor = tensor.cpu().clone()
         tensor.share_memory_()
 
         return tensor
@@ -152,8 +151,7 @@ class SharedMemoryManager:
     def _move_tensors_to_shared_memory(self, obj):
         """Recursively move all tensors in a nested structure to shared memory"""
         if isinstance(obj, torch.Tensor):
-            obj.share_memory_()
-            return obj
+            return self._safe_tensor_to_shared_memory(obj)
         elif isinstance(obj, dict):
             return {k: self._move_tensors_to_shared_memory(v) for k, v in obj.items()}
         elif isinstance(obj, (list, tuple)):
@@ -262,6 +260,7 @@ class SharedMemoryManager:
                     "quant_type",
                     "blocksize",
                     "bnb_quantized",
+                    "quant_storage"
                 ]
                 for attr in weight_attrs:
                     if hasattr(weight, attr):
@@ -276,14 +275,17 @@ class SharedMemoryManager:
         return model, bnb_modules
 
     # model object operations
-    def _save_full_model(self, model_id: str, model_data: dict, model_object_type: SHMObjectType):
+    def _save_full_model(self, model_id: str, model_data: dict, model_object_type: SHMObjectType, is_fsdp=False):
         """Save the full model in shared memory. model_id can be either run_id or name of a base model"""
         with self._process_lock if self._process_lock else self._thread_lock:
+            if model_id in self._registry and model_object_type != SHMObjectType.FULL_MODEL:
+                self.logger.debug(f"Model {model_id} already exists in shared memory. Skipping save.")
             if model_id in self._registry and model_object_type != SHMObjectType.FULL_MODEL:
                 self.logger.debug(f"Model {model_id} already exists in shared memory. Skipping save.")
                 return
 
             # verify sufficient shared memory space before saving model
+            _verify_sufficient_model_size(model_data[model_object_type.value], self.logger)
             _verify_sufficient_model_size(model_data[model_object_type.value], self.logger)
 
             # create model entry in registry
@@ -293,7 +295,7 @@ class SharedMemoryManager:
             # move model to shared memory
             model_cpu = model_data[model_object_type.value]
             tokenizer = model_data["tokenizer"]
-            model, bnb_modules = self._move_model_to_shared_memory(model_cpu)
+            model, bnb_modules = self._move_model_to_shared_memory(model_cpu, is_fsdp=is_fsdp)
             shared_model = {
                 model_object_type: model,
                 "tokenizer": tokenizer,
@@ -407,15 +409,11 @@ class SharedMemoryManager:
         model_obj = model_entry.get(model_object_type)
         return model_obj
 
-    def save_model_object(self, model_id: str, model_object_type: SHMObjectType, model_object: dict):
+    def save_model_object(self, model_id: str, model_object_type: SHMObjectType, model_object: dict, is_fsdp=False):
         """Save a model object to shared memory."""
         # save model object
-        if model_object_type in [
-            SHMObjectType.BASE_MODEL,
-            SHMObjectType.FULL_MODEL,
-            SHMObjectType.REF_FULL_MODEL,
-        ]:
-            self._save_full_model(model_id, model_object, model_object_type)
+        if model_object_type in [SHMObjectType.BASE_MODEL, SHMObjectType.FULL_MODEL, SHMObjectType.REF_FULL_MODEL]:
+            self._save_full_model(model_id, model_object, model_object_type, is_fsdp=is_fsdp)
         elif model_object_type == SHMObjectType.REF_STATE_DICT:
             self._save_ref_state_dict(model_id, model_object)
         elif model_object_type == SHMObjectType.CHECKPOINTS:
@@ -425,6 +423,7 @@ class SharedMemoryManager:
         """Delete model object from shared memory registry and clean up resources."""
         with self._process_lock if self._process_lock else self._thread_lock:
             if model_id not in self._registry:
+                self.logger.warning(f"Model '{model_id}' not found in shared memory during delete")
                 self.logger.warning(f"Model '{model_id}' not found in shared memory during delete")
                 return
 
@@ -436,6 +435,7 @@ class SharedMemoryManager:
             ):
                 del self._registry[model_id][SHMObjectType.CHECKPOINTS]
                 self.logger.debug(f"Deleted checkpoints for model {model_id} from shared memory")
+                self.logger.debug(f"Deleted checkpoints for model {model_id} from shared memory")
 
             # remove full_model
             # TODO: add code to save to disk before deleting
@@ -445,6 +445,7 @@ class SharedMemoryManager:
             ):
                 del self._registry[model_id][SHMObjectType.FULL_MODEL]
                 self.logger.debug(f"Deleted full_model for model {model_id} from shared memory")
+                self.logger.debug(f"Deleted full_model for model {model_id} from shared memory")
 
             # remove ref_state_dict
             if (
@@ -452,6 +453,7 @@ class SharedMemoryManager:
                 and self._registry[model_id][SHMObjectType.REF_STATE_DICT]
             ):
                 del self._registry[model_id][SHMObjectType.REF_STATE_DICT]
+                self.logger.debug(f"Deleted ref_state_dict for model {model_id} from shared memory")
                 self.logger.debug(f"Deleted ref_state_dict for model {model_id} from shared memory")
 
             # remove ref_full_model
@@ -461,14 +463,17 @@ class SharedMemoryManager:
             ):
                 del self._registry[model_id][SHMObjectType.REF_FULL_MODEL]
                 self.logger.debug(f"Deleted ref_full_model for model {model_id} from shared memory")
+                self.logger.debug(f"Deleted ref_full_model for model {model_id} from shared memory")
 
             # remove shared objects (entire registry entry is deleted for base_model, not just SHMObjectType.BASE_MODEL key)
             if base_model_name and base_model_name in self._registry:
                 del self._registry[base_model_name]
                 self.logger.debug(f"Deleted base_model for model {model_id} from shared memory")
+                self.logger.debug(f"Deleted base_model for model {model_id} from shared memory")
 
             # remove registry entry
             del self._registry[model_id]
+            self.logger.debug(f"Deleted model registry entry for {model_id} from shared memory")
             self.logger.debug(f"Deleted model registry entry for {model_id} from shared memory")
 
             # Force garbage collection
@@ -478,11 +483,11 @@ class SharedMemoryManager:
 
             self.logger.debug("Force garbage collection and empty cache")
 
-    def create_warm_start_checkpoint(self, model_id: str, warm_started_from: str):
-        """Copy warm start checkpoint from model_id to warm_started_from"""
+    def create_warm_start_checkpoint(self, model_id: str, cloned_from: str):
+        """Copy warm start checkpoint from run_id to cloned_from"""
         with self._thread_lock:
-            if warm_started_from not in self._registry:
-                raise KeyError(f"Run '{warm_started_from}' not found in shared memory")
+            if cloned_from not in self._registry:
+                raise KeyError(f"Run '{cloned_from}' not found in shared memory")
 
             # create model entry in registry
             if model_id not in self._registry:
@@ -492,19 +497,19 @@ class SharedMemoryManager:
                     SHMObjectType.CHECKPOINTS: {},
                 }
 
-            # copy full_model, ref_state_dict, and checkpoints from warm_started_from to model_id
+            # copy full_model, ref_state_dict, and checkpoints from cloned_from to model_id
             model_entry = dict(self._registry[model_id])
-            if SHMObjectType.FULL_MODEL in self._registry[warm_started_from]:
+            if SHMObjectType.FULL_MODEL in self._registry[cloned_from]:
                 model_entry[SHMObjectType.FULL_MODEL] = copy.deepcopy(
-                    dict(self._registry[warm_started_from])[SHMObjectType.FULL_MODEL]
+                    dict(self._registry[cloned_from])[SHMObjectType.FULL_MODEL]
                 )
-            if SHMObjectType.REF_STATE_DICT in self._registry[warm_started_from]:
+            if SHMObjectType.REF_STATE_DICT in self._registry[cloned_from]:
                 model_entry[SHMObjectType.REF_STATE_DICT] = copy.deepcopy(
                     dict(self._registry[warm_started_from])[SHMObjectType.REF_STATE_DICT]
                 )
-            if SHMObjectType.CHECKPOINTS in self._registry[warm_started_from]:
+            if SHMObjectType.CHECKPOINTS in self._registry[cloned_from]:
                 model_entry[SHMObjectType.CHECKPOINTS] = copy.deepcopy(
-                    dict(self._registry[warm_started_from])[SHMObjectType.CHECKPOINTS]
+                    dict(self._registry[cloned_from])[SHMObjectType.CHECKPOINTS]
                 )
             self._registry[model_id] = model_entry
             self.logger.debug(f"Copied warm start checkpoint from run {warm_started_from} to run {model_id}")

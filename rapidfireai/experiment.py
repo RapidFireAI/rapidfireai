@@ -240,6 +240,8 @@ class Experiment:
         eval_dataset: Any,
         num_chunks: int,
         seed: int = 42,
+        num_gpus: int = 1,
+        monte_carlo_simulations: int = 1000,
     ) -> None:
         """
         Run the fit (training).

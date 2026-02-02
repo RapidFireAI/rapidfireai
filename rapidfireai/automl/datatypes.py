@@ -17,7 +17,7 @@ class Range:
             if dtype not in ("int", "float"):
                 raise ValueError("dtype must be either 'int' or 'float'.")
             self.dtype = dtype
-        if not (isinstance(start, (int, float)) and isinstance(end, (int, float))):
+        if not (isinstance(start, int | float) and isinstance(end, int | float)):
             raise ValueError("start and end must be either int or float.")
         self.start = start
         self.end = end
