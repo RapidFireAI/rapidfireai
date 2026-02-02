@@ -29,6 +29,7 @@ from rapidfireai.fit.utils.constants import (
     WorkerTask,
 )
 from rapidfireai.fit.utils.datapaths import DataPath
+from rapidfireai.utils.distributed_utils import find_free_port
 from rapidfireai.fit.utils.exceptions import ControllerException, NoGPUsFoundException
 from rapidfireai.fit.utils.logging import RFLogger
 from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
@@ -86,7 +87,7 @@ class Controller:
         self.metric_logger.get_experiment(self.experiment_name)
         self.logger.debug("Controller initialized")
 
-    def _create_model_entries(
+    def _create_models(
         self,
         param_config: AutoMLAlgorithm | dict[str, Any],
         source: RunSource,
@@ -95,7 +96,7 @@ class Controller:
         num_chunks: int,
         clone_modify_info: dict[str, Any] | None = None,
     ) -> list[int]:
-        """Creates all model-related entries - database values, directories and MLFlow run."""
+        """Creates the models."""
 
         # get config_leaf from param_config for each run
         config_leafs = get_runs(param_config, seed)
@@ -103,14 +104,23 @@ class Controller:
         # create runs
         runs = {}
         for config_leaf in config_leafs:
-            # get flattened config and total steps
             flattened_config = get_flattened_config_leaf(config_leaf)
-            total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks)
+            total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks, self.default_req_workers)
 
             # get clone modify info
             warm_started_from = clone_modify_info.get("warm_started_from") if clone_modify_info else None
             cloned_from = clone_modify_info.get("cloned_from") if clone_modify_info else None
             chunk_offset = clone_modify_info.get("chunk_offset", 0) if clone_modify_info else 0
+
+            if warm_started_from:
+                # use parent run's estimated runtime and required workers
+                parent_run_details = self.db.get_run(cloned_from)
+                estimated_runtime = parent_run_details["estimated_runtime"]
+                required_workers = parent_run_details["required_workers"]
+            else:
+                # add an initial random estimated runtime
+                estimated_runtime = random.uniform(1.0, 10.0)
+                required_workers = config_leaf.get("num_gpus", self.default_req_workers)
 
             run_id = self.db.create_run(
                 config_leaf=config_leaf,
@@ -121,7 +131,7 @@ class Controller:
                 source=source,
                 ended_by=None,
                 chunk_offset=chunk_offset,
-                warm_started=warm_started,
+                warm_started_from=warm_started_from,
                 cloned_from=cloned_from,
                 estimated_runtime=estimated_runtime,
                 required_workers=required_workers,
@@ -133,9 +143,7 @@ class Controller:
                 base_run_path = DataPath.base_run_path(run_id)
                 work_dir_path = DataPath.work_dir_path(base_run_path)
                 initial_checkpoint_path = DataPath.initial_checkpoint_path(base_run_path)
-                initial_checkpoint_path = DataPath.initial_checkpoint_path(base_run_path)
                 final_checkpoint_path = DataPath.final_checkpoint_path(base_run_path)
-                intermediate_checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path)
                 intermediate_checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path)
 
                 mkdir_p(work_dir_path, notify=False)
@@ -198,7 +206,6 @@ class Controller:
         delete_shared_objects = True
         for r_run_id, r_run_details in relevant_runs.items():
             if r_run_details["config_leaf"]["model_name"] == base_model_name and r_run_id != run_id:
-            if r_run_details["config_leaf"]["model_name"] == base_model_name and r_run_id != run_id:
                 delete_shared_objects = False
                 break
 
@@ -206,7 +213,7 @@ class Controller:
         self.shm_manager.delete_model_object(run_id, base_model_name if delete_shared_objects else None)
         self.shm_manager.delete_model_object(run_id, base_model_name if delete_shared_objects else None)
 
-    def _execute_interactive_control(
+    def _process_interactive_control(
         self,
         run_states: dict[str, Any],
         clone_modify_tasks: list[dict[str, Any]],
@@ -287,10 +294,8 @@ class Controller:
                 if ic_op == ControllerTask.IC_CLONE_MODIFY:
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
-                        "warm_started": False,
-                        "chunk_offset": 0,
                     }
-                    run_ids = self._create_model_entries(
+                    run_ids = self._create_models(
                         config_leaf,
                         RunSource.INTERACTIVE_CONTROL,
                         seed,
@@ -302,7 +307,7 @@ class Controller:
                     # calculate clone chunk offset
                     effective_batch_size = parent_run_details["config_leaf"]["training_args"].get(
                         "per_device_train_batch_size", 1
-                    ) * parent_run_details["config_leaf"]["training_args"].get("gradient_accumulation_steps", 1)
+                    ) * parent_run_details["config_leaf"]["training_args"].get("gradient_accumulation_steps", 1) * parent_run_details["required_workers"]
                     chunker = DatasetChunks(
                         len_train_dataset,
                         num_chunks,
@@ -319,10 +324,10 @@ class Controller:
                         clone_chunk_offset = chunker.get_clone_offset(last_completed_chunk_id)
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
-                        "warm_started": True,
+                        "warm_started_from": parent_run_id,
                         "chunk_offset": clone_chunk_offset,
                     }
-                    run_ids = self._create_model_entries(
+                    run_ids = self._create_models(
                         config_leaf,
                         RunSource.INTERACTIVE_CONTROL,
                         seed,
@@ -373,7 +378,6 @@ class Controller:
                 # clone_modify tasks
                 # get latest run state
                 run_status = run_states[run_id]["status"] if run_id in run_states else self.db.get_run(run_id)["status"]
-                run_status = run_states[run_id]["status"] if run_id in run_states else self.db.get_run(run_id)["status"]
 
                 # track clone_modify tasks only for non-deleted runs
                 if run_status != RunStatus.DELETED:
@@ -381,7 +385,6 @@ class Controller:
                     self.ic_logger.info(f"Added {task['ic_op']} task for run {run_id}.")
                 else:
                     self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
-                    self.ic_logger.warning(f"Skipping {task['ic_op']} task for deleted run {run_id}.")
                     self.ic_logger.warning(f"Skipping {task['ic_op']} task for deleted run {run_id}.")
             else:
                 # Non clone_modify tasks
@@ -403,21 +406,17 @@ class Controller:
                     self.ic_logger.warning(f"Ignoring RESUME/STOP task for run {run_id} as it is already completed")
                     self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
                 elif current_status == RunStatus.FAILED and task["ic_op"] != ControllerTask.IC_DELETE:
-                elif current_status == RunStatus.FAILED and task["ic_op"] != ControllerTask.IC_DELETE:
                     # ignore all tasks except DELETE for failed runs
-                    self.ic_logger.warning(f"Ignoring task {task['ic_op'].value} for failed run {run_id}")
                     self.ic_logger.warning(f"Ignoring task {task['ic_op'].value} for failed run {run_id}")
                     self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
                 elif current_status == RunStatus.DELETED:
                     # ignore all tasks for deleted runs
-                    self.ic_logger.warning(f"Ignoring task {task['ic_op'].value} for deleted run {run_id}")
                     self.ic_logger.warning(f"Ignoring task {task['ic_op'].value} for deleted run {run_id}")
                     self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.SKIPPED)
                 else:
                     # valid ic_op for this run
                     # mark prev task as completed
                     if run_states[run_id]["task_id"] is not None:
-                        self.db.set_ic_ops_task_status(run_states[run_id]["task_id"], TaskStatus.COMPLETED)
                         self.db.set_ic_ops_task_status(run_states[run_id]["task_id"], TaskStatus.COMPLETED)
 
                     # add new task to run states
@@ -432,13 +431,11 @@ class Controller:
                         info_msg = f"Received RESUME task for run {run_id}"
                     else:
                         self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.FAILED)
-                        self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.FAILED)
                         raise ValueError(f"Unsupported task {task['ic_op']}")
                     run_states[run_id].update(
                         {
                             "task_id": task["task_id"],
                             "task": task["ic_op"],
-                            "status": (updated_status if updated_status else current_status),
                             "status": (updated_status if updated_status else current_status),
                         }
                     )
@@ -446,9 +443,7 @@ class Controller:
 
         return run_states, clone_modify_tasks
 
-    def _get_total_step(
-        self, config_leaf: dict[str, Any], len_train_dataset: int, num_chunks: int, required_workers: int
-    ) -> int:
+    def _get_total_step(self, config_leaf: dict[str, Any], len_train_dataset: int, num_chunks: int, required_workers: int) -> int:
         """Get the total number of steps for a run."""
         num_train_epochs = config_leaf["training_args"].get("num_train_epochs", 1)
 
@@ -461,11 +456,8 @@ class Controller:
         elif num_train_epochs:
             per_device_train_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1)
             gradient_accumulation_steps = config_leaf["training_args"].get("gradient_accumulation_steps", 1)
-            per_device_train_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1)
-            gradient_accumulation_steps = config_leaf["training_args"].get("gradient_accumulation_steps", 1)
             len_dataloader = math.ceil(len_train_dataset / per_device_train_batch_size)
             num_update_steps_per_epoch = max(
-                len_dataloader // gradient_accumulation_steps + int(len_dataloader % gradient_accumulation_steps > 0),
                 len_dataloader // gradient_accumulation_steps + int(len_dataloader % gradient_accumulation_steps > 0),
                 1,
             )
@@ -500,7 +492,6 @@ class Controller:
         # set experiment task to create models
         self.db.set_experiment_current_task(ExperimentTask.CREATE_MODELS)
         self.logger.debug(f"Set experiment task to {ExperimentTask.CREATE_MODELS.value}.")
-        self.logger.debug(f"Set experiment task to {ExperimentTask.CREATE_MODELS.value}.")
 
         # save train and eval dataset objects to a file for workers to load
         try:
@@ -522,7 +513,7 @@ class Controller:
         # create models
         try:
             len_train_dataset = len(train_dataset)
-            self._create_model_entries(param_config, RunSource.INITIAL, seed, len_train_dataset, num_chunks=num_chunks)
+            self._create_models(param_config, RunSource.INITIAL, seed, len_train_dataset, num_chunks=num_chunks)
             self.logger.debug("Created models.")
         except Exception as e:
             raise ControllerException(f"Error creating models: {e}") from e
@@ -584,7 +575,6 @@ class Controller:
 
                     # skip if task is the same as previous iteration (no change in status) or run is not active
                     if current_task_tuple == prev_task_tuple or worker_task["run_id"] not in scheduler.run_ids:
-                    if current_task_tuple == prev_task_tuple or worker_task["run_id"] not in scheduler.run_ids:
                         continue
 
                     run_id = worker_task["run_id"]
@@ -595,12 +585,9 @@ class Controller:
 
                 # Process completed tasks first (before scheduling new ones)
                 for run_id in completed_runs:
-                    if run_id not in scheduler.run_ids:
-                        continue
-
                     chunk_id = worker_task["chunk_id"]
                     run_details = all_run_details[run_id]
-                    self.logger.debug(f"Completed task: run {run_id}, chunk {chunk_id} on worker {worker_id}")
+                    self.logger.debug(f"Completed task: run {run_id}, chunk {chunk_id} on workers {active_runs[run_id]}")
                     self.logger.info(
                         f"Run {run_id} completed steps - {run_details['completed_steps']}/{run_details['total_steps']}"
                     )
@@ -612,14 +599,14 @@ class Controller:
                     active_runs.pop(run_id, None)
 
                     # Update database state and local state using scheduler's state as source of truth
-                    new_num_chunks_visited = scheduler.state.run_visited_num_chunks[run_id]
-                    if new_num_chunks_visited == num_chunks:
+                    new_chunks_visited = scheduler.run_visited_num_chunks[run_id]
+                    if new_chunks_visited == num_chunks:
                         num_epochs_completed = run_details["num_epochs_completed"] + 1
                     else:
                         num_epochs_completed = run_details["num_epochs_completed"]
                     self.db.set_run_details(
                         run_id=run_id,
-                        num_chunks_visited_curr_epoch=new_num_chunks_visited,
+                        num_chunks_visited_curr_epoch=new_chunks_visited,
                         num_epochs_completed=num_epochs_completed,
                     )
 
@@ -716,7 +703,7 @@ class Controller:
                     break
 
                 # Check if no schedule possible
-                if run_id == -1:
+                if run_id == -1 and chunk_id == -1:
                     # self.logger.debug("No schedule possible - all workers busy or no available runs")
                     time.sleep(1)
                     continue

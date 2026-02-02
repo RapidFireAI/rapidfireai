@@ -285,7 +285,7 @@ class Experiment:
 
                 try:
                     controller = Controller(self.experiment_id, self.experiment_name)
-                    controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed)
+                    controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations)
                 except Exception as e:
                     # Restore stdout for error logging
                     sys.stdout = old_stdout
