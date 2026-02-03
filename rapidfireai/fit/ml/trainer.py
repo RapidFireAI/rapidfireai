@@ -51,7 +51,7 @@ def create_rf_trainer(trainer_type: str, trainer_config=None, shm_manager=None, 
             self.use_fsdp = use_fsdp
             self._pending_optimizer_state = None
             self._pending_scheduler_state = None
-            if trainer_config.completed_steps > 0 or trainer_config.warm_started:
+            if trainer_config.completed_steps > 0 or trainer_config.warm_started_from is not None:
                 training_state = shm_manager.load_model_object(trainer_config.run_id, SHMObjectType.CHECKPOINTS)
                 self._pending_optimizer_state = training_state["optimizer_state"]
                 self._pending_scheduler_state = training_state["scheduler_state"]
@@ -115,7 +115,7 @@ def create_rf_trainer(trainer_type: str, trainer_config=None, shm_manager=None, 
 
         def _load_optimizer_and_scheduler(self, resume_from_checkpoint: str | None):
             super()._load_optimizer_and_scheduler(resume_from_checkpoint)
-            if self.trainer_config.completed_steps > 0 or self.trainer_config.warm_started:
+            if self.trainer_config.completed_steps > 0 or self.trainer_config.warm_started_from is not None:
                 if self.use_fsdp:
                     self.restore_fsdp_optimizer_state(rank=self.trainer_config.local_rank) 
                 else:   
@@ -540,7 +540,6 @@ def _setup_callbacks(
         )
         callbacks.append(metric_callback)
 
-    if compute_metrics is not None and additional_trainer_kwargs.get("generation_config") is not None:
     if compute_metrics is not None and additional_trainer_kwargs.get("generation_config") is not None:
         compute_metrics_function = compute_metrics
         if formatting_func is not None:

@@ -34,7 +34,6 @@ class RFRandomSearch(AutoMLAlgorithm):
     """Random search algorithm that samples num_runs hyperparameter combinations."""
 
     def get_runs(self, seed: int = 42) -> list[dict[str, Any]]:
-    def get_runs(self, seed: int = 42) -> list[dict[str, Any]]:
         """Generate num_runs random hyperparameter combinations."""
         if seed is not None and (not isinstance(seed, int) or seed < 0):
             raise AutoMLException("seed must be a non-negative integer")
@@ -97,41 +96,42 @@ class RFRandomSearch(AutoMLAlgorithm):
 
             reward_funcs = {} if config.reward_funcs is None else recursive_expand_randomsearch(config.reward_funcs)
 
-                # FIXME:  avoid hardcoding the excluded attributes
-                excluded_attrs = {
-                    "model_name",
-                    "tokenizer",
-                    "tokenizer_kwargs",
-                    "model_type",
-                    "model_kwargs",
-                    "peft_config",
-                    "training_args",
-                    "ref_model_name",
-                    "ref_model_type",
-                    "ref_model_kwargs",
-                    "reward_funcs",
-                    "num_gpus",
-                }
-                additional_kwargs = {
-                    k: v for k, v in config.__dict__.items() if k not in excluded_attrs and v is not None
-                }
-                additional_kwargs_sampled = (
-                    {} if not additional_kwargs else recursive_expand_randomsearch(additional_kwargs)
-                )
+            # FIXME:  avoid hardcoding the excluded attributes
+            excluded_attrs = {
+                "model_name",
+                "tokenizer",
+                "tokenizer_kwargs",
+                "model_type",
+                "model_kwargs",
+                "peft_config",
+                "training_args",
+                "ref_model_name",
+                "ref_model_type",
+                "ref_model_kwargs",
+                "reward_funcs",
+                "num_gpus",
+            }
+            additional_kwargs = {
+                k: v for k, v in config.__dict__.items() if k not in excluded_attrs and v is not None
+            }
+            additional_kwargs_sampled = (
+                {} if not additional_kwargs else recursive_expand_randomsearch(additional_kwargs)
+            )
 
-                leaf = {
-                    "trainer_type": self.trainer_type,
-                    "training_args": training_params,
-                    "peft_params": peft_params,
-                    "model_name": config.model_name,
-                    "tokenizer": config.tokenizer,
-                    "tokenizer_kwargs": config.tokenizer_kwargs,
-                    "model_type": config.model_type,
-                    "model_kwargs": model_kwargs,
-                    "additional_kwargs": additional_kwargs_sampled,
-                }
-                if config.num_gpus is not None:
-                    leaf["num_gpus"] = config.num_gpus
+            leaf = {
+                "trainer_type": self.trainer_type,
+                "training_args": training_params,
+                "peft_params": peft_params,
+                "model_name": config.model_name,
+                "tokenizer": config.tokenizer,
+                "tokenizer_kwargs": config.tokenizer_kwargs,
+                "model_type": config.model_type,
+                "model_kwargs": model_kwargs,
+                "additional_kwargs": additional_kwargs_sampled,
+            }
+            num_gpus = getattr(config, "num_gpus", None)
+            if num_gpus is not None:
+                leaf["num_gpus"] = num_gpus
 
             if self.trainer_type == "DPO":
                 leaf["ref_model_config"] = {
@@ -143,11 +143,11 @@ class RFRandomSearch(AutoMLAlgorithm):
             elif self.trainer_type == "GRPO":
                 leaf["reward_funcs"] = reward_funcs
 
-            # Check for duplicates using hashable representation
-            config_hash = encode_payload(leaf)
-            if config_hash not in seen_configs:
-                seen_configs.add(config_hash)
-                runs.append(leaf)
+                # Check for duplicates using hashable representation
+                config_hash = encode_payload(leaf)
+                if config_hash not in seen_configs:
+                    seen_configs.add(config_hash)
+                    runs.append(leaf)
 
         if len(runs) < self.num_runs:
             raise AutoMLException(

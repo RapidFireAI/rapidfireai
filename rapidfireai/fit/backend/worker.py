@@ -277,7 +277,7 @@ class Worker:
             sys.stderr = tee_stderr
             
             trainer_instance, base_model_name = create_trainer_instance(
-                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.mlflow_manager, chunk_id, use_fsdp=use_fsdp
+                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.metric_logger, chunk_id, use_fsdp=use_fsdp
             )
 
             # if first time, save checkpoint to disk

@@ -599,7 +599,7 @@ class Controller:
                     active_runs.pop(run_id, None)
 
                     # Update database state and local state using scheduler's state as source of truth
-                    new_chunks_visited = scheduler.run_visited_num_chunks[run_id]
+                    new_chunks_visited = scheduler.state.run_visited_num_chunks[run_id]
                     if new_chunks_visited == num_chunks:
                         num_epochs_completed = run_details["num_epochs_completed"] + 1
                     else:
@@ -697,7 +697,7 @@ class Controller:
                 chunk_id = schedule["chunk_id"]
 
                 # Check termination condition
-                if run_id is None and worker_id is None and chunk_id is None:
+                if run_id is None and worker_ids is None and chunk_id is None:
                     self.logger.info("Scheduler indicates all runs have completed all chunks")
                     all_done = True
                     break

@@ -2,7 +2,6 @@
 
 from itertools import product
 from typing import Any
-from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
 from rapidfireai.automl.datatypes import List
@@ -20,7 +19,6 @@ def recursive_expand_gridsearch(item: Any):
         keys = list(item.keys())
         value_lists = [list(recursive_expand_gridsearch(item[k])) for k in keys]
         for values in product(*value_lists):
-            yield dict(zip(keys, values, strict=False))
             yield dict(zip(keys, values, strict=False))
     elif isinstance(item, List):
         for value in item.values:
@@ -81,61 +79,62 @@ class RFGridSearch(AutoMLAlgorithm):
 
                     # Get additional kwargs for Trainer
                     # FIXME: this is a hack to get the additional kwargs, we should find a better way to do this
-                    excluded_attrs = {
-                        "model_name",
-                        "tokenizer",
-                        "tokenizer_kwargs",
-                        "model_type",
-                        "model_kwargs",
-                        "peft_config",
-                        "training_args",
-                        "ref_model_name",
-                        "ref_model_type",
-                        "ref_model_kwargs",
-                        "reward_funcs",
-                        "num_gpus",
-                    }
-                    # excluded_attrs = set(config.__dict__.keys()) - set(config.__annotations__.keys())
-                    additional_kwargs = {
-                        k: v for k, v in config.__dict__.items() if k not in excluded_attrs and v is not None
-                    }
-                    additional_kwargs_instances = (
-                        [{}] if not additional_kwargs else list(recursive_expand_gridsearch(additional_kwargs))
-                    )
+                excluded_attrs = {
+                    "model_name",
+                    "tokenizer",
+                    "tokenizer_kwargs",
+                    "model_type",
+                    "model_kwargs",
+                    "peft_config",
+                    "training_args",
+                    "ref_model_name",
+                    "ref_model_type",
+                    "ref_model_kwargs",
+                    "reward_funcs",
+                    "num_gpus",
+                }
+                # excluded_attrs = set(config.__dict__.keys()) - set(config.__annotations__.keys())
+                additional_kwargs = {
+                    k: v for k, v in config.__dict__.items() if k not in excluded_attrs and v is not None
+                }
+                additional_kwargs_instances = (
+                    [{}] if not additional_kwargs else list(recursive_expand_gridsearch(additional_kwargs))
+                )
 
-                    # Generate gridsearch combinations
-                    for peft_params in peft_instances:
-                        for training_params in training_instances:
-                            for model_kwargs in model_kwargs_instances:
-                                for additional_kwargs in additional_kwargs_instances:
-                                    leaf = {
-                                        "trainer_type": self.trainer_type,
-                                        "training_args": training_params,
-                                        "peft_params": peft_params,
-                                        "model_name": config.model_name,
-                                        "tokenizer": config.tokenizer,
-                                        "tokenizer_kwargs": config.tokenizer_kwargs,
-                                        "model_type": config.model_type,
-                                        "model_kwargs": model_kwargs,
-                                        "additional_kwargs": additional_kwargs,
-                                    }
-                                    if config.num_gpus is not None:
-                                        leaf["num_gpus"] = config.num_gpus
+                # Generate gridsearch combinations
+                for peft_params in peft_instances:
+                    for training_params in training_instances:
+                        for model_kwargs in model_kwargs_instances:
+                            for additional_kwargs in additional_kwargs_instances:
+                                leaf = {
+                                    "trainer_type": self.trainer_type,
+                                    "training_args": training_params,
+                                    "peft_params": peft_params,
+                                    "model_name": config.model_name,
+                                    "tokenizer": config.tokenizer,
+                                    "tokenizer_kwargs": config.tokenizer_kwargs,
+                                    "model_type": config.model_type,
+                                    "model_kwargs": model_kwargs,
+                                    "additional_kwargs": additional_kwargs,
+                                }
+                                num_gpus = getattr(config, "num_gpus", None)
+                                if num_gpus is not None:
+                                    leaf["num_gpus"] = num_gpus
 
-                                if self.trainer_type == "DPO":
-                                    leaf["ref_model_config"] = {
-                                        "model_name": config.ref_model_name,
-                                        "model_type": config.ref_model_type,
-                                    }
-                                    for ref_model_kwargs in ref_model_kwargs_instances:
-                                        leaf["ref_model_config"]["model_kwargs"] = ref_model_kwargs
-                                        runs.append(leaf)
-                                elif self.trainer_type == "GRPO":
-                                    for reward_func in reward_funcs_instances:
-                                        leaf["reward_funcs"] = reward_func
-                                        runs.append(leaf)
-                                else:
+                            if self.trainer_type == "DPO":
+                                leaf["ref_model_config"] = {
+                                    "model_name": config.ref_model_name,
+                                    "model_type": config.ref_model_type,
+                                }
+                                for ref_model_kwargs in ref_model_kwargs_instances:
+                                    leaf["ref_model_config"]["model_kwargs"] = ref_model_kwargs
                                     runs.append(leaf)
+                            elif self.trainer_type == "GRPO":
+                                for reward_func in reward_funcs_instances:
+                                    leaf["reward_funcs"] = reward_func
+                                    runs.append(leaf)
+                            else:
+                                runs.append(leaf)
 
         return runs
 

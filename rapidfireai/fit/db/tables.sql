@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS runs (
     error TEXT DEFAULT '',
     source TEXT DEFAULT '',
     ended_by TEXT DEFAULT '',
-    warm_started BOOLEAN DEFAULT FALSE,
+    warm_started_from BOOLEAN DEFAULT FALSE,
     cloned_from INTEGER DEFAULT NULL,
     estimated_runtime REAL DEFAULT 0.0,
     required_workers INTEGER DEFAULT 0

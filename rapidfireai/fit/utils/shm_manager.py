@@ -185,10 +185,11 @@ class SharedMemoryManager:
         
         return model
 
-    def _move_model_to_shared_memory(self, model):
+    def _move_model_to_shared_memory(self, model, is_fsdp=False):
         """Move model to shared memory with proper BitsAndBytes handling"""
         model = self._clean_model_for_pickling(model)
-        model = model.cpu()
+        if not is_fsdp:
+            model = model.cpu()
         for _, param in model.named_parameters():
             if param.data is not None:
                 param.data = self._safe_tensor_to_shared_memory(param.data)

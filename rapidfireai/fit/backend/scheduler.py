@@ -13,6 +13,7 @@ class SchedulerState:
         self.run_assigned_workers: dict[int, set[int]] = {}
         self.run_completion_time: dict[int, float] = {}
         self.run_scheduling_generation: dict[int, int] = {}  # Track scheduling generation for fairness
+        self.run_epochs_completed: dict[int, int] = {}
         self.current_time: float = 0.0
 
     def copy(self):
@@ -23,6 +24,7 @@ class SchedulerState:
         new_state.run_assigned_workers = copy.deepcopy(self.run_assigned_workers)
         new_state.run_completion_time = copy.deepcopy(self.run_completion_time)
         new_state.run_scheduling_generation = copy.deepcopy(self.run_scheduling_generation)
+        new_state.run_epochs_completed = copy.deepcopy(self.run_epochs_completed)
         new_state.current_time = self.current_time
         return new_state
 
@@ -62,18 +64,12 @@ class Scheduler:
 
     def reset_run(self, run_id: int) -> None:
         """Reset the scheduler for a specific run (used at epoch boundaries)"""
-        if run_id in self.run_ids:
-            # Increment epoch counter before resetting chunk progress
-            # This ensures fair scheduling: runs that completed more epochs have lower priority
-            self.run_epochs_completed[run_id] = self.run_epochs_completed.get(run_id, 0) + 1
-            # Reset chunk progress for this run
-            self.run_visited_num_chunks[run_id] = 0
         if run_id not in self.run_ids:
             return
 
         # Reset progress for this run
         self.state.run_visited_num_chunks[run_id] = 0
-
+        self.state.run_epochs_completed[run_id] = self.state.run_epochs_completed.get(run_id, 0) + 1
         # Reset scheduling generation when resetting a run
         self.state.run_scheduling_generation[run_id] = 0
 
@@ -84,7 +80,7 @@ class Scheduler:
                 self.state.worker_running_current_run[worker_id] = -1
         self.state.run_assigned_workers[run_id].clear()
 
-    def add_run(self, run_info: dict, run_visited_num_chunks: int = 0) -> None:
+    def add_run(self, run_info: dict, run_visited_num_chunks: int = 0, run_epochs_completed: int = 0) -> None:
         """Add a new run to the scheduler."""
         run_id = run_info["run_id"]
 
@@ -104,7 +100,7 @@ class Scheduler:
 
         # Set the progress
         self.state.run_visited_num_chunks[run_id] = run_visited_num_chunks
-
+        self.state.run_epochs_completed[run_id] = run_epochs_completed
         # Initialize scheduling generation for new runs
         # Set to minimum generation so it gets scheduled fairly
         if self.state.run_scheduling_generation:
@@ -153,7 +149,8 @@ class Scheduler:
         self.state.run_visited_num_chunks.pop(run_id, None)
         self.state.run_assigned_workers.pop(run_id, None)
         self.state.run_scheduling_generation.pop(run_id, None)
-
+        self.state.run_epochs_completed.pop(run_id, None)
+        
         self.run_req_workers.pop(run_id, None)
         self.run_estimated_runtime.pop(run_id, None)
 
@@ -196,7 +193,7 @@ class Scheduler:
         return available_workers
 
     def _get_schedulable_runs(self, sim_state: SchedulerState) -> list[int]:
-        """Get runs that can be scheduled, ensuring fair round-robin scheduling."""
+        """Get runs that can be scheduled, ensuring fair epoch-aware scheduling."""
         available_for_scheduling = []
 
         # Identify runs that are not currently running and not completed
@@ -212,14 +209,33 @@ class Scheduler:
         if not available_for_scheduling:
             return []
 
-        # Find the minimum generation among available runs
-        min_generation = min(sim_state.run_scheduling_generation.get(run_id, 0) for run_id in available_for_scheduling)
-
-        # Only return runs at the minimum generation (haven't had their turn in this round)
-        fair_schedulable = []
+        # Find the run with least progress using epoch-aware priority:
+        # 1. First: fewest epochs completed (ensures runs complete current epoch before others start new ones)
+        # 2. Then: fewest chunks in current epoch (fair round-robin within an epoch)
+        # 3. Finally: lowest run_id for tie-breaking
+        # NOTE: newly inserted clones will have 0 epochs, so they get priority
+        
+        min_epochs = min(sim_state.run_epochs_completed.get(run_id, 0) for run_id in available_for_scheduling)
+        
+        # Filter runs with minimum epochs
+        runs_at_min_epoch = []
         for run_id in available_for_scheduling:
-            if sim_state.run_scheduling_generation.get(run_id, 0) == min_generation:
+            if sim_state.run_epochs_completed.get(run_id, 0) == min_epochs:
+                runs_at_min_epoch.append(run_id)
+        
+        if not runs_at_min_epoch:
+            return []
+        
+        # Among runs at minimum epoch, find those with fewest chunks
+        min_chunks = min(sim_state.run_visited_num_chunks[run_id] for run_id in runs_at_min_epoch)
+        
+        fair_schedulable = []
+        for run_id in runs_at_min_epoch:
+            if sim_state.run_visited_num_chunks[run_id] == min_chunks:
                 fair_schedulable.append(run_id)
+        
+        # Sort by run_id for tie-breaking (lowest run_id gets priority)
+        fair_schedulable.sort()
 
         return fair_schedulable
 
