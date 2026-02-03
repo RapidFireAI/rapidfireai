@@ -57,6 +57,11 @@ def run_script(args):
     try:
         result = subprocess.run([str(script_path)] + args, check=True)
         return result.returncode
+    except KeyboardInterrupt:
+        # The shell script handles Ctrl+C via its own trap (cleanup function).
+        # We catch the interrupt here to prevent Python from printing a traceback.
+        # Return 0 since the shell script handles the graceful shutdown.
+        return 0
     except subprocess.CalledProcessError as e:
         print(f"Error running start.sh: {e}", file=sys.stderr)
         return e.returncode
