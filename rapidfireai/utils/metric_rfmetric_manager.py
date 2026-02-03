@@ -70,6 +70,7 @@ class RFMetricLogger(MetricLogger):
                 
     def _translate_run_name(self, run_id: str) -> str:
         """Get the run name from a mlflow run id."""
+        self.logger.warning(f"Translating run id {run_id}:{len(run_id)} to run name")
         if len(run_id) == 32:
             # Run is a mlflow run id, so we need to get the run name from the mlflow run id
             try:
