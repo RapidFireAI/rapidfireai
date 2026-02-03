@@ -7,6 +7,7 @@ import argparse
 import os
 import platform
 import re
+import signal
 import shutil
 import site
 import subprocess
@@ -53,21 +54,22 @@ def run_script(args):
     if not os.access(script_path, os.X_OK):
         os.chmod(script_path, 0o755)
 
-    # Run the script with the provided arguments
+    # Ignore SIGINT in the parent process so the shell script can handle Ctrl+C
+    # via its own trap (cleanup function with user prompt).
+    old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
     try:
         result = subprocess.run([str(script_path)] + args, check=True)
         return result.returncode
-    except KeyboardInterrupt:
-        # The shell script handles Ctrl+C via its own trap (cleanup function).
-        # We catch the interrupt here to prevent Python from printing a traceback.
-        # Return 0 since the shell script handles the graceful shutdown.
-        return 0
     except subprocess.CalledProcessError as e:
-        print(f"Error running start.sh: {e}", file=sys.stderr)
+        # Non-zero exit from shell script (could be from cleanup or failure)
         return e.returncode
     except FileNotFoundError:
         print(f"Error: start.sh script not found at {script_path}", file=sys.stderr)
         return 1
+    finally:
+        # Restore the original signal handler
+        signal.signal(signal.SIGINT, old_handler)
 
 
 def run_doctor(log_lines: int = 10):
