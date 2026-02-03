@@ -51,7 +51,7 @@ class TensorBoardMetricLogger(MetricLogger):
         """
         return experiment_name
 
-    def create_run(self, run_name: str, display_name: Optional[str] = None) -> str:
+    def create_run(self, run_name: str) -> str:
         """
         Create a new TensorBoard run.
 
@@ -60,7 +60,7 @@ class TensorBoardMetricLogger(MetricLogger):
         """
         from torch.utils.tensorboard import SummaryWriter
 
-        run_log_dir = os.path.join(self.log_dir, display_name)
+        run_log_dir = os.path.join(self.log_dir, run_name)
         try:
             mkdir_p(run_log_dir, notify=False)
         except (PermissionError, OSError) as e:
@@ -71,22 +71,22 @@ class TensorBoardMetricLogger(MetricLogger):
         writer = SummaryWriter(log_dir=run_log_dir)
         self.writers[run_name] = writer
 
-        return display_name
+        return run_name
 
-    def log_param(self, run_id: str, key: str, value: str, run_name: str) -> None:
+    def log_param(self, run_id: str, key: str, value: str -> None:
         """
         Log a parameter to TensorBoard.
 
         TensorBoard doesn't have native parameter logging, so we log as text.
         """
-        if run_name not in self.writers:
-            self.create_run(run_name)
+        if run_id not in self.writers:
+            self.create_run(run_id)
 
-        writer = self.writers[run_name]
+        writer = self.writers[run_id]
         writer.add_text(f"params/{key}", str(value), global_step=0)
         writer.flush()
 
-    def log_metric(self, run_id: str, key: str, value: float, step: Optional[int] = None, run_name: Optional[str] = None) -> None:
+    def log_metric(self, run_id: str, key: str, value: float, step: Optional[int] = None) -> None:
         """
         Log a metric to TensorBoard.
 
@@ -95,18 +95,17 @@ class TensorBoardMetricLogger(MetricLogger):
             key: Metric name
             value: Metric value
             step: Step number (required for TensorBoard time series)
-            run_name: Optional run name
         """
-        if run_name not in self.writers:
-            self.create_run(run_name, run_name)
+        if run_id not in self.writers:
+            self.create_run(run_id)
 
-        writer = self.writers[run_name]
+        writer = self.writers[run_id]
         # Use step=0 if not provided (fallback)
         writer.add_scalar(key, value, global_step=step if step is not None else 0)
         # Flush immediately to ensure real-time updates
         writer.flush()
 
-    def get_run_metrics(self, run_id: str, run_name: str) -> dict:
+    def get_run_metrics(self, run_id: str) -> dict:
         """
         Get metrics from TensorBoard.
 
@@ -115,14 +114,14 @@ class TensorBoardMetricLogger(MetricLogger):
         """
         return {}
     
-    def end_run(self, run_id: str, run_name: str) -> None:
+    def end_run(self, run_id: str) -> None:
         """End a TensorBoard run by closing the writer."""
-        if run_name in self.writers:
-            self.writers[run_name].close()
-            del self.writers[run_name]
+        if run_id in self.writers:
+            self.writers[run_id].close()
+            del self.writers[run_id]
 
 
-    def delete_run(self, run_id: str, run_name: str) -> None:
+    def delete_run(self, run_id: str) -> None:
         """
         Delete a TensorBoard run by moving its directory outside the log tree (soft delete).
 
@@ -132,18 +131,17 @@ class TensorBoardMetricLogger(MetricLogger):
 
         Args:
             run_id: Run identifier (directory name)
-            run_name: run name
         """
         import shutil
         import time
 
         # Close and remove writer if active
-        if run_name in self.writers:
-            self.writers[run_name].close()
-            del self.writers[run_name]
+        if run_id in self.writers:
+            self.writers[run_id].close()
+            del self.writers[run_id]
 
         # Move the run directory to sibling deleted folder (outside log_dir tree)
-        run_log_dir = os.path.join(self.log_dir, run_name)
+        run_log_dir = os.path.join(self.log_dir, run_id)
         if os.path.exists(run_log_dir) and os.path.isdir(run_log_dir):
             # Create deleted directory as sibling, not child, of log_dir
             deleted_dir = os.path.join(self.log_dir.parent, f"{self.log_dir.name}_deleted")
@@ -155,7 +153,7 @@ class TensorBoardMetricLogger(MetricLogger):
 
             # Add timestamp to avoid name collisions
             timestamp = int(time.time())
-            destination = os.path.join(deleted_dir, f"{run_name}_{timestamp}")
+            destination = os.path.join(deleted_dir, f"{run_id}_{timestamp}")
 
             shutil.move(run_log_dir, destination)
     

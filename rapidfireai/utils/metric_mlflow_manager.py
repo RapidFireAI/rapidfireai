@@ -45,22 +45,22 @@ class MLflowMetricLogger(MetricLogger):
         self.experiment_id = experiment.experiment_id
         return self.experiment_id
 
-    def create_run(self, run_name: str, display_name: Optional[str] = None) -> str:
+    def create_run(self, run_name: str) -> str:
         """Create a new run and return metric_run_id."""
         if self.experiment_id is None:
             raise ValueError("No experiment set. Call create_experiment() or get_experiment() first.")
         run = self.client.create_run(self.experiment_id, run_name=run_name)
         return run.info.run_id
 
-    def log_param(self, run_id: str, key: str, value: str, run_name: Optional[str] = None) -> None:
+    def log_param(self, run_id: str, key: str, value: str) -> None:
         """Log parameters to a specific run."""
         self.client.log_param(run_id, key, value)
 
-    def log_metric(self, run_id: str, key: str, value: float, step: int = None, run_name: Optional[str] = None) -> None:
+    def log_metric(self, run_id: str, key: str, value: float, step: int = None) -> None:
         """Log a metric to a specific run."""
         self.client.log_metric(run_id, key, value, step=step)
 
-    def get_run_metrics(self, run_id: str, run_name: Optional[str] = None) -> dict[str, list[tuple[int, float]]]:
+    def get_run_metrics(self, run_id: str) -> dict[str, list[tuple[int, float]]]:
         """
         Get all metrics for a specific run.
         """
@@ -83,7 +83,7 @@ class MLflowMetricLogger(MetricLogger):
             self.logger.error(f"Error getting metrics for run {run_id}: {e}")
             return {}
 
-    def end_run(self, run_id: str, run_name: Optional[str] = None) -> None:
+    def end_run(self, run_id: str) -> None:
         """End a specific run."""
         # Check if run exists before terminating
         run = self.client.get_run(run_id)
@@ -104,7 +104,7 @@ class MLflowMetricLogger(MetricLogger):
         else:
             self.logger.warning(f"MLflow run {run_id} not found, cannot terminate")
 
-    def delete_run(self, run_id: str, run_name: Optional[str] = None) -> None:
+    def delete_run(self, run_id: str) -> None:
         """Delete a specific run."""
         # Check if run exists before deleting
         run = self.client.get_run(run_id)
