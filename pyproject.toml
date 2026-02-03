@@ -95,7 +95,7 @@ colab_evals = [
     # Statistical Analysis
 
     # Data Manipulation & Display
-    "unstructured>=0.18.15",   
+    "unstructured>=0.18.15",
 ]
 colab_fit = [
     "pandas>=2.0.0,<2.3.0",  # Colab compatibility (2.2.2) and cudf constraint
@@ -109,9 +109,9 @@ colab_fit = [
     "evaluate>=0.4.5",
     "rouge-score>=0.1.2",
     "sentencepiece>=0.2.1",
+    "ray[default]>=2.46.0",  # Ray for distributed training
     "mlflow>=3.2.0",
     "requests>=2.32.0",  # Relaxed for Colab (2.32.4)
-    "loguru>=0.7.3",
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
     "jupyter>=1.1.1",
     "ipywidgets>=7.3.4,<9.0.0",  # Support both v7 (Colab) and v8 (Jupyter)
@@ -178,7 +178,6 @@ local_evals = [
     "sentencepiece>=0.2.1",
     "mlflow>=3.2.0",
     "requests>=2.32.0",  # Relaxed for Colab (2.32.4)
-    "loguru>=0.7.3",
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
     "jupyter>=1.1.1",
     "flashinfer-python==0.2.5",
@@ -245,7 +244,6 @@ local_fit = [
     "dill>=0.3.8",
     "mlflow>=3.2.0",
     "requests>=2.32.0",  # Relaxed for Colab (2.32.4)
-    "loguru>=0.7.3",
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
     "jupyter>=1.1.1",
     "trackio",

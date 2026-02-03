@@ -11,14 +11,12 @@ Handles dynamic pipeline management operations during experiment execution:
 import json
 import time
 
-from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
-
-from rapidfireai.evals.db import RFDatabase
+from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig
+from rapidfireai.db import RfDb
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
-from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig
-from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.constants import ICOperation, ICStatus, PipelineStatus
+from rapidfireai.utils.logging import RFLogger
 
 
 class InteractiveControlHandler:
@@ -52,7 +50,7 @@ class InteractiveControlHandler:
     def check_and_process_requests(
         self,
         scheduler: PipelineScheduler,
-        db: RFDatabase,
+        db: RfDb,
         num_shards: int,
         dataset,
         pipeline_aggregators: dict,
@@ -79,14 +77,14 @@ class InteractiveControlHandler:
             online_strategy_kwargs: Optional online aggregation strategy parameters
             progress_display: Optional PipelineProgressDisplay instance for updating UI
         """
-        pending_ops = db.get_pending_ic_operations()
+        pending_ops = db.get_pending_ic_operations(target_type="pipeline")
         if not pending_ops:
             return
 
         for op in pending_ops:
             ic_id = op["ic_id"]
             operation = op["operation"]
-            pipeline_id = op["pipeline_id"]
+            pipeline_id = op["target_id"]  # Unified schema uses target_id for both runs and pipelines
 
             try:
                 # Mark as processing
@@ -103,7 +101,7 @@ class InteractiveControlHandler:
 
                 elif operation == ICOperation.CLONE.value:
                     self._handle_clone(
-                        op["request_data"],
+                        op["config_data"],  # Unified schema uses config_data
                         scheduler,
                         db,
                         num_shards,
@@ -135,7 +133,7 @@ class InteractiveControlHandler:
                 time.sleep(0.5)
 
     def _handle_stop(
-        self, pipeline_id: int, scheduler: PipelineScheduler, db: RFDatabase, progress_display=None
+        self, pipeline_id: int, scheduler: PipelineScheduler, db: RfDb, progress_display=None
     ) -> None:
         """
         Stop a pipeline (remove from scheduling, save progress).
@@ -159,7 +157,7 @@ class InteractiveControlHandler:
         self.logger.info(f"Stopped pipeline {pipeline_id} at {shards_completed} shards completed")
 
     def _handle_resume(
-        self, pipeline_id: int, scheduler: PipelineScheduler, db: RFDatabase, num_shards: int, progress_display=None
+        self, pipeline_id: int, scheduler: PipelineScheduler, db: RfDb, num_shards: int, progress_display=None
     ) -> None:
         """
         Resume a stopped pipeline (re-add to scheduler with saved progress).
@@ -199,7 +197,7 @@ class InteractiveControlHandler:
         self,
         pipeline_id: int,
         scheduler: PipelineScheduler,
-        db: RFDatabase,
+        db: RfDb,
         pipeline_results: dict,
         progress_display=None,
     ) -> None:
@@ -240,9 +238,9 @@ class InteractiveControlHandler:
 
     def _handle_clone(
         self,
-        request_data: str,
+        request_data: dict | str,
         scheduler: PipelineScheduler,
-        db: RFDatabase,
+        db: RfDb,
         num_shards: int,
         dataset,
         pipeline_aggregators: dict,
@@ -259,7 +257,7 @@ class InteractiveControlHandler:
         Only the JSON-editable parameters (model config, sampling params, etc.) are modified.
 
         Args:
-            request_data: JSON string with {"parent_pipeline_id": int, "config_json": {...}}
+            request_data: Dict or JSON string with {"parent_pipeline_id": int, "config_json": {...}}
             scheduler: PipelineScheduler instance
             db: Database instance
             num_shards: Total number of shards
@@ -273,8 +271,11 @@ class InteractiveControlHandler:
         Returns:
             pipeline_id of the newly created pipeline
         """
-        # Parse request data
-        data = json.loads(request_data)
+        # Parse request data (handle both dict and JSON string)
+        if isinstance(request_data, str):
+            data = json.loads(request_data)
+        else:
+            data = request_data
         parent_pipeline_id = data["parent_pipeline_id"]
         edited_json = data["config_json"]
 
@@ -350,7 +351,7 @@ class InteractiveControlHandler:
                 if "chunk_overlap" in rag_config:
                     rag.text_splitter._chunk_overlap = rag_config["chunk_overlap"]
 
-            self.logger.info(f"RAG config updated successfully")
+            self.logger.info("RAG config updated successfully")
 
         # Extract pipeline type from edited JSON (or inherit from parent)
         pipeline_type = edited_json.get("pipeline_type")
@@ -437,7 +438,7 @@ class InteractiveControlHandler:
             # Merge parent online_strategy_kwargs with user edits
             pipeline_config_dict["online_strategy_kwargs"] = {
                 **parent_online_strategy,
-                **edited_json.get("online_strategy_kwargs", {})
+                **edited_json.get("online_strategy_kwargs", {}),
             }
         elif "online_strategy_kwargs" in edited_json:
             # No parent strategy, use user's strategy as-is

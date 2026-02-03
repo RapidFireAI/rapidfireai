@@ -3,7 +3,8 @@ import json
 from typing import Any
 
 import dill
-from rapidfireai.automl.model_config import RFvLLMModelConfig, RFOpenAIAPIModelConfig
+
+from rapidfireai.automl.model_config import RFOpenAIAPIModelConfig, RFvLLMModelConfig
 
 
 def encode_payload(payload: object) -> str:
@@ -48,9 +49,7 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
 
     # Extract online_strategy_kwargs if present
     if "online_strategy_kwargs" in pipeline_config:
-        json_config["online_strategy_kwargs"] = pipeline_config[
-            "online_strategy_kwargs"
-        ]
+        json_config["online_strategy_kwargs"] = pipeline_config["online_strategy_kwargs"]
 
     # Extract pipeline type and model-specific params
     if "pipeline" in pipeline_config:
@@ -100,10 +99,7 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
             json_config["pipeline_type"] = "openai"
 
             # Extract client_config (dict) - filter out sensitive keys
-            if (
-                hasattr(pipeline, "client_config")
-                and pipeline.client_config is not None
-            ):
+            if hasattr(pipeline, "client_config") and pipeline.client_config is not None:
                 sensitive_keys = {"api_key", "secret", "token", "password", "key"}
                 json_config["client_config"] = {
                     k: v for k, v in pipeline.client_config.items()
@@ -115,10 +111,7 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
                 json_config["model_config"] = pipeline.model_config
 
             # Extract sampling_params using sampling_params_to_dict (extracts from model_config)
-            if (
-                hasattr(pipeline, "sampling_params")
-                and pipeline.sampling_params is not None
-            ):
+            if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
                 json_config["sampling_params"] = pipeline.sampling_params_to_dict()
 
             # Extract rate limiting params
@@ -126,10 +119,7 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
                 json_config["rpm_limit"] = pipeline.rpm_limit
             if hasattr(pipeline, "tpm_limit") and pipeline.tpm_limit is not None:
                 json_config["tpm_limit"] = pipeline.tpm_limit
-            if (
-                hasattr(pipeline, "max_completion_tokens")
-                and pipeline.max_completion_tokens is not None
-            ):
+            if hasattr(pipeline, "max_completion_tokens") and pipeline.max_completion_tokens is not None:
                 json_config["max_completion_tokens"] = pipeline.max_completion_tokens
 
             # Extract RAG params if present

@@ -1,3 +1,7 @@
+import asyncio
+import concurrent.futures
+import hashlib
+import json
 from copy import deepcopy
 from typing import Any
 
@@ -5,10 +9,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.embeddings import Embeddings
 from langchain_core.example_selectors import MaxMarginalRelevanceExampleSelector, SemanticSimilarityExampleSelector
 from langchain_core.prompts import FewShotPromptTemplate, PromptTemplate
-import hashlib
-import json
-import asyncio
-import concurrent.futures
+
 
 class PromptManager:
     """
@@ -171,16 +172,15 @@ class PromptManager:
             This method requires that setup_examples() has been called first to set up
             the fewshot_generator.
         """
+
         async def gather_examples():
             """Async helper to gather all examples concurrently"""
-            tasks = [
-                self.fewshot_generator.aformat(user_query=user_query)
-                for user_query in user_queries
-            ]
+            tasks = [self.fewshot_generator.aformat(user_query=user_query) for user_query in user_queries]
             return await asyncio.gather(*tasks)
 
         try:
             loop = asyncio.get_running_loop()
+
             def run_in_thread():
                 new_loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(new_loop)
@@ -234,9 +234,9 @@ class PromptManager:
         """
         state = self.__dict__.copy()
         # Remove unpicklable objects
-        state['embedding_function'] = None
-        state['example_selector'] = None
-        state['fewshot_generator'] = None
+        state["embedding_function"] = None
+        state["example_selector"] = None
+        state["fewshot_generator"] = None
         return state
 
     def __setstate__(self, state):
@@ -266,12 +266,9 @@ class PromptManager:
             "example_selector_cls": self.example_selector_cls.__name__ if self.example_selector_cls else None,
             "num_examples": len(self.examples) if self.examples else 0,
             # Hash the examples themselves to detect changes
-            "examples_hash": hashlib.sha256(
-                json.dumps(self.examples, sort_keys=True).encode()
-            ).hexdigest()
+            "examples_hash": hashlib.sha256(json.dumps(self.examples, sort_keys=True).encode()).hexdigest()
             if self.examples
             else None,
         }
         prompt_json = json.dumps(prompt_dict, sort_keys=True)
         return hashlib.sha256(prompt_json.encode()).hexdigest()
-

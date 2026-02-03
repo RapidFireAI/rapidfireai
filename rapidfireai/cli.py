@@ -5,20 +5,26 @@ Command-line interface for RapidFire AI
 
 import argparse
 import os
-import platform
 import re
 import shutil
 import site
 import subprocess
 import sys
 from pathlib import Path
-from importlib.resources import files
-from rapidfireai.utils.get_ip_address import get_ip_address
-from rapidfireai.utils.python_info import get_python_info
-from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabConfig
-from rapidfireai.utils.doctor import get_doctor_info
-from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME
-from rapidfireai.utils.gpu_info import get_compute_capability
+
+from rapidfireai.utils.constants import (
+    RF_DB_PATH,
+    RF_EXPERIMENT_PATH,
+    RF_HOME,
+    RF_LOG_PATH,
+    ColabConfig,
+    DispatcherConfig,
+    JupyterConfig,
+)
+from rapidfireai.platform.doctor import get_doctor_info
+from rapidfireai.platform.get_ip_address import get_ip_address
+from rapidfireai.platform.gpu_info import get_compute_capability
+from rapidfireai.platform.python_info import get_python_info
 
 from .version import __version__
 
@@ -89,41 +95,27 @@ def get_cuda_version():
     return 0, 0
 
 
-def install_packages(evals: bool = False, init_packages: list[str] | None = None):
+def install_packages(init_packages: list[str] | None = None):
     """Install packages for the RapidFire AI project."""
     packages = []
-    # Generate CUDA requirements file
-    mode_file = Path(RF_HOME) / "rf_mode.txt"
-    if evals:
-        mode_file.write_text("evals")
-    else:
-        mode_file.write_text("fit")
     cuda_major, cuda_minor = get_cuda_version()
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
     setup_directory = None
     for site_package in site_packages.split(",") + ["."]:
-        if os.path.exists(os.path.join(site_package.strip(), "setup", "fit")):
+        if os.path.exists(os.path.join(site_package.strip(), "setup", "rapidfireai")):
             setup_directory = Path(site_package) / "setup"
             break
     if not setup_directory:
         print("❌ Setup directory not found, skipping package installation")
         return 1
-    if ColabConfig.ON_COLAB and evals:
-        print("Colab environment detected, installing evals packages")
-        requirements_file = setup_directory / "evals" / "requirements-colab.txt"
-    elif ColabConfig.ON_COLAB and not evals:
-        print("Colab environment detected, installing fit packages")
-        requirements_file = setup_directory / "fit" / "requirements-colab.txt"
-    elif not ColabConfig.ON_COLAB and evals:
-        print("Non-Colab environment detected, installing evals packages")
-        requirements_file = setup_directory / "evals" / "requirements-local.txt"
-    elif not ColabConfig.ON_COLAB and not evals:
-        print("Non-Colab environment detected, installing fit packages")
-        requirements_file = setup_directory / "fit" / "requirements-local.txt"
+
+    if ColabConfig.ON_COLAB:
+        print("Colab environment detected, installing packages")
+        requirements_file = setup_directory / "rapidfireai" / "requirements-colab.txt"
     else:
-        print("❌ Unknown environment detected, skipping package installation")
-        return 1
+        print("Local/server environment detected, installing packages")
+        requirements_file = setup_directory / "rapidfireai" / "requirements-local.txt"
 
     try:
         print(f"Installing packages from {requirements_file.absolute()}...")
@@ -146,8 +138,8 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     torchaudio_version = "2.5.1"
     torch_cuda = "cu121"
     flash_cuda = "cu121"
-    if cuda_major==12:
-        if cuda_minor>=9:
+    if cuda_major == 12:
+        if cuda_minor >= 9:
             # Supports Torch 2.8.0
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
@@ -156,7 +148,7 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             flash_cuda = "cu129"
             vllm_cuda = "cu129"
             vllm_version = "0.11.0"
-        elif cuda_minor>=8:
+        elif cuda_minor >= 8:
             # Supports Torch 2.9.0/1
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
@@ -165,7 +157,7 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             flash_cuda = "cu128"
             vllm_cuda = "cu128"
             vllm_version = "0.11.0"
-        elif cuda_minor>=6:
+        elif cuda_minor >= 6:
             # Supports Torch 2.9.0/1
             torch_version = "2.8.0"
             torchvision_version = "0.23.0"
@@ -173,7 +165,7 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             torch_cuda = "cu126"
             flash_cuda = "cu126"
             vllm_cuda = "cu126"
-        elif cuda_minor>=4:
+        elif cuda_minor >= 4:
             # Supports Torch 2.6.0
             torch_version = "2.6.0"
             torchvision_version = "0.21.0"
@@ -191,7 +183,7 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             flash_cuda = "cu121"
             vllm_cuda = "cu121"
 
-    elif cuda_major==13:
+    elif cuda_major == 13:
         # Supports Torch 2.9.0/1
         torch_version = "2.8.0"
         torchvision_version = "0.23.0"
@@ -206,35 +198,60 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     if ColabConfig.ON_COLAB:
         flash_cuda = "cu128"
 
-    if not evals:
-        pass
-
-    if evals and ColabConfig.ON_COLAB:
-        pass
-
-    
-    ## TODO: re-enable for fit once trl has fix
     if not ColabConfig.ON_COLAB and cuda_major >= 12:
         print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
-        
-        packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        if evals:
-            packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
-            packages.append({"package": "flashinfer-python", "extra_args": []})
-            packages.append({"package": "flashinfer-cubin", "extra_args": []})
-            if cuda_major + (cuda_minor / 10.0) >= 12.8:
-                packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
-            if get_compute_capability() >= 8.0:
-                packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
-            # else:
-            #     packages.append({"package": "flash-attn-triton", "extra_args": ["--upgrade"]})
-            # packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
-            # Re-install torch, torchvision, and torchaudio to ensure compatibility
-            packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-            packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-            packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
+
+        packages.append(
+            {
+                "package": f"torch=={torch_version}",
+                "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+            }
+        )
+        packages.append(
+            {
+                "package": f"torchvision=={torchvision_version}",
+                "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+            }
+        )
+        packages.append(
+            {
+                "package": f"torchaudio=={torchaudio_version}",
+                "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+            }
+        )
+        # Install vLLM and flash attention for inference
+        packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
+        packages.append({"package": "flashinfer-python", "extra_args": []})
+        packages.append({"package": "flashinfer-cubin", "extra_args": []})
+        if cuda_major + (cuda_minor / 10.0) >= 12.8:
+            packages.append(
+                {
+                    "package": "flashinfer-jit-cache",
+                    "extra_args": ["--upgrade", "--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"],
+                }
+            )
+        if get_compute_capability() >= 8.0:
+            packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
+
+        # Re-install torch, torchvision, and torchaudio to ensure compatibility
+        packages.append(
+            {
+                "package": f"torch=={torch_version}",
+                "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+            }
+        )
+        packages.append(
+            {
+                "package": f"torchvision=={torchvision_version}",
+                "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+            }
+        )
+        packages.append(
+            {
+                "package": f"torchaudio=={torchaudio_version}",
+                "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"],
+            }
+        )
         packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
 
     for package_info in packages:
@@ -274,15 +291,16 @@ def copy_tutorial_notebooks():
     return 0
 
 
-def run_init(evals: bool = False):
+def run_init():
     """Run the init command to initialize the project."""
     print("🔧 Initializing RapidFire AI project...")
     print("-" * 30)
-    print("Initializing project...")
-    install_packages(evals)
+    install_packages()
     copy_tutorial_notebooks()
-
+    print("-" * 30)
+    print("✅ RapidFire AI initialization complete!")
     return 0
+
 
 def copy_test_notebooks():
     """Copy the test notebooks to the project."""
@@ -302,12 +320,44 @@ def copy_test_notebooks():
         return 1
     return 0
 
+
+def run_clear():
+    """Clear the database and all log files."""
+    print("🧹 Clearing RapidFire AI data...")
+    print("-" * 30)
+
+    paths_to_clear = [
+        ("Database", RF_DB_PATH),
+        ("Logs", RF_LOG_PATH),
+        ("Experiments", RF_EXPERIMENT_PATH),
+    ]
+
+    # Delete existing directories
+    deleted_any = False
+    for name, path in paths_to_clear:
+        if os.path.exists(path):
+            try:
+                shutil.rmtree(path)
+                print(f"✅ Deleted {name}: {path}")
+                deleted_any = True
+            except Exception as e:
+                print(f"❌ Failed to delete {name}: {e}")
+
+    if not deleted_any:
+        print("✅ Nothing to clear - all directories are already empty or don't exist.")
+
+    print("-" * 30)
+    print("✅ RapidFire AI data cleared!")
+    return 0
+
+
 def run_jupyter():
-    """ Run the Jupyter notebook server. """
-    from jupyter_server.serverapp import ServerApp
-    import logging
+    """Run the Jupyter notebook server."""
     import io
-    from contextlib import redirect_stdout, redirect_stderr
+    import logging
+    from contextlib import redirect_stderr, redirect_stdout
+
+    from jupyter_server.serverapp import ServerApp
 
     # Suppress all logging
     logging.getLogger().setLevel(logging.CRITICAL)
@@ -317,9 +367,9 @@ def run_jupyter():
     app = ServerApp()
     app.open_browser = False
     app.port = JupyterConfig.PORT
-    app.allow_origin = '*'
+    app.allow_origin = "*"
     app.websocket_ping_interval = 90000
-    app.log_level = 'CRITICAL'
+    app.log_level = "CRITICAL"
     app.token = ""
     app.password = ""
     app.default_url = "/tree"
@@ -329,8 +379,8 @@ def run_jupyter():
 
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            app.initialize(argv=['--ServerApp.custom_display_url='])
-        
+            app.initialize(argv=["--ServerApp.custom_display_url="])
+
         dispatcher_port = DispatcherConfig.PORT
 
         if os.getenv("TERM_PROGRAM") == "vscode":
@@ -340,63 +390,75 @@ def run_jupyter():
             os_username = os.getenv("USER", os.getenv("LOGNAME", "username"))
             print(f"Manually forward port {app.port} to localhost")
             print(f"Manually forward port {dispatcher_port} to localhost")
-            print(f"For example using ssh:")
-            print(f"    ssh -L {app.port}:localhost:{app.port} -L {dispatcher_port}:localhost:{dispatcher_port} {os_username}@{get_ip_address()}")
+            print("For example using ssh:")
+            print(
+                f"    ssh -L {app.port}:localhost:{app.port} -L {dispatcher_port}:localhost:{dispatcher_port} {os_username}@{get_ip_address()}"
+            )
         print("If there is a problem, try running jupyter manually with:")
-        print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''")
+        print(
+            f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''"
+        )
         print("\n\nAfter forwarding the ports above, access the Jupyter notebook at:")
         print(f"http://localhost:{app.port}/tree?token={app.token}")
-        
+
         # Don't redirect anything during start - let prompts through
         app.start()
-        
+
     except Exception as e:
         print("ERROR occurred during Jupyter server startup:", file=sys.stderr)
         print("=" * 60, file=sys.stderr)
-        
+
         stdout_output = stdout_capture.getvalue()
         stderr_output = stderr_capture.getvalue()
-        
+
         if stdout_output:
             print("   Standard output:", file=sys.stderr)
             print(stdout_output, file=sys.stderr)
-        
+
         if stderr_output:
             print("   Standard error:", file=sys.stderr)
             print(stderr_output, file=sys.stderr)
-        
+
         print("=" * 60, file=sys.stderr)
         print(f"Exception: {e}", file=sys.stderr)
         print("Try running jupyter manually with:")
-        print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''")
+        print(
+            f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''"
+        )
         raise
+
 
 def main():
     """Main entry point for the rapidfireai command."""
-    parser = argparse.ArgumentParser(description="RapidFire AI - Start/stop/manage services", prog="rapidfireai",
-    epilog="""
+    parser = argparse.ArgumentParser(
+        description="RapidFire AI - Start/stop/manage services",
+        prog="rapidfireai",
+        epilog="""
 Examples:
-  # Basic initialization for training
+  # Initialize RapidFire AI (installs all dependencies)
   rapidfireai init
-  #or
-  # Basic Initialize with evaluation dependencies
-  rapidfireai init --evals
-  
+
   # Start services
   rapidfireai start
-  
+
   # Stop services
   rapidfireai stop
 
+  # Diagnose issues
+  rapidfireai doctor
+
+  # Clear database and log files
+  rapidfireai clear
+
 For more information, visit: https://github.com/RapidFireAI/rapidfireai
-        """
+        """,
     )
 
     parser.add_argument(
         "command",
         nargs="?",
         default="start",
-        choices=["start", "stop", "status", "restart", "setup", "doctor", "init", "jupyter"],
+        choices=["start", "stop", "status", "restart", "setup", "doctor", "init", "jupyter", "clear"],
         help="Command to execute (default: start)",
     )
 
@@ -431,9 +493,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     parser.add_argument("--force", "-f", action="store_true", help="Force action without confirmation")
 
-    parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
-
-    parser.add_argument("--log-lines", type=int, default=10, help="Number of lines to log to the console")
+    parser.add_argument("--log-lines", type=int, default=10, help="Number of log lines to show in doctor command")
 
     args = parser.parse_args()
 
@@ -451,11 +511,9 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
             os.environ["RF_TRACKIO_ENABLED"] = "true"
     if args.tensorboard_log_dir:
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
-    if args.colab:
+    if args.colab or ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
         os.environ["RF_COLAB_MODE"] = "true"
-    elif ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
-        os.environ["RF_COLAB_MODE"] = "true"
-    
+
     # Handle force command separately
     if args.force:
         os.environ["RF_FORCE"] = "true"
@@ -466,10 +524,13 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     # Handle init command separately
     if args.command == "init":
-        return run_init(args.evals)
-    
+        return run_init()
+
     if args.command == "jupyter":
         return run_jupyter()
+
+    if args.command == "clear":
+        return run_clear()
 
     if args.test_notebooks:
         return copy_test_notebooks()
