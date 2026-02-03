@@ -42,6 +42,14 @@ def get_script_path():
     return script_path
 
 
+def _reset_sigint():
+    """Reset SIGINT to default in child process.
+
+    Called via preexec_fn so the shell script can handle Ctrl+C with its trap.
+    """
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
 def run_script(args):
     """Run the start.sh script with the given arguments.
 
@@ -54,12 +62,17 @@ def run_script(args):
     if not os.access(script_path, os.X_OK):
         os.chmod(script_path, 0o755)
 
-    # Ignore SIGINT in the parent process so the shell script can handle Ctrl+C
-    # via its own trap (cleanup function with user prompt).
+    # Ignore SIGINT in the parent process so Python doesn't raise KeyboardInterrupt.
+    # The child process resets SIGINT to default via preexec_fn so the shell script
+    # can handle Ctrl+C with its own trap (cleanup function with user prompt).
     old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     try:
-        result = subprocess.run([str(script_path)] + args, check=True)
+        result = subprocess.run(
+            [str(script_path)] + args,
+            check=True,
+            preexec_fn=_reset_sigint,
+        )
         return result.returncode
     except subprocess.CalledProcessError as e:
         # Non-zero exit from shell script (could be from cleanup or failure)
