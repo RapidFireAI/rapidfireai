@@ -69,15 +69,13 @@ class RFMetricLogger(MetricLogger):
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
                 
     def _translate_run_name(self, run_id: str) -> str:
-        """Get the run name from a mlflow run id."""
-        self.logger.warning(f"Translating run id {run_id}:{len(run_id)} to run name")
         if len(run_id) == 32:
             # Run is a mlflow run id, so we need to get the run name from the mlflow run id
             try:
                 from mlflow.client import MlflowClient
                 client = MlflowClient()
                 run = client.get_run(run_id)
-                return run.info.run_id
+                return run.info.run_name
             except Exception as e:
                 self.logger.warning(f"Error getting run name from mlflow run id {run_id}: {e}, using run id as run name")
                 return run_id
