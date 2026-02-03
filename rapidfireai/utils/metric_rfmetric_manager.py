@@ -73,7 +73,7 @@ class RFMetricLogger(MetricLogger):
             # Run is a mlflow run id, so we need to get the run name from the mlflow run id
             try:
                 from mlflow.client import MlflowClient
-                client = MlflowClient()
+                client = MlflowClient(tracking_uri=MLFlowConfig.URL)
                 run = client.get_run(run_id)
                 return run.info.run_name
             except Exception as e:
@@ -163,7 +163,6 @@ class RFMetricLogger(MetricLogger):
     
     def get_run_metrics(self, run_id: str) -> dict:
         """Get metrics from MetricLogger."""
-        run_name = self.run_id_map.setdefault(run_id, self._translate_run_name(run_id))
         for metric_logger in self.metric_loggers.values():
             if metric_logger.type == MetricLoggerType.MLFLOW:
                 return metric_logger.get_run_metrics(run_id)
@@ -211,7 +210,6 @@ class RFMetricLogger(MetricLogger):
         if RF_MLFLOW_ENABLED == "true":
             metric_loggers["rf_mlflow"] = {
                 "type": MetricLoggerType.MLFLOW,
-                "run_id": "mlflow_id",
                 "config": {
                     "tracking_uri": MLFlowConfig.URL,
                 },
@@ -219,7 +217,6 @@ class RFMetricLogger(MetricLogger):
         if RF_TENSORBOARD_ENABLED == "true":
             metric_loggers["rf_tensorboard"] = {
                 "type": MetricLoggerType.TENSORBOARD,
-                "run_id": "run_name",
                 "config": {
                     "log_dir": Path(RF_TENSORBOARD_LOG_DIR) / experiment_name,
                 },
@@ -227,7 +224,6 @@ class RFMetricLogger(MetricLogger):
         if RF_TRACKIO_ENABLED == "true":
             metric_loggers["rf_trackio"] = {
                 "type": MetricLoggerType.TRACKIO,
-                "run_id": "run_name",
                 "config": {
                     "experiment_name": experiment_name,
                 },
