@@ -73,7 +73,7 @@ class TensorBoardMetricLogger(MetricLogger):
 
         return run_name
 
-    def log_param(self, run_id: str, key: str, value: str -> None:
+    def log_param(self, run_id: str, key: str, value: str) -> None:
         """
         Log a parameter to TensorBoard.
 
