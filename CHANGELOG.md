@@ -13,6 +13,29 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+
+## [v0.14.0]
+
+### Changes
+- Disable IC Ops button in MLflow if no active experiment
+- Add useIsExperimentRunning hook in frontend to check if specific experiment is running
+- Update frontend build packages
+- Update `fiqa` notebook to use max_model_len: 4096
+- Use logger instead of prints in metric loggers
+- Added support for Trackio delete_run()
+- Add Trackio tutorial and documentation
+- Change evals run names to not prefix Pipeline #_
+- Not use transformers>=5.0 for now
+
+### Fixes
+- Bug fixes to Colab notebook
+- Fix rf_db.py to return status as string instead of enum for JSON serialization
+- Consolidate tensorboard logs to single directory for each run
+- Fix dependency version problems with new updates by pinning dill, numpy, tensorboard, setuptools, and huggingface-hub
+- Fixed Trackio's log() method to accept step as a separate keyword argument instead of including it within the metrics dictionary.
+- Fix cloned runs in evals mod
+- IC Logs for evals looking for same string as training
+
 ## [v0.12.9]
 
 ### Changes
