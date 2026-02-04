@@ -45,6 +45,7 @@ class RFMetricLogger(MetricLogger):
         if len(metric_loggers) == 0:
             raise ValueError("metric_loggers must contain at least one metric logger")
         self.metric_loggers = {}
+        self.run_id_map = {} # Map of run_ids -> run_names
         for metric_logger_name, metric_logger_config in metric_loggers.items():
             if metric_logger_config.get("type") not in MetricLoggerType:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
@@ -66,7 +67,35 @@ class RFMetricLogger(MetricLogger):
                 self.logger.info(f"Initialized TrackioMetricLogger: {metric_logger_name}")
             else:
                 raise ValueError(f"metric_logger_config for {metric_logger_name} must be a valid MetricLoggerType")
+                
+    def _translate_run_name(self, run_id: str) -> str:
+        if len(run_id) == 32:
+            # Run is a mlflow run id, so we need to get the run name from the mlflow run id
+            try:
+                from mlflow.tracking import MlflowClient  # type: ignore[import-not-found]
+                client = MlflowClient(tracking_uri=MLFlowConfig.URL)
+                run = client.get_run(run_id)
+                return run.info.run_name
+            except Exception as e:
+                self.logger.warning(f"Error getting run name from mlflow run id {run_id}: {e}, using run id as run name")
+                return run_id
+        return run_id
     
+    def _get_run_name(self, run_id: str) -> str:
+        """
+        Return the user-friendly run name for a canonical run_id, caching the result.
+
+        Important: do NOT use dict.setdefault(run_id, self._translate_run_name(run_id)) here,
+        because the default argument is evaluated eagerly and would trigger MLflow calls on
+        every invocation.
+        """
+        cached = self.run_id_map.get(run_id)
+        if cached is not None:
+            return cached
+        translated = self._translate_run_name(run_id)
+        self.run_id_map[run_id] = translated
+        return translated
+
     def add_logger(self, metric_logger_name: str, metric_logger_config: MetricLoggerConfig) -> None:
         """Add a metric logger to the dictionary."""
         if metric_logger_config.get("type") not in MetricLoggerType:
@@ -109,32 +138,41 @@ class RFMetricLogger(MetricLogger):
         for metric_logger in self.metric_loggers.values():
             if metric_logger.type == MetricLoggerType.MLFLOW:
                 mlflow_run_id = metric_logger.create_run(run_name)
-                self.logger.info(f"Created MLflow run: {mlflow_run_id}")
+                self.logger.info(f"Created MLflow run: {mlflow_run_id}, {run_name}")
                 break
 
         # Use MLflow run ID for all other loggers, or fall back to run_name
         canonical_run_id = mlflow_run_id if mlflow_run_id is not None else run_name
+        self.run_id_map[canonical_run_id] = run_name
 
-        # Create runs in other loggers using the canonical ID
+        # Create runs in other loggers using the run_name
         for metric_logger in self.metric_loggers.values():
             if metric_logger.type != MetricLoggerType.MLFLOW:
-                metric_logger.create_run(canonical_run_id)
+                metric_logger.create_run(run_name)
 
         return canonical_run_id
     
     def log_param(self, run_id: str, key: str, value: str) -> None:
         """Log parameter to MetricLogger."""
+        run_name = self._get_run_name(run_id)
         for metric_logger_name, metric_logger in self.metric_loggers.items():
             if hasattr(metric_logger, "log_param"):
-                metric_logger.log_param(run_id, key, value)
+                if metric_logger.type == MetricLoggerType.MLFLOW:
+                    metric_logger.log_param(run_id, key, value)
+                else:
+                    metric_logger.log_param(run_name, key, value)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support log_param")
     
     def log_metric(self, run_id: str, key: str, value: float, step: Optional[int] = None) -> None:
         """Log metric to MetricLogger."""
+        run_name = self._get_run_name(run_id)
         for metric_logger_name, metric_logger in self.metric_loggers.items():
             if hasattr(metric_logger, "log_metric"):
-                metric_logger.log_metric(run_id, key, value, step=step)
+                if metric_logger.type == MetricLoggerType.MLFLOW:
+                    metric_logger.log_metric(run_id, key, value, step=step)
+                else:
+                    metric_logger.log_metric(run_name, key, value, step=step)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support log_metric")
     
@@ -147,18 +185,26 @@ class RFMetricLogger(MetricLogger):
 
     def end_run(self, run_id: str) -> None:
         """End run in MetricLogger."""
+        run_name = self._get_run_name(run_id)
         for metric_logger_name, metric_logger in self.metric_loggers.items():
-            self.logger.info(f"Ending run: {run_id} in {metric_logger_name}")
+            self.logger.info(f"Ending run: {run_id}, {run_name} in {metric_logger_name}")
             if hasattr(metric_logger, "end_run"):
-                metric_logger.end_run(run_id)
+                if metric_logger.type == MetricLoggerType.MLFLOW:
+                    metric_logger.end_run(run_id)
+                else:
+                    metric_logger.end_run(run_name)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support end_run")
 
     def delete_run(self, run_id: str) -> None:
         """Delete run from MetricLogger."""
+        run_name = self._get_run_name(run_id)
         for metric_logger_name, metric_logger in self.metric_loggers.items():
             if hasattr(metric_logger, "delete_run"):
-                metric_logger.delete_run(run_id)
+                if metric_logger.type == MetricLoggerType.MLFLOW:
+                    metric_logger.delete_run(run_id)
+                else:
+                    metric_logger.delete_run(run_name)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support delete_run")
         return None
