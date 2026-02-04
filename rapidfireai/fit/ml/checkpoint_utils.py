@@ -230,7 +230,7 @@ def load_checkpoint_from_shared_memory(
             )
             if model_id is None:
                 model_id = base_model.config._name_or_path
-            if rank == 0 and not is_quantized:
+            if rank == 0 and not (is_quantized and use_fsdp):
                 save_model_to_shared_memory(
                     base_model,
                     tokenizer,

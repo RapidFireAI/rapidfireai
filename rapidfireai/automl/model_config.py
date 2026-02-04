@@ -150,6 +150,7 @@ class RFModelConfig:
     ref_model_kwargs: dict[str, Any] | None = None
     reward_funcs: str | List | Callable | Any | None = None
     generation_config: dict[str, Any] | None = None
+    num_gpus: int | None = None
 
     def copy(self):  # FIXME: Handle similar to create_rf_class
         """Create a deep copy of the RFModelConfig."""
