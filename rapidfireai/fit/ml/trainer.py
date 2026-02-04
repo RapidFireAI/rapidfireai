@@ -111,7 +111,37 @@ def create_rf_trainer(trainer_type: str, trainer_config=None, shm_manager=None, 
 
             self.create_optimizer()
             self.create_scheduler(num_training_steps=num_training_steps, optimizer=self.optimizer)
+            self._wrap_optimizer_step()
 
+        def _wrap_optimizer_step(self):
+            if self.optimizer is None:
+                return
+            if getattr(self.optimizer, "_rf_step_wrapped", False):
+                return
+
+            original_step = self.optimizer.step
+
+            def _rf_step(closure=None):
+                if self.use_fsdp:
+                    for group in self.optimizer.param_groups:
+                        for p in group["params"]:
+                            if p.grad is not None:
+                                if p.grad.device != p.device or p.grad.dtype != p.dtype:
+                                    p.grad = p.grad.to(
+                                        p.device, dtype=p.dtype, non_blocking=True
+                                    )
+                            state = self.optimizer.state.get(p)
+                            if state:
+                                for key, value in state.items():
+                                    if isinstance(value, torch.Tensor) and key != "step":
+                                        if value.device != p.device or value.dtype != p.dtype:
+                                            state[key] = value.to(
+                                                p.device, dtype=p.dtype, non_blocking=True
+                                            )
+                return original_step(closure)
+
+            self.optimizer.step = _rf_step
+            self.optimizer._rf_step_wrapped = True
 
         def _load_optimizer_and_scheduler(self, resume_from_checkpoint: str | None):
             super()._load_optimizer_and_scheduler(resume_from_checkpoint)
