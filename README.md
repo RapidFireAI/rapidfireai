@@ -47,7 +47,7 @@ For additional context, see the overview: [RapidFire AI Overview](https://oss-do
 - [NVIDIA GPU using the 7.x or 8.x Compute Capability](https://developer.nvidia.com/cuda-gpus)
 - [NVIDIA CUDA Toolkit 11.8+](https://developer.nvidia.com/cuda-toolkit-archive)
 - [Python 3.12.x](https://www.python.org/downloads/)
-- [PyTorch 2.7.0+](https://pytorch.org/get-started/previous-versions/) with corresponding forward compatible prebuilt CUDA binaries
+- [PyTorch 2.8.0+](https://pytorch.org/get-started/previous-versions/) with corresponding forward compatible prebuilt CUDA binaries
 
 ### Install and Get Started
 
@@ -98,12 +98,20 @@ ssh -L 8853:localhost:8853 username@remote-machine
 
 # For RAG/Context Engineering Evals: Install specific dependencies and initialize rapidfireai
 rapidfireai init --evals
+rapidfireai start
+
+# It should print about 50 lines, including the following:
+# ...
+# RapidFire Frontend is ready
+# Open your browser and navigate to: http://0.0.0.0:8853
+# ...
+# Press Ctrl+C to stop all services
 
 # For the RAG/context eng. notebooks, only jupyter is supported for now and must be started as follows
 rapidfireai jupyter
 
 # Forward these ports if you installed rapidfireai on a remote machine
-ssh -L 8850:localhost:8850 -L 8851:localhost:8851 username@remote-machine
+ssh -L 8850:localhost:8850 -L 8851:localhost:8851 -L 8853:localhost:8853 username@remote-machine
 
 # Open the URL provided by the jupyter notebook command above via your browser
 # Open an example notebook from ./tutorial_notebooks/rag-contexteng/ and start experiment
