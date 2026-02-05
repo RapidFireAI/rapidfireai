@@ -1,7 +1,7 @@
 # Non Colab Packages
 # evals dependencies
 # Core ML/AI Framework
-torch<=2.8.0
+torch>=2.8.0
 sentence-transformers>=5.1.0
 
 # Distributed Computing
@@ -9,7 +9,7 @@ ray>=2.49.2
 ray[default]>=2.49.2
 
 # LLM Inference
-transformers>=4.56.1,<5.0.0
+transformers>=4.56.1
 
 # OpenAI API
 openai>=1.106.1
@@ -25,10 +25,10 @@ langchain-huggingface>=1.0.0
 
 # Data Manipulation & Display
 unstructured>=0.18.15
-numpy>=1.26.4,<2.3
+numpy>=1.26.4
 
 # Other
-requests==2.32.5
+requests>=2.32.5
 datasets
 jupyter
 grpcio
