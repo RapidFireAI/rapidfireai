@@ -66,6 +66,7 @@ dependencies = [
     "fsspec",
     "numpy",
     "huggingface-hub",
+    "packaging>=26.0"
 ]
 
 [project.optional-dependencies]
