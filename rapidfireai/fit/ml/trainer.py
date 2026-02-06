@@ -342,6 +342,7 @@ def create_trainer_instance(
         training_args,
         formatting_func,
         global_step_args,
+        use_fsdp=use_fsdp,
     )
 
     if callbacks:
@@ -359,6 +360,8 @@ def create_trainer_instance(
 def _configure_training_args(training_args: dict, trainer_config: TrainerConfig, use_fsdp: bool = False) -> dict:
     """Configure training arguments with default values."""
     completed_steps = trainer_config.completed_steps
+    if completed_steps > 0:
+        training_args.pop("warmup_ratio", None)
     per_device_train_batch_size = training_args.get("per_device_train_batch_size", 1)
     gradient_accumulation_steps = training_args.get("gradient_accumulation_steps", 1)
     len_dataloader = math.ceil(trainer_config.train_dataset.num_rows / per_device_train_batch_size)
@@ -405,7 +408,6 @@ def _configure_training_args(training_args: dict, trainer_config: TrainerConfig,
     training_args["do_train"] = True
     training_args["do_eval"] = True
     training_args["dataloader_pin_memory"] = False
-    training_args["no_cuda"] = False
     training_args["local_rank"] = -1
     training_args["disable_tqdm"] = True
     if training_args.get("output_dir") is None:
@@ -428,18 +430,13 @@ def _configure_training_args(training_args: dict, trainer_config: TrainerConfig,
 
 def _create_trainer_config_object(trainer_type: str, training_args: dict):
     """Create the appropriate trainer config object based on trainer type."""
-    # Filter out parameters that are not accepted by TRL config classes
-    # no_cuda is a TrainingArguments parameter but not accepted by DPOConfig/GRPOConfig
-    filtered_args = training_args.copy()
-    if trainer_type in ["DPO", "GRPO"]:
-        filtered_args.pop("no_cuda", None)
-    
+
     if trainer_type == "SFT":
-        return SFTConfig(**filtered_args)
+        return SFTConfig(**training_args)
     elif trainer_type == "DPO":
-        return DPOConfig(**filtered_args)
+        return DPOConfig(**training_args)
     elif trainer_type == "GRPO":
-        return GRPOConfig(**filtered_args)
+        return GRPOConfig(**training_args)
     else:
         raise ValueError(f"Unsupported trainer type: {trainer_type}")
 
@@ -556,6 +553,7 @@ def _setup_callbacks(
     training_args,
     formatting_func,
     global_step_args,
+    use_fsdp=False,
 ):
     """Setup callbacks for the trainer."""
     callbacks = []
@@ -586,6 +584,7 @@ def _setup_callbacks(
             metric_logger=metric_logger,
             metric_run_id=trainer_config.metric_run_id,
             completed_steps=trainer_config.completed_steps,
+            use_fsdp=use_fsdp,
         )
         callbacks.append(generation_callback)
         additional_trainer_kwargs.pop("generation_config")

@@ -219,7 +219,7 @@ def load_checkpoint_from_shared_memory(
         shm_manager.create_warm_start_checkpoint(run_id, trainer_config.cloned_from)
 
     if is_peft:
-        if not shm_manager.model_exists(model_id) or (is_quantized and use_fsdp):
+        if not shm_manager.model_exists(model_id) or use_fsdp:
             base_model, tokenizer = create_model_instance(
                 trainer_config.config_leaf,
                 trainer_config.create_model_fn,
@@ -230,7 +230,7 @@ def load_checkpoint_from_shared_memory(
             )
             if model_id is None:
                 model_id = base_model.config._name_or_path
-            if rank == 0 and not (is_quantized and use_fsdp):
+            if rank == 0 and not use_fsdp:
                 save_model_to_shared_memory(
                     base_model,
                     tokenizer,

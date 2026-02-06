@@ -105,7 +105,6 @@ class Controller:
         runs = {}
         for config_leaf in config_leafs:
             flattened_config = get_flattened_config_leaf(config_leaf)
-            total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks, self.default_req_workers)
 
             # get clone modify info
             warm_started_from = clone_modify_info.get("warm_started_from") if clone_modify_info else None
@@ -120,8 +119,12 @@ class Controller:
             else:
                 # add an initial random estimated runtime
                 estimated_runtime = random.uniform(1.0, 10.0)
-                required_workers = config_leaf.get("num_gpus", self.default_req_workers)
-
+                if getattr(config_leaf, "num_gpus", None) is not None:
+                    required_workers = config_leaf.get("num_gpus", self.default_req_workers)
+                else:
+                    required_workers = self.default_req_workers
+            
+            total_steps = self._get_total_step(config_leaf, len_train_dataset, num_chunks, required_workers)
             run_id = self.db.create_run(
                 config_leaf=config_leaf,
                 status=RunStatus.NEW,

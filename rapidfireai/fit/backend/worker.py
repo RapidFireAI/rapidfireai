@@ -163,9 +163,6 @@ class Worker:
 
         # check if FSDP is enabled
         use_fsdp = "training_args" in config_leaf and "fsdp_config" in config_leaf["training_args"]
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        os.environ["TRANSFORMERS_VERBOSITY"] = "error"
-
         # Clean up any stale vLLM parallel state before initializing distributed environment
         # This is critical when training multiple models sequentially with GRPO
         if config_leaf.get("trainer_type", "SFT") == "GRPO":
@@ -187,6 +184,7 @@ class Worker:
         # Initialize distributed training if FSDP is enabled for this run
         if use_fsdp:
             try:
+                os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
                 # Get distributed configuration from run details
                 master_addr = multi_worker_details["master_address"]
                 master_port = multi_worker_details["master_port"]
@@ -202,6 +200,7 @@ class Worker:
                 self.logger.error(f"Failed to initialize distributed training for run {run_id}: {e}")
                 raise
         else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(self.worker_id)
             if config_leaf.get("trainer_type", "SFT") == "GRPO":
                 master_port = find_free_port()
                 os.environ["MASTER_PORT"] = str(master_port)
@@ -281,7 +280,7 @@ class Worker:
             )
 
             # if first time, save checkpoint to disk
-            completed_steps = run_details["completed_steps"]
+            completed_steps = self.db.get_completed_steps(run_id)
             if completed_steps == 0 and not USE_SHARED_MEMORY:
                 save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
 
@@ -323,7 +322,7 @@ class Worker:
 
                 # save checkpoints to shared memory
                 save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager, use_fsdp=use_fsdp)
-                if not config_leaf.get("peft_params"):
+                if not config_leaf.get("peft_params") and not use_fsdp:
                     save_model_to_shared_memory(
                         trainer_instance.model,
                         trainer_instance.tokenizer,

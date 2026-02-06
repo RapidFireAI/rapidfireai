@@ -324,7 +324,7 @@ class Experiment:
             # Original blocking behavior for non-Colab environments
             try:
                 controller = Controller(self.experiment_id, self.experiment_name)
-                controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed)
+                controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations)
             except Exception as e:
                 if hasattr(self, "logger"):
                     self.logger.opt(exception=True).error(f"Error running fit: {e}")
