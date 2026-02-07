@@ -547,7 +547,9 @@ def save_checkpoint_to_disk(
     first: bool = False,
     last: bool = False,
     completed_steps: int = 0,
+    use_fsdp: bool = False,
 ) -> None:
+    rank = trainer_config.local_rank if use_fsdp else 0
     base_run_path = DataPath.base_run_path(trainer_config.run_id)
     if first:
         checkpoint_path = DataPath.initial_checkpoint_path(base_run_path)
@@ -556,27 +558,63 @@ def save_checkpoint_to_disk(
     else:
         checkpoint_path = DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"
     device = "cpu"
-    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-    os.makedirs(checkpoint_path, exist_ok=True)
 
-    trainer.model.save_pretrained(checkpoint_path)
+    if rank == 0:
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        os.makedirs(checkpoint_path, exist_ok=True)
 
-    trainer_state_path = checkpoint_path / "trainer_state.json"
-    trainer_state_dict = trainer.state.__dict__.copy()
-    with open(trainer_state_path, "w") as f:
-        json.dump(trainer_state_dict, f, indent=2)
+    # Save model — FSDP requires gathering state to CPU before saving
+    if use_fsdp:
+        if hasattr(trainer.model, "peft_config"):
+            # For PEFT + FSDP: collect adapter state dict offloaded to CPU on rank 0
+            adapter_name = trainer_config.config_leaf.get("training_args", {}).get("model_adapter_name", "default")
+            peft_state_dict = _collect_fsdp_peft_state_dict(trainer.model, adapter_name)
+            if rank == 0 and peft_state_dict is not None:
+                torch.save(peft_state_dict, checkpoint_path / "adapter_model.bin")
+                if adapter_name in trainer.model.peft_config:
+                    trainer.model.peft_config[adapter_name].save_pretrained(checkpoint_path)
+        else:
+            # For full model + FSDP: gather full model to CPU on rank 0
+            model_cpu = _collect_fsdp_full_model(trainer.model, trainer_config)
+            if rank == 0 and model_cpu is not None:
+                model_cpu.save_pretrained(checkpoint_path)
+                del model_cpu
+    else:
+        trainer.model.save_pretrained(checkpoint_path)
 
+    # Save trainer state (only rank 0 writes to disk)
+    if rank == 0:
+        trainer_state_path = checkpoint_path / "trainer_state.json"
+        trainer_state_dict = trainer.state.__dict__.copy()
+        with open(trainer_state_path, "w") as f:
+            json.dump(trainer_state_dict, f, indent=2)
+
+    # Save optimizer — FSDP requires collective gathering with offload to CPU
     if trainer.optimizer is not None:
-        optimizer_path = checkpoint_path / "optimizer.pt"
-        optimizer_state = move_tensors_to_device(trainer.optimizer.state_dict(), device)
-        torch.save(optimizer_state, optimizer_path)
+        if use_fsdp:
+            full_optim_state_dict_config = FullOptimStateDictConfig(offload_to_cpu=True, rank0_only=True)
+            with FSDP.state_dict_type(
+                trainer.model,
+                StateDictType.FULL_STATE_DICT,
+                FullStateDictConfig(offload_to_cpu=True, rank0_only=True),
+                full_optim_state_dict_config,
+            ):
+                optimizer_state = FSDP.optim_state_dict(trainer.model, trainer.optimizer)
+            if rank == 0 and optimizer_state is not None:
+                optimizer_path = checkpoint_path / "optimizer.pt"
+                optimizer_state = move_tensors_to_device(optimizer_state, device)
+                torch.save(optimizer_state, optimizer_path)
+        else:
+            optimizer_path = checkpoint_path / "optimizer.pt"
+            optimizer_state = move_tensors_to_device(trainer.optimizer.state_dict(), device)
+            torch.save(optimizer_state, optimizer_path)
 
-    if trainer.lr_scheduler is not None:
+    if trainer.lr_scheduler is not None and rank == 0:
         scheduler_path = checkpoint_path / "scheduler.pt"
         scheduler_state = move_tensors_to_device(trainer.lr_scheduler.state_dict(), device)
         torch.save(scheduler_state, scheduler_path)
 
-    if hasattr(trainer, "rng_state"):
+    if hasattr(trainer, "rng_state") and rank == 0:
         rng_state_path = checkpoint_path / "rng_state.pth"
         torch.save(trainer.rng_state, rng_state_path)
 

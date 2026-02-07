@@ -282,7 +282,7 @@ class Worker:
             # if first time, save checkpoint to disk
             completed_steps = self.db.get_completed_steps(run_id)
             if completed_steps == 0 and not USE_SHARED_MEMORY:
-                save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
+                save_checkpoint_to_disk(trainer_instance, trainer_config, first=True, use_fsdp=use_fsdp)
 
             # update base model name in db for run
             trainer_config.config_leaf["model_name"] = trainer_instance.model.config._name_or_path
@@ -347,16 +347,17 @@ class Worker:
                         trainer_instance,
                         trainer_config,
                         completed_steps=new_completed_steps,
+                        use_fsdp=use_fsdp,
                     )
                     self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
             else:
                 # save checkpoint to disk when not using shared memory
-                save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps)
+                save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps, use_fsdp=use_fsdp)
                 self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
 
             # save final checkpoint
             if chunk_id == self.num_chunks - 1 and new_completed_steps >= trainer_config.total_steps:
-                save_checkpoint_to_disk(trainer_instance, trainer_config, last=True)
+                save_checkpoint_to_disk(trainer_instance, trainer_config, last=True, use_fsdp=use_fsdp)
                 self.logger.debug(f"Saved final checkpoint for run {run_id} on chunk {chunk_id}")
 
             if use_fsdp and is_distributed_initialized():
