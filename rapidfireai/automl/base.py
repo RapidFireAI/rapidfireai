@@ -12,16 +12,22 @@ class AutoMLAlgorithm(ABC):
 
     VALID_TRAINER_TYPES = {"SFT", "DPO", "GRPO"}
 
-    def __init__(self, configs=None, create_model_fn=None, trainer_type: str | None = None, num_runs: int = 1):
+    def __init__(
+        self,
+        configs=None,
+        create_model_fn=None,
+        trainer_type: str | None = None,
+        num_runs: int = 1,
+    ):
         """
         Initialize AutoML algorithm with configurations and trainer type.
-        
+
         Args:
             configs: List of configurations (RFModelConfig for fit mode, dict for evals mode)
             create_model_fn: Optional function to create models (legacy parameter)
             trainer_type: Trainer type ("SFT", "DPO", "GRPO") for fit mode, None for evals mode
             num_runs: Number of runs for random search
-        
+
         Mode detection:
             - If trainer_type is provided: fit mode (requires RFModelConfig instances)
             - If trainer_type is None: evals mode (requires dict instances)
@@ -29,20 +35,24 @@ class AutoMLAlgorithm(ABC):
         try:
             self.configs = self._normalize_configs(configs)
             self.num_runs = num_runs
-            
+
             # Detect mode based on trainer_type
             if trainer_type is not None:
                 self.mode = "fit"
                 self.trainer_type = trainer_type.upper()
                 if self.trainer_type not in self.VALID_TRAINER_TYPES:
-                    raise AutoMLException(f"trainer_type must be one of {self.VALID_TRAINER_TYPES}")
+                    raise AutoMLException(
+                        f"trainer_type must be one of {self.VALID_TRAINER_TYPES}"
+                    )
             else:
                 self.mode = "evals"
                 self.trainer_type = None
 
             self._validate_configs()
         except Exception as e:
-            raise AutoMLException(f"Error initializing {self.__class__.__name__}: {e}") from e
+            raise AutoMLException(
+                f"Error initializing {self.__class__.__name__}: {e}"
+            ) from e
 
     def _normalize_configs(self, configs):
         """Normalize configs to list format."""
@@ -56,10 +66,10 @@ class AutoMLAlgorithm(ABC):
         """Validate configs based on mode."""
         if not self.configs:
             return
-            
+
         # Import here to avoid circular imports
         from rapidfireai.automl.model_config import RFModelConfig
-        
+
         if self.mode == "fit":
             # Fit mode: must have RFModelConfig instances
             for config in self.configs:

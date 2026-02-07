@@ -23,9 +23,7 @@ def recursive_expand_randomsearch(item: Any):
         return item.__class__(**sampled_params)
     elif isinstance(item, dict):
         return {k: recursive_expand_randomsearch(v) for k, v in item.items()}
-    elif isinstance(item, List):
-        return item.sample()
-    elif isinstance(item, Range):
+    elif isinstance(item, (List | Range)):
         return item.sample()
     else:
         return item
@@ -86,13 +84,23 @@ class RFRandomSearch(AutoMLAlgorithm):
                 else recursive_expand_randomsearch(config.training_args._user_params)
             )
 
-            model_kwargs = {} if config.model_kwargs is None else recursive_expand_randomsearch(config.model_kwargs)
-
-            ref_model_kwargs = (
-                {} if config.ref_model_kwargs is None else recursive_expand_randomsearch(config.ref_model_kwargs)
+            model_kwargs = (
+                {}
+                if config.model_kwargs is None
+                else recursive_expand_randomsearch(config.model_kwargs)
             )
 
-            reward_funcs = {} if config.reward_funcs is None else recursive_expand_randomsearch(config.reward_funcs)
+            ref_model_kwargs = (
+                {}
+                if config.ref_model_kwargs is None
+                else recursive_expand_randomsearch(config.ref_model_kwargs)
+            )
+
+            reward_funcs = (
+                {}
+                if config.reward_funcs is None
+                else recursive_expand_randomsearch(config.reward_funcs)
+            )
 
             # FIXME:  avoid hardcoding the excluded attributes
             excluded_attrs = {
@@ -107,12 +115,17 @@ class RFRandomSearch(AutoMLAlgorithm):
                 "ref_model_type",
                 "ref_model_kwargs",
                 "reward_funcs",
+                "num_gpus",
             }
             additional_kwargs = {
-                k: v for k, v in config.__dict__.items() if k not in excluded_attrs and v is not None
+                k: v
+                for k, v in config.__dict__.items()
+                if k not in excluded_attrs and v is not None
             }
             additional_kwargs_sampled = (
-                {} if not additional_kwargs else recursive_expand_randomsearch(additional_kwargs)
+                {}
+                if not additional_kwargs
+                else recursive_expand_randomsearch(additional_kwargs)
             )
 
             leaf = {
@@ -126,6 +139,9 @@ class RFRandomSearch(AutoMLAlgorithm):
                 "model_kwargs": model_kwargs,
                 "additional_kwargs": additional_kwargs_sampled,
             }
+            num_gpus = getattr(config, "num_gpus", None)
+            if num_gpus is not None:
+                leaf["num_gpus"] = num_gpus
 
             if self.trainer_type == "DPO":
                 leaf["ref_model_config"] = {
@@ -137,11 +153,11 @@ class RFRandomSearch(AutoMLAlgorithm):
             elif self.trainer_type == "GRPO":
                 leaf["reward_funcs"] = reward_funcs
 
-            # Check for duplicates using hashable representation
-            config_hash = encode_payload(leaf)
-            if config_hash not in seen_configs:
-                seen_configs.add(config_hash)
-                runs.append(leaf)
+                # Check for duplicates using hashable representation
+                config_hash = encode_payload(leaf)
+                if config_hash not in seen_configs:
+                    seen_configs.add(config_hash)
+                    runs.append(leaf)
 
         if len(runs) < self.num_runs:
             raise AutoMLException(
@@ -194,7 +210,10 @@ class RFRandomSearch(AutoMLAlgorithm):
                 additional_kwargs = {
                     k: v
                     for k, v in config.items()
-                    if k != "pipeline" and k != "vllm_config" and k != "openai_config" and v is not None
+                    if k != "pipeline"
+                    and k != "vllm_config"
+                    and k != "openai_config"
+                    and v is not None
                 }
                 additional_kwargs_instances = (
                     [{}]

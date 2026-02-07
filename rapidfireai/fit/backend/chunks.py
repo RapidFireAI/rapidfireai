@@ -5,7 +5,9 @@ into chunks for distributed processing."""
 class DatasetChunks:
     """Chunks a HuggingFace Dataset into n_chunks for distributed processing."""
 
-    def __init__(self, dataset_size: int, n_chunks: int, batch_size: int = 1, offset: int = 0):
+    def __init__(
+        self, dataset_size: int, n_chunks: int, batch_size: int = 1, offset: int = 0
+    ):
         self.n_chunks = n_chunks
         self.batch_size = batch_size
         self.offset = offset
@@ -42,7 +44,9 @@ class DatasetChunks:
 
         # Create base chunk indices and apply offset if needed
         base_chunks = self._create_base_chunk_indices()
-        self.chunk_indices = self._apply_offset(base_chunks) if offset > 0 else base_chunks
+        self.chunk_indices = (
+            self._apply_offset(base_chunks) if offset > 0 else base_chunks
+        )
 
     def _create_base_chunk_indices(self):
         """Create start/end index pairs for each chunk, distributing batches as evenly as possible."""
@@ -58,7 +62,9 @@ class DatasetChunks:
         current_example_idx = 0
         for chunk_id in range(self.n_chunks):
             # Last 'extra_batches' chunks get one additional batch
-            num_batches_in_chunk = batches_per_chunk + (1 if chunk_id >= (self.n_chunks - extra_batches) else 0)
+            num_batches_in_chunk = batches_per_chunk + (
+                1 if chunk_id >= (self.n_chunks - extra_batches) else 0
+            )
 
             start_idx = current_example_idx
 
@@ -93,14 +99,18 @@ class DatasetChunks:
     def get_chunk(self, dataset, chunk_id: int):
         """Get a chunk as a HuggingFace Dataset subset."""
         if chunk_id not in self.chunk_indices:
-            raise ValueError(f"Invalid chunk_id {chunk_id}. Valid range: 0-{len(self.chunk_indices) - 1}")
+            raise ValueError(
+                f"Invalid chunk_id {chunk_id}. Valid range: 0-{len(self.chunk_indices) - 1}"
+            )
 
         start_idx, end_idx = self.get_chunk_indices(chunk_id)
 
         # Handle wraparound case when end_idx < start_idx due to modulo
         if end_idx < start_idx:
             # Chunk wraps around: get indices from start to end of dataset, then from 0 to end
-            indices = list(range(start_idx, self.dataset_size)) + list(range(0, end_idx))
+            indices = list(range(start_idx, self.dataset_size)) + list(
+                range(0, end_idx)
+            )
         else:
             indices = list(range(start_idx, end_idx))
 
@@ -132,7 +142,9 @@ class DatasetChunks:
 
         # Handle case where chunk_data might not be a proper tuple
         if not chunk_data or len(chunk_data) != 2:
-            raise ValueError(f"Invalid chunk data for chunk_id {chunk_id}: {chunk_data}")
+            raise ValueError(
+                f"Invalid chunk data for chunk_id {chunk_id}: {chunk_data}"
+            )
 
         start_idx, end_idx = chunk_data
         return (start_idx, end_idx)

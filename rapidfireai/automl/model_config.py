@@ -1,4 +1,5 @@
 """Model configuration for AutoML training and evaluation."""
+
 from __future__ import annotations
 import copy
 import inspect
@@ -14,6 +15,7 @@ from rapidfireai.automl.datatypes import List, Range
 try:
     from peft import LoraConfig
     from trl import DPOConfig, GRPOConfig, SFTConfig
+
     _FIT_DEPS_AVAILABLE = True
 except ImportError:
     # Handle case where fit dependencies are not available
@@ -26,6 +28,7 @@ except ImportError:
 # Evals mode dependencies (vllm)
 try:
     from vllm import SamplingParams
+
     _VLLM_AVAILABLE = True
 except ImportError:
     # Handle case where vllm is not available
@@ -36,7 +39,12 @@ except ImportError:
 try:
     from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
     from rapidfireai.evals.rag.prompt_manager import PromptManager
-    from rapidfireai.evals.actors.inference_engines import InferenceEngine, OpenAIInferenceEngine, VLLMInferenceEngine
+    from rapidfireai.evals.actors.inference_engines import (
+        InferenceEngine,
+        OpenAIInferenceEngine,
+        VLLMInferenceEngine,
+    )
+
     _EVALS_MODULES_AVAILABLE = True
 except ImportError:
     # Handle case where evals modules are not available
@@ -54,7 +62,7 @@ def _create_rf_class(base_class: type, class_name: str):
         raise ValueError(f"base_class must be a class, got {type(base_class)}")
 
     sig = inspect.signature(base_class.__init__)
-    constructor_params = [p for p in sig.parameters.keys() if p != "self"]
+    constructor_params = [p for p in sig.parameters if p != "self"]
 
     type_hints = get_type_hints(base_class)
     new_type_hints = {}
@@ -68,9 +76,11 @@ def _create_rf_class(base_class: type, class_name: str):
         self._constructor_params = constructor_params
         self._initializing = True
 
+        self._initializing = True
+
         parent_kwargs = {}
         for key, value in kwargs.items():
-            if not isinstance(value, (List, Range)):
+            if not isinstance(value, (List | Range)):
                 parent_kwargs[key] = value
 
         base_class.__init__(self, **parent_kwargs)
@@ -148,6 +158,7 @@ class RFModelConfig:
     ref_model_kwargs: dict[str, Any] | None = None
     reward_funcs: str | List | Callable | Any | None = None
     generation_config: dict[str, Any] | None = None
+    num_gpus: int | None = None
 
     def copy(self):  # FIXME: Handle similar to create_rf_class
         """Create a deep copy of the RFModelConfig."""
@@ -215,7 +226,7 @@ def _create_rf_class_evals(base_class: Type, class_name: str):
         self._user_params = copy.deepcopy(kwargs)
         self._constructor_params = constructor_params
         self._initializing = True
-        
+
         parent_kwargs = {}
         for key, value in kwargs.items():
             if isinstance(value, List):
@@ -228,45 +239,51 @@ def _create_rf_class_evals(base_class: Type, class_name: str):
                 parent_kwargs[key] = value.sample()
             else:
                 parent_kwargs[key] = value
-        
+
         base_class.__init__(self, **parent_kwargs)
-        
+
         self._initializing = False
-        
+
     def copy_config(self):
         """Create a deep copy of the configuration."""
-        copied_params = copy.deepcopy(self._user_params)        
+        copied_params = copy.deepcopy(self._user_params)
         new_instance = self.__class__(**copied_params)
-        
+
         return new_instance
-    
+
     def __setattr__(self, name, value):
         """Override setattr to update _user_params when constructor parameters are modified."""
-        
-        if (hasattr(self, '_constructor_params') and 
-            name in self._constructor_params and 
-            hasattr(self, '_user_params') and
-            name in self._user_params and
-            not getattr(self, '_initializing', True)):  # Don't update during init
+
+        if (
+            hasattr(self, "_constructor_params")
+            and name in self._constructor_params
+            and hasattr(self, "_user_params")
+            and name in self._user_params
+            and not getattr(self, "_initializing", True)
+        ):  # Don't update during init
             self._user_params[name] = value
-        
+
         base_class.__setattr__(self, name, value)
-        
+
     return type(
         class_name,
         (base_class,),
         {
-            "__doc__": f"RF version of {base_class.__name__}", 
-            "__annotations__": new_type_hints, 
+            "__doc__": f"RF version of {base_class.__name__}",
+            "__annotations__": new_type_hints,
             "__init__": __init__,
             "copy": copy_config,
-            "__setattr__": __setattr__
+            "__setattr__": __setattr__,
         },
     )
 
 
 # Conditionally create evals helper classes
-if _EVALS_MODULES_AVAILABLE and LangChainRagSpec is not None and PromptManager is not None:
+if (
+    _EVALS_MODULES_AVAILABLE
+    and LangChainRagSpec is not None
+    and PromptManager is not None
+):
     RFLangChainRagSpec = _create_rf_class_evals(LangChainRagSpec, "RFLangChainRagSpec")
     RFPromptManager = _create_rf_class_evals(PromptManager, "RFPromptManager")
 else:
@@ -275,11 +292,16 @@ else:
 
 
 # Conditionally define evals model config classes only if dependencies are available
-if _VLLM_AVAILABLE and _EVALS_MODULES_AVAILABLE and SamplingParams is not None and InferenceEngine is not None:
+if (
+    _VLLM_AVAILABLE
+    and _EVALS_MODULES_AVAILABLE
+    and SamplingParams is not None
+    and InferenceEngine is not None
+):
 
     class RFvLLMModelConfig(ModelConfig):
         """VLLM model configuration for evals mode."""
-        
+
         def __init__(
             self,
             model_config: dict[str, Any],
@@ -305,7 +327,7 @@ if _VLLM_AVAILABLE and _EVALS_MODULES_AVAILABLE and SamplingParams is not None a
                 "model_config": model_config,
                 "sampling_params": sampling_params,
                 "rag": rag,
-                "prompt_manager": prompt_manager
+                "prompt_manager": prompt_manager,
             }
 
         def get_engine_class(self) -> type[InferenceEngine]:
@@ -333,10 +355,9 @@ if _VLLM_AVAILABLE and _EVALS_MODULES_AVAILABLE and SamplingParams is not None a
             # This works across different vLLM versions
             return dict(vars(self.sampling_params))
 
-
     class RFOpenAIAPIModelConfig(ModelConfig):
         """OpenAI API model configuration for evals mode."""
-        
+
         def __init__(
             self,
             client_config: dict[str, Any],
@@ -367,12 +388,12 @@ if _VLLM_AVAILABLE and _EVALS_MODULES_AVAILABLE and SamplingParams is not None a
             self.prompt_manager = prompt_manager
             self.rpm_limit = rpm_limit
             self.tpm_limit = tpm_limit
-            
+
             # Extract max_completion_tokens from model_config if not provided
             if max_completion_tokens is None:
                 max_completion_tokens = model_config.get("max_completion_tokens", 150)
             self.max_completion_tokens = max_completion_tokens
-            
+
             self._user_params = {
                 "client_config": client_config,
                 "model_config": model_config,
@@ -411,11 +432,19 @@ if _VLLM_AVAILABLE and _EVALS_MODULES_AVAILABLE and SamplingParams is not None a
             """
             # Extract sampling-related parameters from model_config
             sampling_keys = [
-                "temperature", "top_p", "max_completion_tokens",
-                "frequency_penalty", "presence_penalty", "seed",
-                "reasoning_effort"  # For o1 models
+                "temperature",
+                "top_p",
+                "max_completion_tokens",
+                "frequency_penalty",
+                "presence_penalty",
+                "seed",
+                "reasoning_effort",  # For o1 models
             ]
-            return {key: self.model_config.get(key) for key in sampling_keys if key in self.model_config}
+            return {
+                key: self.model_config.get(key)
+                for key in sampling_keys
+                if key in self.model_config
+            }
 
 else:
     # Define placeholder classes if dependencies are not available

@@ -24,8 +24,10 @@ CREATE TABLE IF NOT EXISTS runs (
     error TEXT DEFAULT '',
     source TEXT DEFAULT '',
     ended_by TEXT DEFAULT '',
-    warm_started_from INTEGER DEFAULT NULL,
-    cloned_from INTEGER DEFAULT NULL
+    warm_started_from BOOLEAN DEFAULT FALSE,
+    cloned_from INTEGER DEFAULT NULL,
+    estimated_runtime REAL DEFAULT 0.0,
+    required_workers INTEGER DEFAULT 0
 );
 
 -- Interactive Control table
@@ -47,6 +49,7 @@ CREATE TABLE IF NOT EXISTS worker_task (
     run_id INTEGER NOT NULL,
     chunk_id INTEGER NOT NULL,
     config_options TEXT DEFAULT '{}',
+    multi_worker_details TEXT DEFAULT '{}',
     FOREIGN KEY (run_id) REFERENCES runs (run_id)
 );
 

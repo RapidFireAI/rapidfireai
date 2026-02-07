@@ -17,6 +17,9 @@ class TrainerConfig:
     config_leaf: dict[str, Any]
     total_steps: int
     completed_steps: int
+    local_rank: int
+    world_size: int
+    world_worker_ids: list[int]
     create_model_fn: Callable
     train_dataset: torch.utils.data.Dataset
     eval_dataset: torch.utils.data.Dataset | None
