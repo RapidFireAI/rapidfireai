@@ -17,7 +17,12 @@ from rapidfireai.fit.backend.worker import Worker
 from rapidfireai.fit.utils.logging import RFLogger
 
 
-def worker_process_target(worker_id: int, model_registry: DictProxy, process_lock: Lock, shutdown_event: EventType):
+def worker_process_target(
+    worker_id: int,
+    model_registry: DictProxy,
+    process_lock: Lock,
+    shutdown_event: EventType,
+):
     """
     Target function that runs in each worker process.
     Creates Worker instance inside the process to avoid pickling issues.
@@ -93,7 +98,9 @@ class WorkerManager:
                         raise ProcessLookupError("Parent process no longer exists")
                 time.sleep(self.parent_check_interval)
             except ProcessLookupError:
-                self.logger.debug(f"Parent process {self.parent_pid} died, shutting down workers...")
+                self.logger.debug(
+                    f"Parent process {self.parent_pid} died, shutting down workers..."
+                )
                 self.shutdown()
                 break
             except Exception as e:
@@ -111,7 +118,9 @@ class WorkerManager:
         try:
             os.setpgrp()
             self.process_group_id = os.getpgrp()
-            self.logger.debug(f"Starting worker processes in process group {self.process_group_id}")
+            self.logger.debug(
+                f"Starting worker processes in process group {self.process_group_id}"
+            )
         except PermissionError:
             self.logger.debug(
                 "Cannot create process group (restricted environment) - will use individual process termination"
@@ -128,7 +137,8 @@ class WorkerManager:
 
             # Create process - pass only picklable arguments
             process = Process(
-                target=worker_process_target, args=(i, self.model_registry, self.process_lock, shutdown_event)
+                target=worker_process_target,
+                args=(i, self.model_registry, self.process_lock, shutdown_event),
             )
             process.daemon = False
             process.start()

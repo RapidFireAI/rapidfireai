@@ -12,7 +12,9 @@ class Range:
 
     def __init__(self, start, end, dtype: str | None = None):
         if dtype is None:
-            self.dtype = "int" if isinstance(start, int) and isinstance(end, int) else "float"
+            self.dtype = (
+                "int" if isinstance(start, int) and isinstance(end, int) else "float"
+            )
         else:
             if dtype not in ("int", "float"):
                 raise ValueError("dtype must be either 'int' or 'float'.")

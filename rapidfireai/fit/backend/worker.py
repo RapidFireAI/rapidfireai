@@ -49,34 +49,35 @@ from rapidfireai.fit.utils.trainer_config import TrainerConfig
 
 class TeeOutput:
     """A file-like object that captures output to a buffer while providing fileno() for vLLM compatibility.
-    Output is NOT written to the original stream to prevent it from appearing in the notebook."""
-    
+    Output is NOT written to the original stream to prevent it from appearing in the notebook.
+    """
+
     def __init__(self, original_stream, buffer):
         self.original_stream = original_stream
         self.buffer = buffer
-    
+
     def write(self, text):
         """Write only to the buffer, not to the original stream (to suppress notebook output)."""
         self.buffer.write(text)
         # Don't write to original_stream to prevent output in notebook
-    
+
     def flush(self):
         """Flush the buffer only."""
         self.buffer.flush()
         # Don't flush original_stream to prevent output in notebook
-    
+
     def fileno(self):
         """Return the original stream's file descriptor (required by vLLM)."""
         return self.original_stream.fileno()
-    
+
     def isatty(self):
         """Check if the original stream is a TTY."""
         return self.original_stream.isatty()
-    
+
     def getvalue(self):
         """Get the captured buffer content."""
         return self.buffer.getvalue()
-    
+
     def __getattr__(self, name):
         """Delegate other attributes to the original stream."""
         return getattr(self.original_stream, name)
@@ -110,7 +111,9 @@ class Worker:
 
         # create logger
         self.logger: Logger = RFLogger().create_logger(f"worker_{worker_id}")
-        self.training_logger: Logger = TrainingLogger().create_logger(f"worker_{worker_id}")
+        self.training_logger: Logger = TrainingLogger().create_logger(
+            f"worker_{worker_id}"
+        )
         self.logger.debug(f"Worker {self.worker_id} initialized with PID {os.getpid()}")
 
         # create database object
@@ -120,13 +123,19 @@ class Worker:
         self.experiment_name: str = self.db.get_running_experiment()["experiment_name"]
 
         # initialize data paths
-        DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_name))
+        DataPath.initialize(
+            self.experiment_name, self.db.get_experiments_path(self.experiment_name)
+        )
 
         # create metric logger
-        default_metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
+        default_metric_loggers = RFMetricLogger.get_default_metric_loggers(
+            experiment_name=self.experiment_name
+        )
         self.metric_logger = RFMetricLogger(default_metric_loggers, logger=self.logger)
         if self.metric_logger is None:
-            raise WorkerException("MetricLogger is not initialized. Please check the metric logger configuration.")
+            raise WorkerException(
+                "MetricLogger is not initialized. Please check the metric logger configuration."
+            )
         self.metric_logger.get_experiment(self.experiment_name)
 
         # load datasets
@@ -153,21 +162,26 @@ class Worker:
         create_model_fn: Callable,
     ) -> None:
         """Run fit"""
-        self.logger.debug(f"Received run_fit on worker for run {run_id} with chunk {chunk_id}")
+        self.logger.debug(
+            f"Received run_fit on worker for run {run_id} with chunk {chunk_id}"
+        )
 
         # get run details
         run_details = self.db.get_run(run_id)
         config_leaf = run_details["config_leaf"]
         metric_run_id = run_details["metric_run_id"]
 
-
         # check if FSDP is enabled
-        use_fsdp = "training_args" in config_leaf and "fsdp_config" in config_leaf["training_args"]
+        use_fsdp = (
+            "training_args" in config_leaf
+            and "fsdp_config" in config_leaf["training_args"]
+        )
         # Clean up any stale vLLM parallel state before initializing distributed environment
         # This is critical when training multiple models sequentially with GRPO
         if config_leaf.get("trainer_type", "SFT") == "GRPO":
             try:
                 from vllm.distributed import parallel_state
+
                 if hasattr(parallel_state, "destroy_model_parallel"):
                     try:
                         parallel_state.destroy_model_parallel()
@@ -190,14 +204,25 @@ class Worker:
                 master_port = multi_worker_details["master_port"]
                 world_size = multi_worker_details["world_size"]
                 rank = multi_worker_details["local_rank"]
-                self.logger.debug(f"Worker {self.worker_id} initializing distributed training for run {run_id} with master_addr {master_addr}, master_port {master_port}, world_size {world_size}, rank {rank}")
-                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, multi_worker_details["worker_ids"]))
-                setup_distributed_environment(
-                    rank=rank, world_size=world_size, master_addr=master_addr, master_port=master_port
+                self.logger.debug(
+                    f"Worker {self.worker_id} initializing distributed training for run {run_id} with master_addr {master_addr}, master_port {master_port}, world_size {world_size}, rank {rank}"
                 )
-                self.logger.debug(f"Worker {self.worker_id} initialized distributed training for run {run_id}")
+                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(
+                    map(str, multi_worker_details["worker_ids"])
+                )
+                setup_distributed_environment(
+                    rank=rank,
+                    world_size=world_size,
+                    master_addr=master_addr,
+                    master_port=master_port,
+                )
+                self.logger.debug(
+                    f"Worker {self.worker_id} initialized distributed training for run {run_id}"
+                )
             except Exception as e:
-                self.logger.error(f"Failed to initialize distributed training for run {run_id}: {e}")
+                self.logger.error(
+                    f"Failed to initialize distributed training for run {run_id}: {e}"
+                )
                 raise
         else:
             os.environ["CUDA_VISIBLE_DEVICES"] = str(self.worker_id)
@@ -206,9 +231,17 @@ class Worker:
                 os.environ["MASTER_PORT"] = str(master_port)
 
         # get effective batch size
-        per_device_train_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1)
-        gradient_accumulation_steps = config_leaf["training_args"].get("gradient_accumulation_steps", 1)
-        effective_batch_size = per_device_train_batch_size * gradient_accumulation_steps * multi_worker_details.get("world_size", 1)
+        per_device_train_batch_size = config_leaf["training_args"].get(
+            "per_device_train_batch_size", 1
+        )
+        gradient_accumulation_steps = config_leaf["training_args"].get(
+            "gradient_accumulation_steps", 1
+        )
+        effective_batch_size = (
+            per_device_train_batch_size
+            * gradient_accumulation_steps
+            * multi_worker_details.get("world_size", 1)
+        )
 
         # fetch train dataset chunk
         train_dataset_chunker = DatasetChunks(
@@ -217,7 +250,9 @@ class Worker:
             batch_size=effective_batch_size,
             offset=run_details["chunk_offset"],
         )
-        train_dataset_chunk = train_dataset_chunker.get_chunk(self.train_dataset, chunk_id)
+        train_dataset_chunk = train_dataset_chunker.get_chunk(
+            self.train_dataset, chunk_id
+        )
 
         # create worker config
         trainer_config = TrainerConfig(
@@ -238,14 +273,19 @@ class Worker:
             num_epochs_completed=run_details["num_epochs_completed"],
         )
         # add reward funcs to config_leaf if cloned from a GRPO run
-        if trainer_config.cloned_from is not None and trainer_config.config_leaf.get("trainer_type") == "GRPO":
+        if (
+            trainer_config.cloned_from is not None
+            and trainer_config.config_leaf.get("trainer_type") == "GRPO"
+        ):
             parent_run_details = self.db.get_run(trainer_config.cloned_from)
-            config_leaf["reward_funcs"] = parent_run_details["config_leaf"].get("reward_funcs")
+            config_leaf["reward_funcs"] = parent_run_details["config_leaf"].get(
+                "reward_funcs"
+            )
             self.db.set_run_details(run_id, config_leaf=config_leaf)
 
         if use_fsdp and is_distributed_initialized():
             barrier()
-            
+
         # create trainer instance and write logs to user logger
         # Redirect stdout/stderr to /dev/null at OS level to suppress all output (Python and C-level)
         # Then use TeeOutput to capture Python-level output for logging while maintaining fileno() for vLLM
@@ -253,48 +293,59 @@ class Worker:
         stderr_buffer = StringIO()
         original_stdout = sys.stdout
         original_stderr = sys.stderr
-        
+
         # Redirect to /dev/null to suppress all output from appearing in notebook
         devnull_fd = None
         try:
-            with open(os.devnull, 'w') as devnull:
+            with open(os.devnull, "w") as devnull:
                 devnull_fd = devnull.fileno()
-                if hasattr(sys.stdout, 'fileno'):
+                if hasattr(sys.stdout, "fileno"):
                     os.dup2(devnull_fd, sys.stdout.fileno())
-                if hasattr(sys.stderr, 'fileno'):
+                if hasattr(sys.stderr, "fileno"):
                     os.dup2(devnull_fd, sys.stderr.fileno())
         except Exception as e:
             self.logger.debug(f"Could not redirect stdout/stderr to /dev/null: {e}")
-        
+
         # Create TeeOutput wrappers that capture to buffer but don't write to original stream
         # fileno() will return the /dev/null fd which is fine for vLLM
         tee_stdout = TeeOutput(original_stdout, stdout_buffer)
         tee_stderr = TeeOutput(original_stderr, stderr_buffer)
-        
+
         try:
             sys.stdout = tee_stdout
             sys.stderr = tee_stderr
-            
+
             trainer_instance, base_model_name = create_trainer_instance(
-                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.metric_logger, chunk_id, use_fsdp=use_fsdp
+                trainer_config,
+                self.shm_manager,
+                USE_SHARED_MEMORY,
+                self.metric_logger,
+                chunk_id,
+                use_fsdp=use_fsdp,
             )
 
             # if first time, save checkpoint to disk
             completed_steps = self.db.get_completed_steps(run_id)
             if completed_steps == 0 and not USE_SHARED_MEMORY:
-                save_checkpoint_to_disk(trainer_instance, trainer_config, first=True, use_fsdp=use_fsdp)
+                save_checkpoint_to_disk(
+                    trainer_instance, trainer_config, first=True, use_fsdp=use_fsdp
+                )
 
             # update base model name in db for run
-            trainer_config.config_leaf["model_name"] = trainer_instance.model.config._name_or_path
+            trainer_config.config_leaf["model_name"] = (
+                trainer_instance.model.config._name_or_path
+            )
             self.db.set_run_details(run_id, config_leaf=trainer_config.config_leaf)
 
             # train the model and time it
-            self.logger.debug(f"Beginning training for run {run_id} on chunk {chunk_id}")
+            self.logger.debug(
+                f"Beginning training for run {run_id} on chunk {chunk_id}"
+            )
 
-                # Synchronize all workers before training starts
+            # Synchronize all workers before training starts
             if use_fsdp and is_distributed_initialized():
                 barrier()
-            
+
             start_time = time.time()
             trainer_instance.train()
             end_time = time.time()
@@ -308,9 +359,12 @@ class Worker:
 
             # update running average runtime in database for scheduler optimization
             if trainer_config.local_rank == 0:
-                new_runtime_per_batch = (end_time - start_time) / train_dataset_chunker.get_chunk_size(chunk_id)
+                new_runtime_per_batch = (
+                    end_time - start_time
+                ) / train_dataset_chunker.get_chunk_size(chunk_id)
                 running_average_runtime = (
-                    run_details["estimated_runtime"] * completed_steps + new_runtime_per_batch
+                    run_details["estimated_runtime"] * completed_steps
+                    + new_runtime_per_batch
                 ) / new_completed_steps
                 self.db.set_estimated_runtime(run_id, running_average_runtime)
 
@@ -318,10 +372,17 @@ class Worker:
             if USE_SHARED_MEMORY:
                 if use_fsdp and is_distributed_initialized():
                     barrier()
-                    self.logger.debug(f"Worker {self.worker_id} passed barrier after training")
+                    self.logger.debug(
+                        f"Worker {self.worker_id} passed barrier after training"
+                    )
 
                 # save checkpoints to shared memory
-                save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager, use_fsdp=use_fsdp)
+                save_checkpoint_to_shared_memory(
+                    trainer_instance,
+                    trainer_config,
+                    self.shm_manager,
+                    use_fsdp=use_fsdp,
+                )
                 if not config_leaf.get("peft_params") and not use_fsdp:
                     save_model_to_shared_memory(
                         trainer_instance.model,
@@ -331,7 +392,7 @@ class Worker:
                         SHMObjectType.FULL_MODEL,
                         trainer_config.run_id,
                         use_fsdp=use_fsdp,
-                )
+                    )
                 self.logger.debug(
                     f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}",
                     f"and worker {self.worker_id}",
@@ -341,24 +402,44 @@ class Worker:
                     barrier()
 
                 # save checkpoint to disk based on save strategy
-                save_strategy = trainer_config.config_leaf.get("training_args", {}).get("save_strategy", "epoch")
-                if save_strategy == "chunk" or (save_strategy == "epoch" and chunk_id == self.num_chunks - 1):
+                save_strategy = trainer_config.config_leaf.get("training_args", {}).get(
+                    "save_strategy", "epoch"
+                )
+                if save_strategy == "chunk" or (
+                    save_strategy == "epoch" and chunk_id == self.num_chunks - 1
+                ):
                     save_checkpoint_to_disk(
                         trainer_instance,
                         trainer_config,
                         completed_steps=new_completed_steps,
                         use_fsdp=use_fsdp,
                     )
-                    self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
+                    self.logger.debug(
+                        f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}"
+                    )
             else:
                 # save checkpoint to disk when not using shared memory
-                save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps, use_fsdp=use_fsdp)
-                self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
+                save_checkpoint_to_disk(
+                    trainer_instance,
+                    trainer_config,
+                    completed_steps=new_completed_steps,
+                    use_fsdp=use_fsdp,
+                )
+                self.logger.debug(
+                    f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}"
+                )
 
             # save final checkpoint
-            if chunk_id == self.num_chunks - 1 and new_completed_steps >= trainer_config.total_steps:
-                save_checkpoint_to_disk(trainer_instance, trainer_config, last=True, use_fsdp=use_fsdp)
-                self.logger.debug(f"Saved final checkpoint for run {run_id} on chunk {chunk_id}")
+            if (
+                chunk_id == self.num_chunks - 1
+                and new_completed_steps >= trainer_config.total_steps
+            ):
+                save_checkpoint_to_disk(
+                    trainer_instance, trainer_config, last=True, use_fsdp=use_fsdp
+                )
+                self.logger.debug(
+                    f"Saved final checkpoint for run {run_id} on chunk {chunk_id}"
+                )
 
             if use_fsdp and is_distributed_initialized():
                 barrier()
@@ -373,19 +454,22 @@ class Worker:
                     elif hasattr(trainer_instance.llm, "llm_engine"):
                         # Try to clean up the engine core if shutdown method doesn't exist
                         if hasattr(trainer_instance.llm.llm_engine, "engine_core"):
-                            if hasattr(trainer_instance.llm.llm_engine.engine_core, "shutdown"):
+                            if hasattr(
+                                trainer_instance.llm.llm_engine.engine_core, "shutdown"
+                            ):
                                 trainer_instance.llm.llm_engine.engine_core.shutdown()
-                    
+
                     # Clean up vLLM's parallel state if it exists
                     try:
                         from vllm.distributed import parallel_state
+
                         if hasattr(parallel_state, "destroy_model_parallel"):
                             parallel_state.destroy_model_parallel()
                         if hasattr(parallel_state, "destroy_distributed_environment"):
                             parallel_state.destroy_distributed_environment()
                     except (ImportError, AttributeError):
                         pass  # vLLM parallel state cleanup not available
-                    
+
                     # Delete the llm instance explicitly
                     del trainer_instance.llm
                 except Exception as e:
@@ -414,15 +498,17 @@ class Worker:
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
                 torch.cuda.empty_cache()
-                torch.cuda.ipc_collect() 
+                torch.cuda.ipc_collect()
             if use_fsdp and is_distributed_initialized():
                 barrier()
-            self.logger.debug(f"Completed training for run {run_id} on chunk {chunk_id}")
+            self.logger.debug(
+                f"Completed training for run {run_id} on chunk {chunk_id}"
+            )
         finally:
             # Restore original stdout/stderr
             sys.stdout = original_stdout
             sys.stderr = original_stderr
-            
+
         # Write captured output to training logger
         if stdout_buffer.getvalue():
             self.training_logger.info(stdout_buffer.getvalue())
@@ -451,12 +537,18 @@ class Worker:
                 self.logger.debug(f"Received task {task_type} for run {run_id}")
 
                 if task_type == WorkerTask.TRAIN_VAL:
-                    self.db.set_worker_task_status(self.worker_id, TaskStatus.IN_PROGRESS)
+                    self.db.set_worker_task_status(
+                        self.worker_id, TaskStatus.IN_PROGRESS
+                    )
 
                     # run train and validation function
                     try:
-                        self.run_fit(run_id, chunk_id, multi_worker_details, create_model_fn)
-                        self.db.set_worker_task_status(self.worker_id, TaskStatus.COMPLETED)
+                        self.run_fit(
+                            run_id, chunk_id, multi_worker_details, create_model_fn
+                        )
+                        self.db.set_worker_task_status(
+                            self.worker_id, TaskStatus.COMPLETED
+                        )
                     except Exception as e:
                         self.logger.opt(exception=True).error(
                             f"Error while running run_fit for run {run_id} and chunk {chunk_id}: {e}"
@@ -466,14 +558,20 @@ class Worker:
                             status=RunStatus.FAILED,
                             error=str(e) + traceback.format_exc(),
                         )
-                        self.db.set_worker_task_status(self.worker_id, TaskStatus.FAILED)
+                        self.db.set_worker_task_status(
+                            self.worker_id, TaskStatus.FAILED
+                        )
                 else:
                     raise WorkerException(f"Invalid task type: {task_type}")
                 if is_distributed_initialized():
                     cleanup_distributed()
-                    self.logger.debug(f"Worker {self.worker_id} distributed training cleaned up")
+                    self.logger.debug(
+                        f"Worker {self.worker_id} distributed training cleaned up"
+                    )
             except Exception as e:
-                self.logger.opt(exception=True).error(f"Worker {self.worker_id} error: {e}")
+                self.logger.opt(exception=True).error(
+                    f"Worker {self.worker_id} error: {e}"
+                )
                 self.db.set_experiment_error(str(e) + "\n" + traceback.format_exc())
                 break
 
@@ -489,7 +587,9 @@ class Worker:
         if is_distributed_initialized():
             try:
                 cleanup_distributed()
-                self.logger.debug(f"Worker {self.worker_id} distributed training cleaned up")
+                self.logger.debug(
+                    f"Worker {self.worker_id} distributed training cleaned up"
+                )
             except Exception as e:
                 self.logger.debug(f"Error during distributed cleanup: {e}")
 

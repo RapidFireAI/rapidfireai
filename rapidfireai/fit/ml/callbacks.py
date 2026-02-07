@@ -3,7 +3,12 @@ from collections.abc import Callable
 import torch
 from datasets import Dataset
 from tqdm import tqdm
-from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+from transformers import (
+    TrainerCallback,
+    TrainerControl,
+    TrainerState,
+    TrainingArguments,
+)
 from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
 
@@ -87,7 +92,9 @@ class GenerationMetricsCallback(TrainerCallback):
             elif "prompt" in item and "completion" in item:
                 input_text = item["prompt"]
                 reference = item["completion"][-1]["content"]
-                input_text = self.tokenizer.apply_chat_template(input_text, tokenize=False)
+                input_text = self.tokenizer.apply_chat_template(
+                    input_text, tokenize=False
+                )
             elif "text" in item:
                 # SFT format - use text as input, response as reference
                 input_text = item["text"]
@@ -158,10 +165,14 @@ class GenerationMetricsCallback(TrainerCallback):
             return {}
 
         with torch.no_grad():
-            for i in tqdm(range(0, len(indices), self.batch_size), desc="Generating for metrics"):
+            for i in tqdm(
+                range(0, len(indices), self.batch_size), desc="Generating for metrics"
+            ):
                 input_ids_batch = input_ids[i : i + self.batch_size]
                 with torch.inference_mode(), torch.amp.autocast("cuda"):
-                    outputs_batch = model.generate(input_ids_batch, **self.generation_config)
+                    outputs_batch = model.generate(
+                        input_ids_batch, **self.generation_config
+                    )
                 generated_texts = self.tokenizer.batch_decode(
                     outputs_batch[:, input_ids_batch.shape[1] :],
                     skip_special_tokens=True,
@@ -195,7 +206,7 @@ class MetricLoggingCallback(TrainerCallback):
         excluded_keys: list = None,
         completed_steps: int = 0,
         chunk_id: int = 0,
-        num_epochs_completed: int = 0
+        num_epochs_completed: int = 0,
     ):
         self.metric_logger = metric_logger
         self.metric_run_id = metric_run_id
@@ -229,7 +240,9 @@ class MetricLoggingCallback(TrainerCallback):
                                 step=step,
                             )
                     except Exception as e:
-                        print(f"Warning: Failed to log metric {key} to tracking backend: {e}")
+                        print(
+                            f"Warning: Failed to log metric {key} to tracking backend: {e}"
+                        )
             if "eval_loss" not in logs and "train_runtime" not in logs:
                 if self.metric_logger:
                     self.metric_logger.log_metric(
@@ -309,7 +322,10 @@ class LogLevelCallback(TrainerCallback):
             control.should_log = True
 
         # Evaluate
-        if args.eval_strategy == IntervalStrategy.EPOCH and args.eval_delay <= state.epoch:
+        if (
+            args.eval_strategy == IntervalStrategy.EPOCH
+            and args.eval_delay <= state.epoch
+        ):
             control.should_evaluate = True
 
         # Save

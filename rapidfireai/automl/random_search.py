@@ -29,7 +29,6 @@ def recursive_expand_randomsearch(item: Any):
         return item
 
 
-
 class RFRandomSearch(AutoMLAlgorithm):
     """Random search algorithm that samples num_runs hyperparameter combinations."""
 
@@ -38,13 +37,10 @@ class RFRandomSearch(AutoMLAlgorithm):
         if seed is not None and (not isinstance(seed, int) or seed < 0):
             raise AutoMLException("seed must be a non-negative integer")
 
-
         if not isinstance(self.num_runs, int) or self.num_runs <= 0:
             raise AutoMLException("num_runs must be a positive integer")
 
-
         random.seed(seed)
-
 
         try:
             if self.mode == "fit":
@@ -88,13 +84,23 @@ class RFRandomSearch(AutoMLAlgorithm):
                 else recursive_expand_randomsearch(config.training_args._user_params)
             )
 
-            model_kwargs = {} if config.model_kwargs is None else recursive_expand_randomsearch(config.model_kwargs)
-
-            ref_model_kwargs = (
-                {} if config.ref_model_kwargs is None else recursive_expand_randomsearch(config.ref_model_kwargs)
+            model_kwargs = (
+                {}
+                if config.model_kwargs is None
+                else recursive_expand_randomsearch(config.model_kwargs)
             )
 
-            reward_funcs = {} if config.reward_funcs is None else recursive_expand_randomsearch(config.reward_funcs)
+            ref_model_kwargs = (
+                {}
+                if config.ref_model_kwargs is None
+                else recursive_expand_randomsearch(config.ref_model_kwargs)
+            )
+
+            reward_funcs = (
+                {}
+                if config.reward_funcs is None
+                else recursive_expand_randomsearch(config.reward_funcs)
+            )
 
             # FIXME:  avoid hardcoding the excluded attributes
             excluded_attrs = {
@@ -112,10 +118,14 @@ class RFRandomSearch(AutoMLAlgorithm):
                 "num_gpus",
             }
             additional_kwargs = {
-                k: v for k, v in config.__dict__.items() if k not in excluded_attrs and v is not None
+                k: v
+                for k, v in config.__dict__.items()
+                if k not in excluded_attrs and v is not None
             }
             additional_kwargs_sampled = (
-                {} if not additional_kwargs else recursive_expand_randomsearch(additional_kwargs)
+                {}
+                if not additional_kwargs
+                else recursive_expand_randomsearch(additional_kwargs)
             )
 
             leaf = {
@@ -200,7 +210,10 @@ class RFRandomSearch(AutoMLAlgorithm):
                 additional_kwargs = {
                     k: v
                     for k, v in config.items()
-                    if k != "pipeline" and k != "vllm_config" and k != "openai_config" and v is not None
+                    if k != "pipeline"
+                    and k != "vllm_config"
+                    and k != "openai_config"
+                    and v is not None
                 }
                 additional_kwargs_instances = (
                     [{}]
