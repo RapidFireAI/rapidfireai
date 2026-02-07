@@ -419,11 +419,12 @@ class SharedMemoryManager:
         elif model_object_type == SHMObjectType.CHECKPOINTS:
             self._update_checkpoints(model_id, model_object)
 
-    def delete_model_object(self, model_id: str, base_model_name: str | None = None):
-        """Delete model object from shared memory registry and clean up resources."""
+    def delete_model_object(self, model_id: str, base_model_name: str | None = None, is_fsdp: bool = False):
+        """Delete model object from shared memory registry and clean up resources.
+        For FSDP, base model is not stored in shared memory
+        """
         with self._process_lock if self._process_lock else self._thread_lock:
             if model_id not in self._registry:
-                self.logger.warning(f"Model '{model_id}' not found in shared memory during delete")
                 self.logger.warning(f"Model '{model_id}' not found in shared memory during delete")
                 return
 
@@ -434,7 +435,6 @@ class SharedMemoryManager:
                 and self._registry[model_id][SHMObjectType.CHECKPOINTS]
             ):
                 del self._registry[model_id][SHMObjectType.CHECKPOINTS]
-                self.logger.debug(f"Deleted checkpoints for model {model_id} from shared memory")
                 self.logger.debug(f"Deleted checkpoints for model {model_id} from shared memory")
 
             # remove full_model
@@ -454,7 +454,6 @@ class SharedMemoryManager:
             ):
                 del self._registry[model_id][SHMObjectType.REF_STATE_DICT]
                 self.logger.debug(f"Deleted ref_state_dict for model {model_id} from shared memory")
-                self.logger.debug(f"Deleted ref_state_dict for model {model_id} from shared memory")
 
             # remove ref_full_model
             if (
@@ -463,17 +462,14 @@ class SharedMemoryManager:
             ):
                 del self._registry[model_id][SHMObjectType.REF_FULL_MODEL]
                 self.logger.debug(f"Deleted ref_full_model for model {model_id} from shared memory")
-                self.logger.debug(f"Deleted ref_full_model for model {model_id} from shared memory")
 
-            # remove shared objects (entire registry entry is deleted for base_model, not just SHMObjectType.BASE_MODEL key)
-            if base_model_name and base_model_name in self._registry:
+            # remove base model from shm (not present for FSDP - base model reloaded from HuggingFace)
+            if not is_fsdp and base_model_name and base_model_name in self._registry:
                 del self._registry[base_model_name]
-                self.logger.debug(f"Deleted base_model for model {model_id} from shared memory")
                 self.logger.debug(f"Deleted base_model for model {model_id} from shared memory")
 
             # remove registry entry
             del self._registry[model_id]
-            self.logger.debug(f"Deleted model registry entry for {model_id} from shared memory")
             self.logger.debug(f"Deleted model registry entry for {model_id} from shared memory")
 
             # Force garbage collection
@@ -483,8 +479,9 @@ class SharedMemoryManager:
 
             self.logger.debug("Force garbage collection and empty cache")
 
-    def create_warm_start_checkpoint(self, model_id: str, warm_started_from: str):
-        """Copy warm start checkpoint from run_id to cloned_from"""
+    def create_warm_start_checkpoint(self, model_id: str, warm_started_from: str, is_fsdp: bool = False):
+        """Copy warm start checkpoint from run_id to cloned_from.
+        """
         with self._thread_lock:
             if warm_started_from not in self._registry:
                 raise KeyError(f"Run '{warm_started_from}' not found in shared memory")

@@ -18,6 +18,7 @@ class GenerationMetricsCallback(TrainerCallback):
         metric_logger=None,
         metric_run_id: str = None,
         completed_steps: int = 0,
+        use_fsdp: bool = False,
     ):
         self.tokenizer = tokenizer
         self.eval_dataset = eval_dataset

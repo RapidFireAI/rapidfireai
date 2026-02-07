@@ -119,7 +119,7 @@ class Controller:
             else:
                 # add an initial random estimated runtime
                 estimated_runtime = random.uniform(1.0, 10.0)
-                if getattr(config_leaf, "num_gpus", None) is not None:
+                if config_leaf.get("num_gpus", None) is not None:
                     required_workers = config_leaf.get("num_gpus", self.default_req_workers)
                 else:
                     required_workers = self.default_req_workers
@@ -200,21 +200,27 @@ class Controller:
     def _clear_run_from_shm(self, run_id: int) -> None:
         """Clear the run from shared memory."""
 
-        # check if there are any other runs with the same base model
-        base_model_name = self.db.get_run(run_id)["config_leaf"]["model_name"]
-        relevant_runs = self.db.get_runs_by_status([RunStatus.ONGOING, RunStatus.NEW, RunStatus.STOPPED])
-        relevant_runs = self.db.get_runs_by_status([RunStatus.ONGOING, RunStatus.NEW, RunStatus.STOPPED])
+        run_details = self.db.get_run(run_id)
+        config_leaf = run_details["config_leaf"]
+        base_model_name = config_leaf["model_name"]
 
-        # get shared object types to delete - if no other runs are using it
-        delete_shared_objects = True
-        for r_run_id, r_run_details in relevant_runs.items():
-            if r_run_details["config_leaf"]["model_name"] == base_model_name and r_run_id != run_id:
-                delete_shared_objects = False
-                break
+        # Check if this run uses FSDP - base model is not stored in shm for FSDP
+        is_fsdp = "fsdp_config" in config_leaf.get("training_args", {})
 
-        # delete model object from shared memory
-        self.shm_manager.delete_model_object(run_id, base_model_name if delete_shared_objects else None)
-        self.shm_manager.delete_model_object(run_id, base_model_name if delete_shared_objects else None)
+        if is_fsdp:
+            self.shm_manager.delete_model_object(run_id, base_model_name=None, is_fsdp=True)
+        else:
+            relevant_runs = self.db.get_runs_by_status([RunStatus.ONGOING, RunStatus.NEW, RunStatus.STOPPED])
+
+            delete_shared_objects = True
+            for r_run_id, r_run_details in relevant_runs.items():
+                if r_run_details["config_leaf"]["model_name"] == base_model_name and r_run_id != run_id:
+                    delete_shared_objects = False
+                    break
+
+            self.shm_manager.delete_model_object(
+                run_id, base_model_name if delete_shared_objects else None, is_fsdp=False
+            )
 
     def _process_interactive_control(
         self,

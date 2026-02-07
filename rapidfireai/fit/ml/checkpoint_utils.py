@@ -216,10 +216,10 @@ def load_checkpoint_from_shared_memory(
     rank = trainer_config.local_rank if use_fsdp else 0
     is_quantized = bool(trainer_config.config_leaf.get("model_kwargs", {}).get("quantization_config", {}))
     if trainer_config.warm_started_from and not shm_manager.model_exists(run_id):
-        shm_manager.create_warm_start_checkpoint(run_id, trainer_config.cloned_from)
+        shm_manager.create_warm_start_checkpoint(run_id, trainer_config.cloned_from, is_fsdp=use_fsdp)
 
     if is_peft:
-        if not shm_manager.model_exists(model_id) or use_fsdp:
+        if not shm_manager.model_exists(model_id) or use_fsdp or is_quantized:
             base_model, tokenizer = create_model_instance(
                 trainer_config.config_leaf,
                 trainer_config.create_model_fn,
@@ -230,7 +230,7 @@ def load_checkpoint_from_shared_memory(
             )
             if model_id is None:
                 model_id = base_model.config._name_or_path
-            if rank == 0 and not use_fsdp:
+            if rank == 0 and not use_fsdp and not is_quantized:
                 save_model_to_shared_memory(
                     base_model,
                     tokenizer,
