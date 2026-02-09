@@ -272,7 +272,9 @@ rapidfireai = [
     "../setup/start.sh",
     "../setup/fit/start_dev.sh",
     "../setup/fit/requirements-*.txt",
+    "../setup/fit/override-*.txt",
     "../setup/evals/requirements-*.txt",
+    "../setup/evals/override-*.txt",
     "../tutorial_notebooks/**/*",
     "../tests/notebooks/*",
 
