@@ -7,6 +7,10 @@ include setup/start.sh
 include setup/fit/start_dev.sh
 include setup/evals/requirements-local.txt
 include setup/evals/requirements-colab.txt
+include setup/fit/override-local.txt
+include setup/fit/requirements-local.txt
+include setup/fit/requirements-colab.txt
+
 
 # Include frontend resources
 include rapidfireai/frontend/server.py

@@ -132,22 +132,26 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     if ColabConfig.ON_COLAB and evals:
         print("Colab environment detected, installing evals packages")
         requirements_file = setup_directory / "evals" / "requirements-colab.txt"
+        override_file = setup_directory / "evals" / "override-colab.txt"
     elif ColabConfig.ON_COLAB and not evals:
         print("Colab environment detected, installing fit packages")
         requirements_file = setup_directory / "fit" / "requirements-colab.txt"
+        override_file = setup_directory / "fit" / "override-colab.txt"
     elif not ColabConfig.ON_COLAB and evals:
         print("Non-Colab environment detected, installing evals packages")
         requirements_file = setup_directory / "evals" / "requirements-local.txt"
+        override_file = setup_directory / "evals" / "override-local.txt"
     elif not ColabConfig.ON_COLAB and not evals:
         print("Non-Colab environment detected, installing fit packages")
         requirements_file = setup_directory / "fit" / "requirements-local.txt"
+        override_file = setup_directory / "fit" / "override-local.txt"
     else:
         print("❌ Unknown environment detected, skipping package installation")
         return 1
 
     try:
         print(f"Installing packages from {requirements_file.absolute()}...")
-        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file.absolute()]
+        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file.absolute(), "-o", override_file.absolute()]
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
     except subprocess.CalledProcessError as e:
         print(f"❌ Failed to install packages from {requirements_file.absolute()}")
@@ -240,10 +244,10 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
         packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        if evals:
-            packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
-            packages.append({"package": "flashinfer-python", "extra_args": []})
-            packages.append({"package": "flashinfer-cubin", "extra_args": []})
+        if evals or True:
+            # packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
+            # packages.append({"package": "flashinfer-python", "extra_args": []})
+            # packages.append({"package": "flashinfer-cubin", "extra_args": []})
             if cuda_major + (cuda_minor / 10.0) >= 12.8:
                 packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
             if get_compute_capability() >= 8.0:
@@ -252,11 +256,11 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             #     packages.append({"package": "flash-attn-triton", "extra_args": ["--upgrade"]})
             # packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
             # Re-install torch, torchvision, and torchaudio to ensure compatibility
-            packages.append({"package": "transformers>=4.56.1,<5.0.0", "extra_args": ["--upgrade"]})           
+            # packages.append({"package": "transformers>=4.56.1,<5.0.0", "extra_args": ["--upgrade"]})           
             packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
+        # packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
 
     for package_info in packages:
         try:
