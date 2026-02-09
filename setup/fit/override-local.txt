@@ -21,4 +21,7 @@ multiprocess>=0.70.19
 pyarrow>=23.0.0
 outlines-core>=0.2.14
 llguidance>=1.5.0
+Pillow>=12.1.0
+tomlkit>=0.14.0
+aiofiles>=25.1.0
 #datasets>=4.5.0

@@ -66,7 +66,7 @@ loguru>=0.7.3
 ipython>=7.34.0  # Colab compatibility (7.34.0)
 jupyter>=1.1.1
 
-pillow>=12.1.0
+Pillow>=12.1.0
 
 huggingface-hub>=1.4.1
 marshmallow>=4.2.2
