@@ -258,7 +258,6 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
 
-
     for package_info in packages:
         try:
             package = package_info["package"]
