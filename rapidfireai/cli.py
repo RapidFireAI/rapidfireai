@@ -151,7 +151,7 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
 
     try:
         print(f"Installing packages from {requirements_file.absolute()}...")
-        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file.absolute(), "-o", override_file.absolute()]
+        cmd = [sys.executable, "-m", "uv", "pip", "install", "-r", requirements_file.absolute(), "--override", override_file.absolute()]
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
     except subprocess.CalledProcessError as e:
         print(f"❌ Failed to install packages from {requirements_file.absolute()}")

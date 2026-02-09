@@ -42,31 +42,7 @@ classifiers = [
 #     "uv>=0.8.14",
 # ]
 dependencies = [
-    # REST API (Dispatcher)
-    "flask",
-    "flask-cors",
-    "waitress",
-
-    # JSON Query Tool
-    "jq",
-    # "protobuf==5.29.5",
-
-    # Experiment tracking
-    "trackio",
-    "trackio[gpu]",
-    "mlflow",
-    "tensorboard",
-
-    # Other
-    "dill",
-    "jedi",
-    "setuptools",
-    # "pytest>=8.4.2",
-    "uv",
-    "fsspec",
-    "numpy",
-    "huggingface-hub",
-    "packaging>=26.0"
+    "uv"
 ]
 
 [project.optional-dependencies]

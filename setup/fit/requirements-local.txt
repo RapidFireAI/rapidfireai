@@ -85,6 +85,7 @@ xgrammar>=0.1.31
 grpcio>=1.78.0
 faiss-gpu-cu12>=1.13.2
 gunicorn>=25.0.3
+Flask>=3.1.2
 flask-cors>=6.0.2
 loguru>=0.7.3
 bleach>=6.3.0
@@ -101,7 +102,14 @@ pyarrow>=23.0.0
 outlines-core>=0.2.14
 aiofiles>=25.1.0
 llguidance>=1.5.0
-
+waitress>=3.0.2
+jq>=1.11.0
+trackio>=0.15.0
+trackio[gpu]>=0.15.0
+jedi>=0.19.2
 
 dill>=0.4.1
 fsspec>=2026.2.0
+
+    # Uninstalling setuptools-80.10.2:
+    # Uninstalling packaging-25.0:
