@@ -129,25 +129,8 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     if not setup_directory:
         print("❌ Setup directory not found, skipping package installation")
         return 1
-    if ColabConfig.ON_COLAB and evals:
-        print("Colab environment detected, installing evals packages")
-        requirements_file = setup_directory / "evals" / "requirements-colab.txt"
-        override_file = setup_directory / "evals" / "override-colab.txt"
-    elif ColabConfig.ON_COLAB and not evals:
-        print("Colab environment detected, installing fit packages")
-        requirements_file = setup_directory / "fit" / "requirements-colab.txt"
-        override_file = setup_directory / "fit" / "override-colab.txt"
-    elif not ColabConfig.ON_COLAB and evals:
-        print("Non-Colab environment detected, installing evals packages")
-        requirements_file = setup_directory / "evals" / "requirements-local.txt"
-        override_file = setup_directory / "evals" / "override-local.txt"
-    elif not ColabConfig.ON_COLAB and not evals:
-        print("Non-Colab environment detected, installing fit packages")
-        requirements_file = setup_directory / "fit" / "requirements-local.txt"
-        override_file = setup_directory / "fit" / "override-local.txt"
-    else:
-        print("❌ Unknown environment detected, skipping package installation")
-        return 1
+    requirements_file = setup_directory / "requirements.txt"
+    override_file = setup_directory / "overrides.txt"
 
     try:
         print(f"Installing packages from {requirements_file.absolute()}...")
