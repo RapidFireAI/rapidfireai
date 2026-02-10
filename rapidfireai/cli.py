@@ -262,6 +262,10 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         # packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
     if ColabConfig.ON_COLAB and cuda_major >= 12:
+        torch_cuda = "cu126"
+        torch_version = "2.9.0"
+        torchvision_version = "0.24.0"
+        torchaudio_version = "2.9.0"
         print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
         
         packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
