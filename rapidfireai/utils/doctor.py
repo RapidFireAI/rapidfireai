@@ -232,6 +232,9 @@ def get_doctor_info(log_lines: int = 10):
                         for line in read_lines:
                             print(line.strip())
     print("\n")
+    if mode == "unknown":
+        print("❌ RF Mode not set, was rapidfireai init run (see installation instructions)?\n")
+        status = 2 if status < 2 else status
     if status == 0:
         print("\n✅ Diagnostics complete!")
     elif status == 1:
