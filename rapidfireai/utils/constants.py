@@ -56,16 +56,16 @@ class FrontendConfig:
     def __str__(self):
         return f"FrontendConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
 
-# MLFlow Constants
-class MLFlowConfig:
-    """Class to manage the MLFlow configuration"""
+# MLflow Constants
+class MLflowConfig:
+    """Class to manage the MLflow configuration"""
 
     HOST: str = os.getenv("RF_MLFLOW_HOST", "127.0.0.1")
     PORT: int = int(os.getenv("RF_MLFLOW_PORT", "8852"))
     URL: str = f"http://{HOST}:{PORT}"
 
     def __str__(self):
-        return f"MLFlowConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
+        return f"MLflowConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
 
 # Jupyter Constants
 class JupyterConfig:

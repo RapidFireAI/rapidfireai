@@ -858,7 +858,7 @@
     "description" : "AutoML warning shown for columns with incompatible semantic type annotations"
   },
   "3X52Jw" : {
-    "defaultMessage" : "此 tab 顯示記錄到此已記錄模型中的所有追蹤。MLflow 支援許多熱門生成式 AI 框架的自動追蹤。請按照以下步驟記錄您的第一個追蹤。有關 MLflow 追蹤的更多資訊，請瀏覽 <a>MLFlow 文件</a>。",
+    "defaultMessage" : "此 tab 顯示記錄到此已記錄模型中的所有追蹤。MLflow 支援許多熱門生成式 AI 框架的自動追蹤。請按照以下步驟記錄您的第一個追蹤。有關 MLflow 追蹤的更多資訊，請瀏覽 <a>MLflow 文件</a>。",
     "description" : "Message that explains the function of the 'Traces' tab in logged model page. This message is followed by a tutorial explaining how to get started with MLflow Tracing."
   },
   "3Z6K+n" : {
@@ -4371,7 +4371,7 @@
     "description" : "Text content for the online store table time to live metadata field in seconds."
   },
   "Qr828b" : {
-    "defaultMessage" : "若要下載所有 MLFlow 執行資料，請在 Databricks 筆記本中執行此程式碼片段",
+    "defaultMessage" : "若要下載所有 MLflow 執行資料，請在 Databricks 筆記本中執行此程式碼片段",
     "description" : "Here is the description on where to run the following code snippet"
   },
   "QravWY" : {
@@ -7910,7 +7910,7 @@
     "description" : "Use button for endpoints, clicking will show options with which users can query the endpoint"
   },
   "mfcl37" : {
-    "defaultMessage" : "2. 將 MLFlow 的 {integration} 自動記錄添加到您的代碼中：",
+    "defaultMessage" : "2. 將 MLflow 的 {integration} 自動記錄添加到您的代碼中：",
     "description" : "Instructions for integration autologging"
   },
   "mfxai2" : {
@@ -8166,7 +8166,7 @@
     "description" : "Dropdown text to display columns names that could to be rendered for the experiment runs table"
   },
   "nyHcAz" : {
-    "defaultMessage" : "MLFlow 部署傳回以下錯誤：「{errorMessage}」",
+    "defaultMessage" : "MLflow 部署傳回以下錯誤：「{errorMessage}」",
     "description" : "Experiment page > MLflow deployment error message"
   },
   "o1BTcp" : {

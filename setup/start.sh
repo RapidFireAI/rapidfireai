@@ -268,7 +268,7 @@ check_startup_issues() {
 
     # Check if ports are available
     if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
-        print_error "MLFlow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
+        print_error "MLflow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
         return 1
     fi
     if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
@@ -713,6 +713,8 @@ start_services() {
         else
             print_error "Failed to start MLflow server"
         fi
+    else
+        print_status "⊗ Skipping MLflow (use TensorBoard if in Colab mode)"
     fi
 
     # Start API server (always)
@@ -723,14 +725,14 @@ start_services() {
     fi
 
     # Start frontend server (conditionally)
-    if [[ "$RF_COLAB_MODE" != "true" ]]; then
+    if [[ "$RF_MLFLOW_ENABLED" != "true" ]]; then
         if start_frontend; then
             ((services_started++))
         else
             print_error "Failed to start frontend server"
         fi
     else
-        print_status "⊗ Skipping frontend (using TensorBoard in Colab mode)"
+        print_status "⊗ Skipping frontend (use TensorBoard if in Colab mode)"
     fi
 
     return $((total_services - services_started))

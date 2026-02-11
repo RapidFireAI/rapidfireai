@@ -10,7 +10,7 @@ from rapidfireai.utils.metric_tensorboard_manager import TensorBoardMetricLogger
 from rapidfireai.utils.metric_trackio_manager import TrackioMetricLogger
 from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.utils.constants import (
-    MLFlowConfig,
+    MLflowConfig,
     RF_MLFLOW_ENABLED,
     RF_TENSORBOARD_ENABLED,
     RF_TRACKIO_ENABLED,
@@ -73,7 +73,7 @@ class RFMetricLogger(MetricLogger):
             # Run is a mlflow run id, so we need to get the run name from the mlflow run id
             try:
                 from mlflow.tracking import MlflowClient  # type: ignore[import-not-found]
-                client = MlflowClient(tracking_uri=MLFlowConfig.URL)
+                client = MlflowClient(tracking_uri=MLflowConfig.URL)
                 run = client.get_run(run_id)
                 return run.info.run_name
             except Exception as e:
@@ -226,7 +226,7 @@ class RFMetricLogger(MetricLogger):
             metric_loggers["rf_mlflow"] = {
                 "type": MetricLoggerType.MLFLOW,
                 "config": {
-                    "tracking_uri": MLFlowConfig.URL,
+                    "tracking_uri": MLflowConfig.URL,
                 },
             }
         if RF_TENSORBOARD_ENABLED == "true":

@@ -4371,7 +4371,7 @@
     "description" : "Text content for the online store table time to live metadata field in seconds."
   },
   "Qr828b" : {
-    "defaultMessage" : "MLFlow 실행 데이터를 모두 다운로드하려면 Databricks 노트북에서 이 코드 스니펫을 실행합니다",
+    "defaultMessage" : "MLflow 실행 데이터를 모두 다운로드하려면 Databricks 노트북에서 이 코드 스니펫을 실행합니다",
     "description" : "Here is the description on where to run the following code snippet"
   },
   "QravWY" : {

@@ -33,7 +33,7 @@ fsspec>=2023.1.0,<=2025.3.0
 flashinfer-python>=0.5.3
 flashinfer-cubin>=0.5.3
 
-# MLFlow dashboard dependencies
+# MLflow dashboard dependencies
 mlflow>=3.2.0
 gunicorn>=23.0.0
 flask-cors>=5.0.1

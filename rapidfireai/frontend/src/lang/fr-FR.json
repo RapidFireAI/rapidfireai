@@ -2409,7 +2409,7 @@
     "description" : "Hint displaying the provisioned model units"
   },
   "DJtUs6" : {
-    "defaultMessage" : "MLFlow Tracing donne accès aux fonctionnalités de débogage, d’évaluation et de surveillance. {learnMoreLink}",
+    "defaultMessage" : "MLflow Tracing donne accès aux fonctionnalités de débogage, d’évaluation et de surveillance. {learnMoreLink}",
     "description" : "Introduction text for MLflow Tracing"
   },
   "DJvE8g" : {

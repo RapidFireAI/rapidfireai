@@ -14,7 +14,7 @@ from IPython.display import display
 from tqdm import tqdm
 from transformers import logging as transformers_logging
 
-from rapidfireai.utils.constants import MLFlowConfig, RF_MLFLOW_ENABLED
+from rapidfireai.utils.constants import MLflowConfig, RF_MLFLOW_ENABLED
 from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.utils.constants import ExperimentStatus, ExperimentTask
