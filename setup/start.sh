@@ -694,12 +694,9 @@ start_services() {
 
     # Calculate total services based on mode
     # MLflow runs unless tensorboard-only in Colab
+    # Frontend runs if MLflow runs
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         ((total_services++))
-    fi
-
-    # Frontend runs unless Colab mode
-    if [[ "$RF_COLAB_MODE" != "true" ]]; then
         ((total_services++))
     fi
 
