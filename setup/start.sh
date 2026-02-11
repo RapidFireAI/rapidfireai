@@ -59,7 +59,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAPIDFIRE_DIR="$SCRIPT_DIR/../rapidfireai"
 RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
-FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
+if [[ -d "$RAPIDFIRE_DIR/frontend_pro" ]]; then
+    FRONTEND_DIR="$RAPIDFIRE_DIR/frontend_pro"
+else
+    FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
+fi
 RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "fit")
 DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
 
