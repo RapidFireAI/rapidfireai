@@ -729,7 +729,7 @@ start_services() {
     fi
 
     # Start frontend server (conditionally)
-    if [[ "$RF_MLFLOW_ENABLED" != "true" ]]; then
+    if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         if start_frontend; then
             ((services_started++))
         else
