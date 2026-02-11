@@ -13,7 +13,6 @@ def validate_log(
 ) -> bool:
     with open(log_path) as f:
         content = f.read()
-    lines = content.splitlines()
 
     all_pass = True
 

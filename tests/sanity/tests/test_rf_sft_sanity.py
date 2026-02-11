@@ -12,7 +12,7 @@ SANITY_DIR = TESTS_DIR.parent
 SCRIPTS_DIR = SANITY_DIR / "scripts"
 VALIDATIONS_DIR = SCRIPTS_DIR / "validations"
 LOGS_DIR = SANITY_DIR / "logs"
-LOGS_BASE = Path("/home/ubuntu/rapidfireai/logs")  # RapidFire experiment logs (unchanged)
+LOGS_BASE = Path.home() / "rapidfireai" / "logs"  # RapidFire experiment logs
 
 logger = logging.getLogger("test_rf_sft_sanity")
 
