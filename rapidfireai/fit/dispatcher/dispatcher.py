@@ -92,6 +92,11 @@ class Dispatcher:
             self.app.add_url_rule(
                 f"{route_prefix}/get-experiment-logs", "get_experiment_logs", self.get_experiment_logs, methods=["POST"]
             )
+
+            # LLM chat route
+            self.app.add_url_rule(
+                f"{route_prefix}/llm-chat", "llm_chat", self.llm_chat, methods=["POST"]
+            )
         except Exception as e:
             raise DispatcherException(f"Error while registering routes: {e}") from e
 
@@ -357,6 +362,23 @@ class Dispatcher:
             logger = self._get_logger()
             if logger:
                 logger.opt(exception=True).error(f"Error in delete_run: {e}", exc_info=True)
+            return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
+
+    def llm_chat(self) -> tuple[Response, int]:
+        """Chat with the LLM assistant about experiment runs."""
+        try:
+            data = request.get_json()
+            if not data or "message" not in data:
+                return jsonify({"error": "message is required"}), 400
+
+            from rapidfireai.llm.handler import handle_chat
+
+            response_text = handle_chat(self.db, data["message"])
+            return jsonify({"response": response_text}), 200
+        except RuntimeError as e:
+            # Catches missing ANTHROPIC_API_KEY
+            return jsonify({"error": str(e)}), 500
+        except Exception as e:
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def get_ic_ops_logs(self) -> tuple[Response, int]:
