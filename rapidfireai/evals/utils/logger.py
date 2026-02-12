@@ -6,6 +6,15 @@ from rapidfireai.utils.constants import RF_LOG_FILENAME, RF_LOG_PATH, RF_EXPERIM
 from rapidfireai.utils.os_utils import mkdir_p
 
 
+class SafeLoggerAdapter(logging.LoggerAdapter):
+    """Custom LoggerAdapter that prefixes messages with experiment and logger name."""
+    def process(self, msg, kwargs):
+        # Prefix message with experiment and logger name
+        experiment = self.extra.get("experiment_name", "unknown")
+        log_name = self.extra.get("logger_name", "unknown")
+        return f"[{experiment}:{log_name}] {msg}", kwargs
+
+
 class RFLogger:
     _file_handler = None
     _experiment_name = None
@@ -99,14 +108,6 @@ class RFLogger:
     def get_logger(self, logger_name: str = "unknown"):
         logger = logging.getLogger(logger_name)
         logger.setLevel(self.level)
-
-        # Custom LoggerAdapter that prefixes messages instead of using format fields
-        class SafeLoggerAdapter(logging.LoggerAdapter):
-            def process(self, msg, kwargs):
-                # Prefix message with experiment and logger name
-                experiment = self.extra.get("experiment_name", "unknown")
-                log_name = self.extra.get("logger_name", "unknown")
-                return f"[{experiment}:{log_name}] {msg}", kwargs
 
         return SafeLoggerAdapter(
             logger,

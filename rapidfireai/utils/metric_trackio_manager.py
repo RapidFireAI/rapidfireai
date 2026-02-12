@@ -32,7 +32,16 @@ class TrackioMetricLogger(MetricLogger):
         self.run_params = {}  # Map run_id -> dict of params to log on init
 
     def _capture_trackio_output(self, func, *args, **kwargs):
-        """Execute a trackio function while capturing and logging its stdout output."""
+        """
+        Execute a trackio function while capturing and logging its stdout output.
+        Filters out most trackio output to avoid cluttering the logger and notebookcell
+        Args:
+            func: The trackio function to execute
+            *args: Arguments to pass to the function
+            **kwargs: Keyword arguments to pass to the function
+        Returns:
+            The result of the function execution
+        """
         captured_output = io.StringIO()
         with redirect_stdout(captured_output):
             result = func(*args, **kwargs)

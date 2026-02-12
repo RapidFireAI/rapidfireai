@@ -958,7 +958,7 @@ class Dispatcher:
             ic_logs = []
             with open(log_file_path, encoding="utf-8") as f:
                 for line in f:
-                    if f"| {experiment_name} | interactive-control |" in line:
+                    if f"[{experiment_name}:InteractiveControl]" in line:
                         ic_logs.append(line.strip())
 
             return jsonify(ic_logs), 200
