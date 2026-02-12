@@ -718,10 +718,12 @@ def _setup_callbacks(
         else:
             formatted_eval_dataset = trainer_config.eval_dataset
 
+        gen_config = additional_trainer_kwargs.get("generation_config") or {}
+
         generation_callback = GenerationMetricsCallback(
             tokenizer=tokenizer,
             eval_dataset=formatted_eval_dataset,
-            generation_config=additional_trainer_kwargs.get("generation_config"),
+            generation_config=gen_config,
             compute_metrics=compute_metrics_function,
             batch_size=training_args.get("per_device_eval_batch_size"),
             metric_logger=metric_logger,
