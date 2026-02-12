@@ -1,16 +1,11 @@
 """
 RAG (Retrieval-Augmented Generation) Specification using LangChain components.
 
-This module provides a comprehensive RAG implementation that combines document loading,
-text splitting, embedding generation, vector storage, and retrieval functionality.
-Uses FAISS by default for both CPU and GPU similarity search with optimized indexes:
-- GPU: IndexFlatL2 moved to GPU using StandardGpuResources for exact L2 distance search
-- CPU: IndexHNSWFlat for approximate nearest neighbor search with HNSW algorithm
 """
 
 import copy
 from collections.abc import Callable
-from typing import Any, Optional, List as list
+from typing import Any, Optional
 import hashlib
 import json
 
@@ -20,6 +15,7 @@ from langchain_core.documents import Document
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
 from langchain_core.embeddings import Embeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStore
 from langchain_text_splitters import TextSplitter
@@ -43,44 +39,44 @@ def _default_document_template(doc: Document) -> str:
 
 class LangChainRagSpec:
     """
-    A comprehensive RAG (Retrieval-Augmented Generation) implementation using LangChain.
+    RAG (Retrieval-Augmented Generation) implementation using LangChain.
 
-    This class provides a complete pipeline for document processing, embedding generation,
-    vector storage, and batch context retrieval for RAG applications. Uses FAISS by default
-    for both CPU and GPU similarity search with optimized flat indexes for maximum performance.
+    This module provides a RAG implementation that combines document loading (optional),
+    text splitting (optional), embedding generation, vector storage (optional), and
+    retrieval. All retrieval paths are normalized to a LangChain BaseRetriever; that
+    retriever is what is used for query-time retrieval.
 
-    Attributes:
-        document_loader (BaseLoader): The document loader for loading source documents.
-        text_splitter (TextSplitter): The text splitter for chunking documents.
-        embedding_cls (Type[Embeddings]): The embedding class to instantiate.
-        embedding_kwargs (Dict[str, Any]): Dictionary containing all parameters needed to initialize the embedding class.
-        embedding (Optional[Embeddings]): The instantiated embedding model (created in initialize()).
-        vector_store (Optional[VectorStore]): The vector store for storing and searching embeddings.
-        retriever (BaseRetriever): The retriever for finding relevant documents.
-        search_type (str): The search algorithm type ('similarity', 'similarity_score_threshold', 'mmr').
-        search_kwargs (Dict[str, Any]): Additional search parameters including k, filter, fetch_k, lambda_mult.
-        reranker (Optional[Callable]): Optional reranking function for batch results.
-        enable_gpu_search (bool): Whether to use GPU FAISS (IndexFlatL2 on GPU) or CPU FAISS (IndexHNSWFlat).
+    Component flow:
+        - If a retriever is provided, it is used as-is.
+        - If no retriever but a vector store is provided, a retriever is created from the
+        vector store (via as_retriever()) and used. The embedding class is still required
+        to embed queries; it must match the embedding model used to build the vector store.
+        - If neither retriever nor vector store is provided, a FAISS vector store (and
+        retriever) is built from documents. In this case a document loader is required.
+        A text splitter is optional: you may embed documents without chunking if you omit it.
 
-    Vector Store Configuration:
-        - GPU Mode (enable_gpu_search=True): Creates IndexFlatL2 and moves to GPU for exact L2 distance search
-        - CPU Mode (enable_gpu_search=False): Uses IndexHNSWFlat for approximate search with HNSW
+    Embedding class is always required (for embedding queries, and for building the
+    index when one is created). When using a pre-built vector store, use the same
+    embedding model that was used to build it so retrieval results are meaningful.
 
-    Requirements:
-        - faiss-gpu package (provides both GPU and CPU FAISS implementations)
-        - CUDA-compatible GPU (for GPU mode)
+    FAISS defaults when building an index:
+    - GPU: IndexFlatL2 on GPU for exact L2 distance search
+    - CPU: IndexHNSWFlat for approximate nearest neighbor search with HNSW
+
+    Note: The retriever (and any vector store used to create it) must be serializable
+    for use on Ray.
     """
 
     def __init__(
         self,
-        document_loader: BaseLoader,
-        text_splitter: TextSplitter,
-        embedding_cls: type[Embeddings],  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
+        document_loader: Optional[BaseLoader] | None = None,
+        text_splitter: Optional[TextSplitter] | None = None,
+        embedding_cls: type[Embeddings] = HuggingFaceEmbeddings,  # e.g. HuggingFaceEmbeddings, OpenAIEmbeddings
         embedding_kwargs: Optional[dict[str, Any]] | None = None,
-        retriever: Optional[BaseRetriever] | None = None,
         vector_store: Optional[VectorStore] | None = None,
+        retriever: Optional[BaseRetriever] | None = None,
         search_type: str = "similarity",
-        search_kwargs: dict | None = None,
+        search_kwargs: Optional[dict[str, Any]] | None = None,
         reranker_cls: Optional[type[BaseDocumentCompressor]] | None = None,
         reranker_kwargs: Optional[dict[str, Any]] | None = None,
         enable_gpu_search: bool = False,
@@ -90,51 +86,37 @@ class LangChainRagSpec:
         Initialize the RAG specification with LangChain components.
 
         Args:
-            document_loader: The document loader for loading source documents.
-            text_splitter: The text splitter for chunking documents into smaller pieces.
-            embedding_cls: The embedding class (e.g., HuggingFaceEmbeddings) to instantiate.
-            embedding_kwargs: Dictionary containing all parameters needed to initialize the embedding class.
-                The user must provide the correct parameters for their chosen embedding class.
-                For example, HuggingFaceEmbeddings might need {'model_name': 'sentence-transformers/all-mpnet-base-v2', 'model_kwargs': {'device': 'cuda'}}.
-            retriever: Optional custom retriever. If not provided, one will be created
-                      from the FAISS vector_store.
-            vector_store: Optional vector store for storing embeddings. If not provided,
-                         a new FAISS vector store will be created automatically.
-            search_type: The search algorithm type. Options include:
-                        - "similarity": Standard similarity search
-                        - "similarity_score_threshold": Similarity with score threshold
-                        - "mmr": Maximum Marginal Relevance search
-            search_kwargs: Additional parameters for search configuration including:
-                          - k: Number of documents to retrieve (default: 5)
-                          - filter: Filter criteria for search (function)
-                          - fetch_k: Number of documents to fetch for MMR (default: 20)
-                          - lambda_mult: Diversity parameter for MMR (default: 0.5)
-            reranker: Optional function to rerank retrieved documents.
-                     Should accept a single list of Documents and return a reranked list.
-                     Will be applied to each query's results individually.
-            enable_gpu_search: Whether to use GPU-accelerated FAISS (IndexFlatL2 on GPU)
-                                  or CPU-based FAISS (IndexHNSWFlat) for similarity search.
-                                  Requires faiss-gpu package and CUDA-compatible GPU for GPU mode.
-                                  Default: False (uses CPU-based FAISS with HNSW algorithm).
-            document_template: Optional function to format documents.
-                            Should accept a single langchain_core.documents.Document and return a string.
-                            Default style is "metadata:\ncontent". If not provided, a default template is used.
-                            Multiple documents are separated by double newlines.
+            document_loader: Optional. Required only when neither retriever nor vector_store is provided,
+                so that a FAISS index is built from loaded documents.
+            text_splitter: Optional. When building an index from documents, chunks them before embedding.
+                If None, documents are embedded as whole pages (no chunking).
+            embedding_cls: Embedding class to instantiate (default: HuggingFaceEmbeddings). Used to embed
+                queries and to build the index when one is created. When using a pre-built vector_store,
+                use the same embedding model that was used to build it.
+            embedding_kwargs: Optional. Parameters to initialize the embedding class (e.g. HuggingFaceEmbeddings:
+                {'model_name': 'sentence-transformers/all-mpnet-base-v2', 'model_kwargs': {'device': 'cuda'}}).
+            vector_store: Optional. If retriever is not provided but vector_store is, a retriever is
+                created from it via as_retriever(). The embedding_cls must match the model used to build the store.
+            retriever: Optional. If provided, this retriever is used directly (no vector store build).
+            search_type: Search algorithm: "similarity", "similarity_score_threshold", or "mmr".
+            search_kwargs: Search config: k, filter, fetch_k, lambda_mult, etc. (default k=5).
+            reranker_cls: Optional reranker class (e.g. CrossEncoderReranker) for reranking results.
+            reranker_kwargs: Arguments for the reranker class.
+            enable_gpu_search: Use GPU FAISS (IndexFlatL2) when building index; default False (CPU HNSW).
+            document_template: Optional function (Document -> str) to format documents; default "metadata:\\ncontent".
 
         Raises:
-            ValueError: If invalid search_type is provided or required parameters are missing.
-            ImportError: If faiss-gpu package is not available.
-            RuntimeError: If GPU mode is requested but CUDA GPU is not available.
+            ValueError: If search_type is invalid, or document_loader is missing when building from documents.
         """
-        # Validate required parameters
-        # Note: document_loader and text_splitter can be None if retriever/vector_store
-        # are provided (for query-time reconstruction from serialized components)
-        if not document_loader and not retriever and not vector_store:
-            raise ValueError("document_loader is required unless retriever or vector_store is provided")
-        if not text_splitter and not retriever and not vector_store:
-            raise ValueError("text_splitter is required unless retriever or vector_store is provided")
-        if not embedding_cls:
+        # Embedding is always required (queries + optional index build)
+        if embedding_cls is None:
             raise ValueError("embedding_cls is required")
+        # Document loader required only when we build index from documents (no retriever, no vector_store)
+        if not document_loader and not retriever and not vector_store:
+            raise ValueError(
+                "document_loader is required when neither retriever nor vector_store is provided "
+                "(a FAISS index will be built from loaded documents)."
+            )
 
         # Validate search_type
         valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
@@ -194,25 +176,23 @@ class LangChainRagSpec:
 
     def build_index(self) -> None:
         """
-        Build the FAISS index and set up retrieval components.
+        Create the embedding instance and ensure a retriever is available.
 
-        This method must be called after instantiation to:
-        1. Create the embedding model instance using the provided class and parameters
-        2. Initialize the vector store with appropriate index type (GPU or CPU)
-        3. Build the document index by loading, splitting, and adding documents to FAISS
-        4. Create the retriever from the vector store
+        - If a retriever was provided at init, it is used as-is (embedding is still
+          created for any callers that need it).
+        - If a vector_store was provided but no retriever, a retriever is created from
+          it via as_retriever(search_type=..., search_kwargs=...).
+        - If neither retriever nor vector_store was provided, a FAISS vector store is
+          created, documents are loaded (and optionally split if text_splitter is set),
+          added to FAISS, and a retriever is created from the vector store.
 
-        The FAISS index selection depends on the enable_gpu_search flag:
-        - If True: Creates IndexFlatL2 and moves to GPU for exact L2 distance search
-        - If False: Uses FAISS IndexHNSWFlat for approximate nearest neighbor search on CPU
-
-        FAISS Index Configuration:
-        - GPU: IndexFlatL2 moved to GPU using StandardGpuResources, exact L2 distance search
-        - CPU (IndexHNSWFlat): HNSW algorithm with M=32, efConstruction=128, efSearch=64
+        FAISS index type when building:
+        - enable_gpu_search=True: IndexFlatL2 on GPU (exact L2 search).
+        - enable_gpu_search=False: IndexHNSWFlat on CPU (approximate HNSW search).
 
         Raises:
-            Exception: If embedding instantiation fails due to invalid parameters.
-            ImportError: If faiss-gpu package is not available.
+            Exception: If embedding instantiation fails.
+            ImportError: If faiss (or faiss-gpu) is not available when building index.
         """
         # Create embedding instance with provided configuration
         self.embedding = self.embedding_cls(**self.embedding_kwargs)
@@ -290,17 +270,17 @@ class LangChainRagSpec:
         """
         # Create new instance with same base configuration
         new_rag = LangChainRagSpec(
-            document_loader=self.document_loader,  # Shared reference
-            text_splitter=self.text_splitter,  # Shared reference
-            embedding_cls=self.embedding_cls,  # Shared reference
-            embedding_kwargs=self.embedding_kwargs,  # Shared reference
-            retriever=copy.deepcopy(self.retriever),  # Will be created fresh in initialize() if not provided
-            vector_store=self.vector_store,  # Will be created fresh in initialize() if not provided
-            search_type=self.search_type,  # Shared reference
-            search_kwargs=copy.deepcopy(self.search_kwargs),  # Deep copy to avoid shared refs
-            reranker_cls=self.reranker_cls,  # Shared reference
-            reranker_kwargs=copy.deepcopy(self.reranker_kwargs),  # Deep copy to avoid shared refs
-            enable_gpu_search=self.enable_gpu_search,  # Include GPU setting
+            embedding_cls=self.embedding_cls,
+            embedding_kwargs=self.embedding_kwargs,
+            document_loader=self.document_loader,
+            text_splitter=self.text_splitter,
+            retriever=copy.deepcopy(self.retriever) if self.retriever else None,
+            vector_store=copy.deepcopy(self.vector_store) if self.vector_store else None,
+            search_type=self.search_type,
+            search_kwargs=copy.deepcopy(self.search_kwargs),
+            reranker_cls=self.reranker_cls,
+            reranker_kwargs=copy.deepcopy(self.reranker_kwargs),
+            enable_gpu_search=self.enable_gpu_search,
         )
 
         return new_rag
@@ -328,19 +308,17 @@ class LangChainRagSpec:
 
     def _build_vector_store(self) -> None:
         """
-        Build the vector store by loading, splitting, and adding documents.
+        Build the vector store by loading documents, optionally splitting, and adding.
 
-        This method orchestrates the document processing pipeline by:
-        1. Loading documents from the source
-        2. Splitting them into chunks
-        3. Creating and populating the appropriate vector store (CPU or GPU-accelerated)
-
-        The FAISS vector store must already be initialized with the appropriate index type
-        (GpuIndexFlatL2 for GPU or IndexHNSWFlat for CPU) before calling this method.
-        Documents are added to the existing FAISS index using the add_documents() method.
+        Loads documents from the document_loader. If a text_splitter is configured,
+        documents are chunked before embedding; otherwise they are embedded as whole
+        documents. The FAISS vector store must already be initialized (in build_index)
+        before this method is called.
         """
-        all_splits = self._split_documents(documents=self._load_documents())
-        self.vector_store.add_documents(documents=all_splits)
+        documents = self._load_documents()
+        if self.text_splitter:
+            documents = self._split_documents(documents)
+        self.vector_store.add_documents(documents=documents)
 
     def _retrieve_from_vector_store(self, batch_queries: list[str]) -> list[list[Document]]:
         """
@@ -391,30 +369,9 @@ class LangChainRagSpec:
                       "metadata:\ncontent" and documents are separated by double newlines.
         """
         batch_docs = self._retrieve_from_vector_store(batch_queries=batch_queries)
-        batch_docs = self._rerank_docs(batch_docs=batch_docs)
+        batch_docs = self._rerank_docs(batch_queries=batch_queries, batch_docs=batch_docs)
         context = self._serialize_docs(batch_docs=batch_docs)
         return context
-
-    def _rerank_docs(self, batch_docs: list[list[Document]]) -> list[list[Document]]:
-        """
-        Optionally rerank batch documents using the configured reranker function.
-
-        The reranker function is applied to each query's document list individually,
-        maintaining the intuitive API where rerankers work on single document lists.
-
-        Args:
-            batch_docs: A batch of document lists where each inner list contains
-                       documents for a single query.
-
-        Returns:
-            List[List[Document]]: The batch of documents, reranked if a reranker
-                                 is configured, otherwise returned as-is. Maintains
-                                 the same structure as input.
-        """
-        if self.reranker:
-            # Apply reranker to each query's documents individually
-            return [self.reranker(docs) for docs in batch_docs]
-        return batch_docs
 
     def serialize_documents(self, batch_docs: list[list[Document]]) -> list[str]:
         """
@@ -471,11 +428,11 @@ class LangChainRagSpec:
         rag_dict = {}
 
         # Document loader configuration
-        if hasattr(self.document_loader, "path"):
+        if self.document_loader is not None and hasattr(self.document_loader, "path"):
             rag_dict["documents_path"] = self.document_loader.path
 
-        # Text splitter configuration
-        if hasattr(self, "text_splitter"):
+        # Text splitter configuration (optional)
+        if self.text_splitter is not None:
             text_splitter = self.text_splitter
             rag_dict["chunk_size"] = getattr(text_splitter, "_chunk_size", None)
             rag_dict["chunk_overlap"] = getattr(text_splitter, "_chunk_overlap", None)

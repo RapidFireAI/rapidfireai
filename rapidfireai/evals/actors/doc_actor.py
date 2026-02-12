@@ -86,7 +86,8 @@ class DocProcessingActor:
                 - template: Document formatting template (if RAG spec provided)
                 - prompt_manager: Initialized prompt manager (if provided)
                 - enable_gpu_search: Flag indicating if GPU search was used during build (if RAG spec provided)
-                - reranker: Reranker function (if RAG spec provided and reranker exists)
+                - reranker_cls: Reranker class (if RAG spec provided and reranker exists)
+                - reranker_kwargs: Reranker kwargs (if RAG spec provided and reranker exists)
 
         Raises:
             RuntimeError: If any error occurs during RAG component building. The original exception
@@ -98,9 +99,9 @@ class DocProcessingActor:
             # Build RAG (embeddings, FAISS index) if RAG spec provided
             # If enable_gpu_search=True, this builds on GPU
             if rag_spec:
-                self.logger.info("Building FAISS index...")
+                self.logger.info("Building document index...")
                 rag_spec.build_index()
-                self.logger.info("FAISS index built successfully")
+                self.logger.info("Document index built successfully")
 
                 # Transfer GPU index to CPU for serialization (if GPU was used)
                 if rag_spec.enable_gpu_search:
