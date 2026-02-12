@@ -73,9 +73,6 @@ class Controller:
         self.shm_manager: SharedMemoryManager = SharedMemoryManager(
             name="controller-shm"
         )
-        self.shm_manager: SharedMemoryManager = SharedMemoryManager(
-            name="controller-shm"
-        )
         registry, process_lock = self.shm_manager.get_shm_objects()
 
         # create worker manager
@@ -183,9 +180,6 @@ class Controller:
                 raise ControllerException(
                     f"Failed to create required Run DataPath directories: {e}"
                 ) from e
-                raise ControllerException(
-                    f"Failed to create required Run DataPath directories: {e}"
-                ) from e
 
             # create new tracking run
             metric_run_id = None
@@ -223,9 +217,6 @@ class Controller:
                 self.logger.error(msg, exc_info=True)
 
         total_runs = len(runs)
-        self.logger.info(
-            f"Created {total_runs} runs - \n{pformat(runs, indent=4, width=120)}"
-        )
         self.logger.info(
             f"Created {total_runs} runs - \n{pformat(runs, indent=4, width=120)}"
         )
@@ -297,9 +288,6 @@ class Controller:
                 self.db.set_ic_ops_task_status(
                     run_state["task_id"], TaskStatus.COMPLETED
                 )
-                self.db.set_ic_ops_task_status(
-                    run_state["task_id"], TaskStatus.COMPLETED
-                )
                 self.ic_logger.info(f"Stopping run {run_id} by Interactive Control")
             elif run_state["status"] == RunStatus.DELETED:
                 # process deleted tasks
@@ -319,9 +307,6 @@ class Controller:
                 self.db.set_ic_ops_task_status(
                     run_state["task_id"], TaskStatus.COMPLETED
                 )
-                self.db.set_ic_ops_task_status(
-                    run_state["task_id"], TaskStatus.COMPLETED
-                )
                 self.ic_logger.info(f"Deleting run {run_id} by Interactive Control")
             elif run_state["status"] == RunStatus.ONGOING:
                 # process ongoing tasks
@@ -333,15 +318,9 @@ class Controller:
                 self.db.set_ic_ops_task_status(
                     run_state["task_id"], TaskStatus.COMPLETED
                 )
-                self.db.set_ic_ops_task_status(
-                    run_state["task_id"], TaskStatus.COMPLETED
-                )
                 self.ic_logger.info(f"Resuming run {run_id} by Interactive Control")
             elif run_state["status"] == RunStatus.COMPLETED:
                 # process completed tasks
-                self.logger.warning(
-                    f"Run {run_id} is already completed. Skipping Interactive Control task."
-                )
                 self.logger.warning(
                     f"Run {run_id} is already completed. Skipping Interactive Control task."
                 )
@@ -360,9 +339,6 @@ class Controller:
             # add additional_kwargs to config_leaf if it exists in the parent run
             parent_run_details = self.db.get_run(parent_run_id)
             if "additional_kwargs" in parent_run_details["config_leaf"]:
-                config_leaf["additional_kwargs"] = parent_run_details["config_leaf"][
-                    "additional_kwargs"
-                ]
                 config_leaf["additional_kwargs"] = parent_run_details["config_leaf"][
                     "additional_kwargs"
                 ]
@@ -439,12 +415,6 @@ class Controller:
                 raise ControllerException(
                     f"Error creating model for run {parent_run_id}: {e}"
                 ) from e
-                self.ic_logger.error(
-                    f"Error creating model for run {parent_run_id}: {e}"
-                )
-                raise ControllerException(
-                    f"Error creating model for run {parent_run_id}: {e}"
-                ) from e
 
     def _process_interm_ic_ops_states(
         self,
@@ -504,9 +474,6 @@ class Controller:
                     ControllerTask.IC_STOP,
                 ]:
                     # ignore RESUME/STOP tasks for completed runs
-                    self.ic_logger.warning(
-                        f"Ignoring RESUME/STOP task for run {run_id} as it is already completed"
-                    )
                     self.ic_logger.warning(
                         f"Ignoring RESUME/STOP task for run {run_id} as it is already completed"
                     )
