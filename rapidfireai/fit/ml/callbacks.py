@@ -1,9 +1,15 @@
 from collections.abc import Callable
 
 import torch
+import torch.distributed as dist
 from datasets import Dataset
 from tqdm import tqdm
-from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+from transformers import (
+    TrainerCallback,
+    TrainerControl,
+    TrainerState,
+    TrainingArguments,
+)
 from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
 
@@ -18,6 +24,7 @@ class GenerationMetricsCallback(TrainerCallback):
         metric_logger=None,
         metric_run_id: str = None,
         completed_steps: int = 0,
+        use_fsdp: bool = False,
     ):
         self.tokenizer = tokenizer
         self.eval_dataset = eval_dataset
@@ -34,6 +41,10 @@ class GenerationMetricsCallback(TrainerCallback):
         self.metric_logger = metric_logger
         self.metric_run_id = metric_run_id
         self.completed_steps = completed_steps
+        self.use_fsdp = use_fsdp
+
+        # Always force use_cache=True (model may have it disabled for FSDP training)
+        self.generation_config["use_cache"] = True
 
     def on_evaluate(
         self,
@@ -86,7 +97,9 @@ class GenerationMetricsCallback(TrainerCallback):
             elif "prompt" in item and "completion" in item:
                 input_text = item["prompt"]
                 reference = item["completion"][-1]["content"]
-                input_text = self.tokenizer.apply_chat_template(input_text, tokenize=False)
+                input_text = self.tokenizer.apply_chat_template(
+                    input_text, tokenize=False
+                )
             elif "text" in item:
                 # SFT format - use text as input, response as reference
                 input_text = item["text"]
@@ -130,18 +143,48 @@ class GenerationMetricsCallback(TrainerCallback):
             print(f"Warning: Tokenization error in generation callback: {e}")
             return torch.empty((0, 0), dtype=torch.long).to(model.device)
 
-    def _compute_generation_metrics(self, model, step: int) -> dict[str, float]:
-        """Generate text and compute BLEU/ROUGE metrics with batch processing"""
-        model.eval()
 
-        # Determine evaluation samples
-        eval_size = len(self.eval_dataset)
-        indices = list(range(eval_size))
-
+    def _run_generation_loop(
+        self,
+        model,
+        input_ids: torch.Tensor,
+        batch_references: list[str],
+        device,
+        override_batch_size: int | None = None,
+    ) -> tuple[list[str], list[str]]:
+        """Run the autoregressive generation loop over batches and return predictions + references."""
         predictions = []
         references = []
+        num_samples = input_ids.shape[0]
+        batch_size = override_batch_size or self.batch_size
 
-        # Process in batches
+        with torch.no_grad():
+            for i in tqdm(
+                range(0, num_samples, batch_size), desc="Generating for metrics"
+            ):
+                input_ids_batch = input_ids[i : i + batch_size].to(device)
+                with torch.inference_mode(), torch.amp.autocast("cuda"):
+                    outputs_batch = model.generate(
+                        input_ids_batch, **self.generation_config
+                    )
+                generated_texts = self.tokenizer.batch_decode(
+                    outputs_batch[:, input_ids_batch.shape[1] :],
+                    skip_special_tokens=True,
+                )
+                predictions.extend(generated_texts)
+                references.extend(batch_references[i : i + batch_size])
+
+        return predictions, references
+
+    def _compute_generation_metrics(self, model, step: int) -> dict[str, float]:
+        """Generate text and compute BLEU/ROUGE metrics with batch processing.
+
+        For FSDP: all ranks participate in generation (required for collective
+        ops), but only rank 0 computes text metrics. Results are broadcast.
+        """
+        model.eval()
+
+        # Prepare data
         input_texts, batch_references = self._prepare_data(self.eval_dataset)
 
         # Early return if no valid data
@@ -156,19 +199,52 @@ class GenerationMetricsCallback(TrainerCallback):
             print("Warning: Empty input_ids from tokenization")
             return {}
 
-        with torch.no_grad():
-            for i in tqdm(range(0, len(indices), self.batch_size), desc="Generating for metrics"):
-                input_ids_batch = input_ids[i : i + self.batch_size]
-                with torch.inference_mode(), torch.amp.autocast("cuda"):
-                    outputs_batch = model.generate(input_ids_batch, **self.generation_config)
-                generated_texts = self.tokenizer.batch_decode(
-                    outputs_batch[:, input_ids_batch.shape[1] :],
-                    skip_special_tokens=True,
-                )
-                predictions.extend(generated_texts)
-                references.extend(batch_references[i : i + self.batch_size])
+        # Enable KV cache for generation (model may have use_cache=False for FSDP training)
+        # Must set BOTH model.config and model.generation_config so that
+        # model.generate() actually activates the cache in forward()
+        original_config_use_cache = getattr(model.config, "use_cache", False)
+        original_genconfig_use_cache = getattr(
+            getattr(model, "generation_config", None), "use_cache", None
+        )
+        model.config.use_cache = True
+        if hasattr(model, "generation_config") and model.generation_config is not None:
+            model.generation_config.use_cache = True
 
-        # Compute metrics
+        # Use a larger batch size for generation (training batch_size=1 is wasteful here)
+        gen_batch_size = max(self.batch_size, 4) if self.use_fsdp else self.batch_size
+
+        try:
+            if self.use_fsdp:
+                metrics = self._compute_metrics_fsdp(
+                    model, input_ids, batch_references, gen_batch_size
+                )
+            else:
+                metrics = self._compute_metrics_standard(
+                    model, input_ids, batch_references
+                )
+        finally:
+            # Restore original use_cache settings for training
+            model.config.use_cache = original_config_use_cache
+            if (
+                hasattr(model, "generation_config")
+                and model.generation_config is not None
+                and original_genconfig_use_cache is not None
+            ):
+                model.generation_config.use_cache = original_genconfig_use_cache
+
+        return metrics
+
+    def _compute_metrics_standard(
+        self,
+        model,
+        input_ids: torch.Tensor,
+        batch_references: list[str],
+    ) -> dict[str, float]:
+        """Non-FSDP generation path."""
+        predictions, references = self._run_generation_loop(
+            model, input_ids, batch_references, model.device
+        )
+
         metrics = {}
         try:
             if self.compute_metrics and predictions:
@@ -176,10 +252,49 @@ class GenerationMetricsCallback(TrainerCallback):
         except Exception:
             return {}
 
-        # Cleanup
         del predictions, references
-        # if torch.cuda.is_available():
-        #     torch.cuda.empty_cache()
+        return metrics
+
+    def _compute_metrics_fsdp(
+        self,
+        model,
+        input_ids: torch.Tensor,
+        batch_references: list[str],
+        gen_batch_size: int = 4,
+    ) -> dict[str, float]:
+        """FSDP-aware generation: all ranks participate in model.generate()
+        (required -- FSDP forward is a collective op), but only rank 0
+        computes BLEU/ROUGE to avoid redundant work. Metrics are broadcast
+        to all ranks afterward."""
+        rank = dist.get_rank() if dist.is_initialized() else 0
+
+        # All ranks MUST call model.generate() together -- FSDP forward
+        # uses all-gather/reshard which are collective NCCL operations.
+        predictions, references = self._run_generation_loop(
+            model,
+            input_ids,
+            batch_references,
+            model.device,
+            override_batch_size=gen_batch_size,
+        )
+
+        # Only rank 0 computes the expensive text metrics (BLEU/ROUGE)
+        metrics = {}
+        if rank == 0:
+            try:
+                if self.compute_metrics and predictions:
+                    metrics = self.compute_metrics((predictions, references))
+            except Exception:
+                metrics = {}
+
+        del predictions, references
+
+        # Broadcast metrics from rank 0 to all other ranks
+        if dist.is_initialized():
+            metrics_list = [metrics]
+            dist.broadcast_object_list(metrics_list, src=0)
+            metrics = metrics_list[0]
+            dist.barrier()
 
         return metrics
 
@@ -194,7 +309,7 @@ class MetricLoggingCallback(TrainerCallback):
         excluded_keys: list = None,
         completed_steps: int = 0,
         chunk_id: int = 0,
-        num_epochs_completed: int = 0
+        num_epochs_completed: int = 0,
     ):
         self.metric_logger = metric_logger
         self.metric_run_id = metric_run_id
@@ -228,7 +343,9 @@ class MetricLoggingCallback(TrainerCallback):
                                 step=step,
                             )
                     except Exception as e:
-                        print(f"Warning: Failed to log metric {key} to tracking backend: {e}")
+                        print(
+                            f"Warning: Failed to log metric {key} to tracking backend: {e}"
+                        )
             if "eval_loss" not in logs and "train_runtime" not in logs:
                 if self.metric_logger:
                     self.metric_logger.log_metric(
@@ -308,7 +425,10 @@ class LogLevelCallback(TrainerCallback):
             control.should_log = True
 
         # Evaluate
-        if args.eval_strategy == IntervalStrategy.EPOCH and args.eval_delay <= state.epoch:
+        if (
+            args.eval_strategy == IntervalStrategy.EPOCH
+            and args.eval_delay <= state.epoch
+        ):
             control.should_evaluate = True
 
         # Save

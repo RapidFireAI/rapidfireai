@@ -51,7 +51,9 @@ class RfDb:
                     cursor = self.db.conn.execute("PRAGMA table_info(runs)")
                     columns = [column[1] for column in cursor.fetchall()]
                     if "metric_run_id" not in columns:
-                        self.db.conn.execute("ALTER TABLE runs ADD COLUMN metric_run_id TEXT")
+                        self.db.conn.execute(
+                            "ALTER TABLE runs ADD COLUMN metric_run_id TEXT"
+                        )
                         self.db.conn.commit()
                 except sqlite3.Error:
                     pass
@@ -59,7 +61,9 @@ class RfDb:
                     cursor = self.db.conn.execute("PRAGMA table_info(experiments)")
                     columns = [column[1] for column in cursor.fetchall()]
                     if "metric_experiment_id" not in columns:
-                        self.db.conn.execute("ALTER TABLE experiments ADD COLUMN metric_experiment_id TEXT")
+                        self.db.conn.execute(
+                            "ALTER TABLE experiments ADD COLUMN metric_experiment_id TEXT"
+                        )
                         self.db.conn.commit()
                 except sqlite3.Error:
                     pass
@@ -107,7 +111,13 @@ class RfDb:
             WHERE status = ? OR status = ?
         """
         self.db.execute(
-            query, (TaskStatus.FAILED.value, TaskStatus.IN_PROGRESS.value, TaskStatus.SCHEDULED.value), commit=True
+            query,
+            (
+                TaskStatus.FAILED.value,
+                TaskStatus.IN_PROGRESS.value,
+                TaskStatus.SCHEDULED.value,
+            ),
+            commit=True,
         )
 
         # mark ongoing and new Runs as failed
@@ -170,14 +180,18 @@ class RfDb:
             ORDER BY experiment_id DESC
             LIMIT 1
         """
-        experiment_details = self.db.execute(query, (ExperimentStatus.RUNNING.value,), fetch=True)
+        experiment_details = self.db.execute(
+            query, (ExperimentStatus.RUNNING.value,), fetch=True
+        )
 
         if experiment_details:
             experiment_details = experiment_details[0]
             experiment_details = {
                 "experiment_id": experiment_details[0],
                 "experiment_name": experiment_details[1],
-                "status": experiment_details[2],  # Return string value, not enum (for JSON serialization)
+                "status": experiment_details[
+                    2
+                ],  # Return string value, not enum (for JSON serialization)
                 "error": experiment_details[3],
                 "metric_experiment_id": experiment_details[4],
                 "config_options": decode_db_payload(experiment_details[5]),
@@ -199,7 +213,9 @@ class RfDb:
             return ExperimentStatus(status[0][0])
         raise DBException("No experiment status found")
 
-    def set_experiment_status(self, experiment_id: int, status: ExperimentStatus) -> None:
+    def set_experiment_status(
+        self, experiment_id: int, status: ExperimentStatus
+    ) -> None:
         """Set the status of an experiment"""
         query = """
             UPDATE experiments
@@ -239,7 +255,9 @@ class RfDb:
             SET current_task = ?
             WHERE status = ?
         """
-        self.db.execute(query, (task.value, ExperimentStatus.RUNNING.value), commit=True)
+        self.db.execute(
+            query, (task.value, ExperimentStatus.RUNNING.value), commit=True
+        )
 
     def get_experiment_current_task(self) -> ExperimentTask:
         """Get the current task of an experiment"""
@@ -299,13 +317,16 @@ class RfDb:
         ended_by: RunEndedBy | None = None,
         warm_started_from: int | None = None,
         cloned_from: int | None = None,
+        estimated_runtime: float = 0.0,
+        required_workers: int = 0,
     ) -> int:
         """Create a new run"""
         query = """
             INSERT INTO runs (status, metric_run_id, flattened_config, config_leaf,
             completed_steps, total_steps, num_chunks_visited_curr_epoch,
-            num_epochs_completed, chunk_offset, error, source, ended_by, warm_started_from, cloned_from)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            num_epochs_completed, chunk_offset, error, source, ended_by, warm_started_from, cloned_from,
+            estimated_runtime, required_workers)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         self.db.execute(
             query,
@@ -324,6 +345,8 @@ class RfDb:
                 ended_by.value if ended_by else "",
                 warm_started_from,
                 cloned_from,
+                estimated_runtime,
+                required_workers,
             ),
             commit=True,
         )
@@ -349,13 +372,17 @@ class RfDb:
         ended_by: RunEndedBy | None = None,
         warm_started_from: int | None = None,
         cloned_from: int | None = None,
+        estimated_runtime: float | None = None,
+        required_workers: int | None = None,
     ) -> None:
         """Set the details of an existing run"""
         # Initialize a dictionary to hold the column-value pairs
         columns = {
             "status": status.value if status else None,
             "metric_run_id": metric_run_id,
-            "flattened_config": json.dumps(flattened_config) if flattened_config else None,
+            "flattened_config": (
+                json.dumps(flattened_config) if flattened_config else None
+            ),
             "config_leaf": encode_payload(config_leaf) if config_leaf else None,
             "completed_steps": completed_steps,
             "total_steps": total_steps,
@@ -367,6 +394,8 @@ class RfDb:
             "ended_by": ended_by.value if ended_by else None,
             "warm_started_from": warm_started_from,
             "cloned_from": cloned_from,
+            "estimated_runtime": estimated_runtime,
+            "required_workers": required_workers,
         }
 
         # Filter out None values
@@ -394,7 +423,7 @@ class RfDb:
         query = """
             SELECT status, metric_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
-            warm_started_from, cloned_from
+            warm_started_from, cloned_from, estimated_runtime, required_workers
             FROM runs
             WHERE run_id = ?
         """
@@ -406,7 +435,11 @@ class RfDb:
                 "status": RunStatus(run_details[0]),
                 "metric_run_id": run_details[1],
                 "flattened_config": json.loads(run_details[2]),
-                "config_leaf": decode_db_payload(run_details[3]) if run_details[3] and run_details[3] != "{}" else {},
+                "config_leaf": (
+                    decode_db_payload(run_details[3])
+                    if run_details[3] and run_details[3] != "{}"
+                    else {}
+                ),
                 "completed_steps": run_details[4],
                 "total_steps": run_details[5],
                 "num_chunks_visited_curr_epoch": run_details[6],
@@ -417,11 +450,15 @@ class RfDb:
                 "ended_by": RunEndedBy(run_details[11]) if run_details[11] else None,
                 "warm_started_from": run_details[12],
                 "cloned_from": run_details[13],
+                "estimated_runtime": run_details[14],
+                "required_workers": run_details[15],
             }
             return formatted_details
         raise DBException("No run found")
 
-    def get_runs_by_status(self, statuses: list[RunStatus]) -> dict[int, dict[str, Any]]:
+    def get_runs_by_status(
+        self, statuses: list[RunStatus]
+    ) -> dict[int, dict[str, Any]]:
         """Get all runs by statuses"""
         if not statuses:
             return {}
@@ -431,7 +468,7 @@ class RfDb:
         query = f"""
             SELECT run_id, status, metric_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
-            warm_started_from, cloned_from
+            warm_started_from, cloned_from, estimated_runtime, required_workers
             FROM runs
             WHERE status IN ({placeholders})
         """
@@ -445,7 +482,9 @@ class RfDb:
                     "status": RunStatus(run[1]),
                     "metric_run_id": run[2],
                     "flattened_config": json.loads(run[3]),
-                    "config_leaf": decode_db_payload(run[4]) if run[4] and run[4] != "{}" else {},
+                    "config_leaf": (
+                        decode_db_payload(run[4]) if run[4] and run[4] != "{}" else {}
+                    ),
                     "completed_steps": run[5],
                     "total_steps": run[6],
                     "num_chunks_visited_curr_epoch": run[7],
@@ -456,6 +495,8 @@ class RfDb:
                     "ended_by": RunEndedBy(run[12]) if run[12] else None,
                     "warm_started_from": run[13],
                     "cloned_from": run[14],
+                    "estimated_runtime": run[15],
+                    "required_workers": run[16],
                 }
         return formatted_details
 
@@ -464,7 +505,7 @@ class RfDb:
         query = """
             SELECT run_id, status, metric_run_id, flattened_config, config_leaf, completed_steps, total_steps,
             num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
-            warm_started_from, cloned_from
+            warm_started_from, cloned_from, estimated_runtime, required_workers
             FROM runs
         """
         run_details = self.db.execute(query, fetch=True)
@@ -476,7 +517,9 @@ class RfDb:
                     "status": RunStatus(run[1]),
                     "metric_run_id": run[2],
                     "flattened_config": json.loads(run[3]),
-                    "config_leaf": decode_db_payload(run[4]) if run[4] and run[4] != "{}" else {},
+                    "config_leaf": (
+                        decode_db_payload(run[4]) if run[4] and run[4] != "{}" else {}
+                    ),
                     "completed_steps": run[5],
                     "total_steps": run[6],
                     "num_chunks_visited_curr_epoch": run[7],
@@ -487,6 +530,8 @@ class RfDb:
                     "ended_by": RunEndedBy(run[12]) if run[12] else None,
                     "warm_started_from": run[13],
                     "cloned_from": run[14],
+                    "estimated_runtime": run[15],
+                    "required_workers": run[16],
                 }
         return formatted_details
 
@@ -520,8 +565,19 @@ class RfDb:
             return completed_steps[0][0]
         raise DBException("No completed steps found")
 
+    def set_estimated_runtime(self, run_id: int, estimated_runtime: float) -> None:
+        """Set the estimated runtime for a run"""
+        query = """
+            UPDATE runs
+            SET estimated_runtime = ?
+            WHERE run_id = ?
+        """
+        self.db.execute(query, (estimated_runtime, run_id), commit=True)
+
     # Interactive Control Table
-    def create_ic_ops_task(self, run_id: int, ic_op: ControllerTask, config_leaf: dict[str, Any]) -> int:
+    def create_ic_ops_task(
+        self, run_id: int, ic_op: ControllerTask, config_leaf: dict[str, Any]
+    ) -> int:
         """Create a new interactive control task"""
         query = """
             INSERT INTO interactive_control (run_id, ic_op, config_leaf, status)
@@ -576,14 +632,18 @@ class RfDb:
         status: TaskStatus,
         run_id: int,
         chunk_id: int = -1,
+        multi_worker_details: dict[str, Any] | None = None,
         config_options: dict[str, Any] | None = None,
     ) -> int:
         """Create a worker task"""
 
         query = """
-            INSERT INTO worker_task (worker_id, task_type, status, run_id, chunk_id, config_options)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO worker_task (worker_id, task_type, status, run_id, chunk_id, multi_worker_details, config_options)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """
+        multi_worker_details_str = (
+            json.dumps(multi_worker_details) if multi_worker_details else "{}"
+        )
         config_options_str = encode_payload(config_options) if config_options else "{}"
         self.db.execute(
             query,
@@ -593,6 +653,7 @@ class RfDb:
                 status.value,
                 run_id,
                 chunk_id,
+                multi_worker_details_str,
                 config_options_str,
             ),
             commit=True,
@@ -605,7 +666,7 @@ class RfDb:
     def get_all_worker_tasks(self) -> dict[int, dict[str, Any]]:
         """Get the latest task of each worker"""
         query = """
-            SELECT worker_id, task_id, task_type, status, run_id, chunk_id, config_options
+            SELECT worker_id, task_id, task_type, status, run_id, chunk_id, multi_worker_details, config_options
             FROM worker_task wt1
             WHERE task_id = (
                 SELECT MAX(task_id)
@@ -624,31 +685,53 @@ class RfDb:
                     "status": TaskStatus(task[3]),
                     "run_id": task[4],
                     "chunk_id": task[5],
-                    "config_options": decode_db_payload(task[6]) if task[6] and task[6] != "{}" else {},
+                    "multi_worker_details": (
+                        json.loads(task[6]) if task[6] and task[6] != "{}" else {}
+                    ),
+                    "config_options": (
+                        decode_db_payload(task[7])
+                        if task[7] and task[7] != "{}"
+                        else {}
+                    ),
                 }
         return formatted_details
 
     def get_worker_scheduled_task(self, worker_id: int) -> dict[str, Any]:
         """Get the latest scheduled task for a worker"""
         query = """
-            SELECT task_id, task_type, run_id, chunk_id, config_options
+            SELECT task_id, task_type, run_id, chunk_id, multi_worker_details, config_options
             FROM worker_task
             WHERE worker_id = ? AND status = ?
             ORDER BY task_id DESC
             LIMIT 1
         """
-        task_details = self.db.execute(query, (worker_id, TaskStatus.SCHEDULED.value), fetch=True)
+        task_details = self.db.execute(
+            query, (worker_id, TaskStatus.SCHEDULED.value), fetch=True
+        )
 
         if task_details:
             task_details = task_details[0]
+            multi_worker_details = (
+                json.loads(task_details[4])
+                if task_details[4] and task_details[4] != "{}"
+                else {}
+            )
+            config_options = (
+                decode_db_payload(task_details[5])
+                if task_details[5] and task_details[5] != "{}"
+                else {}
+            )
             formatted_details = {
                 "task_id": task_details[0],
                 "task_type": WorkerTask(task_details[1]),
                 "run_id": task_details[2],
                 "chunk_id": task_details[3],
-                "config_options": decode_db_payload(task_details[4])
-                if task_details[4] and task_details[4] != "{}"
-                else {},
+                "multi_worker_details": multi_worker_details,
+                "config_options": (
+                    config_options
+                    if task_details[4] and task_details[4] != "{}"
+                    else {}
+                ),
             }
             return formatted_details
         return {}
