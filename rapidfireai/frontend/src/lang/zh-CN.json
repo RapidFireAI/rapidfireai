@@ -4623,7 +4623,7 @@
     "description" : "Endpoint details page > External model details > AI Gateway details section > Edit button (displayed when AI gateway has existing configuration that can be changed)"
   },
   "SzapEm" : {
-    "defaultMessage" : "使用最新版本的 MLFlow 记录模型后，它们将显示在此处。<link>了解更多</link>。",
+    "defaultMessage" : "使用最新版本的 MLflow 记录模型后，它们将显示在此处。<link>了解更多</link>。",
     "description" : "Placeholder for empty models table on the logged models list page"
   },
   "SzvvXl" : {
@@ -5512,7 +5512,7 @@
     "description" : "Error message when traffic percentage is empty"
   },
   "Y3rXl0" : {
-    "defaultMessage" : "使用跟踪功能来检测 GenAI 应用程序，以解锁 MLFlow 的调试、评估和监控功能。{learnMoreLink}",
+    "defaultMessage" : "使用跟踪功能来检测 GenAI 应用程序，以解锁 MLflow 的调试、评估和监控功能。{learnMoreLink}",
     "description" : "Introduction text for the local app instrumentation drawer"
   },
   "Y47tVZ" : {
@@ -6426,7 +6426,7 @@
     "description" : "Generic 500 user-friendly error for the MLflow UI"
   },
   "dhMjxj" : {
-    "defaultMessage" : "创建 MLFlow 跟踪教程实验时出现问题：",
+    "defaultMessage" : "创建 MLflow 跟踪教程实验时出现问题：",
     "description" : "Error message for experiment creation failure"
   },
   "dhp2Xh" : {
@@ -8166,7 +8166,7 @@
     "description" : "Dropdown text to display columns names that could to be rendered for the experiment runs table"
   },
   "nyHcAz" : {
-    "defaultMessage" : "MLFlow 部署返回了以下错误：“{errorMessage}”",
+    "defaultMessage" : "MLflow 部署返回了以下错误：“{errorMessage}”",
     "description" : "Experiment page > MLflow deployment error message"
   },
   "o1BTcp" : {

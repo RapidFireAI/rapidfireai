@@ -11,7 +11,7 @@ from rapidfireai.utils.ping import ping_server
 from rapidfireai.utils.constants import (
     JupyterConfig,
     DispatcherConfig,
-    MLFlowConfig,
+    MLflowConfig,
     FrontendConfig,
     RayConfig,
     ColabConfig,
@@ -167,7 +167,7 @@ def get_doctor_info(log_lines: int = 10):
     for check_item in [
         {"host": JupyterConfig.HOST, "port": JupyterConfig.PORT, "service": "Jupyter"}, 
         {"host": DispatcherConfig.HOST, "port": DispatcherConfig.PORT, "service": "API(Dispatcher)"}, 
-        {"host": MLFlowConfig.HOST, "port": MLFlowConfig.PORT, "service": "MLFlow"},
+        {"host": MLflowConfig.HOST, "port": MLflowConfig.PORT, "service": "MLflow"},
         {"host": FrontendConfig.HOST, "port": FrontendConfig.PORT, "service": "Frontend"},
         {"host": RayConfig.HOST, "port": RayConfig.PORT, "service": "Ray"}]:
 
@@ -209,7 +209,7 @@ def get_doctor_info(log_lines: int = 10):
     print(f"RF_TRACKIO_ENABLED: {RF_TRACKIO_ENABLED}")
     print(f"JupyterConfig: {JupyterConfig()}")
     print(f"DispatcherConfig: {DispatcherConfig()}")
-    print(f"MLFlowConfig: {MLFlowConfig()}")
+    print(f"MLflowConfig: {MLflowConfig()}")
     print(f"FrontendConfig: {FrontendConfig()}")
     print(f"RayConfig: {RayConfig()}")
     print(f"ColabConfig: {ColabConfig()}")

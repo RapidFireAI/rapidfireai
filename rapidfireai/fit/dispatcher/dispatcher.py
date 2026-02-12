@@ -9,24 +9,13 @@ from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.utils.constants import (
-    DispatcherConfig,
-    FrontendConfig,
-    MLFlowConfig,
-    RF_LOG_FILENAME,
-    RF_LOG_PATH,
-)
+from rapidfireai.utils.constants import DispatcherConfig, FrontendConfig, MLflowConfig, RF_LOG_FILENAME, RF_LOG_PATH
 from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.fit.utils.constants import ControllerTask
 from rapidfireai.fit.utils.exceptions import DispatcherException
 from rapidfireai.fit.utils.logging import RFLogger
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost",
-    DispatcherConfig.URL,
-    MLFlowConfig.URL,
-    FrontendConfig.URL,
-]
+CORS_ALLOWED_ORIGINS = ["http://localhost", DispatcherConfig.URL, MLflowConfig.URL, FrontendConfig.URL]
 
 
 class Dispatcher:

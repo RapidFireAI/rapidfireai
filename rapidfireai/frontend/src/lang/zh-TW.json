@@ -5245,7 +5245,7 @@
     "description" : "Label for the model version of the endpoint"
   },
   "WNz02j" : {
-    "defaultMessage" : "對於更複雜的使用案例，MLflow 亦提供可用來控制追蹤行為的精細 APIs。如需詳細資訊，請造訪與 MLFlow 追蹤相關 Fluent 和用戶端 API 的<a>官方文件</a>。",
+    "defaultMessage" : "對於更複雜的使用案例，MLflow 亦提供可用來控制追蹤行為的精細 APIs。如需詳細資訊，請造訪與 MLflow 追蹤相關 Fluent 和用戶端 API 的<a>官方文件</a>。",
     "description" : "Explanation of alternative APIs for custom tracing in MLflow. The link leads to the MLflow documentation for the user to learn more."
   },
   "WP1pyQ" : {
@@ -5293,7 +5293,7 @@
     "description" : "Title text for the producer schedule column."
   },
   "Wd8Tga" : {
-    "defaultMessage" : "無結構描述。有關如何在模型中包含輸入和輸出結構描述，請參閱 <link>MLFlow 文檔</link>。",
+    "defaultMessage" : "無結構描述。有關如何在模型中包含輸入和輸出結構描述，請參閱 <link>MLflow 文檔</link>。",
     "description" : "Text for schema table when no schema exists in the model version\n                     page"
   },
   "WeAgwI" : {
@@ -8166,7 +8166,7 @@
     "description" : "Dropdown text to display columns names that could to be rendered for the experiment runs table"
   },
   "nyHcAz" : {
-    "defaultMessage" : "MLFlow 部署傳回以下錯誤：「{errorMessage}」",
+    "defaultMessage" : "MLflow 部署傳回以下錯誤：「{errorMessage}」",
     "description" : "Experiment page > MLflow deployment error message"
   },
   "o1BTcp" : {
@@ -9244,7 +9244,7 @@
     "description" : "Title text for the features column."
   },
   "ulTmhI" : {
-    "defaultMessage" : "「自動記錄」的功能並不適用這個選項。您可以考慮改用手動監控或是 MLFlow 的追蹤 API。",
+    "defaultMessage" : "「自動記錄」的功能並不適用這個選項。您可以考慮改用手動監控或是 MLflow 的追蹤 API。",
     "description" : "Message suggesting manual instrumentation when autologging is not available"
   },
   "umeTwG" : {

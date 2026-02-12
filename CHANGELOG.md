@@ -136,7 +136,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Additional filesystem fixes for RAG/FIT split
 
 ### Changes
-- Changed default ports for Dispatcher = 8851, MLFlow = 8852, Frontend = 8853
+- Changed default ports for Dispatcher = 8851, MLflow = 8852, Frontend = 8853
 - New log directory variable RF_LOG_PATH
 - Additional changes to allow customization of ports used
 
@@ -163,7 +163,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 ### Added
 - Support for Google Colab
 - Links for RapidFireAI documentation, GitHub, and Discord in notebooks
-- Support for Tensorboard, currently only Colab
+- Support for TensorBoard, currently only Colab
 
 ### Changes
 - Relaxed `pip` dependency versions
@@ -184,7 +184,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 ## [v0.10.1]
 ### Changes
 
-- Upgrade to MLFlow 3 
+- Upgrade to MLflow 3 
 - Comment out installing `vllm` and `flash-attn` for now
 - Changed to be multiples of eff. batch and chunks
 - Adjusted logging steps and eval steps to show more points on curves

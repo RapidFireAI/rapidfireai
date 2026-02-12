@@ -19,7 +19,7 @@ import { LegacySkeleton } from '@databricks/design-system';
 import { MlflowRouter as MlflowRouter } from './MlflowRouter';
 import { useMLflowDarkTheme } from './common/hooks/useMLflowDarkTheme';
 
-export function MLFlowRoot() {
+export function MLflowRoot() {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const intl = useI18nInit();
   // eslint-disable-next-line react-hooks/rules-of-hooks

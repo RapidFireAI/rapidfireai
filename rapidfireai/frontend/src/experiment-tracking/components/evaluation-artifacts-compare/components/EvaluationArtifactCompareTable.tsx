@@ -3,7 +3,7 @@ import { RunRowType } from '../../experiment-page/utils/experimentPage.row-types
 import { UseEvaluationArtifactTableDataResult } from '../hooks/useEvaluationArtifactTableData';
 import { CellClickedEvent, ColDef, GridApi } from '@ag-grid-community/core';
 import { Typography, useDesignSystemTheme } from '@databricks/design-system';
-import { MLFlowAgGridLoader } from '../../../../common/components/ag-grid/AgGridLoader';
+import { MLflowAgGridLoader } from '../../../../common/components/ag-grid/AgGridLoader';
 import { EvaluationRunHeaderCellRenderer } from './EvaluationRunHeaderCellRenderer';
 import { EvaluationTextCellRenderer } from './EvaluationTextCellRenderer';
 import {
@@ -250,7 +250,7 @@ export const EvaluationArtifactCompareTable = ({
 
   return (
     <div css={{ height: '100%', overflow: 'hidden' }} ref={gridWrapperRef}>
-      <MLFlowAgGridLoader
+      <MLflowAgGridLoader
         css={createTableStyles(theme)}
         context={{ highlightedText }}
         rowHeight={EVALUATION_ARTIFACTS_TABLE_ROW_HEIGHT}

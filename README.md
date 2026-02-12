@@ -332,12 +332,12 @@ used to overwrite the defaults.
 - `RF_HOME` - Base RapidFire AI home directory (default: ${HOME}/rapidfireai on Non-Google Colab and /content/rapidfireai on Google Colab)
 - `RF_LOG_PATH` - Base directory to store log files (default: ${RF_HOME}/logs)
 - `RF_EXPERIMENT_PATH` - Base directory to store experiment work files (default: ${RF_HOME}/rapidfire_experiments)
-- `RF_TENSORBOARD_LOG_DIR` - Base directory for Tensorboard logs (default: ${RF_EXPERIMENT_PATH}/tensorboard_logs))
+- `RF_TENSORBOARD_LOG_DIR` - Base directory for TensorBoard logs (default: ${RF_EXPERIMENT_PATH}/tensorboard_logs))
 - `RF_LOG_FILENAME` - Default log file name (default: rapidfire.log)
 - `RF_TRAINING_LOG_FILENAME` - Default training log file name (default: training.log)
 - `RF_DB_PATH` - Base directory for database files (default: ${RF_HOME}/db)
-- `RF_MLFLOW_ENABLED` - Enable MLFlow tracking backend
-- `RF_TENSORBOARD_ENABLED` - Enable Tensorboard tracking backend
+- `RF_MLFLOW_ENABLED` - Enable MLflow tracking backend
+- `RF_TENSORBOARD_ENABLED` - Enable TensorBoard tracking backend
 - `RF_TRACKIO_ENABLED` - Enable Trackio tracking backend
 - `RF_COLAB_MODE` - Whether running on colab (default: false on Non-Google Colab and true on Google Colab)
 - `RF_TUTORIAL_PATH` - Location that `rapidfireai init` copies `tutorial_notebooks` to (default: ./tutorial_notebooks)
