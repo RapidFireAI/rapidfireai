@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import gc
 
 import torch
 import torch.distributed as dist
@@ -77,6 +78,14 @@ class GenerationMetricsCallback(TrainerCallback):
                     step=step,
                 )
 
+        # Critical: Switch model back to training mode and ensure training state is restored
+        model.train()
+        # Clear any cached computation graphs or compiled model states
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        gc.collect()
+
     def _prepare_data(self, eval_dataset: Dataset) -> tuple:
         """Prepare batch data for generation with defensive validation"""
         input_texts = []
@@ -152,9 +161,6 @@ class GenerationMetricsCallback(TrainerCallback):
         ``batch_decode(skip_special_tokens=True)`` produces clean text
         without post-EOS garbage.
         """
-        # Clone because the input may be an inference-mode tensor (from
-        # model.generate() under torch.inference_mode()) which forbids
-        # in-place modification.
         generated_ids = generated_ids.clone()
         for eos_id in eos_token_ids:
             mask = generated_ids == eos_id  # (batch, seq_len)
@@ -176,14 +182,6 @@ class GenerationMetricsCallback(TrainerCallback):
         eos_token_ids: list[int] | None = None,
     ) -> tuple[list[str], list[str]]:
         """Run the autoregressive generation loop over batches and return predictions + references.
-
-        Parameters
-        ----------
-        eos_token_ids : list[int] | None
-            When provided, each generated sequence is truncated at the
-            first occurrence of any of these token ids *before* decoding.
-            Used by the FSDP path where ``eos_token_id`` is removed from
-            the generation config to keep ranks in sync.
         """
         predictions = []
         references = []
@@ -221,14 +219,15 @@ class GenerationMetricsCallback(TrainerCallback):
                 # Free GPU tensors from this batch immediately to avoid
                 # accumulating KV-cache / output memory across batches.
                 del outputs_batch, input_ids_batch, new_tokens
+                torch.cuda.empty_cache()
+
+        # Final cleanup after all batches - clear any lingering CUDA state
+        torch.cuda.empty_cache()
 
         return predictions, references
 
     def _compute_generation_metrics(self, model, step: int) -> dict[str, float]:
         """Generate text and compute BLEU/ROUGE metrics with batch processing.
-
-        For FSDP: all ranks participate in generation (required for collective
-        ops), but only rank 0 computes text metrics. Results are broadcast.
         """
         model.eval()
 
@@ -279,7 +278,10 @@ class GenerationMetricsCallback(TrainerCallback):
             # Free the tokenized eval tensor and release CUDA cached memory
             # back to the allocator so it doesn't accumulate across eval runs.
             del input_ids
+            # Clear any CUDA graph cache that may have been created during generation
             torch.cuda.empty_cache()
+            # Force Python garbage collection to reclaim CPU memory
+            gc.collect()
 
         return metrics
 
@@ -300,8 +302,11 @@ class GenerationMetricsCallback(TrainerCallback):
                 metrics = self.compute_metrics((predictions, references))
         except Exception:
             return {}
+        finally:
+            # Explicitly delete predictions and references to free memory
+            del predictions, references
+            gc.collect()
 
-        del predictions, references
         return metrics
 
     def _compute_metrics_fsdp(
@@ -312,12 +317,6 @@ class GenerationMetricsCallback(TrainerCallback):
         gen_batch_size: int = 4,
     ) -> dict[str, float]:
         """FSDP-aware generation with data sharding across ranks.
-
-        Each rank generates on a different shard of the eval data while
-        still participating in FSDP collective operations (required because
-        the full model doesn't fit on a single GPU).  Only rank 0 computes
-        the final text metrics (BLEU / ROUGE).  Results are broadcast to
-        all ranks.
         """
         rank = dist.get_rank() if dist.is_initialized() else 0
         world_size = dist.get_world_size() if dist.is_initialized() else 1
@@ -334,11 +333,6 @@ class GenerationMetricsCallback(TrainerCallback):
         actual_count = shard_input_ids.shape[0]
 
         # Pad so every rank processes *exactly* shard_size samples.
-        # This keeps the number of model.generate() calls identical across
-        # ranks, which is required because each forward pass is a collective
-        # NCCL operation.  Padding predictions are stripped before gathering
-        # (see ``predictions[:actual_count]`` below) so they never affect
-        # metric scores.
         if actual_count < shard_size:
             pad_count = shard_size - actual_count
             pad_ids = input_ids[:pad_count]  # reuse first samples as padding
@@ -346,10 +340,6 @@ class GenerationMetricsCallback(TrainerCallback):
             shard_references = shard_references + batch_references[:pad_count]
 
         # Disabling eos_token_id forces every rank to execute exactly
-        # max_new_tokens forward passes per generate() call, preventing
-        # NCCL collective desync between ranks.  The real EOS ids are
-        # passed to the generation loop so it can truncate each sequence
-        # at the token level *before* decoding.
         gen_config = dict(self.generation_config)
         saved_eos = gen_config.pop("eos_token_id", None)
 
@@ -413,8 +403,15 @@ class GenerationMetricsCallback(TrainerCallback):
                     metrics = self.compute_metrics((flat_preds, flat_refs))
             except Exception:
                 metrics = {}
+            finally:
+                # Clean up large lists on rank 0
+                del flat_preds, flat_refs, all_predictions, all_references
 
+        # Clean up per-rank predictions/references
         del predictions, references
+        
+        # Force garbage collection across all ranks
+        gc.collect()
 
         # ---- broadcast final metrics from rank 0 to all ranks ----
         if dist.is_initialized():
