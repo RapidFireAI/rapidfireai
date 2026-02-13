@@ -10,6 +10,7 @@ import logging
 import os
 import threading
 import traceback
+from datetime import datetime, timezone
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from waitress import serve
@@ -234,6 +235,11 @@ class Dispatcher:
         )
         self.app.add_url_rule(
             f"{route_prefix}/get-ic-logs", "get_ic_logs", self.get_ic_logs, methods=["POST", "OPTIONS"]
+        )
+
+        # LLM Chat route
+        self.app.add_url_rule(
+            f"{route_prefix}/llm-chat", "llm_chat", self.llm_chat, methods=["POST", "OPTIONS"]
         )
 
     def health_check(self) -> tuple[Response, int]:
@@ -862,6 +868,33 @@ class Dispatcher:
         except Exception:
             # If anything fails, assume experiment is not running (safer to disable button)
             return jsonify({"is_running": False}), 200
+
+    # ============================================================
+    # LLM Chat endpoint
+    # ============================================================
+
+    def llm_chat(self) -> tuple[Response, int]:
+        """Save a user chat message to user_instructions.txt"""
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+
+        try:
+            data = request.get_json()
+            if not data or "message" not in data:
+                return jsonify({"error": "message is required"}), 400
+
+            message = data["message"]
+            experiment_id = data.get("experiment_id", "")
+            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+            file_path = os.path.join(project_root, "user_instructions.txt")
+
+            with open(file_path, "a", encoding="utf-8") as f:
+                f.write(f"{timestamp} | experiment_id={experiment_id} | {message}\n")
+
+            return jsonify({"response": "Message received", "saved_to": file_path}), 200
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
     # ============================================================
     # Logging endpoints

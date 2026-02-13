@@ -2,6 +2,7 @@
 
 import os
 import traceback
+from datetime import datetime, timezone
 from logging import Logger
 from typing import Any
 
@@ -126,6 +127,14 @@ class Dispatcher:
                 f"{route_prefix}/get-experiment-logs",
                 "get_experiment_logs",
                 self.get_experiment_logs,
+                methods=["POST"],
+            )
+
+            # LLM Chat route
+            self.app.add_url_rule(
+                f"{route_prefix}/llm-chat",
+                "llm_chat",
+                self.llm_chat,
                 methods=["POST"],
             )
         except Exception as e:
@@ -414,6 +423,26 @@ class Dispatcher:
                 logger.opt(exception=True).error(
                     f"Error in delete_run: {e}", exc_info=True
                 )
+            return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
+
+    def llm_chat(self) -> tuple[Response, int]:
+        """Save a user chat message to user_instructions.txt"""
+        try:
+            data = request.get_json()
+            if not data or "message" not in data:
+                return jsonify({"error": "message is required"}), 400
+
+            message = data["message"]
+            experiment_id = data.get("experiment_id", "")
+            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+            file_path = os.path.join(project_root, "user_instructions.txt")
+
+            with open(file_path, "a", encoding="utf-8") as f:
+                f.write(f"{timestamp} | experiment_id={experiment_id} | {message}\n")
+
+            return jsonify({"response": "Message received", "saved_to": file_path}), 200
+        except Exception as e:
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def get_ic_ops_logs(self) -> tuple[Response, int]:
