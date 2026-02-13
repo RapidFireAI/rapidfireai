@@ -152,6 +152,10 @@ class GenerationMetricsCallback(TrainerCallback):
         ``batch_decode(skip_special_tokens=True)`` produces clean text
         without post-EOS garbage.
         """
+        # Clone because the input may be an inference-mode tensor (from
+        # model.generate() under torch.inference_mode()) which forbids
+        # in-place modification.
+        generated_ids = generated_ids.clone()
         for eos_id in eos_token_ids:
             mask = generated_ids == eos_id  # (batch, seq_len)
             for row_idx in range(generated_ids.shape[0]):
