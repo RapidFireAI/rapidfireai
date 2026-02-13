@@ -3,7 +3,6 @@ from collections.abc import Callable
 import torch
 import torch.distributed as dist
 from datasets import Dataset
-from tqdm import tqdm
 from transformers import (
     TrainerCallback,
     TrainerControl,
@@ -139,10 +138,28 @@ class GenerationMetricsCallback(TrainerCallback):
 
             return inputs["input_ids"]
         except Exception as e:
-            # Log error and return empty tensor to prevent crash
             print(f"Warning: Tokenization error in generation callback: {e}")
             return torch.empty((0, 0), dtype=torch.long).to(model.device)
 
+    @staticmethod
+    def _truncate_at_eos(
+        generated_ids: torch.Tensor,
+        eos_token_ids: list[int],
+    ) -> torch.Tensor:
+        """Truncate each sequence at the first EOS token (token-level).
+
+        Replaces every token after the first EOS with ``pad=0`` so that
+        ``batch_decode(skip_special_tokens=True)`` produces clean text
+        without post-EOS garbage.
+        """
+        for eos_id in eos_token_ids:
+            mask = generated_ids == eos_id  # (batch, seq_len)
+            for row_idx in range(generated_ids.shape[0]):
+                eos_positions = mask[row_idx].nonzero(as_tuple=False)
+                if eos_positions.numel() > 0:
+                    first_eos = eos_positions[0].item()
+                    generated_ids[row_idx, first_eos:] = 0
+        return generated_ids
 
     def _run_generation_loop(
         self,
@@ -151,28 +168,55 @@ class GenerationMetricsCallback(TrainerCallback):
         batch_references: list[str],
         device,
         override_batch_size: int | None = None,
+        generation_config: dict | None = None,
+        eos_token_ids: list[int] | None = None,
     ) -> tuple[list[str], list[str]]:
-        """Run the autoregressive generation loop over batches and return predictions + references."""
+        """Run the autoregressive generation loop over batches and return predictions + references.
+
+        Parameters
+        ----------
+        eos_token_ids : list[int] | None
+            When provided, each generated sequence is truncated at the
+            first occurrence of any of these token ids *before* decoding.
+            Used by the FSDP path where ``eos_token_id`` is removed from
+            the generation config to keep ranks in sync.
+        """
         predictions = []
         references = []
         num_samples = input_ids.shape[0]
         batch_size = override_batch_size or self.batch_size
+        gen_config = (
+            generation_config
+            if generation_config is not None
+            else self.generation_config
+        )
 
         with torch.no_grad():
-            for i in tqdm(
-                range(0, num_samples, batch_size), desc="Generating for metrics"
-            ):
+            for i in range(0, num_samples, batch_size):
                 input_ids_batch = input_ids[i : i + batch_size].to(device)
+
                 with torch.inference_mode(), torch.amp.autocast("cuda"):
-                    outputs_batch = model.generate(
-                        input_ids_batch, **self.generation_config
-                    )
+                    outputs_batch = model.generate(input_ids_batch, **gen_config)
+
+                # Slice to only the newly generated tokens
+                new_tokens = outputs_batch[:, input_ids_batch.shape[1] :]
+
+                # Truncate at real EOS before decoding (FSDP path disables
+                # eos_token_id to keep ranks in sync, so generated sequences
+                # may contain tokens past the natural stopping point).
+                if eos_token_ids:
+                    new_tokens = self._truncate_at_eos(new_tokens, eos_token_ids)
+
                 generated_texts = self.tokenizer.batch_decode(
-                    outputs_batch[:, input_ids_batch.shape[1] :],
+                    new_tokens,
                     skip_special_tokens=True,
                 )
                 predictions.extend(generated_texts)
                 references.extend(batch_references[i : i + batch_size])
+
+                # Free GPU tensors from this batch immediately to avoid
+                # accumulating KV-cache / output memory across batches.
+                del outputs_batch, input_ids_batch, new_tokens
 
         return predictions, references
 
@@ -189,19 +233,15 @@ class GenerationMetricsCallback(TrainerCallback):
 
         # Early return if no valid data
         if not input_texts:
-            print("Warning: No valid eval data for generation metrics")
             return {}
 
         input_ids = self._generate_batch(model, input_texts)
 
         # Check for empty generation batch
         if input_ids.numel() == 0:
-            print("Warning: Empty input_ids from tokenization")
             return {}
 
         # Enable KV cache for generation (model may have use_cache=False for FSDP training)
-        # Must set BOTH model.config and model.generation_config so that
-        # model.generate() actually activates the cache in forward()
         original_config_use_cache = getattr(model.config, "use_cache", False)
         original_genconfig_use_cache = getattr(
             getattr(model, "generation_config", None), "use_cache", None
@@ -231,6 +271,11 @@ class GenerationMetricsCallback(TrainerCallback):
                 and original_genconfig_use_cache is not None
             ):
                 model.generation_config.use_cache = original_genconfig_use_cache
+
+            # Free the tokenized eval tensor and release CUDA cached memory
+            # back to the allocator so it doesn't accumulate across eval runs.
+            del input_ids
+            torch.cuda.empty_cache()
 
         return metrics
 
@@ -262,34 +307,112 @@ class GenerationMetricsCallback(TrainerCallback):
         batch_references: list[str],
         gen_batch_size: int = 4,
     ) -> dict[str, float]:
-        """FSDP-aware generation: all ranks participate in model.generate()
-        (required -- FSDP forward is a collective op), but only rank 0
-        computes BLEU/ROUGE to avoid redundant work. Metrics are broadcast
-        to all ranks afterward."""
-        rank = dist.get_rank() if dist.is_initialized() else 0
+        """FSDP-aware generation with data sharding across ranks.
 
-        # All ranks MUST call model.generate() together -- FSDP forward
-        # uses all-gather/reshard which are collective NCCL operations.
+        Each rank generates on a different shard of the eval data while
+        still participating in FSDP collective operations (required because
+        the full model doesn't fit on a single GPU).  Only rank 0 computes
+        the final text metrics (BLEU / ROUGE).  Results are broadcast to
+        all ranks.
+        """
+        rank = dist.get_rank() if dist.is_initialized() else 0
+        world_size = dist.get_world_size() if dist.is_initialized() else 1
+
+        num_samples = input_ids.shape[0]
+
+        # ---- shard the eval data across ranks ----
+        shard_size = (num_samples + world_size - 1) // world_size  # ceil div
+        start_idx = rank * shard_size
+        end_idx = min(start_idx + shard_size, num_samples)
+
+        shard_input_ids = input_ids[start_idx:end_idx]
+        shard_references = batch_references[start_idx:end_idx]
+        actual_count = shard_input_ids.shape[0]
+
+        # Pad so every rank processes *exactly* shard_size samples.
+        # This keeps the number of model.generate() calls identical across
+        # ranks, which is required because each forward pass is a collective
+        # NCCL operation.  Padding predictions are stripped before gathering
+        # (see ``predictions[:actual_count]`` below) so they never affect
+        # metric scores.
+        if actual_count < shard_size:
+            pad_count = shard_size - actual_count
+            pad_ids = input_ids[:pad_count]  # reuse first samples as padding
+            shard_input_ids = torch.cat([shard_input_ids, pad_ids], dim=0)
+            shard_references = shard_references + batch_references[:pad_count]
+
+        # Disabling eos_token_id forces every rank to execute exactly
+        # max_new_tokens forward passes per generate() call, preventing
+        # NCCL collective desync between ranks.  The real EOS ids are
+        # passed to the generation loop so it can truncate each sequence
+        # at the token level *before* decoding.
+        gen_config = dict(self.generation_config)
+        saved_eos = gen_config.pop("eos_token_id", None)
+
+        # Resolve the real EOS token ids for post-generation truncation.
+        # Prefer the explicit config value, fall back to the tokenizer.
+        if saved_eos is not None:
+            real_eos_ids = saved_eos if isinstance(saved_eos, list) else [saved_eos]
+        elif self.tokenizer.eos_token_id is not None:
+            real_eos_ids = [self.tokenizer.eos_token_id]
+        else:
+            real_eos_ids = None
+
+        # ---- run generation on this rank's shard ----
         predictions, references = self._run_generation_loop(
             model,
-            input_ids,
-            batch_references,
+            shard_input_ids,
+            shard_references,
             model.device,
             override_batch_size=gen_batch_size,
+            generation_config=gen_config,
+            eos_token_ids=real_eos_ids,
         )
 
-        # Only rank 0 computes the expensive text metrics (BLEU/ROUGE)
-        metrics = {}
+        # Free the per-rank GPU shard immediately; the predictions are
+        # already decoded to Python strings.
+        del shard_input_ids
+        torch.cuda.empty_cache()
+
+        # Drop padding predictions
+        predictions = predictions[:actual_count]
+        references = references[:actual_count]
+
+        # ---- gather predictions from all ranks to rank 0 ----
+        if dist.is_initialized() and world_size > 1:
+            all_predictions: list[list[str] | None] = [None] * world_size
+            all_references: list[list[str] | None] = [None] * world_size
+            dist.gather_object(
+                predictions,
+                all_predictions if rank == 0 else None,
+                dst=0,
+            )
+            dist.gather_object(
+                references,
+                all_references if rank == 0 else None,
+                dst=0,
+            )
+        else:
+            all_predictions = [predictions]
+            all_references = [references]
+
+        # ---- rank 0 computes expensive text metrics ----
+        metrics: dict[str, float] = {}
         if rank == 0:
+            flat_preds = [p for shard in all_predictions for p in shard]
+            flat_refs = [r for shard in all_references for r in shard]
+            # trim to exact original count (discard per-rank padding artefacts)
+            flat_preds = flat_preds[:num_samples]
+            flat_refs = flat_refs[:num_samples]
             try:
-                if self.compute_metrics and predictions:
-                    metrics = self.compute_metrics((predictions, references))
+                if self.compute_metrics and flat_preds:
+                    metrics = self.compute_metrics((flat_preds, flat_refs))
             except Exception:
                 metrics = {}
 
         del predictions, references
 
-        # Broadcast metrics from rank 0 to all other ranks
+        # ---- broadcast final metrics from rank 0 to all ranks ----
         if dist.is_initialized():
             metrics_list = [metrics]
             dist.broadcast_object_list(metrics_list, src=0)
@@ -396,6 +519,7 @@ class LogLevelCallback(TrainerCallback):
             and (state.global_step - self.eval_first_step) % state.eval_steps == 0
         ):
             control.should_evaluate = True
+
         # Save
         if (
             args.save_strategy == SaveStrategy.STEPS
