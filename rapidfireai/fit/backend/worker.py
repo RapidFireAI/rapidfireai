@@ -444,70 +444,133 @@ class Worker:
             if use_fsdp and is_distributed_initialized():
                 barrier()
 
-            # Clean up vLLM engine before deleting trainer to avoid stale process group references
-            # This is critical for GRPO with FSDP when training multiple models sequentially
-            if hasattr(trainer_instance, "llm"):
-                try:
-                    # Shutdown vLLM engine to clean up its process groups
-                    if hasattr(trainer_instance.llm, "shutdown"):
-                        trainer_instance.llm.shutdown()
-                    elif hasattr(trainer_instance.llm, "llm_engine"):
-                        # Try to clean up the engine core if shutdown method doesn't exist
-                        if hasattr(trainer_instance.llm.llm_engine, "engine_core"):
-                            if hasattr(
-                                trainer_instance.llm.llm_engine.engine_core, "shutdown"
-                            ):
-                                trainer_instance.llm.llm_engine.engine_core.shutdown()
-
-                    # Clean up vLLM's parallel state if it exists
-                    try:
-                        from vllm.distributed import parallel_state
-
-                        if hasattr(parallel_state, "destroy_model_parallel"):
-                            parallel_state.destroy_model_parallel()
-                        if hasattr(parallel_state, "destroy_distributed_environment"):
-                            parallel_state.destroy_distributed_environment()
-                    except (ImportError, AttributeError):
-                        pass  # vLLM parallel state cleanup not available
-
-                    # Delete the llm instance explicitly
-                    del trainer_instance.llm
-                except Exception as e:
-                    self.logger.debug(f"Error cleaning up vLLM engine: {e}")
-                    # Force delete even if shutdown fails
-                    if hasattr(trainer_instance, "llm"):
-                        del trainer_instance.llm
-
-            if hasattr(trainer_instance, "model"):
-                del trainer_instance.model
-            if use_fsdp:
-                del trainer_instance.model_wrapped
-            if hasattr(trainer_instance, "ref_model"):
-                del trainer_instance.ref_model
-            if hasattr(trainer_instance, "optimizer"):
-                trainer_instance.optimizer.zero_grad(set_to_none=True)
-                if hasattr(trainer_instance.optimizer, "state"):
-                    trainer_instance.optimizer.state.clear()
-                del trainer_instance.optimizer
-            if hasattr(trainer_instance, "lr_scheduler"):
-                del trainer_instance.lr_scheduler
-            del trainer_instance
-
-            # run garbage collection
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
-            if use_fsdp and is_distributed_initialized():
-                barrier()
-            self.logger.debug(
-                f"Completed training for run {run_id} on chunk {chunk_id}"
-            )
+        except Exception as e:
+            self.logger.error(f"Error during training for run {run_id}: {e}")
+            raise
         finally:
-            # Restore original stdout/stderr
-            sys.stdout = original_stdout
-            sys.stderr = original_stderr
+            # CRITICAL: Cleanup must happen even when training fails to prevent memory leaks
+            try:
+                # Clean up vLLM engine before deleting trainer to avoid stale process group references
+                # This is critical for GRPO with FSDP when training multiple models sequentially
+                if "trainer_instance" in locals() and hasattr(trainer_instance, "llm"):
+                    try:
+                        # Shutdown vLLM engine to clean up its process groups
+                        if hasattr(trainer_instance.llm, "shutdown"):
+                            trainer_instance.llm.shutdown()
+                        elif hasattr(trainer_instance.llm, "llm_engine"):
+                            # Try to clean up the engine core if shutdown method doesn't exist
+                            if hasattr(trainer_instance.llm.llm_engine, "engine_core"):
+                                if hasattr(
+                                    trainer_instance.llm.llm_engine.engine_core, "shutdown"
+                                ):
+                                    trainer_instance.llm.llm_engine.engine_core.shutdown()
+
+                        # Clean up vLLM's parallel state if it exists
+                        try:
+                            from vllm.distributed import parallel_state
+
+                            if hasattr(parallel_state, "destroy_model_parallel"):
+                                parallel_state.destroy_model_parallel()
+                            if hasattr(parallel_state, "destroy_distributed_environment"):
+                                parallel_state.destroy_distributed_environment()
+                        except (ImportError, AttributeError):
+                            pass  # vLLM parallel state cleanup not available
+
+                        # Delete the llm instance explicitly
+                        del trainer_instance.llm
+                    except Exception as cleanup_e:
+                        self.logger.debug(f"Error cleaning up vLLM engine: {cleanup_e}")
+                        # Force delete even if shutdown fails
+                        if hasattr(trainer_instance, "llm"):
+                            try:
+                                del trainer_instance.llm
+                            except Exception:
+                                pass
+
+                # Delete trainer components to free memory
+                if "trainer_instance" in locals():
+                    # For FSDP, need to clean up wrapped model first before the base model
+                    if use_fsdp and hasattr(trainer_instance, "model_wrapped"):
+                        try:
+                            del trainer_instance.model_wrapped
+                        except Exception as e:
+                            self.logger.debug(f"Error deleting model_wrapped: {e}")
+                    
+                    if hasattr(trainer_instance, "model"):
+                        try:
+                            del trainer_instance.model
+                        except Exception as e:
+                            self.logger.debug(f"Error deleting model: {e}")
+                    
+                    if hasattr(trainer_instance, "ref_model"):
+                        try:
+                            del trainer_instance.ref_model
+                        except Exception as e:
+                            self.logger.debug(f"Error deleting ref_model: {e}")
+                    if hasattr(trainer_instance, "optimizer"):
+                        try:
+                            trainer_instance.optimizer.zero_grad(set_to_none=True)
+                            if hasattr(trainer_instance.optimizer, "state"):
+                                trainer_instance.optimizer.state.clear()
+                            del trainer_instance.optimizer
+                        except Exception:
+                            pass
+                    if hasattr(trainer_instance, "lr_scheduler"):
+                        try:
+                            del trainer_instance.lr_scheduler
+                        except Exception:
+                            pass
+                    if hasattr(trainer_instance, "tokenizer"):
+                        try:
+                            del trainer_instance.tokenizer
+                        except Exception:
+                            pass
+                    # Clean up accelerator which may hold model references
+                    if hasattr(trainer_instance, "accelerator"):
+                        try:
+                            if hasattr(trainer_instance.accelerator, "free_memory"):
+                                trainer_instance.accelerator.free_memory()
+                            del trainer_instance.accelerator
+                        except Exception:
+                            pass
+                    # Clean up any remaining trainer state
+                    if hasattr(trainer_instance, "state"):
+                        try:
+                            del trainer_instance.state
+                        except Exception:
+                            pass
+                    try:
+                        del trainer_instance
+                    except Exception:
+                        pass
+
+                # run garbage collection
+                gc.collect()
+                if torch.cuda.is_available():
+                    # Synchronize and clear CUDA memory
+                    try:
+                        torch.cuda.synchronize()
+                    except Exception:
+                        pass
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+                    # Reset peak memory stats to avoid misleading numbers
+                    try:
+                        torch.cuda.reset_peak_memory_stats()
+                        torch.cuda.reset_accumulated_memory_stats()
+                    except Exception:
+                        pass
+                if use_fsdp and is_distributed_initialized():
+                    barrier()
+                self.logger.debug(
+                    f"Cleanup completed for run {run_id} on chunk {chunk_id}"
+                )
+            except Exception as cleanup_error:
+                self.logger.error(f"Error during cleanup for run {run_id}: {cleanup_error}")
+            finally:
+                # Restore original stdout/stderr
+                sys.stdout = original_stdout
+                sys.stderr = original_stderr
 
         # Write captured output to training logger
         if stdout_buffer.getvalue():
