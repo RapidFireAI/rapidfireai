@@ -321,20 +321,25 @@ class GenerationMetricsCallback(TrainerCallback):
         rank = dist.get_rank() if dist.is_initialized() else 0
         world_size = dist.get_world_size() if dist.is_initialized() else 1
 
-        num_samples = input_ids.shape[0]
+        total_eval_samples = input_ids.shape[0]
 
         # ---- shard the eval data across ranks ----
-        shard_size = (num_samples + world_size - 1) // world_size  # ceil div
-        start_idx = rank * shard_size
-        end_idx = min(start_idx + shard_size, num_samples)
+        samples_per_gpu = (total_eval_samples + world_size - 1) // world_size  # ceil div
+        start_idx = rank * samples_per_gpu
+        end_idx = min(start_idx + samples_per_gpu, total_eval_samples)
 
         shard_input_ids = input_ids[start_idx:end_idx]
         shard_references = batch_references[start_idx:end_idx]
-        actual_count = shard_input_ids.shape[0]
+        actual_samples_on_this_gpu = shard_input_ids.shape[0]
 
-        # Pad so every rank processes *exactly* shard_size samples.
-        if actual_count < shard_size:
-            pad_count = shard_size - actual_count
+        # Pad so every rank processes *exactly* samples_per_gpu samples.
+        # This keeps the number of model.generate() calls identical across
+        # ranks, which is required because each forward pass is a collective
+        # NCCL operation.  Padding predictions are stripped before gathering
+        # (see ``predictions[:actual_samples_on_this_gpu]`` below) so they never affect
+        # metric scores.
+        if actual_samples_on_this_gpu < samples_per_gpu:
+            pad_count = samples_per_gpu - actual_samples_on_this_gpu
             pad_ids = input_ids[:pad_count]  # reuse first samples as padding
             shard_input_ids = torch.cat([shard_input_ids, pad_ids], dim=0)
             shard_references = shard_references + batch_references[:pad_count]
@@ -369,8 +374,8 @@ class GenerationMetricsCallback(TrainerCallback):
         torch.cuda.empty_cache()
 
         # Drop padding predictions
-        predictions = predictions[:actual_count]
-        references = references[:actual_count]
+        predictions = predictions[:actual_samples_on_this_gpu]
+        references = references[:actual_samples_on_this_gpu]
 
         # ---- gather predictions from all ranks to rank 0 ----
         if dist.is_initialized() and world_size > 1:
@@ -396,8 +401,8 @@ class GenerationMetricsCallback(TrainerCallback):
             flat_preds = [p for shard in all_predictions for p in shard]
             flat_refs = [r for shard in all_references for r in shard]
             # trim to exact original count (discard per-rank padding artefacts)
-            flat_preds = flat_preds[:num_samples]
-            flat_refs = flat_refs[:num_samples]
+            flat_preds = flat_preds[:total_eval_samples]
+            flat_refs = flat_refs[:total_eval_samples]
             try:
                 if self.compute_metrics and flat_preds:
                     metrics = self.compute_metrics((flat_preds, flat_refs))
