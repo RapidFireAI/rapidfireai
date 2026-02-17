@@ -165,6 +165,7 @@ class QueryProcessingActor:
                     # FAISS indices are not thread-safe, so each actor needs its own copy
                     import pickle
                     from langchain_community.vectorstores import FAISS
+                    from langchain_huggingface import HuggingFaceEmbeddings
 
                     self.logger.info("Deserializing FAISS index for this actor...")
                     faiss_index = pickle.loads(context_generator_ref["faiss_index_bytes"])
@@ -172,8 +173,16 @@ class QueryProcessingActor:
                     index_to_docstore_id = pickle.loads(context_generator_ref["index_to_docstore_id_bytes"])
 
                     # Recreate the embedding function
-                    embedding_cls = context_generator_ref["embedding_cls"]
-                    embedding_kwargs = context_generator_ref["embedding_kwargs"]
+                    embedding_cfg = dict(context_generator_ref["embedding_cfg"])
+                    if not embedding_cfg:
+                        embedding_cls = HuggingFaceEmbeddings
+                        embedding_kwargs = {}
+                    else:
+                        cfg = dict(embedding_cfg)
+                        embedding_cls = cfg.pop("class", None)
+                        if embedding_cls is None:
+                            raise ValueError("embedding_cfg must contain a 'class' key (the embedding class)")
+                        embedding_kwargs = dict(cfg)
                     embedding_function = embedding_cls(**embedding_kwargs)
                     self.logger.info(f"Recreated embedding function: {embedding_cls.__name__}")
 
@@ -187,29 +196,47 @@ class QueryProcessingActor:
                     self.logger.info("Created independent FAISS vector store for this actor")
 
                     # Create the retriever
-                    search_type = context_generator_ref["search_type"]
-                    search_kwargs = context_generator_ref["search_kwargs"]
+                    search_cfg = dict(context_generator_ref["search_cfg"])
+                    default_search_kwargs: dict[str, Any] = {
+                        "k": 5,
+                        "filter": None,
+                        "fetch_k": 20,
+                        "lambda_mult": 0.5,
+                    }
+                    if not search_cfg:
+                        search_type = "similarity"
+                        search_kwargs = dict(default_search_kwargs)
+                    else:
+                        cfg = dict(search_cfg)
+                        search_type = cfg.pop("type", "similarity")
+                        valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
+                        if search_type not in valid_search_types:
+                            raise ValueError(f"search_cfg['type'] must be one of {valid_search_types}, got: {search_type}")
+                        search_kwargs = dict(default_search_kwargs)
+                        search_kwargs.update(cfg)
                     retriever = vector_store.as_retriever(
                         search_type=search_type,
                         search_kwargs=search_kwargs
                     )
                     self.logger.info(f"Recreated retriever with search_type={search_type}")
 
-                    # Recreate RAG spec with query-time components
-                    # We don't need document_loader or text_splitter for query-time operations,
-                    # so we use None/placeholder values
+                    reranker_cfg = dict(context_generator_ref["reranker_cfg"])
+                    if reranker_cfg:
+                        cfg = dict(reranker_cfg)
+                        reranker_cls = cfg.pop("class", None)
+                        if reranker_cls is None:
+                            raise ValueError("reranker_cfg must contain a 'class' key (the reranker class)")
+
+                    # Recreate RAG spec with query-time components (config dicts from serialized ref)
                     self.rag_spec = LangChainRagSpec(
-                        document_loader=None,  # Not needed for query-time
-                        text_splitter=None,  # Not needed for query-time
-                        embedding_cls=embedding_cls,
-                        embedding_kwargs=embedding_kwargs,
-                        retriever=retriever,
+                        document_loader=None,
+                        text_splitter=None,
+                        embedding_cfg=embedding_cfg,
                         vector_store=vector_store,
-                        search_type=search_type,
-                        search_kwargs=search_kwargs,
-                        reranker_cls=context_generator_ref.get("reranker_cls"),
-                        reranker_kwargs=context_generator_ref.get("reranker_kwargs"),
-                        enable_gpu_search=False,  # Query actors always use CPU
+                        retriever=retriever,
+                        search_cfg=search_cfg,
+                        reranker_cfg=reranker_cfg,
+                        enable_gpu_search=False,
                         document_template=context_generator_ref.get("template"),
                     )
                     # Manually set the embedding and template since we bypassed normal initialization

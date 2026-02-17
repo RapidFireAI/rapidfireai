@@ -23,8 +23,8 @@ class PromptManager:
         instructions (str): The main instructions for the prompt.
         instructions_file_path (str): Path to a file containing instructions.
         examples (List[Dict[str, str]]): List of example dictionaries for few-shot learning.
-        embedding_cls (Type[Embeddings]): The embedding class to instantiate.
-        embedding_kwargs (Dict[str, Any]): Parameters for initializing the embedding class.
+        embedding_cls (Type[Embeddings]): The embedding class (parsed from embedding_cfg).
+        embedding_kwargs (Dict[str, Any]): Parameters for initializing the embedding class (parsed from embedding_cfg).
         example_selector_cls (Type[Union[MaxMarginalRelevanceExampleSelector, SemanticSimilarityExampleSelector]]):
             Class for creating example selectors. Must be either MaxMarginalRelevanceExampleSelector
             or SemanticSimilarityExampleSelector.
@@ -39,8 +39,7 @@ class PromptManager:
         instructions: str = "",
         instructions_file_path: str = "",
         examples: list[dict[str, str]] = [],
-        embedding_cls: type[Embeddings] = None,  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
-        embedding_kwargs: dict[str, Any] | None = None,
+        embedding_cfg: dict[str, Any] | None = None,
         example_selector_cls: type[MaxMarginalRelevanceExampleSelector | SemanticSimilarityExampleSelector] = None,
         example_prompt_template: PromptTemplate = None,
         k: int = 3,
@@ -55,10 +54,9 @@ class PromptManager:
                 if instructions is empty or None.
             examples (List[Dict[str, str]]): List of example dictionaries for few-shot learning.
                 Each dictionary should contain the example data (e.g., {'input': '...', 'output': '...'}).
-            embedding_cls (Type[Embeddings]): The embedding class to instantiate for semantic similarity.
-                Examples: HuggingFaceEmbeddings, OpenAIEmbeddings, etc.
-            embedding_kwargs (Dict[str, Any]): Parameters for initializing the embedding class.
-                Must contain all required parameters for the chosen embedding class.
+            embedding_cfg (Dict[str, Any]): Dict with "class" key (the embedding class, e.g.
+                HuggingFaceEmbeddings) and remaining keys as kwargs. Required for few-shot
+                functionality with semantic similarity.
             example_selector_cls (Type[Union[MaxMarginalRelevanceExampleSelector, SemanticSimilarityExampleSelector]]):
                 Class for creating example selectors. Must be either MaxMarginalRelevanceExampleSelector
                 or SemanticSimilarityExampleSelector.
@@ -73,8 +71,16 @@ class PromptManager:
         self.instructions = instructions
         self.instructions_file_path = instructions_file_path
         self.examples = examples
-        self.embedding_cls = embedding_cls
-        self.embedding_kwargs = embedding_kwargs
+
+        # Parse embedding_cfg: "class" -> embedding_cls, rest -> embedding_kwargs
+        if not embedding_cfg:
+            self.embedding_cls = None
+            self.embedding_kwargs = {}
+        else:
+            cfg = dict(embedding_cfg)
+            self.embedding_cls = cfg.pop("class", None)
+            self.embedding_kwargs = dict(cfg)
+
         self.example_selector_cls = example_selector_cls
         self.example_prompt_template = example_prompt_template
         self.k = k
@@ -99,9 +105,9 @@ class PromptManager:
             with open(self.instructions_file_path) as f:
                 self.instructions = f.read()
         if not self.embedding_cls:
-            raise ValueError("embedding_cls is required")
+            raise ValueError("'class' key is required in embedding_cfg")
         if not self.embedding_kwargs:
-            raise ValueError("embedding_kwargs is required")
+            raise ValueError("kwargs missing from embedding_cfg")
         if not self.example_selector_cls:
             raise ValueError("example_selector_cls is required")
 
@@ -214,12 +220,15 @@ class PromptManager:
             The copied instance will need to be set up by calling
             setup_examples() before it can be used to generate examples.
         """
+        embedding_cfg = (
+            {"class": self.embedding_cls, **deepcopy(self.embedding_kwargs)}
+            if self.embedding_cls else None
+        )
         return PromptManager(
             instructions=self.instructions,
             instructions_file_path=self.instructions_file_path,
             examples=deepcopy(self.examples),
-            embedding_cls=self.embedding_cls,
-            embedding_kwargs=deepcopy(self.embedding_kwargs),
+            embedding_cfg=embedding_cfg,
             example_selector_cls=self.example_selector_cls,
             example_prompt_template=deepcopy(self.example_prompt_template),
             k=self.k,

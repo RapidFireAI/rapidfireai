@@ -71,46 +71,36 @@ class LangChainRagSpec:
         self,
         document_loader: Optional[BaseLoader] | None = None,
         text_splitter: Optional[TextSplitter] | None = None,
-        embedding_cls: type[Embeddings] = HuggingFaceEmbeddings,  # e.g. HuggingFaceEmbeddings, OpenAIEmbeddings
-        embedding_kwargs: Optional[dict[str, Any]] | None = None,
+        embedding_cfg: Optional[dict[str, Any]] | None = None,
         vector_store: Optional[VectorStore] | None = None,
         retriever: Optional[BaseRetriever] | None = None,
-        search_type: str = "similarity",
-        search_kwargs: Optional[dict[str, Any]] | None = None,
-        reranker_cls: Optional[type[BaseDocumentCompressor]] | None = None,
-        reranker_kwargs: Optional[dict[str, Any]] | None = None,
+        search_cfg: Optional[dict[str, Any]] | None = None,
+        reranker_cfg: Optional[dict[str, Any]] | None = None,
         enable_gpu_search: bool = False,
         document_template: Optional[Callable[[Document], str]] | None = None,
     ) -> None:
         """
         Initialize the RAG specification with LangChain components.
 
+        Config dicts couple class/type with their kwargs:
+        - embedding_cfg: Must have "class" key (embedding class, e.g. HuggingFaceEmbeddings); rest are kwargs.
+        - search_cfg: Must have "type" key ("similarity" | "similarity_score_threshold" | "mmr"); rest are kwargs (e.g. k, fetch_k, lambda_mult).
+        - reranker_cfg: Must have "class" key (reranker class, e.g. CrossEncoderReranker); rest are kwargs.
+
         Args:
-            document_loader: Optional. Required only when neither retriever nor vector_store is provided,
-                so that a FAISS index is built from loaded documents.
-            text_splitter: Optional. When building an index from documents, chunks them before embedding.
-                If None, documents are embedded as whole pages (no chunking).
-            embedding_cls: Embedding class to instantiate (default: HuggingFaceEmbeddings). Used to embed
-                queries and to build the index when one is created. When using a pre-built vector_store,
-                use the same embedding model that was used to build it.
-            embedding_kwargs: Optional. Parameters to initialize the embedding class (e.g. HuggingFaceEmbeddings:
-                {'model_name': 'sentence-transformers/all-mpnet-base-v2', 'model_kwargs': {'device': 'cuda'}}).
-            vector_store: Optional. If retriever is not provided but vector_store is, a retriever is
-                created from it via as_retriever(). The embedding_cls must match the model used to build the store.
-            retriever: Optional. If provided, this retriever is used directly (no vector store build).
-            search_type: Search algorithm: "similarity", "similarity_score_threshold", or "mmr".
-            search_kwargs: Search config: k, filter, fetch_k, lambda_mult, etc. (default k=5).
-            reranker_cls: Optional reranker class (e.g. CrossEncoderReranker) for reranking results.
-            reranker_kwargs: Arguments for the reranker class.
-            enable_gpu_search: Use GPU FAISS (IndexFlatL2) when building index; default False (CPU HNSW).
-            document_template: Optional function (Document -> str) to format documents; default "metadata:\\ncontent".
+            document_loader: Optional. Required only when neither retriever nor vector_store is provided.
+            text_splitter: Optional. When building from documents, chunks before embedding; if None, embed whole pages.
+            embedding_cfg: Dict with "class" (embedding class) and remaining keys as kwargs. If None, uses HuggingFaceEmbeddings with no extra kwargs.
+            vector_store: Optional. If retriever not provided, a retriever is created from it. Embedding must match.
+            retriever: Optional. If provided, used directly.
+            search_cfg: Dict with "type" (search algorithm) and remaining keys as search kwargs (k, filter, fetch_k, lambda_mult). If None, defaults to similarity with k=5.
+            reranker_cfg: Dict with "class" (reranker class) and remaining keys as kwargs. If None, no reranker.
+            enable_gpu_search: Use GPU FAISS when building index; default False.
+            document_template: Optional function (Document -> str) to format documents.
 
         Raises:
-            ValueError: If search_type is invalid, or document_loader is missing when building from documents.
+            ValueError: If embedding_cfg is missing "class", search_cfg has invalid "type", or document_loader missing when building from documents.
         """
-        # Embedding is always required (queries + optional index build)
-        if embedding_cls is None:
-            raise ValueError("embedding_cls is required")
         # Document loader required only when we build index from documents (no retriever, no vector_store)
         if not document_loader and not retriever and not vector_store:
             raise ValueError(
@@ -118,36 +108,54 @@ class LangChainRagSpec:
                 "(a FAISS index will be built from loaded documents)."
             )
 
-        # Validate search_type
-        valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
-        if search_type not in valid_search_types:
-            raise ValueError(f"search_type must be one of {valid_search_types}, got: {search_type}")
-
-        self.document_loader = document_loader
-        self.text_splitter = text_splitter
-        self.embedding_cls = embedding_cls
-        self.embedding_kwargs = embedding_kwargs or {}
-        self.embedding: Embeddings | None = None  # Will be created in initialize()
-        self.search_type = search_type
-        if document_template:
-            self.template = document_template
+        # Parse embedding_cfg: "class" -> embedding_cls, rest -> embedding_kwargs
+        if not embedding_cfg:
+            self.embedding_cls = HuggingFaceEmbeddings
+            self.embedding_kwargs = {}
         else:
-            self.template = _default_document_template
+            cfg = dict(embedding_cfg)
+            self.embedding_cls = cfg.pop("class", None)
+            if self.embedding_cls is None:
+                raise ValueError("embedding_cfg must contain a 'class' key (the embedding class)")
+            self.embedding_kwargs = dict(cfg)
 
-        # Default search kwargs with type safety
-        self.search_kwargs: dict[str, Any] = {
+        # Parse search_cfg: "type" -> search_type, rest -> search_kwargs
+        default_search_kwargs: dict[str, Any] = {
             "k": 5,
             "filter": None,
             "fetch_k": 20,
             "lambda_mult": 0.5,
         }
-        if search_kwargs:
-            self.search_kwargs.update(search_kwargs)
+        if not search_cfg:
+            self.search_type = "similarity"
+            self.search_kwargs = dict(default_search_kwargs)
+        else:
+            cfg = dict(search_cfg)
+            self.search_type = cfg.pop("type", "similarity")
+            valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
+            if self.search_type not in valid_search_types:
+                raise ValueError(f"search_cfg['type'] must be one of {valid_search_types}, got: {self.search_type}")
+            self.search_kwargs = dict(default_search_kwargs)
+            self.search_kwargs.update(cfg)
 
+        # Parse reranker_cfg: "class" -> reranker_cls, rest -> reranker_kwargs
+        if not reranker_cfg:
+            self.reranker_cls = None
+            self.reranker_kwargs = {}
+        else:
+            cfg = dict(reranker_cfg)
+            self.reranker_cls = cfg.pop("class", None)
+            self.reranker_kwargs = dict(cfg)
+
+        self.document_loader = document_loader
+        self.text_splitter = text_splitter
+        self.embedding: Embeddings | None = None  # Will be created in build_index()
+        if document_template:
+            self.template = document_template
+        else:
+            self.template = _default_document_template
         self.vector_store = vector_store
         self.retriever = retriever
-        self.reranker_cls = reranker_cls
-        self.reranker_kwargs = reranker_kwargs or {}
         self.enable_gpu_search = enable_gpu_search
         self.reranker = None
 
@@ -268,18 +276,21 @@ class LangChainRagSpec:
         Returns:
             LangChainRagSpec: A new instance with the same configuration.
         """
-        # Create new instance with same base configuration
+        # Build config dicts from current instance for the copy
+        embedding_cfg = {"class": self.embedding_cls, **self.embedding_kwargs}
+        search_cfg = {"type": self.search_type, **self.search_kwargs}
+        reranker_cfg = (
+            {"class": self.reranker_cls, **copy.deepcopy(self.reranker_kwargs)}
+            if self.reranker_cls else None
+        )
         new_rag = LangChainRagSpec(
-            embedding_cls=self.embedding_cls,
-            embedding_kwargs=self.embedding_kwargs,
             document_loader=self.document_loader,
             text_splitter=self.text_splitter,
-            retriever=copy.deepcopy(self.retriever) if self.retriever else None,
+            embedding_cfg=embedding_cfg,
             vector_store=copy.deepcopy(self.vector_store) if self.vector_store else None,
-            search_type=self.search_type,
-            search_kwargs=copy.deepcopy(self.search_kwargs),
-            reranker_cls=self.reranker_cls,
-            reranker_kwargs=copy.deepcopy(self.reranker_kwargs),
+            retriever=copy.deepcopy(self.retriever) if self.retriever else None,
+            search_cfg=search_cfg,
+            reranker_cfg=reranker_cfg,
             enable_gpu_search=self.enable_gpu_search,
         )
 
