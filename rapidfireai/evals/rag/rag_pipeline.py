@@ -57,8 +57,6 @@ class LangChainRagSpec:
 
     Embedding config is optional:
     - Required only for embedding queries as vectors, and for building the vector store. 
-    - When using a pre-built vector store, use the same embedding model that was used 
-    to create the vector store so retrieval results are meaningful.
     - For full-text search, provide the retriever directly and embedding config is not required.
 
     FAISS defaults when building an index:

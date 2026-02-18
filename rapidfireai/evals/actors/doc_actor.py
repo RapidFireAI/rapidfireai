@@ -12,6 +12,8 @@ from typing import Any
 import faiss
 import ray
 
+from langchain_community.vectorstores import FAISS
+
 from rapidfireai.evals.rag.prompt_manager import PromptManager
 from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
 from rapidfireai.evals.utils.logger import RFLogger
@@ -80,6 +82,7 @@ class DocProcessingActor:
                 - embedding_cfg: Config dict with "class" + kwargs (used by query actors)
                 - search_cfg: Config dict with "type" + kwargs (used by query actors)
                 - reranker_cfg: Config dict with "class" + kwargs, or None (used by query actors)
+                - retriever: Retriever object (if provided)
                 - template: Document formatting template
                 - enable_gpu_search: Whether GPU FAISS was used during build
                 - prompt_manager: Initialized prompt manager (if provided)
@@ -122,33 +125,41 @@ class DocProcessingActor:
 
             if rag_spec:
                 # Serialize FAISS index only when we built one (vector_store is set)
-                if rag_spec.vector_store is not None:
+                if rag_spec.vector_store is not None and isinstance(rag_spec.vector_store, FAISS):
                     faiss_index = rag_spec.vector_store.index
                     docstore = rag_spec.vector_store.docstore
                     index_to_docstore_id = rag_spec.vector_store.index_to_docstore_id
+                    embedding_function = rag_spec.vector_store.embedding_function
 
                     self.logger.info("Serializing FAISS index for cross-actor sharing...")
                     faiss_index_bytes = pickle.dumps(faiss_index)
                     docstore_bytes = pickle.dumps(docstore)
                     index_to_docstore_id_bytes = pickle.dumps(index_to_docstore_id)
+                    embedding_function_bytes = pickle.dumps(embedding_function)
                     self.logger.info(f"FAISS index serialized: {len(faiss_index_bytes)} bytes")
 
                     components.update({
                         "faiss_index_bytes": faiss_index_bytes,
                         "docstore_bytes": docstore_bytes,
                         "index_to_docstore_id_bytes": index_to_docstore_id_bytes,
+                        "embedding_function_bytes": embedding_function_bytes
+                    })
+                else:
+                    components.update({
+                        "vector_store": rag_spec.vector_store if rag_spec.vector_store is not None else None,
+                        "retriever": rag_spec.retriever if rag_spec.retriever is not None else None,
                     })
 
                 # Package config dicts for query actors to reconstruct LangChainRagSpec
                 components.update({
-                    "embedding_cfg": {"class": rag_spec.embedding_cls, **rag_spec.embedding_kwargs},
-                    "search_cfg": {"type": rag_spec.search_type, **rag_spec.search_kwargs},
-                    "reranker_cfg": (
-                        {"class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs}
-                        if rag_spec.reranker_cls else {}
-                    ),
-                    "template": rag_spec.template,
-                    "enable_gpu_search": rag_spec.enable_gpu_search,
+                    "search_cfg": {
+                        "type": rag_spec.search_type, **rag_spec.search_kwargs
+                        } if rag_spec.search_cfg is not None else None,
+                    "reranker_cfg": {
+                        "class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs
+                        } if rag_spec.reranker_cfg is not None else None,
+                    "template": rag_spec.template if rag_spec.template is not None else None,
+                    "enable_gpu_search": rag_spec.enable_gpu_search if rag_spec.enable_gpu_search is not None else False,
                 })
 
             # Add prompt_manager if provided (works with or without RAG)
