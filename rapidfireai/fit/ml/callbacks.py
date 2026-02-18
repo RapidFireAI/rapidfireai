@@ -1,5 +1,6 @@
 from collections.abc import Callable
 import gc
+import warnings
 
 import torch
 import torch.distributed as dist
@@ -11,6 +12,25 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import IntervalStrategy, SaveStrategy
+
+from rapidfireai.fit.utils.logging import RFLogger
+
+
+def _gpu_memory_summary(device=None) -> str:
+    """Return a concise string with current GPU memory usage for logging."""
+    if not torch.cuda.is_available():
+        return "CUDA not available"
+    if device is None:
+        device = torch.cuda.current_device()
+    allocated = torch.cuda.memory_allocated(device) / (1024**3)
+    reserved = torch.cuda.memory_reserved(device) / (1024**3)
+    total = torch.cuda.get_device_properties(device).total_memory / (1024**3)
+    free = total - allocated
+    return (
+        f"GPU {device}: {allocated:.2f} GiB allocated, "
+        f"{reserved:.2f} GiB reserved, "
+        f"{free:.2f} GiB free (of {total:.2f} GiB total)"
+    )
 
 
 class GenerationMetricsCallback(TrainerCallback):
@@ -42,9 +62,12 @@ class GenerationMetricsCallback(TrainerCallback):
         self.metric_run_id = metric_run_id
         self.completed_steps = completed_steps
         self.use_fsdp = use_fsdp
+        self.logger = RFLogger().create_logger("eval_generation")
 
-        # Always force use_cache=True (model may have it disabled for FSDP training)
-        self.generation_config["use_cache"] = True
+        # Do not force use_cache=True — KV cache significantly increases GPU
+        # memory during generation and can cause CUDA OOM on memory-constrained
+        # runs.  Let the caller / model defaults decide.
+        self.generation_config.pop("use_cache", None)
 
     def on_evaluate(
         self,
@@ -57,7 +80,32 @@ class GenerationMetricsCallback(TrainerCallback):
         if model is None:
             return
 
-        metrics = self._compute_generation_metrics(model, state.global_step)
+        step = self.completed_steps + state.global_step
+        self.logger.debug(
+            f"[Eval] on_evaluate START at step {step} | {_gpu_memory_summary()}"
+        )
+
+        try:
+            metrics = self._compute_generation_metrics(model, state.global_step)
+        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+            if not isinstance(e, torch.cuda.OutOfMemoryError) and "out of memory" not in str(e).lower():
+                raise  # Re-raise non-OOM RuntimeErrors
+
+            # Recover from CUDA OOM: restore model to training state, free
+            # memory, and let training continue without eval metrics.
+            self.logger.error(
+                f"[Eval] CUDA OOM during evaluation at step {step}. "
+                f"Skipping generation metrics. Training will continue. | {_gpu_memory_summary()}"
+            )
+            model.train()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+            gc.collect()
+            self.logger.debug(
+                f"[Eval] OOM recovery cleanup done at step {step} | {_gpu_memory_summary()}"
+            )
+            return
 
         # Ensure metrics are added to log history
         if hasattr(state, "log_history") and state.log_history:
@@ -80,11 +128,56 @@ class GenerationMetricsCallback(TrainerCallback):
 
         # Critical: Switch model back to training mode and ensure training state is restored
         model.train()
-        # Clear any cached computation graphs or compiled model states
+
+        # Aggressive post-eval cleanup to reclaim GPU memory and reduce
+        # CUDA allocator fragmentation.  model.generate() with FSDP
+        # triggers many all-gather operations whose output tensors can
+        # leak as stale Python references (visible later in gc scan).
+        # Cleaning them NOW -- before training resumes and before the
+        # eventual checkpoint save -- prevents the leaked tensors from
+        # pinning CUDA allocator blocks that the checkpoint all-gather
+        # will need.
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+            # 1. Purge any KV-cache / past_key_values the model may have
+            #    cached during generation.
+            for attr in ("past_key_values", "_past", "key_cache", "value_cache"):
+                if hasattr(model, attr):
+                    try:
+                        setattr(model, attr, None)
+                    except Exception:
+                        pass
+            # Also clear per-layer KV caches if stored on decoder layers
+            for module in model.modules():
+                for attr in ("past_key_values", "_past", "key_cache", "value_cache",
+                             "_seen_tokens"):
+                    if hasattr(module, attr):
+                        try:
+                            setattr(module, attr, None)
+                        except Exception:
+                            pass
+
+            # 2. Two-pass gc.collect to break circular references held by
+            #    FSDP C++ internals, autograd graph nodes, and stale
+            #    all-gather output tensors from generation forward passes.
+            gc.collect()
+            gc.collect()
+
+            # 3. Synchronize + empty_cache to ensure all async NCCL ops
+            #    have landed and freed blocks are returned to CUDA.
             torch.cuda.synchronize()
-        gc.collect()
+            torch.cuda.empty_cache()
+
+            # 4. Reset allocator statistics so the caching allocator can
+            #    make better decisions going forward.
+            try:
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.reset_accumulated_memory_stats()
+            except Exception:
+                pass
+
+        self.logger.debug(
+            f"[Eval] on_evaluate END at step {step} | {_gpu_memory_summary()}"
+        )
 
     def _prepare_data(self, eval_dataset: Dataset) -> tuple:
         """Prepare batch data for generation with defensive validation"""
@@ -187,6 +280,7 @@ class GenerationMetricsCallback(TrainerCallback):
         references = []
         num_samples = input_ids.shape[0]
         batch_size = override_batch_size or self.batch_size
+        total_batches = (num_samples + batch_size - 1) // batch_size
         gen_config = (
             generation_config
             if generation_config is not None
@@ -195,6 +289,11 @@ class GenerationMetricsCallback(TrainerCallback):
 
         with torch.no_grad():
             for i in range(0, num_samples, batch_size):
+                batch_idx = i // batch_size + 1
+                self.logger.debug(
+                    f"[Eval] Generating batch {batch_idx}/{total_batches} "
+                    f"on GPU {device} | {_gpu_memory_summary()}"
+                )
                 input_ids_batch = input_ids[i : i + batch_size].to(device)
 
                 with torch.inference_mode(), torch.amp.autocast("cuda"):
@@ -229,6 +328,13 @@ class GenerationMetricsCallback(TrainerCallback):
     def _compute_generation_metrics(self, model, step: int) -> dict[str, float]:
         """Generate text and compute BLEU/ROUGE metrics with batch processing.
         """
+        # Free cached memory before generation to maximize available GPU memory.
+        # Generation with KV cache is significantly more memory-intensive than
+        # training forward/backward passes, so reclaim fragmented CUDA memory first.
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
         model.eval()
 
         # Prepare data
@@ -244,15 +350,6 @@ class GenerationMetricsCallback(TrainerCallback):
         if input_ids.numel() == 0:
             return {}
 
-        # Enable KV cache for generation (model may have use_cache=False for FSDP training)
-        original_config_use_cache = getattr(model.config, "use_cache", False)
-        original_genconfig_use_cache = getattr(
-            getattr(model, "generation_config", None), "use_cache", None
-        )
-        model.config.use_cache = True
-        if hasattr(model, "generation_config") and model.generation_config is not None:
-            model.generation_config.use_cache = True
-
         # Use a larger batch size for generation (training batch_size=1 is wasteful here)
         gen_batch_size = max(self.batch_size, 4) if self.use_fsdp else self.batch_size
 
@@ -266,15 +363,6 @@ class GenerationMetricsCallback(TrainerCallback):
                     model, input_ids, batch_references
                 )
         finally:
-            # Restore original use_cache settings for training
-            model.config.use_cache = original_config_use_cache
-            if (
-                hasattr(model, "generation_config")
-                and model.generation_config is not None
-                and original_genconfig_use_cache is not None
-            ):
-                model.generation_config.use_cache = original_genconfig_use_cache
-
             # Free the tokenized eval tensor and release CUDA cached memory
             # back to the allocator so it doesn't accumulate across eval runs.
             del input_ids

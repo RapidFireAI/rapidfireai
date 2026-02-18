@@ -47,6 +47,114 @@ from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
 
 
+def _release_model_gpu_memory(model, logger=None):
+    """Release GPU tensor storage from a model to free CUDA memory.
+    """
+    if model is None:
+        return
+    _empty = torch.empty(0, device="cpu")
+    freed_bytes = 0
+    handles_found = 0
+    params_found = 0
+
+    # ---- 1. FSDP flat-parameter handles (hold extra refs to GPU tensors) ----
+    try:
+        for module in model.modules():
+            handle = getattr(module, "_handle", None)
+            if handle is not None:
+                handles_found += 1
+                fp = getattr(handle, "flat_param", None)
+                if fp is not None and hasattr(fp, "data") and fp.data.is_cuda:
+                    freed_bytes += fp.data.nelement() * fp.data.element_size()
+                    fp.data = _empty
+                    fp.grad = None
+    except Exception as e:
+        if logger:
+            logger.debug(f"[GPU cleanup] Error in FSDP handle scan: {e}")
+
+    # ---- 2. All model parameters ----
+    try:
+        for param in model.parameters():
+            params_found += 1
+            if param.data.is_cuda:
+                freed_bytes += param.data.nelement() * param.data.element_size()
+                param.data = _empty
+            if param.grad is not None:
+                param.grad = None
+    except Exception as e:
+        if logger:
+            logger.debug(f"[GPU cleanup] Error in param scan: {e}")
+
+    # ---- 3. All model buffers ----
+    try:
+        for buf in model.buffers():
+            if buf.is_cuda:
+                freed_bytes += buf.nelement() * buf.element_size()
+                buf.data = _empty
+    except Exception as e:
+        if logger:
+            logger.debug(f"[GPU cleanup] Error in buffer scan: {e}")
+
+    if logger:
+        logger.debug(
+            f"[GPU cleanup] model scan: {handles_found} FSDP handles, "
+            f"{params_found} params, released {freed_bytes / (1024**3):.2f} GiB"
+        )
+
+
+def _scan_and_release_leaked_cuda_tensors(logger=None):
+    """Nuclear fallback: scan ALL gc-tracked objects for CUDA tensors and zero them.
+
+    This catches tensors held by FSDP C++ internals, callback handlers,
+    accelerator caches, or any other reference that model-level iteration
+    cannot reach.  Safe to call between training runs when no CUDA tensors
+    should be alive.
+    """
+    gc.collect()
+    gc.collect()  # second pass catches circular refs
+
+    freed_bytes = 0
+    tensor_count = 0
+    _empty = torch.empty(0, device="cpu")
+    leaked_summary = {}
+
+    for obj in gc.get_objects():
+        if not torch.is_tensor(obj):
+            continue
+        try:
+            if obj.is_cuda:
+                size = obj.nelement() * obj.element_size()
+                freed_bytes += size
+                tensor_count += 1
+                key = (tuple(obj.shape), str(obj.dtype))
+                if key not in leaked_summary:
+                    leaked_summary[key] = {"count": 0, "total_bytes": 0}
+                leaked_summary[key]["count"] += 1
+                leaked_summary[key]["total_bytes"] += size
+                obj.data = _empty
+        except Exception:
+            pass
+
+    if logger:
+        logger.debug(
+            f"[GPU cleanup] gc scan: zeroed {tensor_count} leaked CUDA tensors, "
+            f"{freed_bytes / (1024**3):.2f} GiB"
+        )
+        if leaked_summary:
+            top = sorted(
+                leaked_summary.items(),
+                key=lambda x: x[1]["total_bytes"],
+                reverse=True,
+            )[:10]
+            for (shape, dtype), info in top:
+                logger.debug(
+                    f"  shape={shape}, dtype={dtype}: "
+                    f"{info['count']}x, {info['total_bytes'] / (1024**2):.1f} MiB"
+                )
+
+    return freed_bytes
+
+
 class TeeOutput:
     """A file-like object that captures output to a buffer while providing fileno() for vLLM compatibility.
     Output is NOT written to the original stream to prevent it from appearing in the notebook.
@@ -338,9 +446,19 @@ class Worker:
             self.db.set_run_details(run_id, config_leaf=trainer_config.config_leaf)
 
             # train the model and time it
-            self.logger.debug(
-                f"Beginning training for run {run_id} on chunk {chunk_id}"
-            )
+            if torch.cuda.is_available():
+                mem_alloc = torch.cuda.memory_allocated() / (1024**3)
+                mem_reserved = torch.cuda.memory_reserved() / (1024**3)
+                mem_total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / (1024**3)
+                self.logger.debug(
+                    f"Beginning training for run {run_id} on chunk {chunk_id} | "
+                    f"GPU mem: {mem_alloc:.2f} GiB allocated, {mem_reserved:.2f} GiB reserved, "
+                    f"{mem_total - mem_alloc:.2f} GiB free (of {mem_total:.2f} GiB total)"
+                )
+            else:
+                self.logger.debug(
+                    f"Beginning training for run {run_id} on chunk {chunk_id}"
+                )
 
             # Synchronize all workers before training starts
             if use_fsdp and is_distributed_initialized():
@@ -376,47 +494,149 @@ class Worker:
                         f"Worker {self.worker_id} passed barrier after training"
                     )
 
-                # save checkpoints to shared memory
-                save_checkpoint_to_shared_memory(
-                    trainer_instance,
-                    trainer_config,
-                    self.shm_manager,
-                    use_fsdp=use_fsdp,
-                )
-                if not config_leaf.get("peft_params") and not use_fsdp:
-                    save_model_to_shared_memory(
-                        trainer_instance.model,
-                        trainer_instance.tokenizer,
-                        trainer_config,
-                        self.shm_manager,
-                        SHMObjectType.FULL_MODEL,
-                        trainer_config.run_id,
-                        use_fsdp=use_fsdp,
+                # ---- Aggressive GPU cleanup before checkpoint save ----
+                # The checkpoint save uses FSDP FULL_STATE_DICT all-gather
+                # which needs contiguous GPU memory.  After eval/generation
+                # passes, CUDA allocator fragmentation and leaked NCCL
+                # buffers can reduce actual usable memory even when
+                # memory_allocated() looks fine.  Clean everything we can.
+                if torch.cuda.is_available():
+                    # 1. Zero optimizer gradients (set_to_none frees storage)
+                    try:
+                        if hasattr(trainer_instance, "optimizer") and trainer_instance.optimizer is not None:
+                            trainer_instance.optimizer.zero_grad(set_to_none=True)
+                    except Exception:
+                        pass
+
+                    # 2. Clear optimizer state tensors (exp_avg, exp_avg_sq)
+                    #    that might still live on GPU despite FSDP CPU offload.
+                    #    We're about to re-collect the optimizer state via
+                    #    FSDP.optim_state_dict() in the checkpoint save, so
+                    #    these cached copies are expendable.
+                    try:
+                        if hasattr(trainer_instance, "optimizer") and trainer_instance.optimizer is not None:
+                            for param_group in trainer_instance.optimizer.param_groups:
+                                for p in param_group["params"]:
+                                    if p in trainer_instance.optimizer.state:
+                                        state = trainer_instance.optimizer.state[p]
+                                        for key in list(state.keys()):
+                                            if torch.is_tensor(state[key]) and state[key].is_cuda:
+                                                state[key] = state[key].to("cpu")
+                    except Exception:
+                        pass
+
+                    # 3. Purge model-level caches left by eval generation
+                    #    (KV caches, past_key_values, etc.)
+                    try:
+                        model = trainer_instance.model
+                        for attr in ("past_key_values", "_past", "key_cache",
+                                     "value_cache"):
+                            if hasattr(model, attr):
+                                setattr(model, attr, None)
+                        for module in model.modules():
+                            for attr in ("past_key_values", "_past", "key_cache",
+                                         "value_cache", "_seen_tokens"):
+                                if hasattr(module, attr):
+                                    try:
+                                        setattr(module, attr, None)
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        pass
+
+                    # 4. Release trainer caches that aren't needed for
+                    #    checkpoint saving (callback handler, data collator
+                    #    cached tensors, memory tracker).
+                    try:
+                        if hasattr(trainer_instance, "_memory_tracker"):
+                            trainer_instance._memory_tracker = None
+                    except Exception:
+                        pass
+
+                    # 5. Two-pass gc to break circular refs, then sync +
+                    #    empty_cache so CUDA returns all freed blocks.
+                    gc.collect()
+                    gc.collect()
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+
+                    # 6. Reset allocator stats for cleaner decision-making.
+                    try:
+                        torch.cuda.reset_peak_memory_stats()
+                        torch.cuda.reset_accumulated_memory_stats()
+                    except Exception:
+                        pass
+
+                    mem_alloc = torch.cuda.memory_allocated() / (1024**3)
+                    mem_reserved = torch.cuda.memory_reserved() / (1024**3)
+                    mem_total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / (1024**3)
+                    self.logger.debug(
+                        f"Pre-checkpoint memory freed | "
+                        f"GPU mem: {mem_alloc:.2f} GiB allocated, {mem_reserved:.2f} GiB reserved, "
+                        f"{mem_total - mem_alloc:.2f} GiB free (of {mem_total:.2f} GiB total)"
                     )
-                self.logger.debug(
-                    f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}",
-                    f"and worker {self.worker_id}",
+
+                is_run_finished = (
+                    chunk_id == self.num_chunks - 1
+                    and new_completed_steps >= trainer_config.total_steps
                 )
 
-                if use_fsdp and is_distributed_initialized():
-                    barrier()
-
-                # save checkpoint to disk based on save strategy
-                save_strategy = trainer_config.config_leaf.get("training_args", {}).get(
-                    "save_strategy", "epoch"
-                )
-                if save_strategy == "chunk" or (
-                    save_strategy == "epoch" and chunk_id == self.num_chunks - 1
-                ):
+                if is_run_finished:
+                    # Run finished all steps — save the final checkpoint
+                    # directly to disk and skip shared memory.
+                    # save_checkpoint_to_shared_memory zeroes flat_params for
+                    # the optimizer all-gather, which makes any subsequent
+                    # FSDP state_dict calls fail.  By going straight to disk
+                    # we avoid that corruption.
                     save_checkpoint_to_disk(
                         trainer_instance,
                         trainer_config,
-                        completed_steps=new_completed_steps,
+                        last=True,
                         use_fsdp=use_fsdp,
                     )
                     self.logger.debug(
-                        f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}"
+                        f"Saved final checkpoint to disk for run {run_id} on chunk {chunk_id}"
                     )
+                else:
+                    # Normal (non-final) chunk: save to shared memory
+                    save_checkpoint_to_shared_memory(
+                        trainer_instance,
+                        trainer_config,
+                        self.shm_manager,
+                        use_fsdp=use_fsdp,
+                    )
+                    if not config_leaf.get("peft_params") and not use_fsdp:
+                        save_model_to_shared_memory(
+                            trainer_instance.model,
+                            trainer_instance.tokenizer,
+                            trainer_config,
+                            self.shm_manager,
+                            SHMObjectType.FULL_MODEL,
+                            trainer_config.run_id,
+                            use_fsdp=use_fsdp,
+                        )
+                    self.logger.debug(
+                        f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}",
+                        f"and worker {self.worker_id}",
+                    )
+
+                    if use_fsdp and is_distributed_initialized():
+                        barrier()
+
+                    # save checkpoint to disk based on save strategy
+                    save_strategy = trainer_config.config_leaf.get("training_args", {}).get(
+                        "save_strategy", "epoch"
+                    )
+                    if save_strategy == "chunk":
+                        save_checkpoint_to_disk(
+                            trainer_instance,
+                            trainer_config,
+                            completed_steps=new_completed_steps,
+                            use_fsdp=use_fsdp,
+                        )
+                        self.logger.debug(
+                            f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}"
+                        )
             else:
                 # save checkpoint to disk when not using shared memory
                 save_checkpoint_to_disk(
@@ -429,9 +649,11 @@ class Worker:
                     f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}"
                 )
 
-            # save final checkpoint
+            # save final checkpoint (only for non-shared-memory path;
+            # the USE_SHARED_MEMORY path handles this above)
             if (
-                chunk_id == self.num_chunks - 1
+                not USE_SHARED_MEMORY
+                and chunk_id == self.num_chunks - 1
                 and new_completed_steps >= trainer_config.total_steps
             ):
                 save_checkpoint_to_disk(
@@ -487,56 +709,84 @@ class Worker:
                             except Exception:
                                 pass
 
-                # Delete trainer components to free memory
+                # ---- Systematic GPU memory cleanup ----
                 if "trainer_instance" in locals():
-                    # For FSDP, need to clean up wrapped model first before the base model
-                    if use_fsdp and hasattr(trainer_instance, "model_wrapped"):
-                        try:
-                            del trainer_instance.model_wrapped
-                        except Exception as e:
-                            self.logger.debug(f"Error deleting model_wrapped: {e}")
-                    
-                    if hasattr(trainer_instance, "model"):
-                        try:
-                            del trainer_instance.model
-                        except Exception as e:
-                            self.logger.debug(f"Error deleting model: {e}")
-                    
-                    if hasattr(trainer_instance, "ref_model"):
-                        try:
-                            del trainer_instance.ref_model
-                        except Exception as e:
-                            self.logger.debug(f"Error deleting ref_model: {e}")
-                    if hasattr(trainer_instance, "optimizer"):
-                        try:
+                    # Step 1: Neutralize all internal references that point TO the model.
+                    # The HF Trainer's callback_handler, optimizer, and accelerator
+                    # all hold separate refs to the model that keep it alive.
+                    try:
+                        if hasattr(trainer_instance, "callback_handler"):
+                            trainer_instance.callback_handler.model = None
+                            trainer_instance.callback_handler.optimizer = None
+                            trainer_instance.callback_handler.lr_scheduler = None
+                    except Exception:
+                        pass
+
+                    # Step 2: Clear optimizer state AND param_groups (param_groups
+                    # hold direct refs to model parameter tensors).
+                    try:
+                        if hasattr(trainer_instance, "optimizer") and trainer_instance.optimizer is not None:
                             trainer_instance.optimizer.zero_grad(set_to_none=True)
                             if hasattr(trainer_instance.optimizer, "state"):
                                 trainer_instance.optimizer.state.clear()
+                            if hasattr(trainer_instance.optimizer, "param_groups"):
+                                for pg in trainer_instance.optimizer.param_groups:
+                                    pg["params"] = []
+                    except Exception:
+                        pass
+
+                    # Step 3: Release GPU tensor storage via model-level iteration.
+                    for attr in ("model", "model_wrapped", "ref_model"):
+                        try:
+                            _release_model_gpu_memory(
+                                getattr(trainer_instance, attr, None),
+                                logger=self.logger,
+                            )
+                        except Exception:
+                            pass
+
+                    # Step 4: Delete all trainer attributes in dependency order.
+                    try:
+                        if hasattr(trainer_instance, "optimizer"):
                             del trainer_instance.optimizer
-                        except Exception:
-                            pass
-                    if hasattr(trainer_instance, "lr_scheduler"):
-                        try:
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(trainer_instance, "lr_scheduler"):
                             del trainer_instance.lr_scheduler
-                        except Exception:
-                            pass
-                    if hasattr(trainer_instance, "tokenizer"):
-                        try:
-                            del trainer_instance.tokenizer
-                        except Exception:
-                            pass
-                    # Clean up accelerator which may hold model references
-                    if hasattr(trainer_instance, "accelerator"):
-                        try:
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(trainer_instance, "model_wrapped"):
+                            del trainer_instance.model_wrapped
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(trainer_instance, "model"):
+                            del trainer_instance.model
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(trainer_instance, "ref_model"):
+                            del trainer_instance.ref_model
+                    except Exception:
+                        pass
+
+                    # Step 5: Free accelerator (holds wrapped model + optimizer refs).
+                    try:
+                        if hasattr(trainer_instance, "accelerator"):
                             if hasattr(trainer_instance.accelerator, "free_memory"):
                                 trainer_instance.accelerator.free_memory()
                             del trainer_instance.accelerator
-                        except Exception:
-                            pass
-                    # Clean up any remaining trainer state
-                    if hasattr(trainer_instance, "state"):
+                    except Exception:
+                        pass
+
+                    # Step 6: Clear remaining trainer attrs and kill the object.
+                    for attr in ("tokenizer", "state", "callback_handler",
+                                 "_memory_tracker", "data_collator"):
                         try:
-                            del trainer_instance.state
+                            if hasattr(trainer_instance, attr):
+                                delattr(trainer_instance, attr)
                         except Exception:
                             pass
                     try:
@@ -544,27 +794,44 @@ class Worker:
                     except Exception:
                         pass
 
-                # run garbage collection
+                # Step 7: Two-pass gc.collect() (second pass catches circular refs).
                 gc.collect()
+                gc.collect()
+
                 if torch.cuda.is_available():
-                    # Synchronize and clear CUDA memory
-                    try:
-                        torch.cuda.synchronize()
-                    except Exception:
-                        pass
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+
+                    # Step 8: Nuclear fallback — scan ALL gc-tracked objects for
+                    # leaked CUDA tensors that model iteration couldn't reach
+                    # (FSDP C++ handles, lingering autograd graph nodes, etc.).
+                    _scan_and_release_leaked_cuda_tensors(logger=self.logger)
+
+                    gc.collect()
                     torch.cuda.empty_cache()
                     torch.cuda.ipc_collect()
-                    # Reset peak memory stats to avoid misleading numbers
+
                     try:
                         torch.cuda.reset_peak_memory_stats()
                         torch.cuda.reset_accumulated_memory_stats()
                     except Exception:
                         pass
+
                 if use_fsdp and is_distributed_initialized():
                     barrier()
-                self.logger.debug(
-                    f"Cleanup completed for run {run_id} on chunk {chunk_id}"
-                )
+                if torch.cuda.is_available():
+                    mem_alloc = torch.cuda.memory_allocated() / (1024**3)
+                    mem_reserved = torch.cuda.memory_reserved() / (1024**3)
+                    mem_total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / (1024**3)
+                    self.logger.debug(
+                        f"Cleanup completed for run {run_id} on chunk {chunk_id} | "
+                        f"GPU mem: {mem_alloc:.2f} GiB allocated, {mem_reserved:.2f} GiB reserved, "
+                        f"{mem_total - mem_alloc:.2f} GiB free (of {mem_total:.2f} GiB total)"
+                    )
+                else:
+                    self.logger.debug(
+                        f"Cleanup completed for run {run_id} on chunk {chunk_id}"
+                    )
             except Exception as cleanup_error:
                 self.logger.error(f"Error during cleanup for run {run_id}: {cleanup_error}")
             finally:

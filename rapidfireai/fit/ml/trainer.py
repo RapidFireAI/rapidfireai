@@ -66,8 +66,8 @@ def create_rf_trainer(
                 training_state = shm_manager.load_model_object(
                     trainer_config.run_id, SHMObjectType.CHECKPOINTS
                 )
-                self._pending_optimizer_state = training_state["optimizer_state"]
-                self._pending_scheduler_state = training_state["scheduler_state"]
+                self._pending_optimizer_state = training_state.get("optimizer_state")
+                self._pending_scheduler_state = training_state.get("scheduler_state")
 
         def restore_optimizer_state(self):
             """Restore optimizer state for Single GPU trainer"""
