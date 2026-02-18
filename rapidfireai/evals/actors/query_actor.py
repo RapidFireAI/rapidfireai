@@ -220,7 +220,7 @@ class QueryProcessingActor:
                     )
                     self.logger.info(f"Recreated retriever with search_type={search_type}")
 
-                    reranker_cfg = dict(context_generator_ref["reranker_cfg"])
+                    reranker_cfg = dict(context_generator_ref["reranker_cfg"]) if context_generator_ref["reranker_cfg"] else None
                     if reranker_cfg:
                         cfg = dict(reranker_cfg)
                         reranker_cls = cfg.pop("class", None)

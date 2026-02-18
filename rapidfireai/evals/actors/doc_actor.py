@@ -145,7 +145,7 @@ class DocProcessingActor:
                     "search_cfg": {"type": rag_spec.search_type, **rag_spec.search_kwargs},
                     "reranker_cfg": (
                         {"class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs}
-                        if rag_spec.reranker_cls else None
+                        if rag_spec.reranker_cls else {}
                     ),
                     "template": rag_spec.template,
                     "enable_gpu_search": rag_spec.enable_gpu_search,

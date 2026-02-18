@@ -55,9 +55,11 @@ class LangChainRagSpec:
         retriever) is built from documents. In this case a document loader is required.
         A text splitter is optional: you may embed documents without chunking if you omit it.
 
-    Embedding class is always required (for embedding queries, and for building the
-    index when one is created). When using a pre-built vector store, use the same
-    embedding model that was used to build it so retrieval results are meaningful.
+    Embedding config is optional:
+    - Required only for embedding queries as vectors, and for building the vector store. 
+    - When using a pre-built vector store, use the same embedding model that was used 
+    to create the vector store so retrieval results are meaningful.
+    - For full-text search, provide the retriever directly and embedding config is not required.
 
     FAISS defaults when building an index:
     - GPU: IndexFlatL2 on GPU for exact L2 distance search
