@@ -111,24 +111,9 @@ def create_model_instance(
 
 
 def _collect_fsdp_peft_state_dict(model, adapter_name: str = "default"):
-    """Collect PEFT state dict from FSDP model without gathering frozen layers.
+    """Collect PEFT LoRA weights per-layer to avoid expensive root FSDP all-gather.
 
-    The standard approach (FULL_STATE_DICT on the whole model) triggers an
-    all-gather on EVERY FSDP unit, including the root module that contains
-    embed_tokens / norm / lm_head (~3 GiB for Qwen3-32B).  After eval /
-    generation passes, hidden GPU memory overhead (allocator fragmentation,
-    NCCL communication buffers) can leave insufficient contiguous memory
-    for this root all-gather, causing the checkpoint save to hang with OOM.
-
-    This function instead collects the FULL_STATE_DICT from each
-    decoder-layer FSDP unit individually and extracts only the LoRA
-    adapter weights.  The root FSDP unit (which has no LoRA adapters) is
-    skipped entirely, reducing peak GPU memory from ~3 GiB to ~0.93 GiB
-    (one decoder layer).
-
-    Keys are returned in the same format as ``get_peft_model_state_dict``:
-    the adapter name is stripped so that ``set_peft_model_state_dict`` can
-    re-insert it (potentially under a different name) on load.
+    Keys are stripped of the adapter name to match ``get_peft_model_state_dict`` format.
     """
     import re
     import torch.distributed as dist
@@ -151,8 +136,7 @@ def _collect_fsdp_peft_state_dict(model, adapter_name: str = "default"):
         ):
             return get_peft_model_state_dict(model, adapter_name=adapter_name)
 
-    # Build the same adapter-name removal pattern that
-    # peft.get_peft_model_state_dict uses (see peft/utils/save_and_load.py).
+    # Strip adapter name from keys to match peft.get_peft_model_state_dict format
     _adapter_suffix_re = re.compile(re.escape(f".{adapter_name}") + r"$")
 
     def _strip_adapter_name(key: str) -> str:
@@ -223,26 +207,69 @@ def _collect_fsdp_full_model(model, trainer_config):
     return model_cpu
 
 
-def _pre_allgather_memory_guard():
-    """Reclaim GPU memory before an FSDP all-gather operation.
+def flush_cuda_cache():
+    """Two-pass gc.collect, synchronize CUDA, empty cache, and reset allocator stats."""
+    gc.collect()
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        try:
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.reset_accumulated_memory_stats()
+        except Exception:
+            pass
 
-    After eval/generation passes, stale CUDA tensors from FSDP forward
-    all-gathers can leak through Python GC references and pin allocator
-    blocks, causing the checkpoint all-gather to OOM even when
-    ``memory_allocated()`` looks sufficient.  This guard:
 
-    1. Runs two-pass ``gc.collect()`` to break circular references.
-    2. Synchronises CUDA and flushes the caching allocator so all freed
-       blocks are returned to the CUDA driver.
-    """
-    if not torch.cuda.is_available():
+def purge_model_kv_caches(model):
+    """Clear KV caches and generation artifacts from model and all submodules."""
+    if model is None:
         return
+    _cache_attrs = ("past_key_values", "_past", "key_cache", "value_cache", "_seen_tokens")
+    for attr in _cache_attrs:
+        if hasattr(model, attr):
+            try:
+                setattr(model, attr, None)
+            except Exception:
+                pass
+    for module in model.modules():
+        for attr in _cache_attrs:
+            if hasattr(module, attr):
+                try:
+                    setattr(module, attr, None)
+                except Exception:
+                    pass
 
-    gc.collect()
-    gc.collect()
 
-    torch.cuda.synchronize()
-    torch.cuda.empty_cache()
+def release_model_gpu_memory(model):
+    """Zero all CUDA tensors (FSDP flat_params, params, buffers) on a model."""
+    if model is None:
+        return
+    _empty = torch.empty(0, device="cpu")
+    try:
+        for module in model.modules():
+            handle = getattr(module, "_handle", None)
+            if handle is not None:
+                fp = getattr(handle, "flat_param", None)
+                if fp is not None and hasattr(fp, "data") and fp.data.is_cuda:
+                    fp.data = _empty
+                    fp.grad = None
+    except Exception:
+        pass
+    try:
+        for param in model.parameters():
+            if param.data.is_cuda:
+                param.data = _empty
+            if param.grad is not None:
+                param.grad = None
+    except Exception:
+        pass
+    try:
+        for buf in model.buffers():
+            if buf.is_cuda:
+                buf.data = _empty
+    except Exception:
+        pass
 
 
 def save_checkpoint_to_shared_memory(
@@ -261,7 +288,7 @@ def save_checkpoint_to_shared_memory(
                 "model_adapter_name", "default"
             )
 
-            _pre_allgather_memory_guard()
+            flush_cuda_cache()
             peft_state_dict = _collect_fsdp_peft_state_dict(trainer.model, adapter_name)
             if rank == 0 and peft_state_dict is not None:
                 checkpoint["state_dict"] = {
@@ -281,35 +308,10 @@ def save_checkpoint_to_shared_memory(
 
     if trainer.optimizer is not None:
         if use_fsdp:
-            # After PEFT state dict is safely on CPU, free model param GPU
-            # memory to reclaim ~15 GiB headroom for the optimizer state
-            # all-gather.  The optimizer state tensors (exp_avg, exp_avg_sq)
-            # are separate objects from the model params; FSDP.optim_state_dict
-            # uses the flat_param OBJECT as a dict key and reads handle
-            # metadata for the mapping, so zeroed param data is fine.
-            _empty = torch.empty(0, device="cpu")
-            for module in trainer.model.modules():
-                handle = getattr(module, "_handle", None)
-                if handle is not None:
-                    fp = getattr(handle, "flat_param", None)
-                    if fp is not None and hasattr(fp, "data") and fp.data.is_cuda:
-                        fp.data = _empty
-                        fp.grad = None
-            for param in trainer.model.parameters():
-                if param.data.is_cuda:
-                    param.data = _empty
-                if param.grad is not None:
-                    param.grad = None
-            for buf in trainer.model.buffers():
-                if buf.is_cuda:
-                    buf.data = _empty
-            gc.collect()
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
-
-            _pre_allgather_memory_guard()
+            # Free model GPU memory before optimizer all-gather (zeroed param data is fine
+            # because FSDP.optim_state_dict uses the flat_param object as a dict key).
+            release_model_gpu_memory(trainer.model)
+            flush_cuda_cache()
 
             try:
                 full_optim_state_dict_config = FullOptimStateDictConfig(
@@ -820,34 +822,10 @@ def save_checkpoint_to_disk(
     else:
         trainer.model.save_pretrained(checkpoint_path)
 
-    # For FSDP + PEFT: free model param GPU memory after the adapter
-    # state dict has been safely saved to disk.  This reclaims ~15 GiB
-    # headroom for the optimizer all-gather below.  The optimizer state
-    # tensors (exp_avg, exp_avg_sq) are separate objects from the model
-    # params; FSDP.optim_state_dict uses the flat_param OBJECT as a dict
-    # key, so zeroed param data is fine.
+    # Free model GPU memory before optimizer all-gather
     if use_fsdp and hasattr(trainer.model, "peft_config"):
-        _empty = torch.empty(0, device="cpu")
-        for module in trainer.model.modules():
-            handle = getattr(module, "_handle", None)
-            if handle is not None:
-                fp = getattr(handle, "flat_param", None)
-                if fp is not None and hasattr(fp, "data") and fp.data.is_cuda:
-                    fp.data = _empty
-                    fp.grad = None
-        for param in trainer.model.parameters():
-            if param.data.is_cuda:
-                param.data = _empty
-            if param.grad is not None:
-                param.grad = None
-        for buf in trainer.model.buffers():
-            if buf.is_cuda:
-                buf.data = _empty
-        gc.collect()
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
+        release_model_gpu_memory(trainer.model)
+        flush_cuda_cache()
 
     # Save trainer state (only rank 0 writes to disk)
     if rank == 0:

@@ -1,6 +1,5 @@
 from collections.abc import Callable
 import gc
-import warnings
 
 import torch
 import torch.distributed as dist
@@ -13,6 +12,7 @@ from transformers import (
 )
 from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
+from rapidfireai.fit.ml.checkpoint_utils import flush_cuda_cache, purge_model_kv_caches
 from rapidfireai.fit.utils.logging import RFLogger
 
 
@@ -47,9 +47,7 @@ class GenerationMetricsCallback(TrainerCallback):
         self.use_fsdp = use_fsdp
         self.logger = RFLogger().create_logger("eval_generation")
 
-        # Do not force use_cache=True — KV cache significantly increases GPU
-        # memory during generation and can cause CUDA OOM on memory-constrained
-        # runs.  Let the caller / model defaults decide.
+        # Let caller/model defaults decide on KV cache (can cause OOM)
         self.generation_config.pop("use_cache", None)
 
     def on_evaluate(
@@ -71,8 +69,7 @@ class GenerationMetricsCallback(TrainerCallback):
             if not isinstance(e, torch.cuda.OutOfMemoryError) and "out of memory" not in str(e).lower():
                 raise  # Re-raise non-OOM RuntimeErrors
 
-            # Recover from CUDA OOM: restore model to training state, free
-            # memory, and let training continue without eval metrics.
+            # Recover from CUDA OOM: skip eval metrics, continue training
             self.logger.error(
                 f"[Eval] CUDA OOM during evaluation at step {step}. "
                 f"Skipping generation metrics. Training will continue."
@@ -103,54 +100,12 @@ class GenerationMetricsCallback(TrainerCallback):
                     step=step,
                 )
 
-        # Critical: Switch model back to training mode and ensure training state is restored
+        # Switch model back to training mode
         model.train()
 
-        # Aggressive post-eval cleanup to reclaim GPU memory and reduce
-        # CUDA allocator fragmentation.  model.generate() with FSDP
-        # triggers many all-gather operations whose output tensors can
-        # leak as stale Python references (visible later in gc scan).
-        # Cleaning them NOW -- before training resumes and before the
-        # eventual checkpoint save -- prevents the leaked tensors from
-        # pinning CUDA allocator blocks that the checkpoint all-gather
-        # will need.
-        if torch.cuda.is_available():
-            # 1. Purge any KV-cache / past_key_values the model may have
-            #    cached during generation.
-            for attr in ("past_key_values", "_past", "key_cache", "value_cache"):
-                if hasattr(model, attr):
-                    try:
-                        setattr(model, attr, None)
-                    except Exception:
-                        pass
-            # Also clear per-layer KV caches if stored on decoder layers
-            for module in model.modules():
-                for attr in ("past_key_values", "_past", "key_cache", "value_cache",
-                             "_seen_tokens"):
-                    if hasattr(module, attr):
-                        try:
-                            setattr(module, attr, None)
-                        except Exception:
-                            pass
-
-            # 2. Two-pass gc.collect to break circular references held by
-            #    FSDP C++ internals, autograd graph nodes, and stale
-            #    all-gather output tensors from generation forward passes.
-            gc.collect()
-            gc.collect()
-
-            # 3. Synchronize + empty_cache to ensure all async NCCL ops
-            #    have landed and freed blocks are returned to CUDA.
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
-
-            # 4. Reset allocator statistics so the caching allocator can
-            #    make better decisions going forward.
-            try:
-                torch.cuda.reset_peak_memory_stats()
-                torch.cuda.reset_accumulated_memory_stats()
-            except Exception:
-                pass
+        # Post-eval cleanup: free leaked FSDP all-gather tensors before checkpoint save
+        purge_model_kv_caches(model)
+        flush_cuda_cache()
 
         self.logger.debug(f"[Eval] on_evaluate END at step {step}")
 
@@ -223,12 +178,7 @@ class GenerationMetricsCallback(TrainerCallback):
         generated_ids: torch.Tensor,
         eos_token_ids: list[int],
     ) -> torch.Tensor:
-        """Truncate each sequence at the first EOS token (token-level).
-
-        Replaces every token after the first EOS with ``pad=0`` so that
-        ``batch_decode(skip_special_tokens=True)`` produces clean text
-        without post-EOS garbage.
-        """
+        """Replace tokens after the first EOS with pad=0 for clean decoding."""
         generated_ids = generated_ids.clone()
         for eos_id in eos_token_ids:
             mask = generated_ids == eos_id  # (batch, seq_len)
@@ -249,8 +199,7 @@ class GenerationMetricsCallback(TrainerCallback):
         generation_config: dict | None = None,
         eos_token_ids: list[int] | None = None,
     ) -> tuple[list[str], list[str]]:
-        """Run the autoregressive generation loop over batches and return predictions + references.
-        """
+        """Run autoregressive generation over batches and return predictions + references."""
         predictions = []
         references = []
         num_samples = input_ids.shape[0]
@@ -268,12 +217,10 @@ class GenerationMetricsCallback(TrainerCallback):
                 with torch.inference_mode(), torch.amp.autocast("cuda"):
                     outputs_batch = model.generate(input_ids_batch, **gen_config)
 
-                # Slice to only the newly generated tokens
+                # Keep only newly generated tokens
                 new_tokens = outputs_batch[:, input_ids_batch.shape[1] :]
 
-                # Truncate at real EOS before decoding (FSDP path disables
-                # eos_token_id to keep ranks in sync, so generated sequences
-                # may contain tokens past the natural stopping point).
+                # Truncate at real EOS (disabled during FSDP generation to keep ranks in sync)
                 if eos_token_ids:
                     new_tokens = self._truncate_at_eos(new_tokens, eos_token_ids)
 
@@ -284,8 +231,7 @@ class GenerationMetricsCallback(TrainerCallback):
                 predictions.extend(generated_texts)
                 references.extend(batch_references[i : i + batch_size])
 
-                # Free GPU tensors from this batch immediately to avoid
-                # accumulating KV-cache / output memory across batches.
+                # Free GPU tensors from this batch immediately
                 del outputs_batch, input_ids_batch, new_tokens
                 torch.cuda.empty_cache()
 
@@ -295,11 +241,8 @@ class GenerationMetricsCallback(TrainerCallback):
         return predictions, references
 
     def _compute_generation_metrics(self, model, step: int) -> dict[str, float]:
-        """Generate text and compute BLEU/ROUGE metrics with batch processing.
-        """
-        # Free cached memory before generation to maximize available GPU memory.
-        # Generation with KV cache is significantly more memory-intensive than
-        # training forward/backward passes, so reclaim fragmented CUDA memory first.
+        """Generate text and compute BLEU/ROUGE metrics."""
+        # Free cached memory before generation (more memory-intensive than training)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         gc.collect()
@@ -332,12 +275,8 @@ class GenerationMetricsCallback(TrainerCallback):
                     model, input_ids, batch_references
                 )
         finally:
-            # Free the tokenized eval tensor and release CUDA cached memory
-            # back to the allocator so it doesn't accumulate across eval runs.
             del input_ids
-            # Clear any CUDA graph cache that may have been created during generation
             torch.cuda.empty_cache()
-            # Force Python garbage collection to reclaim CPU memory
             gc.collect()
 
         return metrics
@@ -373,8 +312,7 @@ class GenerationMetricsCallback(TrainerCallback):
         batch_references: list[str],
         gen_batch_size: int = 4,
     ) -> dict[str, float]:
-        """FSDP-aware generation with data sharding across ranks.
-        """
+        """FSDP-aware generation with data sharding across ranks."""
         rank = dist.get_rank() if dist.is_initialized() else 0
         world_size = dist.get_world_size() if dist.is_initialized() else 1
 
@@ -389,24 +327,18 @@ class GenerationMetricsCallback(TrainerCallback):
         shard_references = batch_references[start_idx:end_idx]
         actual_samples_on_this_gpu = shard_input_ids.shape[0]
 
-        # Pad so every rank processes *exactly* samples_per_gpu samples.
-        # This keeps the number of model.generate() calls identical across
-        # ranks, which is required because each forward pass is a collective
-        # NCCL operation.  Padding predictions are stripped before gathering
-        # (see ``predictions[:actual_samples_on_this_gpu]`` below) so they never affect
-        # metric scores.
+        # Pad to keep generate() call count identical across ranks (NCCL collective)
         if actual_samples_on_this_gpu < samples_per_gpu:
             pad_count = samples_per_gpu - actual_samples_on_this_gpu
             pad_ids = input_ids[:pad_count]  # reuse first samples as padding
             shard_input_ids = torch.cat([shard_input_ids, pad_ids], dim=0)
             shard_references = shard_references + batch_references[:pad_count]
 
-        # Disabling eos_token_id forces every rank to execute exactly
+        # Disable eos_token_id to keep ranks in sync; truncate post-generation
         gen_config = dict(self.generation_config)
         saved_eos = gen_config.pop("eos_token_id", None)
 
-        # Resolve the real EOS token ids for post-generation truncation.
-        # Prefer the explicit config value, fall back to the tokenizer.
+        # Resolve real EOS ids for post-generation truncation
         if saved_eos is not None:
             real_eos_ids = saved_eos if isinstance(saved_eos, list) else [saved_eos]
         elif self.tokenizer.eos_token_id is not None:
@@ -425,8 +357,7 @@ class GenerationMetricsCallback(TrainerCallback):
             eos_token_ids=real_eos_ids,
         )
 
-        # Free the per-rank GPU shard immediately; the predictions are
-        # already decoded to Python strings.
+        # Free per-rank GPU shard (predictions already decoded to strings)
         del shard_input_ids
         torch.cuda.empty_cache()
 
