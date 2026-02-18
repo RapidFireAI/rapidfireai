@@ -223,17 +223,7 @@ def _collect_fsdp_full_model(model, trainer_config):
     return model_cpu
 
 
-def _gpu_mem_str() -> str:
-    """Return a short GPU memory summary string."""
-    if not torch.cuda.is_available():
-        return "no CUDA"
-    a = torch.cuda.memory_allocated() / (1024**3)
-    r = torch.cuda.memory_reserved() / (1024**3)
-    t = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / (1024**3)
-    return f"{a:.2f} GiB alloc, {r:.2f} GiB reserved, {t - a:.2f} GiB free"
-
-
-def _pre_allgather_memory_guard(tag: str = "", logger=None):
+def _pre_allgather_memory_guard():
     """Reclaim GPU memory before an FSDP all-gather operation.
 
     After eval/generation passes, stale CUDA tensors from FSDP forward
@@ -244,14 +234,6 @@ def _pre_allgather_memory_guard(tag: str = "", logger=None):
     1. Runs two-pass ``gc.collect()`` to break circular references.
     2. Synchronises CUDA and flushes the caching allocator so all freed
        blocks are returned to the CUDA driver.
-
-    NOTE: We intentionally do NOT zero arbitrary GC-tracked CUDA tensors
-    here.  FSDP ``FlatParameter`` objects for frozen modules (embedding,
-    layer norms, LM head) are ``nn.Parameter`` instances with
-    ``requires_grad=False`` -- zeroing them replaces their data with a
-    CPU empty tensor and causes ``_check_on_compute_device`` to raise
-    ``AssertionError: Expects tensor to be on the compute device cuda:X,
-    was on cpu`` when FSDP tries to unshard for the state dict.
     """
     if not torch.cuda.is_available():
         return
@@ -262,11 +244,6 @@ def _pre_allgather_memory_guard(tag: str = "", logger=None):
     torch.cuda.synchronize()
     torch.cuda.empty_cache()
 
-    if logger:
-        logger.debug(
-            f"[ckpt {tag}] GPU mem after guard: {_gpu_mem_str()}"
-        )
-
 
 def save_checkpoint_to_shared_memory(
     trainer: SFTTrainer | DPOTrainer | GRPOTrainer,
@@ -275,9 +252,6 @@ def save_checkpoint_to_shared_memory(
     use_fsdp: bool = False,
 ) -> None:
     device = "cpu"
-    from rapidfireai.fit.utils.logging import RFLogger
-    _log = RFLogger().create_logger("checkpoint_save")
-
     checkpoint = {}
     rank = trainer_config.local_rank if use_fsdp else 0
 
@@ -287,18 +261,8 @@ def save_checkpoint_to_shared_memory(
                 "model_adapter_name", "default"
             )
 
-            # Reclaim leaked CUDA tensors from eval/generation before
-            # the FULL_STATE_DICT all-gather.  Without this, stale
-            # all-gather outputs from model.generate() can fragment
-            # the allocator and cause OOM even when memory_allocated()
-            # reports sufficient free memory.
-            _pre_allgather_memory_guard(
-                tag=f"peft run {trainer_config.run_id}", logger=_log
-            )
-
-            _log.debug(f"[ckpt] PEFT state dict START | {_gpu_mem_str()}")
+            _pre_allgather_memory_guard()
             peft_state_dict = _collect_fsdp_peft_state_dict(trainer.model, adapter_name)
-            _log.debug(f"[ckpt] PEFT state dict DONE  | {_gpu_mem_str()}")
             if rank == 0 and peft_state_dict is not None:
                 checkpoint["state_dict"] = {
                     k: v.cpu().clone() for k, v in peft_state_dict.items()
@@ -344,15 +308,10 @@ def save_checkpoint_to_shared_memory(
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
                 torch.cuda.empty_cache()
-            _log.debug(f"[ckpt] Model params freed    | {_gpu_mem_str()}")
 
-            # Second memory guard before the optimizer all-gather
-            _pre_allgather_memory_guard(
-                tag=f"optim run {trainer_config.run_id}", logger=_log
-            )
+            _pre_allgather_memory_guard()
 
             try:
-                _log.debug(f"[ckpt] Optim state dict START | {_gpu_mem_str()}")
                 full_optim_state_dict_config = FullOptimStateDictConfig(
                     offload_to_cpu=True, rank0_only=True
                 )
@@ -365,16 +324,11 @@ def save_checkpoint_to_shared_memory(
                     optimizer_state = FSDP.optim_state_dict(
                         trainer.model, trainer.optimizer
                     )
-                _log.debug(f"[ckpt] Optim state dict DONE  | {_gpu_mem_str()}")
                 if optimizer_state is not None and trainer_config.local_rank == 0:
                     checkpoint["optimizer_state"] = move_tensors_to_device(
                         optimizer_state, device
                     )
-            except Exception as e:
-                _log.warning(
-                    f"Failed to save FSDP optimizer state (will use fresh optimizer "
-                    f"on next chunk): {e}"
-                )
+            except Exception:
                 checkpoint["optimizer_state"] = None
         else:
             checkpoint["optimizer_state"] = move_tensors_to_device(

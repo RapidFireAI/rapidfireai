@@ -47,62 +47,41 @@ from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
 
 
-def _release_model_gpu_memory(model, logger=None):
-    """Release GPU tensor storage from a model to free CUDA memory.
-    """
+def _release_model_gpu_memory(model):
+    """Release GPU tensor storage from a model to free CUDA memory."""
     if model is None:
         return
     _empty = torch.empty(0, device="cpu")
-    freed_bytes = 0
-    handles_found = 0
-    params_found = 0
 
-    # ---- 1. FSDP flat-parameter handles (hold extra refs to GPU tensors) ----
     try:
         for module in model.modules():
             handle = getattr(module, "_handle", None)
             if handle is not None:
-                handles_found += 1
                 fp = getattr(handle, "flat_param", None)
                 if fp is not None and hasattr(fp, "data") and fp.data.is_cuda:
-                    freed_bytes += fp.data.nelement() * fp.data.element_size()
                     fp.data = _empty
                     fp.grad = None
-    except Exception as e:
-        if logger:
-            logger.debug(f"[GPU cleanup] Error in FSDP handle scan: {e}")
+    except Exception:
+        pass
 
-    # ---- 2. All model parameters ----
     try:
         for param in model.parameters():
-            params_found += 1
             if param.data.is_cuda:
-                freed_bytes += param.data.nelement() * param.data.element_size()
                 param.data = _empty
             if param.grad is not None:
                 param.grad = None
-    except Exception as e:
-        if logger:
-            logger.debug(f"[GPU cleanup] Error in param scan: {e}")
+    except Exception:
+        pass
 
-    # ---- 3. All model buffers ----
     try:
         for buf in model.buffers():
             if buf.is_cuda:
-                freed_bytes += buf.nelement() * buf.element_size()
                 buf.data = _empty
-    except Exception as e:
-        if logger:
-            logger.debug(f"[GPU cleanup] Error in buffer scan: {e}")
-
-    if logger:
-        logger.debug(
-            f"[GPU cleanup] model scan: {handles_found} FSDP handles, "
-            f"{params_found} params, released {freed_bytes / (1024**3):.2f} GiB"
-        )
+    except Exception:
+        pass
 
 
-def _scan_and_release_leaked_cuda_tensors(logger=None):
+def _scan_and_release_leaked_cuda_tensors():
     """Nuclear fallback: scan ALL gc-tracked objects for CUDA tensors and zero them.
 
     This catches tensors held by FSDP C++ internals, callback handlers,
@@ -111,48 +90,17 @@ def _scan_and_release_leaked_cuda_tensors(logger=None):
     should be alive.
     """
     gc.collect()
-    gc.collect()  # second pass catches circular refs
+    gc.collect()
 
-    freed_bytes = 0
-    tensor_count = 0
     _empty = torch.empty(0, device="cpu")
-    leaked_summary = {}
-
     for obj in gc.get_objects():
         if not torch.is_tensor(obj):
             continue
         try:
             if obj.is_cuda:
-                size = obj.nelement() * obj.element_size()
-                freed_bytes += size
-                tensor_count += 1
-                key = (tuple(obj.shape), str(obj.dtype))
-                if key not in leaked_summary:
-                    leaked_summary[key] = {"count": 0, "total_bytes": 0}
-                leaked_summary[key]["count"] += 1
-                leaked_summary[key]["total_bytes"] += size
                 obj.data = _empty
         except Exception:
             pass
-
-    if logger:
-        logger.debug(
-            f"[GPU cleanup] gc scan: zeroed {tensor_count} leaked CUDA tensors, "
-            f"{freed_bytes / (1024**3):.2f} GiB"
-        )
-        if leaked_summary:
-            top = sorted(
-                leaked_summary.items(),
-                key=lambda x: x[1]["total_bytes"],
-                reverse=True,
-            )[:10]
-            for (shape, dtype), info in top:
-                logger.debug(
-                    f"  shape={shape}, dtype={dtype}: "
-                    f"{info['count']}x, {info['total_bytes'] / (1024**2):.1f} MiB"
-                )
-
-    return freed_bytes
 
 
 class TeeOutput:
@@ -445,20 +393,9 @@ class Worker:
             )
             self.db.set_run_details(run_id, config_leaf=trainer_config.config_leaf)
 
-            # train the model and time it
-            if torch.cuda.is_available():
-                mem_alloc = torch.cuda.memory_allocated() / (1024**3)
-                mem_reserved = torch.cuda.memory_reserved() / (1024**3)
-                mem_total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / (1024**3)
-                self.logger.debug(
-                    f"Beginning training for run {run_id} on chunk {chunk_id} | "
-                    f"GPU mem: {mem_alloc:.2f} GiB allocated, {mem_reserved:.2f} GiB reserved, "
-                    f"{mem_total - mem_alloc:.2f} GiB free (of {mem_total:.2f} GiB total)"
-                )
-            else:
-                self.logger.debug(
-                    f"Beginning training for run {run_id} on chunk {chunk_id}"
-                )
+            self.logger.debug(
+                f"Beginning training for run {run_id} on chunk {chunk_id}"
+            )
 
             # Synchronize all workers before training starts
             if use_fsdp and is_distributed_initialized():
@@ -566,15 +503,6 @@ class Worker:
                         torch.cuda.reset_accumulated_memory_stats()
                     except Exception:
                         pass
-
-                    mem_alloc = torch.cuda.memory_allocated() / (1024**3)
-                    mem_reserved = torch.cuda.memory_reserved() / (1024**3)
-                    mem_total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / (1024**3)
-                    self.logger.debug(
-                        f"Pre-checkpoint memory freed | "
-                        f"GPU mem: {mem_alloc:.2f} GiB allocated, {mem_reserved:.2f} GiB reserved, "
-                        f"{mem_total - mem_alloc:.2f} GiB free (of {mem_total:.2f} GiB total)"
-                    )
 
                 is_run_finished = (
                     chunk_id == self.num_chunks - 1
@@ -740,7 +668,6 @@ class Worker:
                         try:
                             _release_model_gpu_memory(
                                 getattr(trainer_instance, attr, None),
-                                logger=self.logger,
                             )
                         except Exception:
                             pass
@@ -805,7 +732,7 @@ class Worker:
                     # Step 8: Nuclear fallback — scan ALL gc-tracked objects for
                     # leaked CUDA tensors that model iteration couldn't reach
                     # (FSDP C++ handles, lingering autograd graph nodes, etc.).
-                    _scan_and_release_leaked_cuda_tensors(logger=self.logger)
+                    _scan_and_release_leaked_cuda_tensors()
 
                     gc.collect()
                     torch.cuda.empty_cache()
@@ -819,19 +746,9 @@ class Worker:
 
                 if use_fsdp and is_distributed_initialized():
                     barrier()
-                if torch.cuda.is_available():
-                    mem_alloc = torch.cuda.memory_allocated() / (1024**3)
-                    mem_reserved = torch.cuda.memory_reserved() / (1024**3)
-                    mem_total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / (1024**3)
-                    self.logger.debug(
-                        f"Cleanup completed for run {run_id} on chunk {chunk_id} | "
-                        f"GPU mem: {mem_alloc:.2f} GiB allocated, {mem_reserved:.2f} GiB reserved, "
-                        f"{mem_total - mem_alloc:.2f} GiB free (of {mem_total:.2f} GiB total)"
-                    )
-                else:
-                    self.logger.debug(
-                        f"Cleanup completed for run {run_id} on chunk {chunk_id}"
-                    )
+                self.logger.debug(
+                    f"Cleanup completed for run {run_id} on chunk {chunk_id}"
+                )
             except Exception as cleanup_error:
                 self.logger.error(f"Error during cleanup for run {run_id}: {cleanup_error}")
             finally:

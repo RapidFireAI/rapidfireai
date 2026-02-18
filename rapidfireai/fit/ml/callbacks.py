@@ -16,23 +16,6 @@ from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 from rapidfireai.fit.utils.logging import RFLogger
 
 
-def _gpu_memory_summary(device=None) -> str:
-    """Return a concise string with current GPU memory usage for logging."""
-    if not torch.cuda.is_available():
-        return "CUDA not available"
-    if device is None:
-        device = torch.cuda.current_device()
-    allocated = torch.cuda.memory_allocated(device) / (1024**3)
-    reserved = torch.cuda.memory_reserved(device) / (1024**3)
-    total = torch.cuda.get_device_properties(device).total_memory / (1024**3)
-    free = total - allocated
-    return (
-        f"GPU {device}: {allocated:.2f} GiB allocated, "
-        f"{reserved:.2f} GiB reserved, "
-        f"{free:.2f} GiB free (of {total:.2f} GiB total)"
-    )
-
-
 class GenerationMetricsCallback(TrainerCallback):
     def __init__(
         self,
@@ -81,9 +64,6 @@ class GenerationMetricsCallback(TrainerCallback):
             return
 
         step = self.completed_steps + state.global_step
-        self.logger.debug(
-            f"[Eval] on_evaluate START at step {step} | {_gpu_memory_summary()}"
-        )
 
         try:
             metrics = self._compute_generation_metrics(model, state.global_step)
@@ -95,16 +75,13 @@ class GenerationMetricsCallback(TrainerCallback):
             # memory, and let training continue without eval metrics.
             self.logger.error(
                 f"[Eval] CUDA OOM during evaluation at step {step}. "
-                f"Skipping generation metrics. Training will continue. | {_gpu_memory_summary()}"
+                f"Skipping generation metrics. Training will continue."
             )
             model.train()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
             gc.collect()
-            self.logger.debug(
-                f"[Eval] OOM recovery cleanup done at step {step} | {_gpu_memory_summary()}"
-            )
             return
 
         # Ensure metrics are added to log history
@@ -175,9 +152,7 @@ class GenerationMetricsCallback(TrainerCallback):
             except Exception:
                 pass
 
-        self.logger.debug(
-            f"[Eval] on_evaluate END at step {step} | {_gpu_memory_summary()}"
-        )
+        self.logger.debug(f"[Eval] on_evaluate END at step {step}")
 
     def _prepare_data(self, eval_dataset: Dataset) -> tuple:
         """Prepare batch data for generation with defensive validation"""
@@ -280,7 +255,6 @@ class GenerationMetricsCallback(TrainerCallback):
         references = []
         num_samples = input_ids.shape[0]
         batch_size = override_batch_size or self.batch_size
-        total_batches = (num_samples + batch_size - 1) // batch_size
         gen_config = (
             generation_config
             if generation_config is not None
@@ -289,11 +263,6 @@ class GenerationMetricsCallback(TrainerCallback):
 
         with torch.no_grad():
             for i in range(0, num_samples, batch_size):
-                batch_idx = i // batch_size + 1
-                self.logger.debug(
-                    f"[Eval] Generating batch {batch_idx}/{total_batches} "
-                    f"on GPU {device} | {_gpu_memory_summary()}"
-                )
                 input_ids_batch = input_ids[i : i + batch_size].to(device)
 
                 with torch.inference_mode(), torch.amp.autocast("cuda"):
