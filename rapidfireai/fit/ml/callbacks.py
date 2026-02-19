@@ -45,7 +45,6 @@ class GenerationMetricsCallback(TrainerCallback):
         self.metric_run_id = metric_run_id
         self.completed_steps = completed_steps
         self.use_fsdp = use_fsdp
-        self.logger = RFLogger().create_logger("eval_generation")
 
         # Let caller/model defaults decide on KV cache (can cause OOM)
         self.generation_config.pop("use_cache", None)
@@ -68,12 +67,6 @@ class GenerationMetricsCallback(TrainerCallback):
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
             if not isinstance(e, torch.cuda.OutOfMemoryError) and "out of memory" not in str(e).lower():
                 raise  # Re-raise non-OOM RuntimeErrors
-
-            # Recover from CUDA OOM: skip eval metrics, continue training
-            self.logger.error(
-                f"[Eval] CUDA OOM during evaluation at step {step}. "
-                f"Skipping generation metrics. Training will continue."
-            )
             model.train()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -103,8 +96,8 @@ class GenerationMetricsCallback(TrainerCallback):
         # Switch model back to training mode
         model.train()
 
-        # Post-eval cleanup: free leaked FSDP all-gather tensors before checkpoint save
-        purge_model_kv_caches(model)
+        if self.use_fsdp:
+            purge_model_kv_caches(model)
         flush_cuda_cache()
 
     def _prepare_data(self, eval_dataset: Dataset) -> tuple:
