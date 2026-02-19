@@ -148,104 +148,105 @@ class QueryProcessingActor:
             if context_generator_ref is not None:
                 # Ray automatically dereferences ObjectRefs passed to remote actors
                 # So we receive the dict directly, not an ObjectRef
-
-                search_cfg = dict(context_generator_ref["search_cfg"]) if context_generator_ref["search_cfg"] else None
-                default_search_kwargs: dict[str, Any] = {
-                    "k": 5,
-                    "filter": None,
-                    "fetch_k": 20,
-                    "lambda_mult": 0.5,
-                }
-                if not search_cfg:
-                    search_type = "similarity"
-                    search_kwargs = dict(default_search_kwargs)
-                else:
-                    cfg = dict(search_cfg)
-                    search_type = cfg.pop("type", "similarity")
+                # Check RAG components are present and deserialize them
+                if "faiss_index_bytes" in context_generator_ref or "vector_store" in context_generator_ref or "retriever" in context_generator_ref:
+                    search_cfg = context_generator_ref.get("search_cfg", {})
+                    default_search_cfg: dict[str, Any] = {
+                        "type": "similarity",
+                        "k": 5,
+                        "filter": None,
+                        "fetch_k": 20,
+                        "lambda_mult": 0.5,
+                    }
+                    default_search_cfg.update(search_cfg)
+                    search_type = default_search_cfg.get("type", "similarity")
                     valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
                     if search_type not in valid_search_types:
                         raise ValueError(f"search_cfg['type'] must be one of {valid_search_types}, got: {search_type}")
-                    search_kwargs = dict(default_search_kwargs)
-                    search_kwargs.update(cfg)
+                    search_kwargs = dict(default_search_cfg)
+                    search_kwargs.pop("type")
 
-                # Create the reranker
-                reranker_cfg = dict(context_generator_ref["reranker_cfg"]) if context_generator_ref["reranker_cfg"] else None
-                if reranker_cfg:
-                    reranker_cls = reranker_cfg.get("class", None)
-                    if reranker_cls is None:
-                        raise ValueError("reranker_cfg must contain a 'class' key (the reranker class)")
+                    # Create the reranker
+                    reranker_cfg = context_generator_ref.get("reranker_cfg", None)
+                    if reranker_cfg is not None:
+                        reranker_cls = reranker_cfg.get("class", None)
+                        if reranker_cls is None:
+                            raise ValueError("reranker_cfg must contain a 'class' key (the reranker class)")
 
-                # Check if FAISS index is present and deserialize the FAISS vector store
-                if "faiss_index_bytes" in context_generator_ref:
-                    # NOTE: Keep FAISS on CPU for query actors to avoid GPU memory conflicts
-                    # The DocProcessingActor builds the index on GPU (fast), transfers to CPU,
-                    # and shares it. Query actors use CPU FAISS which is still fast for retrieval
-                    # and avoids memory management issues with multiple actors sharing GPUs.
+                    # Check if FAISS index is present and deserialize the FAISS vector store
+                    if "faiss_index_bytes" in context_generator_ref:
+                        # NOTE: Keep FAISS on CPU for query actors to avoid GPU memory conflicts
+                        # The DocProcessingActor builds the index on GPU (fast), transfers to CPU,
+                        # and shares it. Query actors use CPU FAISS which is still fast for retrieval
+                        # and avoids memory management issues with multiple actors sharing GPUs.
 
-                    self.logger.info("Using CPU-based FAISS for retrieval (avoids GPU memory conflicts)")
+                        self.logger.info("Using CPU-based FAISS for retrieval (avoids GPU memory conflicts)")
 
-                    # Deserialize FAISS index to create an independent copy for this actor
-                    # FAISS indices are not thread-safe, so each actor needs its own copy
-                    import pickle
-                    from langchain_community.vectorstores import FAISS
-                    from langchain_huggingface import HuggingFaceEmbeddings
+                        # Deserialize FAISS index to create an independent copy for this actor
+                        # FAISS indices are not thread-safe, so each actor needs its own copy
+                        import pickle
+                        from langchain_community.vectorstores import FAISS
+                        from langchain_huggingface import HuggingFaceEmbeddings
 
-                    self.logger.info("Deserializing FAISS index for this actor...")
-                    faiss_index = pickle.loads(context_generator_ref["faiss_index_bytes"])
-                    docstore = pickle.loads(context_generator_ref["docstore_bytes"])
-                    index_to_docstore_id = pickle.loads(context_generator_ref["index_to_docstore_id_bytes"])
-                    embedding_function = pickle.loads(context_generator_ref["embedding_function_bytes"])
+                        self.logger.info("Deserializing FAISS index for this actor...")
+                        faiss_index = pickle.loads(context_generator_ref["faiss_index_bytes"])
+                        docstore = pickle.loads(context_generator_ref["docstore_bytes"])
+                        index_to_docstore_id = pickle.loads(context_generator_ref["index_to_docstore_id_bytes"])
+                        # embedding_function = pickle.loads(context_generator_ref["embedding_function_bytes"])
+                        embedding_cls = context_generator_ref["embedding_cls"]
+                        embedding_kwargs = context_generator_ref["embedding_kwargs"]
+                        embedding_function = embedding_cls(**embedding_kwargs)
 
-                    # Recreate the embedding function
-                    # embedding_cfg = dict(context_generator_ref["embedding_cfg"])
-                    # if not embedding_cfg:
-                    #     embedding_cls = HuggingFaceEmbeddings
-                    #     embedding_kwargs = {}
-                    # else:
-                    #     cfg = dict(embedding_cfg)
-                    #     embedding_cls = cfg.pop("class", None)
-                    #     if embedding_cls is None:
-                    #         raise ValueError("embedding_cfg must contain a 'class' key (the embedding class)")
-                    #     embedding_kwargs = dict(cfg)
-                    # embedding_function = embedding_cls(**embedding_kwargs)
-                    # self.logger.info(f"Recreated embedding function: {embedding_cls.__name__}")
+                        # Recreate the embedding function
+                        # embedding_cfg = dict(context_generator_ref["embedding_cfg"])
+                        # if not embedding_cfg:
+                        #     embedding_cls = HuggingFaceEmbeddings
+                        #     embedding_kwargs = {}
+                        # else:
+                        #     cfg = dict(embedding_cfg)
+                        #     embedding_cls = cfg.pop("class", None)
+                        #     if embedding_cls is None:
+                        #         raise ValueError("embedding_cfg must contain a 'class' key (the embedding class)")
+                        #     embedding_kwargs = dict(cfg)
+                        # embedding_function = embedding_cls(**embedding_kwargs)
+                        self.logger.info(f"Recreated embedding function: {embedding_cls.__name__}")
 
-                    # Create a new FAISS vector store with the deserialized components
-                    vector_store = FAISS(
-                        embedding_function=embedding_function,
-                        index=faiss_index,
-                        docstore=docstore,
-                        index_to_docstore_id=index_to_docstore_id
+                        # Create a new FAISS vector store with the deserialized components
+                        vector_store = FAISS(
+                            embedding_function=embedding_function,
+                            index=faiss_index,
+                            docstore=docstore,
+                            index_to_docstore_id=index_to_docstore_id
+                        )
+                        self.logger.info("Created independent FAISS vector store for this actor")
+
+                        # Create the retriever
+                        retriever = vector_store.as_retriever(
+                            search_type=search_type,
+                            search_kwargs=search_kwargs
+                        )
+                        self.logger.info(f"Recreated retriever with search_type={search_type}")
+                    else:
+                        vector_store = context_generator_ref.get("vector_store")
+                        retriever = context_generator_ref.get("retriever")
+
+                    # Recreate RAG spec with query-time components (config dicts from serialized ref)
+                    self.rag_spec = LangChainRagSpec(
+                        document_loader=None,
+                        text_splitter=None,
+                        embedding_cfg=None,
+                        vector_store=vector_store,
+                        retriever=retriever,
+                        search_cfg={"type": search_type, **search_kwargs},
+                        reranker_cfg=reranker_cfg,
+                        enable_gpu_search=False,
+                        document_template=context_generator_ref.get("template"),
                     )
-                    self.logger.info("Created independent FAISS vector store for this actor")
-
-                    # Create the retriever
-                    retriever = vector_store.as_retriever(
-                        search_type=search_type,
-                        search_kwargs=search_kwargs
-                    )
-                    self.logger.info(f"Recreated retriever with search_type={search_type}")
-                else:
-                    vector_store = context_generator_ref.get("vector_store")
-                    retriever = context_generator_ref.get("retriever")
-
-                # Recreate RAG spec with query-time components (config dicts from serialized ref)
-                self.rag_spec = LangChainRagSpec(
-                    document_loader=None,
-                    text_splitter=None,
-                    embedding_cfg=None,
-                    vector_store=vector_store,
-                    retriever=retriever,
-                    search_cfg=search_cfg,
-                    reranker_cfg=reranker_cfg,
-                    enable_gpu_search=False,
-                    document_template=context_generator_ref.get("template"),
-                )
-                # Manually set the embedding and template since we bypassed normal initialization
-                # self.rag_spec.embedding = embedding_function
-                self.rag_spec.template = context_generator_ref.get("template")
-                self.rag_spec.build_index()
-                self.logger.info("Recreated RAG spec with retriever and template")
+                    # Manually set the embedding and template since we bypassed normal initialization
+                    self.rag_spec.embedding = embedding_function
+                    self.rag_spec.template = context_generator_ref.get("template")
+                    self.rag_spec.build_index()
+                    self.logger.info("Recreated RAG spec with retriever and template")
 
                 # Set up PromptManager if provided (reinitialize after deserialization)
                 # This can exist with or without RAG components

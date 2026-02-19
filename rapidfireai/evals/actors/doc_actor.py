@@ -129,20 +129,24 @@ class DocProcessingActor:
                     faiss_index = rag_spec.vector_store.index
                     docstore = rag_spec.vector_store.docstore
                     index_to_docstore_id = rag_spec.vector_store.index_to_docstore_id
-                    embedding_function = rag_spec.vector_store.embedding_function
+                    # embedding_function = rag_spec.vector_store.embedding_function
+                    embedding_cls = rag_spec.embedding_cls
+                    embedding_kwargs = rag_spec.embedding_kwargs
 
                     self.logger.info("Serializing FAISS index for cross-actor sharing...")
                     faiss_index_bytes = pickle.dumps(faiss_index)
                     docstore_bytes = pickle.dumps(docstore)
                     index_to_docstore_id_bytes = pickle.dumps(index_to_docstore_id)
-                    embedding_function_bytes = pickle.dumps(embedding_function)
+                    # embedding_function_bytes = pickle.dumps(embedding_function)
                     self.logger.info(f"FAISS index serialized: {len(faiss_index_bytes)} bytes")
 
                     components.update({
                         "faiss_index_bytes": faiss_index_bytes,
                         "docstore_bytes": docstore_bytes,
                         "index_to_docstore_id_bytes": index_to_docstore_id_bytes,
-                        "embedding_function_bytes": embedding_function_bytes
+                        "embedding_cls": embedding_cls,
+                        "embedding_kwargs": embedding_kwargs,
+                        # "embedding_function_bytes": embedding_function_bytes
                     })
                 else:
                     components.update({
@@ -154,10 +158,10 @@ class DocProcessingActor:
                 components.update({
                     "search_cfg": {
                         "type": rag_spec.search_type, **rag_spec.search_kwargs
-                        } if rag_spec.search_cfg is not None else None,
+                        } if rag_spec.search_type else None,
                     "reranker_cfg": {
                         "class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs
-                        } if rag_spec.reranker_cfg is not None else None,
+                        } if rag_spec.reranker_cls is not None else None,
                     "template": rag_spec.template if rag_spec.template is not None else None,
                     "enable_gpu_search": rag_spec.enable_gpu_search if rag_spec.enable_gpu_search is not None else False,
                 })
