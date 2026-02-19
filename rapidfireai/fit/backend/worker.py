@@ -50,17 +50,40 @@ from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
 
 
-def _scan_and_release_leaked_cuda_tensors():
-    """Zero all gc-tracked CUDA tensors unreachable by model iteration."""
+def _scan_and_release_leaked_cuda_tensors(skip_quantized: bool = False):
+    """Zero all gc-tracked CUDA tensors unreachable by model iteration.
+    """
     gc.collect()
     gc.collect()
+
+    bnb_tensor_ids: set[int] = set()
+    if skip_quantized:
+        try:
+            from bitsandbytes.functional import QuantState
+
+            for obj in gc.get_objects():
+                if not isinstance(obj, QuantState):
+                    continue
+                for attr_name in ("absmax", "code", "offset"):
+                    t = getattr(obj, attr_name, None)
+                    if torch.is_tensor(t):
+                        bnb_tensor_ids.add(id(t))
+                # state2 is a nested QuantState for double quantization
+                nested = getattr(obj, "state2", None)
+                if isinstance(nested, QuantState):
+                    for attr_name in ("absmax", "code", "offset"):
+                        t = getattr(nested, attr_name, None)
+                        if torch.is_tensor(t):
+                            bnb_tensor_ids.add(id(t))
+        except ImportError:
+            pass
 
     _empty = torch.empty(0, device="cpu")
     for obj in gc.get_objects():
         if not torch.is_tensor(obj):
             continue
         try:
-            if obj.is_cuda:
+            if obj.is_cuda and id(obj) not in bnb_tensor_ids:
                 obj.data = _empty
         except Exception:
             pass
@@ -501,6 +524,9 @@ class Worker:
             self.logger.error(f"Error during training for run {run_id}: {e}")
             raise
         finally:
+            is_quantized = bool(
+                config_leaf.get("model_kwargs", {}).get("quantization_config") or trainer_instance.model.config.get("quantization_config") is not None
+            )
             # Cleanup must happen even when training fails to prevent memory leaks
             try:
                 # Clean up vLLM engine (critical for GRPO with sequential model training)
@@ -596,8 +622,8 @@ class Worker:
                 flush_cuda_cache()
 
                 if torch.cuda.is_available():
-                    # Nuclear fallback: zero any leaked CUDA tensors not reachable by model iteration
-                    _scan_and_release_leaked_cuda_tensors()
+                    # Nuclear fallback: zero leaked CUDA tensors (skip BnB QuantState for quantized models)
+                    _scan_and_release_leaked_cuda_tensors(skip_quantized=is_quantized)
                     gc.collect()
                     torch.cuda.empty_cache()
                     torch.cuda.ipc_collect()
