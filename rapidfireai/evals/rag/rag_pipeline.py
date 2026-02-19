@@ -331,59 +331,6 @@ class LangChainRagSpec:
             documents = self._split_documents(documents)
         self.vector_store.add_documents(documents=documents)
 
-    def _retrieve_from_vector_store(self, batch_queries: list[str]) -> list[list[Document]]:
-        """
-        Retrieve relevant documents from the vector store for batch queries.
-
-        Args:
-            batch_queries: A list of search query strings to process in batch.
-
-        Returns:
-            List[List[Document]]: A list where each element is a list of relevant
-                                documents for the corresponding query.
-        """
-        return self.retriever.batch(batch_queries)
-
-    def _serialize_docs(self, batch_docs: list[list[Document]]) -> list[str]:
-        """
-        Serialize batch documents into formatted strings for context injection.
-
-        Args:
-            batch_docs: A batch of document lists, where each inner list contains
-                       Document objects for a single query.
-
-        Returns:
-            List[str]: A list of formatted strings where each string contains
-                      all documents for one query. Documents are formatted according to the template specified.
-        """
-
-        separator = "\n\n"
-        return [separator.join([self.template(d) for d in docs]) for docs in batch_docs]
-
-    def retrieve_documents(self, batch_queries: list[str]) -> list[str]:
-        """
-        Retrieve, optionally rerank, and serialize relevant documents for batch queries.
-
-        This is the main public method for getting relevant context as formatted strings
-        that can be directly injected into prompts for RAG applications. Supports efficient
-        batch processing for improved performance when processing multiple queries.
-
-        Args:
-            batch_queries: A list of search query strings to find relevant documents for.
-                          Can contain a single query for individual processing or
-                          multiple queries for batch processing.
-
-        Returns:
-            List[str]: A list of formatted strings containing relevant documents with
-                      their metadata for each query. Documents are potentially reranked
-                      if a reranker function was provided. Each document is formatted as
-                      "metadata:\ncontent" and documents are separated by double newlines.
-        """
-        batch_docs = self._retrieve_from_vector_store(batch_queries=batch_queries)
-        batch_docs = self._rerank_docs(batch_queries=batch_queries, batch_docs=batch_docs)
-        context = self._serialize_docs(batch_docs=batch_docs)
-        return context
-
     def serialize_documents(self, batch_docs: list[list[Document]]) -> list[str]:
         """
         Serialize batch documents into formatted strings for context injection.
