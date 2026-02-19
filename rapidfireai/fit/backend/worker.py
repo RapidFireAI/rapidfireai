@@ -359,7 +359,9 @@ class Worker:
                 chunk_id,
                 use_fsdp=use_fsdp,
             )
-
+            is_quantized = bool(
+                config_leaf.get("model_kwargs", {}).get("quantization_config") or trainer_instance.model.config.get("quantization_config") is not None
+            )
             # if first time, save checkpoint to disk
             completed_steps = self.db.get_completed_steps(run_id)
             if completed_steps == 0 and not USE_SHARED_MEMORY:
@@ -524,9 +526,6 @@ class Worker:
             self.logger.error(f"Error during training for run {run_id}: {e}")
             raise
         finally:
-            is_quantized = bool(
-                config_leaf.get("model_kwargs", {}).get("quantization_config") or trainer_instance.model.config.get("quantization_config") is not None
-            )
             # Cleanup must happen even when training fails to prevent memory leaks
             try:
                 # Clean up vLLM engine (critical for GRPO with sequential model training)
@@ -560,6 +559,10 @@ class Worker:
 
                 # Systematic GPU memory cleanup
                 if "trainer_instance" in locals():
+                    _is_quantized_fsdp = (
+                        "is_quantized" in dir() and is_quantized and use_fsdp
+                    )
+
                     # Neutralize internal references that keep the model alive
                     try:
                         if hasattr(trainer_instance, "callback_handler"):
@@ -581,12 +584,13 @@ class Worker:
                     except Exception:
                         pass
 
-                    # Release GPU memory from all model variants
-                    for attr in ("model", "model_wrapped", "ref_model"):
-                        try:
-                            release_model_gpu_memory(getattr(trainer_instance, attr, None))
-                        except Exception:
-                            pass
+                    if not _is_quantized_fsdp:
+                        # Aggressive tensor zeroing is safe for non-quantized models
+                        for attr in ("model", "model_wrapped", "ref_model"):
+                            try:
+                                release_model_gpu_memory(getattr(trainer_instance, attr, None))
+                            except Exception:
+                                pass
 
                     # Delete trainer attributes in dependency order
                     for attr in ("optimizer", "lr_scheduler", "model_wrapped",
@@ -618,12 +622,18 @@ class Worker:
                         del trainer_instance
                     except Exception:
                         pass
+                else:
+                    _is_quantized_fsdp = False
 
                 flush_cuda_cache()
 
                 if torch.cuda.is_available():
-                    # Nuclear fallback: zero leaked CUDA tensors (skip BnB QuantState for quantized models)
-                    _scan_and_release_leaked_cuda_tensors(skip_quantized=is_quantized)
+                    if not _is_quantized_fsdp:
+                        _scan_and_release_leaked_cuda_tensors(
+                            skip_quantized=(
+                                "is_quantized" in dir() and is_quantized
+                            )
+                        )
                     gc.collect()
                     torch.cuda.empty_cache()
                     torch.cuda.ipc_collect()

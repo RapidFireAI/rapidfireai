@@ -107,8 +107,6 @@ class GenerationMetricsCallback(TrainerCallback):
         purge_model_kv_caches(model)
         flush_cuda_cache()
 
-        self.logger.debug(f"[Eval] on_evaluate END at step {step}")
-
     def _prepare_data(self, eval_dataset: Dataset) -> tuple:
         """Prepare batch data for generation with defensive validation"""
         input_texts = []
