@@ -413,12 +413,10 @@ class Worker:
                         f"Worker {self.worker_id} passed barrier after training"
                     )
 
-                # Pre-checkpoint GPU cleanup: free fragmented memory for FSDP all-gather
-                if torch.cuda.is_available():
+                if use_fsdp and torch.cuda.is_available():
                     try:
                         if hasattr(trainer_instance, "optimizer") and trainer_instance.optimizer is not None:
                             trainer_instance.optimizer.zero_grad(set_to_none=True)
-                            # Offload optimizer state to CPU (will be re-collected via FSDP.optim_state_dict)
                             for param_group in trainer_instance.optimizer.param_groups:
                                 for p in param_group["params"]:
                                     if p in trainer_instance.optimizer.state:
@@ -437,7 +435,7 @@ class Worker:
                     except Exception:
                         pass
 
-                    flush_cuda_cache()
+                flush_cuda_cache()
 
                 is_run_finished = (
                     chunk_id == self.num_chunks - 1
@@ -560,10 +558,9 @@ class Worker:
                 # Systematic GPU memory cleanup
                 if "trainer_instance" in locals():
                     _is_quantized_fsdp = (
-                        "is_quantized" in dir() and is_quantized and use_fsdp
+                        use_fsdp and "is_quantized" in dir() and is_quantized
                     )
 
-                    # Neutralize internal references that keep the model alive
                     try:
                         if hasattr(trainer_instance, "callback_handler"):
                             trainer_instance.callback_handler.model = None
@@ -572,7 +569,6 @@ class Worker:
                     except Exception:
                         pass
 
-                    # Clear optimizer state and param_groups
                     try:
                         if hasattr(trainer_instance, "optimizer") and trainer_instance.optimizer is not None:
                             trainer_instance.optimizer.zero_grad(set_to_none=True)
@@ -584,15 +580,13 @@ class Worker:
                     except Exception:
                         pass
 
-                    if not _is_quantized_fsdp:
-                        # Aggressive tensor zeroing is safe for non-quantized models
+                    if use_fsdp and not _is_quantized_fsdp:
                         for attr in ("model", "model_wrapped", "ref_model"):
                             try:
                                 release_model_gpu_memory(getattr(trainer_instance, attr, None))
                             except Exception:
                                 pass
 
-                    # Delete trainer attributes in dependency order
                     for attr in ("optimizer", "lr_scheduler", "model_wrapped",
                                  "model", "ref_model"):
                         try:
@@ -601,7 +595,6 @@ class Worker:
                         except Exception:
                             pass
 
-                    # Free accelerator
                     try:
                         if hasattr(trainer_instance, "accelerator"):
                             if hasattr(trainer_instance.accelerator, "free_memory"):
@@ -610,7 +603,6 @@ class Worker:
                     except Exception:
                         pass
 
-                    # Clear remaining trainer attrs
                     for attr in ("tokenizer", "state", "callback_handler",
                                  "_memory_tracker", "data_collator"):
                         try:
@@ -618,6 +610,7 @@ class Worker:
                                 delattr(trainer_instance, attr)
                         except Exception:
                             pass
+
                     try:
                         del trainer_instance
                     except Exception:
@@ -628,7 +621,7 @@ class Worker:
                 flush_cuda_cache()
 
                 if torch.cuda.is_available():
-                    if not _is_quantized_fsdp:
+                    if use_fsdp and not _is_quantized_fsdp:
                         _scan_and_release_leaked_cuda_tensors(
                             skip_quantized=(
                                 "is_quantized" in dir() and is_quantized
