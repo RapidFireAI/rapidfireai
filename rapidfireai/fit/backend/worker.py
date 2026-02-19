@@ -360,7 +360,7 @@ class Worker:
                 use_fsdp=use_fsdp,
             )
             is_quantized = bool(
-                config_leaf.get("model_kwargs", {}).get("quantization_config") or trainer_instance.model.config.get("quantization_config") is not None
+                config_leaf.get("model_kwargs", {}).get("quantization_config") or getattr(trainer_instance.model.config, "quantization_config", None) is not None
             )
             # if first time, save checkpoint to disk
             completed_steps = self.db.get_completed_steps(run_id)
