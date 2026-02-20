@@ -101,8 +101,8 @@ class DocProcessingActor:
                 rag_spec.build_index()
                 self.logger.info("Document index built successfully")
 
-                # Transfer GPU index to CPU for serialization (if GPU was used and we have a vector store)
-                if rag_spec.vector_store is not None and rag_spec.enable_gpu_search:
+                # Transfer GPU index to CPU for serialization (if GPU was used and we have a FAISS vector store)
+                if rag_spec.vector_store is not None and rag_spec.enable_gpu_search and isinstance(rag_spec.vector_store, FAISS):
                     self.logger.info("Transferring FAISS index from GPU to CPU for serialization...")
 
                     # Transfer the GPU index to CPU
