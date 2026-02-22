@@ -7,8 +7,8 @@ from rapidfireai import Experiment
 
 experiment = Experiment(
     experiment_name: str,          # Unique name; auto-suffixed if reused
-    mode: str = "fit",             # "fit" or "eval" — cannot mix in same experiment
-    experiments_path: str = "./rapidfire_experiments"
+    mode: str = "fit",             # "fit" or "evals" — cannot mix in same experiment
+    experiment_path: str = "./rapidfire_experiments"
 )
 ```
 
@@ -16,8 +16,8 @@ experiment = Experiment(
 
 | Method | Description |
 |--------|-------------|
-| `run_fit(config_group, create_model_fn, train_dataset, eval_dataset, num_chunks, seed=42)` | Launch multi-config training |
-| `run_evals(config_group, dataset, num_shards=4, num_actors, seed=42) → dict` | Launch multi-config evals; returns `{run_id: (aggregated_metrics, cumulative_metrics)}` |
+| `run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed=42, num_gpus=1)` | Launch multi-config training |
+| `run_evals(config_group, dataset, num_shards=4, seed=42, num_actors=None, gpus_per_actor=None, cpus_per_actor=None) → dict` | Launch multi-config evals; returns `{run_id: (aggregated_metrics, cumulative_metrics)}` |
 | `end()` | End experiment, clear system state |
 | `get_runs_info() → pd.DataFrame` | Metadata for all runs (run_id, status, config, etc.) |
 | `get_results() → pd.DataFrame` | All metrics for all steps for all runs |
@@ -43,17 +43,17 @@ from rapidfireai.automl import RFGridSearch, RFRandomSearch
 RFGridSearch(
     configs: Dict | List[Dict],    # Config dict with List() knobs (no Range allowed)
     trainer_type: str = None       # "SFT" | "DPO" | "GRPO" — omit for run_evals()
-)
+)   # Note: trainer_type is required for fit mode; omit or set None for evals mode
+
 
 RFRandomSearch(
     configs: Dict,                 # Can have List() or Range() knobs
     trainer_type: str = None,
-    num_runs: int,                 # How many random combos to sample
-    seed: int = 42
+    num_runs: int = 1,             # How many random combos to sample
 )
 ```
 
-**param_config** for `run_fit()` / **config_group** for `run_evals()` accepts:
+**param_config** (for `run_fit()`) / **config_group** (for `run_evals()`) accepts:
 - Single config dict
 - List of config dicts
 - `RFGridSearch()` / `RFRandomSearch()` output
@@ -218,6 +218,7 @@ RFOpenAIAPIModelConfig(
     },
     rpm_limit=500,
     tpm_limit=500_000,
+    max_completion_tokens=None,    # Defaults to 150 if not set in model_config
     rag=None,
     prompt_manager=prompt_manager,
 )
@@ -297,7 +298,7 @@ def accumulate_metrics_fn(aggregated_metrics: dict[str, list[dict]]) -> dict[str
 
 Access via dashboard at `http://0.0.0.0:8853` or in-notebook:
 ```python
-from rapidfireai.utils.interactive_controller import InteractiveController
+from rapidfireai.fit.utils.interactive_controller import InteractiveController
 controller = InteractiveController(dispatcher_url="http://127.0.0.1:8851")
 controller.display()
 ```
