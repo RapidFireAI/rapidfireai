@@ -1,0 +1,269 @@
+---
+description: RapidFire AI Python package rules — apply when working with rapidfireai imports, experiment configs, or LLM fine-tuning/eval workflows
+globs:
+  - "**/*.py"
+  - "**/*.ipynb"
+alwaysApply: false
+---
+
+# RapidFire AI — Cursor Rules
+
+## Package Overview
+`rapidfireai` is a hyperparallelized LLM experimentation framework. It shards data into chunks/shards and rotates multiple model configs through them concurrently, enabling interactive control (stop/resume/clone) of runs in flight.
+
+## Environment Setup
+```bash
+python3 --version              # Must be 3.12+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install rapidfireai
+pip uninstall -y hf-xet        # Required: fixes known HF bug
+rapidfireai init               # SFT/RFT
+rapidfireai init --evals       # RAG/evals
+rapidfireai start              # Start server (keep terminal open)
+```
+Ports: 8850 (jupyter), 8851 (dispatcher), 8852 (mlflow), 8853 (frontend/dashboard)
+
+## Core Architecture Pattern
+
+Think of RapidFire AI like a **tournament bracket for ML configs**: instead of running configs one-by-one (sequential), it interleaves all configs across data shards so you see early results for everyone simultaneously — and can cut losers early.
+
+```
+Experiment
+  └─ Config Group (multiple knob combinations)
+       └─ Run × N (one per leaf config)
+            └─ Chunks/Shards (data subdivisions for concurrent scheduling)
+```
+
+## Imports Reference
+
+```python
+# Core
+from rapidfireai import Experiment
+
+# Multi-config builders
+from rapidfireai.automl import List, Range, RFGridSearch, RFRandomSearch
+
+# SFT/RFT
+from rapidfireai.automl import RFModelConfig, RFLoraConfig, RFSFTConfig, RFDPOConfig, RFGRPOConfig
+
+# RAG/Evals
+from rapidfireai.automl import RFLangChainRagSpec, RFvLLMModelConfig, RFOpenAIAPIModelConfig, RFPromptManager
+
+# IC Ops (in-notebook control panel)
+from rapidfireai.utils.interactive_controller import InteractiveController
+```
+
+## Experiment Lifecycle
+
+```python
+# --- ALWAYS: create experiment with a unique name ---
+experiment = Experiment(experiment_name="exp-v1", mode="fit")   # or mode="eval"
+
+# --- FIT workflow (SFT / DPO / GRPO) ---
+experiment.run_fit(
+    param_config=config_group,
+    create_model_fn=my_create_model,
+    train_dataset=train_ds,
+    eval_dataset=eval_ds,
+    num_chunks=4,              # >= 4 recommended
+    seed=42
+)
+
+# --- EVAL workflow (RAG / context engineering) ---
+results = experiment.run_evals(
+    config_group=config_group,
+    dataset=eval_ds,
+    num_shards=4,              # >= 4 recommended
+    num_actors=8,              # parallel workers; max 16 for CPU-only
+    seed=42
+)
+
+# --- ALWAYS: end when done ---
+experiment.end()
+```
+
+## Knob Specification Rules
+
+```python
+# List() = discrete set of values for a knob
+List([16, 32, 64])
+List(["linear", "cosine"])
+List([obj1, obj2])
+
+# Range() = continuous interval (RFRandomSearch only — NOT RFGridSearch)
+Range(1e-5, 1e-3, dtype="float")
+Range(8, 128, dtype="int")
+
+# RFGridSearch: cartesian product of all List() knobs (no Range allowed)
+config_group = RFGridSearch(configs=my_config_dict, trainer_type="SFT")
+
+# RFRandomSearch: IID sampling from List() and Range() knobs
+config_group = RFRandomSearch(configs=my_config_dict, trainer_type="SFT", num_runs=10)
+
+# trainer_type: "SFT" | "DPO" | "GRPO" | None (None for run_evals)
+```
+
+## SFT Example (Full Pattern)
+
+```python
+from rapidfireai import Experiment
+from rapidfireai.automl import RFModelConfig, RFLoraConfig, RFSFTConfig, List, RFGridSearch
+
+def create_model(model_config: dict):
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    model = AutoModelForCausalLM.from_pretrained(
+        model_config["model_name"], **model_config["model_kwargs"]
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_config["model_name"])
+    return model, tokenizer
+
+def format_row(row: dict) -> dict:
+    return {
+        "prompt": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": row["instruction"]},
+        ],
+        "completion": [{"role": "assistant", "content": row["response"]}]
+    }
+
+config_group = RFGridSearch(
+    configs={
+        "model_config": RFModelConfig(
+            model_name=List(["meta-llama/Llama-3.1-8B-Instruct", "mistralai/Mistral-7B-Instruct-v0.3"]),
+            peft_config=RFLoraConfig(
+                r=List([16, 128]),
+                lora_alpha=List([32, 256]),
+                target_modules=["q_proj", "v_proj"],
+            ),
+            training_args=RFSFTConfig(
+                learning_rate=2e-4,
+                per_device_train_batch_size=4,
+                num_train_epochs=2,
+                eval_strategy="steps",
+                eval_steps=25,
+                fp16=True,
+            ),
+            model_kwargs={"device_map": "auto", "torch_dtype": "auto", "use_cache": False},
+            formatting_func=format_row,
+        )
+    },
+    trainer_type="SFT"
+)
+
+experiment = Experiment("sft-experiment", mode="fit")
+experiment.run_fit(config_group, create_model, train_ds, eval_ds, num_chunks=4)
+experiment.end()
+```
+
+## RAG Eval Example (Full Pattern)
+
+```python
+from rapidfireai import Experiment
+from rapidfireai.automl import (
+    RFLangChainRagSpec, RFvLLMModelConfig, RFGridSearch, List
+)
+from langchain_community.document_loaders import DirectoryLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+
+rag_spec = RFLangChainRagSpec(
+    document_loader=DirectoryLoader("data/", glob="*.jsonl"),
+    text_splitter=List([
+        RecursiveCharacterTextSplitter(chunk_size=256, chunk_overlap=32),
+        RecursiveCharacterTextSplitter(chunk_size=128, chunk_overlap=32),
+    ]),
+    embedding_cls=HuggingFaceEmbeddings,
+    embedding_kwargs={"model_name": "sentence-transformers/all-MiniLM-L6-v2"},
+    search_type="similarity",
+    search_kwargs={"k": 15},
+)
+
+def preprocess(batch, rag, prompt_manager):
+    context = rag.get_context(batch["query"])
+    return {
+        "prompts": [
+            [{"role": "system", "content": "Answer the question."},
+             {"role": "user", "content": f"Context: {ctx}\nQ: {q}"}]
+            for q, ctx in zip(batch["query"], context)
+        ],
+        **batch
+    }
+
+def compute_metrics(batch):
+    correct = sum(p == g for p, g in zip(batch["generated_text"], batch["ground_truth"]))
+    return {"Correct": {"value": correct}, "Total": {"value": len(batch["query"])}}
+
+def accumulate_metrics(agg):
+    correct = sum(m["value"] for m in agg["Correct"])
+    total = sum(m["value"] for m in agg["Total"])
+    return {
+        "Correct": {"value": correct, "is_distributive": True, "value_range": (0, 1)},
+        "Total": {"value": total},
+        "Accuracy": {"value": correct / total, "is_algebraic": True, "value_range": (0, 1)},
+    }
+
+config_group = RFGridSearch({
+    "vllm_config": RFvLLMModelConfig(
+        model_config={"model": "Qwen/Qwen2.5-0.5B-Instruct", "dtype": "half", "max_model_len": 2048},
+        sampling_params={"temperature": 0.8, "max_tokens": 512},
+        rag=rag_spec,
+    ),
+    "batch_size": 8,
+    "preprocess_fn": preprocess,
+    "compute_metrics_fn": compute_metrics,
+    "accumulate_metrics_fn": accumulate_metrics,
+    "online_strategy_kwargs": {"strategy_name": "normal", "confidence_level": 0.95, "use_fpc": True},
+})
+
+experiment = Experiment("rag-experiment", mode="eval")
+results = experiment.run_evals(config_group, dataset=eval_ds, num_shards=4, num_actors=4)
+experiment.end()
+```
+
+## Common Mistakes to Avoid
+
+| ❌ Wrong | ✅ Right |
+|---------|---------|
+| `Range()` in `RFGridSearch` | Use `List()` in `RFGridSearch`; `Range()` only in `RFRandomSearch` |
+| Omitting `trainer_type` in fit mode | Always set `trainer_type="SFT"/"DPO"/"GRPO"` for `run_fit()` |
+| `mode="fit"` + `run_evals()` | Match `mode` to the method: `"fit"` → `run_fit()`, `"eval"` → `run_evals()` |
+| `kill -9` on rapidfireai server | Always `rapidfireai stop` or `Ctrl+C` gracefully |
+| Running `rapidfireai init` every session | `init` is one-time per venv |
+| Forgetting `pip uninstall -y hf-xet` | Always uninstall after `pip install rapidfireai` |
+| Passing embedding instance to `embedding_cls` | Pass the **class** (e.g. `HuggingFaceEmbeddings`), not `HuggingFaceEmbeddings(...)` |
+| `num_chunks=1` or `num_shards=1` | Use ≥ 4 for meaningful concurrent visibility |
+
+## LoRA Knob Guidance
+
+```python
+# Start here — quick exploration:
+RFLoraConfig(r=List([16, 32]), lora_alpha=List([32, 64]), target_modules=["q_proj", "v_proj"])
+
+# High capacity — if underfitting:
+RFLoraConfig(r=128, lora_alpha=256, target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"])
+
+# Key knobs in order of impact: r (rank) > target_modules > lora_alpha > lora_dropout
+```
+
+## Diagnostics
+
+```bash
+rapidfireai doctor                          # Full env/GPU/package check
+lsof -t -i:8853 | xargs kill -9           # Free frontend port
+export CUDA_VISIBLE_DEVICES=0,1            # Select GPUs before start
+ps -ef | grep "multiprocessing.spawn"      # Find stray processes between experiments
+```
+
+## Results Inspection
+
+```python
+# After run_fit():
+runs_df = experiment.get_runs_info()      # run_id, status, config, etc.
+results_df = experiment.get_results()     # all metrics, all steps, all runs
+
+# After run_evals():
+# results dict returned directly by run_evals()
+for run_id, (agg_metrics, cumulative_metrics) in results.items():
+    print(run_id, agg_metrics)
+```
