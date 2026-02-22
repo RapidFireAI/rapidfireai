@@ -4,7 +4,7 @@
 RapidFire AI (`rapidfireai`) is a Python package for hyperparallelized LLM experimentation — running multiple configs concurrently, with real-time IC Ops (stop/resume/clone/delete runs mid-flight).
 
 Supports two workflows:
-- **RAG / Context Engineering** — eval mode, uses `run_evals()`
+- **RAG / Context Engineering** — evals mode, uses `run_evals()`
 - **Fine-Tuning / Post-Training** — fit mode (SFT, DPO, GRPO), uses `run_fit()`
 
 ## Environment Requirements
@@ -57,17 +57,17 @@ experiment.end()
 
 ### Eval (RAG)
 ```python
-experiment = Experiment(experiment_name="my-rag-exp", mode="eval")
+experiment = Experiment(experiment_name="my-rag-exp", mode="evals")
 results = experiment.run_evals(config_group, dataset=eval_dataset, num_shards=4, num_actors=8)
 experiment.end()
 ```
 
 ## Key Rules
-- `mode="fit"` → use `run_fit()` | `mode="eval"` → use `run_evals()`
+- `mode="fit"` → use `run_fit()` | `mode="evals"` → use `run_evals()`
 - `List([...])` wraps discrete knob values; `Range(start, end, dtype=)` for continuous
 - `RFGridSearch` → no `Range()` allowed; `RFRandomSearch` → allows both `List` and `Range`
 - `num_chunks` / `num_shards` ≥ 4 recommended for meaningful concurrency
-- `trainer_type` argument required for `RFGridSearch`/`RFRandomSearch` in fit mode; omit for eval
+- `trainer_type` argument required for `RFGridSearch`/`RFRandomSearch` in fit mode; omit for evals
 - Stopping the server forcibly loses experiment artifacts — always use `rapidfireai stop`
 
 ## Detailed API Reference

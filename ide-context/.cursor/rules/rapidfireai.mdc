@@ -51,14 +51,14 @@ from rapidfireai.automl import RFModelConfig, RFLoraConfig, RFSFTConfig, RFDPOCo
 from rapidfireai.automl import RFLangChainRagSpec, RFvLLMModelConfig, RFOpenAIAPIModelConfig, RFPromptManager
 
 # IC Ops (in-notebook control panel)
-from rapidfireai.utils.interactive_controller import InteractiveController
+from rapidfireai.fit.utils.interactive_controller import InteractiveController
 ```
 
 ## Experiment Lifecycle
 
 ```python
 # --- ALWAYS: create experiment with a unique name ---
-experiment = Experiment(experiment_name="exp-v1", mode="fit")   # or mode="eval"
+experiment = Experiment(experiment_name="exp-v1", mode="fit")   # or mode="evals"
 
 # --- FIT workflow (SFT / DPO / GRPO) ---
 experiment.run_fit(
@@ -101,7 +101,7 @@ config_group = RFGridSearch(configs=my_config_dict, trainer_type="SFT")
 # RFRandomSearch: IID sampling from List() and Range() knobs
 config_group = RFRandomSearch(configs=my_config_dict, trainer_type="SFT", num_runs=10)
 
-# trainer_type: "SFT" | "DPO" | "GRPO" | None (None for run_evals)
+# trainer_type: "SFT" | "DPO" | "GRPO" | None (None for run_evals in evals mode)
 ```
 
 ## SFT Example (Full Pattern)
@@ -216,7 +216,7 @@ config_group = RFGridSearch({
     "online_strategy_kwargs": {"strategy_name": "normal", "confidence_level": 0.95, "use_fpc": True},
 })
 
-experiment = Experiment("rag-experiment", mode="eval")
+experiment = Experiment("rag-experiment", mode="evals")
 results = experiment.run_evals(config_group, dataset=eval_ds, num_shards=4, num_actors=4)
 experiment.end()
 ```
@@ -227,7 +227,7 @@ experiment.end()
 |---------|---------|
 | `Range()` in `RFGridSearch` | Use `List()` in `RFGridSearch`; `Range()` only in `RFRandomSearch` |
 | Omitting `trainer_type` in fit mode | Always set `trainer_type="SFT"/"DPO"/"GRPO"` for `run_fit()` |
-| `mode="fit"` + `run_evals()` | Match `mode` to the method: `"fit"` → `run_fit()`, `"eval"` → `run_evals()` |
+| `mode="fit"` + `run_evals()` | Match `mode` to the method: `"fit"` → `run_fit()`, `"evals"` → `run_evals()` |
 | `kill -9` on rapidfireai server | Always `rapidfireai stop` or `Ctrl+C` gracefully |
 | Running `rapidfireai init` every session | `init` is one-time per venv |
 | Forgetting `pip uninstall -y hf-xet` | Always uninstall after `pip install rapidfireai` |
