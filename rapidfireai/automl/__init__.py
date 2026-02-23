@@ -1,7 +1,7 @@
 """AutoML module for hyperparameter optimization (unified for fit and evals)."""
 
 from .base import AutoMLAlgorithm
-from .datatypes import List, Range
+from .datatypes import List, Range, EmbeddingSpec, RerankSpec, SearchSpec
 from .grid_search import RFGridSearch
 from .random_search import RFRandomSearch
 from .automl_utils import get_flattened_config_leaf, get_runs

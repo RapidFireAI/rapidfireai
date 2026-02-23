@@ -326,22 +326,29 @@ class InteractiveControlHandler:
             # Map flattened rag_config keys to their locations in the RAG object
             # This mapping corresponds to extract_rag_params() in serialize.py
 
-            # Direct attribute: search_type
-            if "search_type" in rag_config:
-                rag.search_type = rag_config["search_type"]
+            if hasattr(rag, "search_spec") and rag.search_spec is not None:
+                if "search_type" in rag_config:
+                    rag.search_spec.search_type = rag_config["search_type"]
+                for key in ["k", "filter", "fetch_k", "lambda_mult"]:
+                    if key in rag_config:
+                        rag.search_spec.search_kwargs[key] = rag_config[key]
+            else:
+                if "search_type" in rag_config:
+                    rag.search_type = rag_config["search_type"]
+                if rag.search_kwargs is None:
+                    rag.search_kwargs = {}
+                for key in ["k", "filter", "fetch_k", "lambda_mult"]:
+                    if key in rag_config:
+                        rag.search_kwargs[key] = rag_config[key]
 
-            # search_kwargs dict: k, filter, fetch_k, lambda_mult
-            if rag.search_kwargs is None:
-                rag.search_kwargs = {}
-            for key in ["k", "filter", "fetch_k", "lambda_mult"]:
-                if key in rag_config:
-                    rag.search_kwargs[key] = rag_config[key]
-
-            # reranker_kwargs dict: top_n
-            if rag.reranker_kwargs is None:
-                rag.reranker_kwargs = {}
-            if "top_n" in rag_config:
-                rag.reranker_kwargs["top_n"] = rag_config["top_n"]
+            if hasattr(rag, "reranker_spec") and rag.reranker_spec is not None:
+                if "top_n" in rag_config:
+                    rag.reranker_spec.kwargs["top_n"] = rag_config["top_n"]
+            else:
+                if rag.reranker_kwargs is None:
+                    rag.reranker_kwargs = {}
+                if "top_n" in rag_config:
+                    rag.reranker_kwargs["top_n"] = rag_config["top_n"]
 
             # text_splitter attributes: chunk_size, chunk_overlap
             if rag.text_splitter is not None:
@@ -469,12 +476,17 @@ class InteractiveControlHandler:
                     self.metric_manager.log_param(metric_run_id, "model", model_name)
 
                 # Log RAG params
-                if rag and hasattr(rag, "search_type"):
-                    self.metric_manager.log_param(metric_run_id, "rag_search_type", str(rag.search_type))
-                if rag and hasattr(rag, "search_kwargs") and rag.search_kwargs:
-                    k = rag.search_kwargs.get("k")
+                if rag and hasattr(rag, "search_spec") and rag.search_spec:
+                    self.metric_manager.log_param(metric_run_id, "rag_search_type", str(rag.search_spec.search_type))
+                    k = rag.search_spec.search_kwargs.get("k")
                     if k is not None:
                         self.metric_manager.log_param(metric_run_id, "rag_k", str(k))
+                elif rag and hasattr(rag, "search_type"):
+                    self.metric_manager.log_param(metric_run_id, "rag_search_type", str(rag.search_type))
+                    if hasattr(rag, "search_kwargs") and rag.search_kwargs:
+                        k = rag.search_kwargs.get("k")
+                        if k is not None:
+                            self.metric_manager.log_param(metric_run_id, "rag_k", str(k))
 
                 # Log sampling params
                 if hasattr(model_config, "sampling_params") and model_config.sampling_params:
@@ -565,10 +577,16 @@ class InteractiveControlHandler:
 
         # Extract RAG-related fields
         if hasattr(pipeline, "rag") and pipeline.rag is not None:
-            search_type = getattr(pipeline.rag, "search_type", None)
-            if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs is not None:
-                rag_k = pipeline.rag.search_kwargs.get("k", None)
-            if hasattr(pipeline.rag, "reranker_kwargs") and pipeline.rag.reranker_kwargs is not None:
+            if hasattr(pipeline.rag, "search_spec") and pipeline.rag.search_spec is not None:
+                search_type = pipeline.rag.search_spec.search_type
+                rag_k = pipeline.rag.search_spec.search_kwargs.get("k", None)
+            else:
+                search_type = getattr(pipeline.rag, "search_type", None)
+                if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs is not None:
+                    rag_k = pipeline.rag.search_kwargs.get("k", None)
+            if hasattr(pipeline.rag, "reranker_spec") and pipeline.rag.reranker_spec is not None:
+                top_n = pipeline.rag.reranker_spec.kwargs.get("top_n", None)
+            elif hasattr(pipeline.rag, "reranker_kwargs") and pipeline.rag.reranker_kwargs is not None:
                 top_n = pipeline.rag.reranker_kwargs.get("top_n", None)
             if hasattr(pipeline.rag, "text_splitter") and pipeline.rag.text_splitter is not None:
                 chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)

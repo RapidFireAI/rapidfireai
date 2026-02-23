@@ -3,26 +3,62 @@
 from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
+from rapidfireai.automl.datatypes import List, Range
 from rapidfireai.fit.utils.exceptions import AutoMLException
+
+
+def _resolve_scalar(value: Any) -> int | float | None:
+    """
+    Resolve a potentially unexpanded hyperparameter value to a scalar for comparison.
+
+    If the value is a plain scalar, return it directly.
+    If it is a List (unexpanded), return the maximum element.
+    If it is a Range (unexpanded), return the upper bound.
+    Returns None for anything else that cannot be compared numerically.
+    """
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, List):
+        scalars = [_resolve_scalar(v) for v in value.values]
+        scalars = [s for s in scalars if s is not None]
+        return max(scalars) if scalars else None
+    if isinstance(value, Range):
+        return value.end
+    return None
 
 
 def _is_valid_reranker_top_n_vs_k(pipeline: Any) -> bool:
     """
     Check if pipeline has valid top_n <= k when reranker with top_n is present.
+
+    Handles unexpanded List/Range hyperparameter objects by checking against
+    the worst-case (maximum) value so that invalid configs are correctly rejected.
     """
     if pipeline is None or not hasattr(pipeline, "rag") or pipeline.rag is None:
         return True
     rag = pipeline.rag
-    if not hasattr(rag, "reranker_kwargs") or not rag.reranker_kwargs:
+
+    raw_top_n = None
+    if hasattr(rag, "reranker_spec") and rag.reranker_spec is not None:
+        raw_top_n = rag.reranker_spec.kwargs.get("top_n")
+    elif hasattr(rag, "reranker_kwargs") and rag.reranker_kwargs:
+        raw_top_n = rag.reranker_kwargs.get("top_n")
+    if raw_top_n is None:
         return True
-    top_n = rag.reranker_kwargs.get("top_n")
+    top_n = _resolve_scalar(raw_top_n)
     if top_n is None:
         return True
-    k = None
-    if hasattr(rag, "search_kwargs") and rag.search_kwargs:
-        k = rag.search_kwargs.get("k")
-    if k is None:
+
+    raw_k = None
+    if hasattr(rag, "search_spec") and rag.search_spec is not None:
+        raw_k = rag.search_spec.search_kwargs.get("k")
+    elif hasattr(rag, "search_kwargs") and rag.search_kwargs:
+        raw_k = rag.search_kwargs.get("k")
+    if raw_k is None:
         return True  # No k to compare; user config may be incomplete
+    k = _resolve_scalar(raw_k)
+    if k is None:
+        return True
     return top_n <= k
 
 

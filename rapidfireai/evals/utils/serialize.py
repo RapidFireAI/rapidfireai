@@ -63,12 +63,17 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
                 return None
 
             rag_config = {}
-            rag_config["search_type"] = getattr(rag_spec, "search_type", None)
+            if hasattr(rag_spec, "search_spec") and rag_spec.search_spec is not None:
+                rag_config["search_type"] = rag_spec.search_spec.search_type
+                rag_config["k"] = rag_spec.search_spec.search_kwargs.get("k", None)
+            else:
+                rag_config["search_type"] = getattr(rag_spec, "search_type", None)
+                if hasattr(rag_spec, "search_kwargs") and rag_spec.search_kwargs is not None:
+                    rag_config["k"] = rag_spec.search_kwargs.get("k", None)
 
-            if hasattr(rag_spec, "search_kwargs") and rag_spec.search_kwargs is not None:
-                rag_config["k"] = rag_spec.search_kwargs.get("k", None)
-
-            if hasattr(rag_spec, "reranker_kwargs") and rag_spec.reranker_kwargs is not None:
+            if hasattr(rag_spec, "reranker_spec") and rag_spec.reranker_spec is not None:
+                rag_config["top_n"] = rag_spec.reranker_spec.kwargs.get("top_n", None)
+            elif hasattr(rag_spec, "reranker_kwargs") and rag_spec.reranker_kwargs is not None:
                 rag_config["top_n"] = rag_spec.reranker_kwargs.get("top_n", None)
 
             if hasattr(rag_spec, "text_splitter") and rag_spec.text_splitter is not None:

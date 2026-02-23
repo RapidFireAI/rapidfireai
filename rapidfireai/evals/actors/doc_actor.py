@@ -79,14 +79,12 @@ class DocProcessingActor:
                 - faiss_index_bytes: Serialized FAISS index (if RAG spec provided)
                 - docstore_bytes: Serialized docstore (if RAG spec provided)
                 - index_to_docstore_id_bytes: Serialized mapping (if RAG spec provided)
-                - embedding_cls: Embedding class (if RAG spec provided)
-                - embedding_kwargs: Embedding kwargs (if RAG spec provided)
-                - search_type: Search type (if RAG spec provided)
-                - search_kwargs: Search parameters (if RAG spec provided)
+                - embedding_spec: EmbeddingSpec to recreate embedding (if RAG spec provided)
+                - search_spec: SearchSpec with search type and kwargs (if RAG spec provided)
+                - reranker_spec: RerankSpec with reranker class and kwargs (if RAG spec provided)
                 - template: Document formatting template (if RAG spec provided)
                 - prompt_manager: Initialized prompt manager (if provided)
                 - enable_gpu_search: Flag indicating if GPU search was used during build (if RAG spec provided)
-                - reranker: Reranker function (if RAG spec provided and reranker exists)
 
         Raises:
             RuntimeError: If any error occurs during RAG component building. The original exception
@@ -145,14 +143,11 @@ class DocProcessingActor:
                     "faiss_index_bytes": faiss_index_bytes,  # Serialized FAISS index
                     "docstore_bytes": docstore_bytes,  # Serialized docstore
                     "index_to_docstore_id_bytes": index_to_docstore_id_bytes,  # Serialized mapping
-                    "embedding_cls": rag_spec.embedding_cls,  # Class to recreate embedding
-                    "embedding_kwargs": rag_spec.embedding_kwargs,  # Kwargs to recreate embedding
-                    "search_type": rag_spec.search_type,
-                    "search_kwargs": rag_spec.search_kwargs,
+                    "embedding_spec": rag_spec.embedding_spec,
+                    "search_spec": rag_spec.search_spec,
+                    "reranker_spec": rag_spec.reranker_spec,
                     "template": rag_spec.template,
-                    "enable_gpu_search": rag_spec.enable_gpu_search,  # Track GPU usage
-                    "reranker_cls": rag_spec.reranker_cls,  # Reranker class (if any)
-                    "reranker_kwargs": rag_spec.reranker_kwargs,  # Reranker kwargs (if any)
+                    "enable_gpu_search": rag_spec.enable_gpu_search,
                 })
 
             # Add prompt_manager if provided (works with or without RAG)

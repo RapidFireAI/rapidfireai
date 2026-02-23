@@ -193,11 +193,15 @@ class Controller:
         # Log RAG params
         if hasattr(pipeline, "rag") and pipeline.rag:
             rag = pipeline.rag
-            if hasattr(rag, "search_type"):
-                manager.log_param(run_id, "rag.search_type", str(rag.search_type))
-            if hasattr(rag, "search_kwargs") and rag.search_kwargs:
-                for key, value in rag.search_kwargs.items():
+            if hasattr(rag, "search_spec") and rag.search_spec:
+                manager.log_param(run_id, "rag.search_type", str(rag.search_spec.search_type))
+                for key, value in rag.search_spec.search_kwargs.items():
                     manager.log_param(run_id, f"rag.{key}", str(value))
+            elif hasattr(rag, "search_type"):
+                manager.log_param(run_id, "rag.search_type", str(rag.search_type))
+                if hasattr(rag, "search_kwargs") and rag.search_kwargs:
+                    for key, value in rag.search_kwargs.items():
+                        manager.log_param(run_id, f"rag.{key}", str(value))
             if hasattr(rag, "chunk_size"):
                 manager.log_param(run_id, "rag.chunk_size", str(rag.chunk_size))
             if hasattr(rag, "chunk_overlap"):
@@ -389,13 +393,15 @@ class Controller:
                 needs_gpu = True
             elif rag_spec:
                 # Check if rag_spec embeddings or reranker request CUDA (even if enable_gpu_search=False)
-                if rag_spec.embedding_kwargs:
-                    model_kwargs = rag_spec.embedding_kwargs.get("model_kwargs", {})
+                emb_kwargs = rag_spec.embedding_spec.kwargs if hasattr(rag_spec, "embedding_spec") and rag_spec.embedding_spec else rag_spec.embedding_kwargs
+                if emb_kwargs:
+                    model_kwargs = emb_kwargs.get("model_kwargs", {})
                     device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
                     if device and str(device).startswith("cuda"):
                         needs_gpu = True
-                if not needs_gpu and rag_spec.reranker_kwargs:
-                    reranker_model_kwargs = rag_spec.reranker_kwargs.get("model_kwargs", {})
+                rnk_kwargs = rag_spec.reranker_spec.kwargs if hasattr(rag_spec, "reranker_spec") and rag_spec.reranker_spec else rag_spec.reranker_kwargs
+                if not needs_gpu and rnk_kwargs:
+                    reranker_model_kwargs = rnk_kwargs.get("model_kwargs", {})
                     device = reranker_model_kwargs.get("device", "") if isinstance(reranker_model_kwargs, dict) else ""
                     if device and str(device).startswith("cuda"):
                         needs_gpu = True
@@ -617,12 +623,17 @@ class Controller:
                             self.metric_manager.log_param(metric_run_id, "model", model_name)
 
                         if hasattr(pipeline, "rag") and pipeline.rag:
-                            if hasattr(pipeline.rag, "search_type"):
-                                self.metric_manager.log_param(metric_run_id, "rag_search_type", str(pipeline.rag.search_type))
-                            if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs:
-                                k = pipeline.rag.search_kwargs.get("k")
+                            if hasattr(pipeline.rag, "search_spec") and pipeline.rag.search_spec:
+                                self.metric_manager.log_param(metric_run_id, "rag_search_type", str(pipeline.rag.search_spec.search_type))
+                                k = pipeline.rag.search_spec.search_kwargs.get("k")
                                 if k is not None:
                                     self.metric_manager.log_param(metric_run_id, "rag_k", str(k))
+                            elif hasattr(pipeline.rag, "search_type"):
+                                self.metric_manager.log_param(metric_run_id, "rag_search_type", str(pipeline.rag.search_type))
+                                if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs:
+                                    k = pipeline.rag.search_kwargs.get("k")
+                                    if k is not None:
+                                        self.metric_manager.log_param(metric_run_id, "rag_k", str(k))
 
                         # Extract sampling params
                         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:

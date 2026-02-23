@@ -8,9 +8,11 @@ Uses FAISS by default for both CPU and GPU similarity search with optimized inde
 - CPU: IndexHNSWFlat for approximate nearest neighbor search with HNSW algorithm
 """
 
+from __future__ import annotations
+
 import copy
 from collections.abc import Callable
-from typing import Any, Optional, List as list
+from typing import Any, Optional, List as list, TYPE_CHECKING
 import hashlib
 import json
 
@@ -26,6 +28,9 @@ from langchain_text_splitters import TextSplitter
 from langchain_core.documents import BaseDocumentCompressor
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+
+if TYPE_CHECKING:
+    from rapidfireai.automl.datatypes import EmbeddingSpec, RerankSpec, SearchSpec
 
 def _default_document_template(doc: Document) -> str:
     """
@@ -52,14 +57,12 @@ class LangChainRagSpec:
     Attributes:
         document_loader (BaseLoader): The document loader for loading source documents.
         text_splitter (TextSplitter): The text splitter for chunking documents.
-        embedding_cls (Type[Embeddings]): The embedding class to instantiate.
-        embedding_kwargs (Dict[str, Any]): Dictionary containing all parameters needed to initialize the embedding class.
-        embedding (Optional[Embeddings]): The instantiated embedding model (created in initialize()).
+        embedding_spec (EmbeddingSpec): Coupled embedding class and kwargs.
+        embedding (Optional[Embeddings]): The instantiated embedding model (created in build_index()).
         vector_store (Optional[VectorStore]): The vector store for storing and searching embeddings.
         retriever (BaseRetriever): The retriever for finding relevant documents.
-        search_type (str): The search algorithm type ('similarity', 'similarity_score_threshold', 'mmr').
-        search_kwargs (Dict[str, Any]): Additional search parameters including k, filter, fetch_k, lambda_mult.
-        reranker (Optional[Callable]): Optional reranking function for batch results.
+        search_spec (SearchSpec): Coupled search type and search kwargs.
+        reranker_spec (Optional[RerankSpec]): Coupled reranker class and kwargs.
         enable_gpu_search (bool): Whether to use GPU FAISS (IndexFlatL2 on GPU) or CPU FAISS (IndexHNSWFlat).
 
     Vector Store Configuration:
@@ -75,14 +78,11 @@ class LangChainRagSpec:
         self,
         document_loader: BaseLoader,
         text_splitter: TextSplitter,
-        embedding_cls: type[Embeddings],  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
-        embedding_kwargs: Optional[dict[str, Any]] | None = None,
+        embedding_spec: EmbeddingSpec,
         retriever: Optional[BaseRetriever] | None = None,
         vector_store: Optional[VectorStore] | None = None,
-        search_type: str = "similarity",
-        search_kwargs: dict | None = None,
-        reranker_cls: Optional[type[BaseDocumentCompressor]] | None = None,
-        reranker_kwargs: Optional[dict[str, Any]] | None = None,
+        search_spec: SearchSpec | None = None,
+        reranker_spec: Optional[RerankSpec] | None = None,
         enable_gpu_search: bool = False,
         document_template: Optional[Callable[[Document], str]] | None = None,
     ) -> None:
@@ -92,26 +92,15 @@ class LangChainRagSpec:
         Args:
             document_loader: The document loader for loading source documents.
             text_splitter: The text splitter for chunking documents into smaller pieces.
-            embedding_cls: The embedding class (e.g., HuggingFaceEmbeddings) to instantiate.
-            embedding_kwargs: Dictionary containing all parameters needed to initialize the embedding class.
-                The user must provide the correct parameters for their chosen embedding class.
-                For example, HuggingFaceEmbeddings might need {'model_name': 'sentence-transformers/all-mpnet-base-v2', 'model_kwargs': {'device': 'cuda'}}.
+            embedding_spec: An EmbeddingSpec that couples the embedding class with its kwargs.
+                For example: EmbeddingSpec(HuggingFaceEmbeddings, {'model_name': '...', 'model_kwargs': {'device': 'cuda'}}).
             retriever: Optional custom retriever. If not provided, one will be created
                       from the FAISS vector_store.
             vector_store: Optional vector store for storing embeddings. If not provided,
                          a new FAISS vector store will be created automatically.
-            search_type: The search algorithm type. Options include:
-                        - "similarity": Standard similarity search
-                        - "similarity_score_threshold": Similarity with score threshold
-                        - "mmr": Maximum Marginal Relevance search
-            search_kwargs: Additional parameters for search configuration including:
-                          - k: Number of documents to retrieve (default: 5)
-                          - filter: Filter criteria for search (function)
-                          - fetch_k: Number of documents to fetch for MMR (default: 20)
-                          - lambda_mult: Diversity parameter for MMR (default: 0.5)
-            reranker: Optional function to rerank retrieved documents.
-                     Should accept a single list of Documents and return a reranked list.
-                     Will be applied to each query's results individually.
+            search_spec: A SearchSpec that couples search_type with search_kwargs. If not
+                        provided, defaults to SearchSpec("similarity", {"k": 5}).
+            reranker_spec: Optional RerankSpec that couples the reranker class with its kwargs.
             enable_gpu_search: Whether to use GPU-accelerated FAISS (IndexFlatL2 on GPU)
                                   or CPU-based FAISS (IndexHNSWFlat) for similarity search.
                                   Requires faiss-gpu package and CUDA-compatible GPU for GPU mode.
@@ -122,7 +111,7 @@ class LangChainRagSpec:
                             Multiple documents are separated by double newlines.
 
         Raises:
-            ValueError: If invalid search_type is provided or required parameters are missing.
+            ValueError: If invalid parameters are provided.
             ImportError: If faiss-gpu package is not available.
             RuntimeError: If GPU mode is requested but CUDA GPU is not available.
         """
@@ -133,41 +122,82 @@ class LangChainRagSpec:
             raise ValueError("document_loader is required unless retriever or vector_store is provided")
         if not text_splitter and not retriever and not vector_store:
             raise ValueError("text_splitter is required unless retriever or vector_store is provided")
-        if not embedding_cls:
-            raise ValueError("embedding_cls is required")
+        if not embedding_spec:
+            raise ValueError("embedding_spec is required")
 
-        # Validate search_type
-        valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
-        if search_type not in valid_search_types:
-            raise ValueError(f"search_type must be one of {valid_search_types}, got: {search_type}")
+        from rapidfireai.automl.datatypes import SearchSpec as _SearchSpec
 
         self.document_loader = document_loader
         self.text_splitter = text_splitter
-        self.embedding_cls = embedding_cls
-        self.embedding_kwargs = embedding_kwargs or {}
-        self.embedding: Embeddings | None = None  # Will be created in initialize()
-        self.search_type = search_type
+        self.embedding_spec = embedding_spec
+        self.embedding: Embeddings | None = None
+
+        if search_spec is None:
+            self.search_spec = _SearchSpec("similarity", {
+                "k": 5,
+                "filter": None,
+                "fetch_k": 20,
+                "lambda_mult": 0.5,
+            })
+        else:
+            default_kwargs: dict[str, Any] = {
+                "k": 5,
+                "filter": None,
+                "fetch_k": 20,
+                "lambda_mult": 0.5,
+            }
+            default_kwargs.update(search_spec.search_kwargs)
+            self.search_spec = _SearchSpec(search_spec.search_type, default_kwargs)
+
         if document_template:
             self.template = document_template
         else:
             self.template = _default_document_template
 
-        # Default search kwargs with type safety
-        self.search_kwargs: dict[str, Any] = {
-            "k": 5,
-            "filter": None,
-            "fetch_k": 20,
-            "lambda_mult": 0.5,
-        }
-        if search_kwargs:
-            self.search_kwargs.update(search_kwargs)
-
         self.vector_store = vector_store
         self.retriever = retriever
-        self.reranker_cls = reranker_cls
-        self.reranker_kwargs = reranker_kwargs or {}
+        self.reranker_spec = reranker_spec
         self.enable_gpu_search = enable_gpu_search
         self.reranker = None
+
+    # --- Convenience properties for downstream access ---
+
+    @property
+    def embedding_cls(self) -> type[Embeddings]:
+        return self.embedding_spec.cls
+
+    @property
+    def embedding_kwargs(self) -> dict[str, Any]:
+        return self.embedding_spec.kwargs
+
+    @property
+    def search_type(self) -> str:
+        return self.search_spec.search_type
+
+    @search_type.setter
+    def search_type(self, value: str):
+        self.search_spec.search_type = value
+
+    @property
+    def search_kwargs(self) -> dict[str, Any]:
+        return self.search_spec.search_kwargs
+
+    @search_kwargs.setter
+    def search_kwargs(self, value: dict[str, Any]):
+        self.search_spec.search_kwargs = value
+
+    @property
+    def reranker_cls(self) -> type[BaseDocumentCompressor] | None:
+        return self.reranker_spec.cls if self.reranker_spec else None
+
+    @property
+    def reranker_kwargs(self) -> dict[str, Any]:
+        return self.reranker_spec.kwargs if self.reranker_spec else {}
+
+    @reranker_kwargs.setter
+    def reranker_kwargs(self, value: dict[str, Any]):
+        if self.reranker_spec:
+            self.reranker_spec.kwargs = value
 
     @staticmethod
     def default_template(doc: Document) -> str:
@@ -214,30 +244,28 @@ class LangChainRagSpec:
             Exception: If embedding instantiation fails due to invalid parameters.
             ImportError: If faiss-gpu package is not available.
         """
-        # Create embedding instance with provided configuration
-        self.embedding = self.embedding_cls(**self.embedding_kwargs)
+        self.embedding = self.embedding_spec.create()
 
-        if self.reranker_cls:
-            if self.reranker_cls is CrossEncoderReranker:
-                hf_model_name = self.reranker_kwargs.pop("model_name", "cross-encoder/ms-marco-MiniLM-L6-v2")
-                hf_model_kwargs = self.reranker_kwargs.pop("model_kwargs", {})
+        if self.reranker_spec:
+            reranker_cls = self.reranker_spec.cls
+            reranker_kwargs = copy.deepcopy(self.reranker_spec.kwargs)
+            if reranker_cls is CrossEncoderReranker:
+                hf_model_name = reranker_kwargs.pop("model_name", "cross-encoder/ms-marco-MiniLM-L6-v2")
+                hf_model_kwargs = reranker_kwargs.pop("model_kwargs", {})
                 
-                self.reranker = self.reranker_cls(
+                self.reranker = reranker_cls(
                     model=HuggingFaceCrossEncoder(
                         model_name=hf_model_name,
                         model_kwargs=hf_model_kwargs
                     ),
-                    **self.reranker_kwargs
+                    **reranker_kwargs
                 )
             else:
-                self.reranker = self.reranker_cls(**self.reranker_kwargs)
+                self.reranker = reranker_cls(**reranker_kwargs)
 
-        # Initialize vector store and retriever based on provided parameters
         if not self.retriever and not self.vector_store:
             try:
                 if self.enable_gpu_search:
-                    # Use GPU-accelerated FAISS vector store with exact search (L2 distance) by default
-                    # FAISS vector store will be built (adding documents) in _build_vector_store() method
                     self.vector_store = FAISS(
                         embedding_function=self.embedding,
                         index=faiss.IndexFlatL2(len(self.embedding.embed_query("RapidFire AI is awesome!"))),
@@ -246,11 +274,9 @@ class LangChainRagSpec:
                     )
 
                 else:
-                    # Use CPU-based Implementation of FAISS with approximate search HNSW
-                    # TODO: move these to constants.py
-                    M = 16  # good default value: controls the number of bidirectional connections of each node
-                    ef_construction = 64  # 4-8x of M: Size of dynamic candidate list during construction
-                    ef_search = 32  # 2-4x of M: Size of dynamic candidate list during search
+                    M = 16
+                    ef_construction = 64
+                    ef_search = 32
 
                     hnsw_index = faiss.IndexHNSWFlat(len(self.embedding.embed_query("RapidFire AI is awesome!")), M)
                     hnsw_index.hnsw.efConstruction = ef_construction
@@ -277,7 +303,7 @@ class LangChainRagSpec:
                 search_type=self.search_type, search_kwargs=self.search_kwargs
             )
 
-    def copy(self) -> "LangChainRagSpec":
+    def copy(self) -> LangChainRagSpec:
         """
         Create a deep copy of the LangChainRagSpec object.
 
@@ -288,19 +314,33 @@ class LangChainRagSpec:
         Returns:
             LangChainRagSpec: A new instance with the same configuration.
         """
-        # Create new instance with same base configuration
+        from rapidfireai.automl.datatypes import EmbeddingSpec as _EmbeddingSpec
+        from rapidfireai.automl.datatypes import RerankSpec as _RerankSpec
+        from rapidfireai.automl.datatypes import SearchSpec as _SearchSpec
+
+        new_search_spec = _SearchSpec(
+            search_type=self.search_type,
+            search_kwargs=copy.deepcopy(self.search_kwargs),
+        )
+        new_reranker_spec = None
+        if self.reranker_spec:
+            new_reranker_spec = _RerankSpec(
+                cls=self.reranker_spec.cls,
+                kwargs=copy.deepcopy(self.reranker_spec.kwargs),
+            )
+
         new_rag = LangChainRagSpec(
-            document_loader=self.document_loader,  # Shared reference
-            text_splitter=self.text_splitter,  # Shared reference
-            embedding_cls=self.embedding_cls,  # Shared reference
-            embedding_kwargs=self.embedding_kwargs,  # Shared reference
-            retriever=copy.deepcopy(self.retriever),  # Will be created fresh in initialize() if not provided
-            vector_store=self.vector_store,  # Will be created fresh in initialize() if not provided
-            search_type=self.search_type,  # Shared reference
-            search_kwargs=copy.deepcopy(self.search_kwargs),  # Deep copy to avoid shared refs
-            reranker_cls=self.reranker_cls,  # Shared reference
-            reranker_kwargs=copy.deepcopy(self.reranker_kwargs),  # Deep copy to avoid shared refs
-            enable_gpu_search=self.enable_gpu_search,  # Include GPU setting
+            document_loader=self.document_loader,
+            text_splitter=self.text_splitter,
+            embedding_spec=_EmbeddingSpec(
+                cls=self.embedding_spec.cls,
+                kwargs=copy.deepcopy(self.embedding_spec.kwargs),
+            ),
+            retriever=copy.deepcopy(self.retriever),
+            vector_store=self.vector_store,
+            search_spec=new_search_spec,
+            reranker_spec=new_reranker_spec,
+            enable_gpu_search=self.enable_gpu_search,
         )
 
         return new_rag
@@ -395,27 +435,6 @@ class LangChainRagSpec:
         context = self._serialize_docs(batch_docs=batch_docs)
         return context
 
-    def _rerank_docs(self, batch_docs: list[list[Document]]) -> list[list[Document]]:
-        """
-        Optionally rerank batch documents using the configured reranker function.
-
-        The reranker function is applied to each query's document list individually,
-        maintaining the intuitive API where rerankers work on single document lists.
-
-        Args:
-            batch_docs: A batch of document lists where each inner list contains
-                       documents for a single query.
-
-        Returns:
-            List[List[Document]]: The batch of documents, reranked if a reranker
-                                 is configured, otherwise returned as-is. Maintains
-                                 the same structure as input.
-        """
-        if self.reranker:
-            # Apply reranker to each query's documents individually
-            return [self.reranker(docs) for docs in batch_docs]
-        return batch_docs
-
     def serialize_documents(self, batch_docs: list[list[Document]]) -> list[str]:
         """
         Serialize batch documents into formatted strings for context injection.
@@ -483,13 +502,13 @@ class LangChainRagSpec:
 
         # Embedding configuration
         rag_dict["embedding_cls"] = self.embedding_cls.__name__ if self.embedding_cls else None
-        rag_dict["embedding_kwargs"] = self.embedding_kwargs  # Contains model_name, device, etc.
+        rag_dict["embedding_kwargs"] = self.embedding_kwargs
 
         # Search configuration
         rag_dict["search_type"] = self.search_type
-        rag_dict["search_kwargs"] = self.search_kwargs  # Contains k and other search params
+        rag_dict["search_kwargs"] = self.search_kwargs
         rag_dict["enable_gpu_search"] = self.enable_gpu_search
-        rag_dict["has_reranker"] = self.reranker_cls is not None and self.reranker_kwargs is not None
+        rag_dict["has_reranker"] = self.reranker_spec is not None
 
         # Convert to JSON string and hash
         rag_json = json.dumps(rag_dict, sort_keys=True)

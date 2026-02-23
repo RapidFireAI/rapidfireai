@@ -171,11 +171,10 @@ class QueryProcessingActor:
                     docstore = pickle.loads(context_generator_ref["docstore_bytes"])
                     index_to_docstore_id = pickle.loads(context_generator_ref["index_to_docstore_id_bytes"])
 
-                    # Recreate the embedding function
-                    embedding_cls = context_generator_ref["embedding_cls"]
-                    embedding_kwargs = context_generator_ref["embedding_kwargs"]
-                    embedding_function = embedding_cls(**embedding_kwargs)
-                    self.logger.info(f"Recreated embedding function: {embedding_cls.__name__}")
+                    # Recreate the embedding function from the spec
+                    embedding_spec = context_generator_ref["embedding_spec"]
+                    embedding_function = embedding_spec.create()
+                    self.logger.info(f"Recreated embedding function: {embedding_spec.cls.__name__}")
 
                     # Create a new FAISS vector store with the deserialized components
                     vector_store = FAISS(
@@ -187,28 +186,22 @@ class QueryProcessingActor:
                     self.logger.info("Created independent FAISS vector store for this actor")
 
                     # Create the retriever
-                    search_type = context_generator_ref["search_type"]
-                    search_kwargs = context_generator_ref["search_kwargs"]
+                    search_spec = context_generator_ref["search_spec"]
                     retriever = vector_store.as_retriever(
-                        search_type=search_type,
-                        search_kwargs=search_kwargs
+                        search_type=search_spec.search_type,
+                        search_kwargs=search_spec.search_kwargs
                     )
-                    self.logger.info(f"Recreated retriever with search_type={search_type}")
+                    self.logger.info(f"Recreated retriever with search_type={search_spec.search_type}")
 
                     # Recreate RAG spec with query-time components
-                    # We don't need document_loader or text_splitter for query-time operations,
-                    # so we use None/placeholder values
                     self.rag_spec = LangChainRagSpec(
                         document_loader=None,  # Not needed for query-time
                         text_splitter=None,  # Not needed for query-time
-                        embedding_cls=embedding_cls,
-                        embedding_kwargs=embedding_kwargs,
+                        embedding_spec=embedding_spec,
                         retriever=retriever,
                         vector_store=vector_store,
-                        search_type=search_type,
-                        search_kwargs=search_kwargs,
-                        reranker_cls=context_generator_ref.get("reranker_cls"),
-                        reranker_kwargs=context_generator_ref.get("reranker_kwargs"),
+                        search_spec=search_spec,
+                        reranker_spec=context_generator_ref.get("reranker_spec"),
                         enable_gpu_search=False,  # Query actors always use CPU
                         document_template=context_generator_ref.get("template"),
                     )

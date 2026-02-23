@@ -1,6 +1,7 @@
 """Contains classes for representing hyperparameter data types."""
 
 import random
+from typing import Any
 
 # TODO: need to set seed for random module.
 # TODO: List.sample() will not work for nested lists.
@@ -42,3 +43,33 @@ class List:
     def sample(self):
         """Sample a value from the list."""
         return random.choice(self.values)
+
+class EmbeddingSpec:
+    """Couples an embedding class with its kwargs to prevent cross-combination in grid search.
+    """
+    def __init__(self, cls: type, kwargs: dict[str, Any] | None = None):
+        self.cls = cls
+        self.kwargs = kwargs or {}
+
+    def create(self):
+        """Instantiate the embedding model using cls and kwargs."""
+        return self.cls(**self.kwargs)
+
+
+class RerankSpec:
+    """Couples a reranker class with its kwargs to prevent cross-combination in grid search.
+    """
+    def __init__(self, cls: type, kwargs: dict[str, Any] | None = None):
+        self.cls = cls
+        self.kwargs = kwargs or {}
+
+
+class SearchSpec:
+    """Couples search_type with search_kwargs to prevent cross-combination in grid search.
+    """
+    def __init__(self, search_type: str = "similarity", search_kwargs: dict[str, Any] | None = None):
+        valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
+        if search_type not in valid_search_types:
+            raise ValueError(f"search_type must be one of {valid_search_types}, got: {search_type}")
+        self.search_type = search_type
+        self.search_kwargs = search_kwargs or {}
