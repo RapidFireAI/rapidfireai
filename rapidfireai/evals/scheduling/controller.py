@@ -405,9 +405,9 @@ class Controller:
                     device = reranker_model_kwargs.get("device", "") if isinstance(reranker_model_kwargs, dict) else ""
                     if device and str(device).startswith("cuda"):
                         needs_gpu = True
-            elif prompt_manager and prompt_manager.embedding_kwargs:
+            elif prompt_manager and getattr(prompt_manager, "embedding_spec", None):
                 # Check if prompt_manager requests CUDA device
-                model_kwargs = prompt_manager.embedding_kwargs.get("model_kwargs", {})
+                model_kwargs = prompt_manager.embedding_spec.kwargs.get("model_kwargs", {})
                 device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
                 if device and str(device).startswith("cuda"):
                     needs_gpu = True

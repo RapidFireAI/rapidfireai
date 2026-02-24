@@ -23,11 +23,11 @@ class PromptManager:
         instructions (str): The main instructions for the prompt.
         instructions_file_path (str): Path to a file containing instructions.
         examples (List[Dict[str, str]]): List of example dictionaries for few-shot learning.
-        embedding_cls (Type[Embeddings]): The embedding class to instantiate.
-        embedding_kwargs (Dict[str, Any]): Parameters for initializing the embedding class.
+        embedding_spec: EmbeddingSpec (cls + kwargs), same unified type as RFLangChainRagSpec.
+        search_spec: Optional SearchSpec; with RFPromptManager kept in _user_params for AutoML expansion.
+        reranker_spec: Optional RerankSpec; with RFPromptManager kept in _user_params for AutoML expansion.
         example_selector_cls (Type[Union[MaxMarginalRelevanceExampleSelector, SemanticSimilarityExampleSelector]]):
-            Class for creating example selectors. Must be either MaxMarginalRelevanceExampleSelector
-            or SemanticSimilarityExampleSelector.
+            Class for creating example selectors.
         example_prompt_template (PromptTemplate): Template for formatting individual examples.
         k (int): Number of examples to retrieve for few-shot learning.
         example_selector (BaseExampleSelector): The instantiated example selector.
@@ -39,8 +39,9 @@ class PromptManager:
         instructions: str = "",
         instructions_file_path: str = "",
         examples: list[dict[str, str]] = [],
-        embedding_cls: type[Embeddings] = None,  # Class like HuggingFaceEmbeddings, OpenAIEmbeddings, etc
-        embedding_kwargs: dict[str, Any] | None = None,
+        embedding_spec: Any = None,
+        search_spec: Any = None,
+        reranker_spec: Any = None,
         example_selector_cls: type[MaxMarginalRelevanceExampleSelector | SemanticSimilarityExampleSelector] = None,
         example_prompt_template: PromptTemplate = None,
         k: int = 3,
@@ -55,10 +56,10 @@ class PromptManager:
                 if instructions is empty or None.
             examples (List[Dict[str, str]]): List of example dictionaries for few-shot learning.
                 Each dictionary should contain the example data (e.g., {'input': '...', 'output': '...'}).
-            embedding_cls (Type[Embeddings]): The embedding class to instantiate for semantic similarity.
-                Examples: HuggingFaceEmbeddings, OpenAIEmbeddings, etc.
-            embedding_kwargs (Dict[str, Any]): Parameters for initializing the embedding class.
-                Must contain all required parameters for the chosen embedding class.
+            embedding_spec: EmbeddingSpec (cls + kwargs), same unified type as RFLangChainRagSpec.
+                Required for few-shot; with RFPromptManager kept in _user_params for AutoML expansion.
+            search_spec: Optional SearchSpec; with RFPromptManager kept in _user_params for AutoML expansion.
+            reranker_spec: Optional RerankSpec; with RFPromptManager kept in _user_params for AutoML expansion.
             example_selector_cls (Type[Union[MaxMarginalRelevanceExampleSelector, SemanticSimilarityExampleSelector]]):
                 Class for creating example selectors. Must be either MaxMarginalRelevanceExampleSelector
                 or SemanticSimilarityExampleSelector.
@@ -73,8 +74,9 @@ class PromptManager:
         self.instructions = instructions
         self.instructions_file_path = instructions_file_path
         self.examples = examples
-        self.embedding_cls = embedding_cls
-        self.embedding_kwargs = embedding_kwargs
+        self.embedding_spec = embedding_spec
+        self.search_spec = search_spec
+        self.reranker_spec = reranker_spec
         self.example_selector_cls = example_selector_cls
         self.example_prompt_template = example_prompt_template
         self.k = k
@@ -98,10 +100,8 @@ class PromptManager:
                 raise ValueError("either instructions or instructions_file_path is required")
             with open(self.instructions_file_path) as f:
                 self.instructions = f.read()
-        if not self.embedding_cls:
-            raise ValueError("embedding_cls is required")
-        if not self.embedding_kwargs:
-            raise ValueError("embedding_kwargs is required")
+        if not self.embedding_spec:
+            raise ValueError("embedding_spec is required")
         if not self.example_selector_cls:
             raise ValueError("example_selector_cls is required")
 
@@ -119,7 +119,7 @@ class PromptManager:
         if not self.k:
             raise ValueError("k is required")
 
-        self.embedding_function = self.embedding_cls(**self.embedding_kwargs)
+        self.embedding_function = self.embedding_spec.cls(**self.embedding_spec.kwargs)
 
         self.vectorstore_cls = FAISS
         # self.vectorstore_cls_kwargs = {
@@ -214,23 +214,27 @@ class PromptManager:
             The copied instance will need to be set up by calling
             setup_examples() before it can be used to generate examples.
         """
-        return PromptManager(
+        kwargs = dict(
             instructions=self.instructions,
             instructions_file_path=self.instructions_file_path,
             examples=deepcopy(self.examples),
-            embedding_cls=self.embedding_cls,
-            embedding_kwargs=deepcopy(self.embedding_kwargs),
+            embedding_spec=self.embedding_spec,
             example_selector_cls=self.example_selector_cls,
             example_prompt_template=deepcopy(self.example_prompt_template),
             k=self.k,
         )
+        if self.search_spec is not None:
+            kwargs["search_spec"] = self.search_spec
+        if self.reranker_spec is not None:
+            kwargs["reranker_spec"] = self.reranker_spec
+        return PromptManager(**kwargs)
 
     def __getstate__(self):
         """
         Custom pickling to exclude unpicklable embedding_function.
 
         The embedding_function contains threading locks that can't be pickled.
-        We'll recreate it when unpickling using embedding_cls and embedding_kwargs.
+        We'll recreate it when unpickling via setup_examples() using embedding_spec.
         """
         state = self.__dict__.copy()
         # Remove unpicklable objects
@@ -261,8 +265,8 @@ class PromptManager:
         prompt_dict = {
             "instructions": self.instructions,
             "k": self.k,  # Number of fewshot examples to retrieve
-            "embedding_cls": self.embedding_cls.__name__ if self.embedding_cls else None,
-            "embedding_kwargs": self.embedding_kwargs,  # Model name and config
+            "embedding_spec_cls": getattr(self.embedding_spec, "cls", None).__name__ if getattr(self.embedding_spec, "cls", None) else None,
+            "embedding_spec_kwargs": getattr(self.embedding_spec, "kwargs", None),
             "example_selector_cls": self.example_selector_cls.__name__ if self.example_selector_cls else None,
             "num_examples": len(self.examples) if self.examples else 0,
             # Hash the examples themselves to detect changes
