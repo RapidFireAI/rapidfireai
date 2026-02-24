@@ -28,7 +28,7 @@ from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 from rapidfireai.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.automl import get_runs, get_flattened_config_leaf
-from rapidfireai.evals.utils.serialize import extract_pipeline_config_json
+from rapidfireai.evals.utils.serialize import extract_pipeline_config_json, extract_pipeline_display_metadata
 
 class Controller:
     """
@@ -732,8 +732,15 @@ class Controller:
             if "model_name" in cumulative_metrics:
                 ordered_metrics["model_name"] = cumulative_metrics["model_name"]
 
-            hyperparam_keys = ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                             "sampling_params", "prompt_manager_k", "model_config"]
+            hyperparam_keys = [
+                "text_splitter", "chunk_size", "chunk_overlap",
+                "embedding_class", "embedding_model", "embedding_kwargs",
+                "vector_store", "search_type", "search_kwargs",
+                "reranker_class", "reranker_model", "reranker_top_n",
+                "gpu_search", "sampling_params",
+                "prompt_manager_k", "example_selector",
+                "generator_type", "preprocess_fn", "postprocess_fn", "model_config",
+            ]
             for key in hyperparam_keys:
                 if key in cumulative_metrics:
                     ordered_metrics[key] = cumulative_metrics[key]
@@ -929,72 +936,15 @@ class Controller:
         pipeline_info = []
         pipeline_configs = [pipeline_id_to_config[pipeline_id] for pipeline_id in pipeline_ids]
         for pipeline_id, pipeline_config in zip(pipeline_ids, pipeline_configs, strict=False):
-            # Initialize all variables to None
-            model_name = "Unknown"
-            search_type = None
-            rag_k = None
-            top_n = None
-            chunk_size = None
-            chunk_overlap = None
-            sampling_params = None
-            prompt_manager_k = None
-            model_config = None
+            metadata = extract_pipeline_display_metadata(pipeline_config)
+            model_name = metadata.pop("model_name", "Unknown")
 
-            # Extract model name from config
-            pipeline = pipeline_config["pipeline"]
-            if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-                if "model" in pipeline.model_config:
-                    model_name = pipeline.model_config["model"]
-                # Extract full model config (excluding the model name)
-                model_config_copy = pipeline.model_config.copy()
-                model_config_copy.pop("model", None)
-                if model_config_copy:  # Only assign if there are other configs
-                    model_config = model_config_copy
-
-            # Extract RAG-related fields
-            if hasattr(pipeline, "rag") and pipeline.rag is not None:
-                search_type = getattr(pipeline.rag, "search_type", None)
-                if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs is not None:
-                    rag_k = pipeline.rag.search_kwargs.get("k", None)
-                if hasattr(pipeline.rag, "reranker_kwargs") and pipeline.rag.reranker_kwargs is not None:
-                    top_n = pipeline.rag.reranker_kwargs.get("top_n", None)
-                if hasattr(pipeline.rag, "text_splitter") and pipeline.rag.text_splitter is not None:
-                    chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)
-                    chunk_overlap = getattr(pipeline.rag.text_splitter, "_chunk_overlap", None)
-
-            # Extract sampling params
-            if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
-                sampling_params = pipeline._user_params.get("sampling_params", None)
-
-            # Extract prompt_manager fields
-            if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
-                prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
-
-            # Build pipeline info dict with all fields (only include non-None values)
             pipeline_info_dict = {
                 "pipeline_id": pipeline_id,
                 "pipeline_config": pipeline_config,
                 "model_name": model_name,
             }
-
-            # Add optional fields only if they're not None
-            if search_type is not None:
-                pipeline_info_dict["search_type"] = search_type
-            if rag_k is not None:
-                pipeline_info_dict["rag_k"] = rag_k
-            if top_n is not None:
-                pipeline_info_dict["top_n"] = top_n
-            if chunk_size is not None:
-                pipeline_info_dict["chunk_size"] = chunk_size
-            if chunk_overlap is not None:
-                pipeline_info_dict["chunk_overlap"] = chunk_overlap
-            if sampling_params is not None:
-                pipeline_info_dict["sampling_params"] = sampling_params
-            if prompt_manager_k is not None:
-                pipeline_info_dict["prompt_manager_k"] = prompt_manager_k
-            if model_config is not None:
-                pipeline_info_dict["model_config"] = model_config
-
+            pipeline_info_dict.update(metadata)
             pipeline_info.append(pipeline_info_dict)
 
         progress_display = PipelineProgressDisplay(pipeline_info, num_shards)
@@ -1452,14 +1402,26 @@ class Controller:
             db.set_pipeline_current_shard(pipeline_id, shard_id)
 
         # PHASE 8: Compute final metrics for each pipeline
+        # Use pipeline_id_to_config keys (includes cloned pipelines added during execution)
+        all_pipeline_ids = list(pipeline_id_to_config.keys())
+
+        # Build pipeline_id_to_info for all pipelines (original + cloned)
         pipeline_id_to_info = {}
         for info_dict in pipeline_info:
-            pipeline_id = info_dict["pipeline_id"]
+            pid = info_dict["pipeline_id"]
             info_copy = {k: v for k, v in info_dict.items() if k not in ["pipeline_config", "pipeline_id"]}
-            pipeline_id_to_info[pipeline_id] = info_copy
+            pipeline_id_to_info[pid] = info_copy
+
+        # Add info for any cloned pipelines not in the original pipeline_info
+        for pid in all_pipeline_ids:
+            if pid not in pipeline_id_to_info:
+                cloned_metadata = extract_pipeline_display_metadata(pipeline_id_to_config[pid])
+                model_name = cloned_metadata.pop("model_name", "Unknown")
+                cloned_metadata["model_name"] = model_name
+                pipeline_id_to_info[pid] = cloned_metadata
 
         final_results = self._compute_final_metrics_for_pipelines(
-            pipeline_ids,
+            all_pipeline_ids,
             pipeline_id_to_config,
             pipeline_aggregators,
             pipeline_results,

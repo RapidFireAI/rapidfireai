@@ -7,6 +7,7 @@ from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
 from rapidfireai.automl.datatypes import List, Range
+from rapidfireai.automl.automl_utils import _is_valid_reranker_top_n_vs_k
 from rapidfireai.fit.utils.exceptions import AutoMLException
 
 
@@ -234,6 +235,10 @@ class RFRandomSearch(AutoMLAlgorithm):
                             **additional_kwargs,
                         }
 
+                        # Skip if reranker top_n > k (invalid: top_n must be <= k)
+                        if not _is_valid_reranker_top_n_vs_k(pipeline_instance):
+                            continue
+
                         # Check for duplicates using hashable representation
                         config_hash = encode_payload(leaf)
                         if config_hash not in seen_configs:
@@ -254,6 +259,8 @@ class RFRandomSearch(AutoMLAlgorithm):
             raise AutoMLException(
                 f"Could not generate {self.num_runs} unique configurations. "
                 f"Generated {len(runs)} unique configs after {attempts} attempts. "
+                "When using a reranker with top_n, top_n must be <= k (search_kwargs.k). "
+                "Only add top_n values that are less than or equal to k."
             )
 
         return runs

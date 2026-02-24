@@ -5,6 +5,7 @@ from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
 from rapidfireai.automl.datatypes import List
+from rapidfireai.automl.automl_utils import filter_evals_runs_valid_reranker
 from rapidfireai.fit.utils.exceptions import AutoMLException
 
 
@@ -209,4 +210,4 @@ class RFGridSearch(AutoMLAlgorithm):
                         }
                         runs.append(leaf)
 
-        return runs
+        return filter_evals_runs_valid_reranker(runs)
