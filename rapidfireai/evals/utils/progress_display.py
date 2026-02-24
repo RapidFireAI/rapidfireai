@@ -167,14 +167,11 @@ class PipelineProgressDisplay:
                       - pipeline_id (required)
                       - pipeline_config (required)
                       - model_name (required)
-                      - search_type (optional)
-                      - rag_k (optional)
-                      - top_n (optional)
-                      - chunk_size (optional)
-                      - chunk_overlap (optional)
-                      - sampling_params (optional)
-                      - prompt_manager_k (optional)
-                      - model_config (optional)
+                      - text_splitter, chunk_size, chunk_overlap (optional)
+                      - embedding_class, embedding_model, embedding_kwargs (optional)
+                      - vector_store, search_type, search_kwargs (optional)
+                      - reranker_class, reranker_model, reranker_top_n (optional)
+                      - gpu_search, sampling_params, prompt_manager_k, model_config (optional)
             num_shards: Total number of shards
         """
         self.pipelines = pipelines
@@ -201,8 +198,15 @@ class PipelineProgressDisplay:
 
             # Store additional metadata fields (only non-None values)
             metadata = {}
-            for key in ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                       "sampling_params", "prompt_manager_k", "model_config"]:
+            for key in [
+                "text_splitter", "chunk_size", "chunk_overlap",
+                "embedding_class", "embedding_model", "embedding_kwargs",
+                "vector_store", "search_type", "search_kwargs",
+                "reranker_class", "reranker_model", "reranker_top_n",
+                "gpu_search", "sampling_params",
+                "prompt_manager_k",  "example_selector",
+                "model_config",
+            ]:
                 if key in pipeline_info:
                     metadata[key] = pipeline_info[key]
             self.pipeline_metadata[pid] = metadata
@@ -241,8 +245,15 @@ class PipelineProgressDisplay:
             all_metadata_fields.update(metadata.keys())
 
         # Define display order for metadata fields
-        metadata_precedence = ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                              "sampling_params", "prompt_manager_k", "model_config"]
+        metadata_precedence = [
+            "text_splitter", "chunk_size", "chunk_overlap",
+            "embedding_class", "embedding_model", "embedding_kwargs",
+            "vector_store", "search_type", "search_kwargs",
+            "reranker_class", "reranker_model", "reranker_top_n",
+            "gpu_search", "sampling_params",
+            "prompt_manager_k",  "example_selector",
+            "model_config",
+        ]
         ordered_metadata = []
         remaining_metadata = []
 
@@ -360,11 +371,9 @@ class PipelineProgressDisplay:
         if value is None:
             return "-"
 
-        # Handle dict values (like sampling_params, model_config)
+        # Handle dict values (like sampling_params, model_config, search_kwargs, embedding_kwargs)
         if isinstance(value, dict):
-            # Format as compact JSON-like string
             if field_name == "sampling_params":
-                # Format sampling params more nicely
                 parts = []
                 if "temperature" in value:
                     parts.append(f"temp={value['temperature']}")
@@ -374,22 +383,25 @@ class PipelineProgressDisplay:
                     parts.append(f"top_k={value['top_k']}")
                 if "max_tokens" in value:
                     parts.append(f"max_t={value['max_tokens']}")
-                # If we have formatted parts, use them, otherwise show abbreviated dict
-                if parts:
-                    return ", ".join(parts)
-                else:
-                    return str(value)[:50]  # Truncate long dicts
+                return ", ".join(parts) if parts else str(value)[:50]
             elif field_name == "model_config":
-                # Format model config as key=value pairs
                 parts = [f"{k}={v}" for k, v in value.items() if k != "model"]
                 return ", ".join(parts) if parts else "-"
+            elif field_name == "search_kwargs":
+                parts = [f"{k}={v}" for k, v in value.items() if v is not None]
+                return ", ".join(parts) if parts else "-"
+            elif field_name == "embedding_kwargs":
+                return self._format_nested_dict(value)
             else:
-                # Default dict formatting
-                return str(value)[:50]  # Truncate long dicts
+                return str(value)[:50]
+
+        # Handle boolean values
+        if isinstance(value, bool):
+            return str(value)
 
         # Handle list values
         if isinstance(value, list):
-            return f"[{', '.join(str(v) for v in value[:5])}]"  # Show first 5 items
+            return f"[{', '.join(str(v) for v in value[:5])}]"
 
         # Handle numeric values
         if isinstance(value, (int, float)):
@@ -399,8 +411,19 @@ class PipelineProgressDisplay:
         if isinstance(value, str):
             return value
 
-        # Fallback: convert to string
         return str(value)
+
+    @staticmethod
+    def _format_nested_dict(d: dict) -> str:
+        """Format a nested dict compactly, preserving one level of nesting."""
+        parts = []
+        for k, v in d.items():
+            if isinstance(v, dict):
+                inner = ", ".join(f"{ik}={iv}" for ik, iv in v.items())
+                parts.append(f"{k}={{{inner}}}")
+            else:
+                parts.append(f"{k}={v}")
+        return ", ".join(parts)
 
     def start(self):
         """Start the live display."""
@@ -523,8 +546,15 @@ class PipelineProgressDisplay:
 
         # Store metadata
         metadata_dict = {}
-        for key in ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                   "sampling_params", "prompt_manager_k", "model_config"]:
+        for key in [
+            "text_splitter", "chunk_size", "chunk_overlap",
+            "embedding_class", "embedding_model", "embedding_kwargs",
+            "vector_store", "search_type", "search_kwargs",
+            "reranker_class", "reranker_model", "reranker_top_n",
+            "gpu_search", "sampling_params",
+            "prompt_manager_k",  "example_selector",
+            "model_config",
+        ]:
             if key in pipeline_info_dict:
                 metadata_dict[key] = pipeline_info_dict[key]
         self.pipeline_metadata[pipeline_id] = metadata_dict
