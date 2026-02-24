@@ -1,5 +1,6 @@
 """Contains classes for representing hyperparameter data types."""
 
+import copy
 import random
 from typing import Any
 
@@ -50,6 +51,7 @@ class EmbeddingSpec:
     def __init__(self, cls: type, kwargs: dict[str, Any] | None = None):
         self.cls = cls
         self.kwargs = kwargs or {}
+        self._user_params = {"cls": cls, "kwargs": copy.deepcopy(self.kwargs)}
 
     def create(self):
         """Instantiate the embedding model using cls and kwargs."""
@@ -62,6 +64,7 @@ class RerankSpec:
     def __init__(self, cls: type, kwargs: dict[str, Any] | None = None):
         self.cls = cls
         self.kwargs = kwargs or {}
+        self._user_params = {"cls": cls, "kwargs": copy.deepcopy(self.kwargs)}
 
 
 class SearchSpec:
@@ -73,3 +76,7 @@ class SearchSpec:
             raise ValueError(f"search_type must be one of {valid_search_types}, got: {search_type}")
         self.search_type = search_type
         self.search_kwargs = search_kwargs or {}
+        self._user_params = {
+            "search_type": self.search_type,
+            "search_kwargs": copy.deepcopy(self.search_kwargs),
+        }
