@@ -794,12 +794,10 @@ class Controller:
 
                             if isinstance(metric_data, dict):
                                 metric_value = metric_data.get("value", 0)
-                                lower_bound = metric_data.get("lower_bound")
-                                upper_bound = metric_data.get("upper_bound")
+                                confidence_interval = metric_data.get("confidence_interval")
                             else:
                                 metric_value = metric_data
-                                lower_bound = None
-                                upper_bound = None
+                                confidence_interval = None
 
                             # Log main metric value
                             if isinstance(metric_value, (int, float)):
@@ -808,19 +806,12 @@ class Controller:
                                 except Exception as e:
                                     self.logger.debug(f"Failed to log final metric {metric_name} to MetricLogger: {e}")
 
-                            # Log lower_bound if available
-                            if lower_bound is not None and isinstance(lower_bound, (int, float)):
+                            # Log confidence_interval if available
+                            if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
                                 try:
-                                    self.metric_manager.log_metric(metric_run_id, f"{metric_name}_lower_bound", float(lower_bound), step=step)
+                                    self.metric_manager.log_metric(metric_run_id, f"{metric_name}_confidence_interval", float(confidence_interval), step=step)
                                 except Exception as e:
-                                    self.logger.debug(f"Failed to log final metric {metric_name}_lower_bound to MetricLogger: {e}")
-
-                            # Log upper_bound if available
-                            if upper_bound is not None and isinstance(upper_bound, (int, float)):
-                                try:
-                                    self.metric_manager.log_metric(metric_run_id, f"{metric_name}_upper_bound", float(upper_bound), step=step)
-                                except Exception as e:
-                                    self.logger.debug(f"Failed to log final metric {metric_name}_upper_bound to MetricLogger: {e}")
+                                    self.logger.debug(f"Failed to log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
                         try:
                             self.metric_manager.end_run(metric_run_id)
@@ -1199,12 +1190,10 @@ class Controller:
 
                                             if isinstance(metric_data, dict):
                                                 metric_value = metric_data.get("value", 0)
-                                                lower_bound = metric_data.get("lower_bound")
-                                                upper_bound = metric_data.get("upper_bound")
+                                                confidence_interval = metric_data.get("confidence_interval")
                                             else:
                                                 metric_value = metric_data
-                                                lower_bound = None
-                                                upper_bound = None
+                                                confidence_interval = None
 
                                             # Log main metric value
                                             if isinstance(metric_value, (int, float)):
@@ -1213,19 +1202,12 @@ class Controller:
                                                 except Exception as e:
                                                     self.logger.debug(f"Failed to log metric {metric_name} to MetricLogger: {e}")
 
-                                            # Log lower_bound if available
-                                            if lower_bound is not None and isinstance(lower_bound, (int, float)):
+                                            # Log confidence_interval if available
+                                            if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
                                                 try:
-                                                    self.metric_manager.log_metric(metric_run_id, f"{metric_name}_lower_bound", float(lower_bound), step=step)
+                                                    self.metric_manager.log_metric(metric_run_id, f"{metric_name}_confidence_interval", float(confidence_interval), step=step)
                                                 except Exception as e:
-                                                    self.logger.debug(f"Failed to log metric {metric_name}_lower_bound to MetricLogger: {e}")
-
-                                            # Log upper_bound if available
-                                            if upper_bound is not None and isinstance(upper_bound, (int, float)):
-                                                try:
-                                                    self.metric_manager.log_metric(metric_run_id, f"{metric_name}_upper_bound", float(upper_bound), step=step)
-                                                except Exception as e:
-                                                    self.logger.debug(f"Failed to log metric {metric_name}_upper_bound to MetricLogger: {e}")
+                                                    self.logger.debug(f"Failed to log metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
                                         if "Throughput" in display_metrics:
                                             throughput_value = display_metrics["Throughput"]["value"]
