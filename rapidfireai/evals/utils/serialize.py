@@ -26,6 +26,12 @@ def extract_pipeline_display_metadata(pipeline_config: dict[str, Any]) -> dict[s
             metadata["model_config"] = model_config_copy
     metadata["model_name"] = model_name
 
+    # Generator type (vLLM or OpenAI)
+    if RFvLLMModelConfig is not None and isinstance(pipeline, RFvLLMModelConfig):
+        metadata["generator_type"] = "vLLM"
+    elif RFOpenAIAPIModelConfig is not None and isinstance(pipeline, RFOpenAIAPIModelConfig):
+        metadata["generator_type"] = "OpenAI"
+
     # --- RAG-related fields ---
     if hasattr(pipeline, "rag") and pipeline.rag is not None:
         rag = pipeline.rag

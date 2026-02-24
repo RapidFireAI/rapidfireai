@@ -204,8 +204,8 @@ class PipelineProgressDisplay:
                 "vector_store", "search_type", "search_kwargs",
                 "reranker_class", "reranker_model", "reranker_top_n",
                 "gpu_search", "sampling_params",
-                "prompt_manager_k",  "example_selector",
-                "model_config",
+                "prompt_manager_k", "example_selector",
+                "generator_type", "model_config",
             ]:
                 if key in pipeline_info:
                     metadata[key] = pipeline_info[key]
@@ -251,8 +251,8 @@ class PipelineProgressDisplay:
             "vector_store", "search_type", "search_kwargs",
             "reranker_class", "reranker_model", "reranker_top_n",
             "gpu_search", "sampling_params",
-            "prompt_manager_k",  "example_selector",
-            "model_config",
+            "prompt_manager_k", "example_selector",
+            "generator_type", "model_config",
         ]
         ordered_metadata = []
         remaining_metadata = []
@@ -552,8 +552,8 @@ class PipelineProgressDisplay:
             "vector_store", "search_type", "search_kwargs",
             "reranker_class", "reranker_model", "reranker_top_n",
             "gpu_search", "sampling_params",
-            "prompt_manager_k",  "example_selector",
-            "model_config",
+            "prompt_manager_k", "example_selector",
+            "generator_type", "model_config",
         ]:
             if key in pipeline_info_dict:
                 metadata_dict[key] = pipeline_info_dict[key]

@@ -739,7 +739,7 @@ class Controller:
                 "reranker_class", "reranker_model", "reranker_top_n",
                 "gpu_search", "sampling_params",
                 "prompt_manager_k", "example_selector",
-                "model_config",
+                "generator_type", "model_config",
             ]
             for key in hyperparam_keys:
                 if key in cumulative_metrics:
