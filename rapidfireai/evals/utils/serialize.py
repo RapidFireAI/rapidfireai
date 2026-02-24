@@ -119,6 +119,14 @@ def extract_pipeline_display_metadata(pipeline_config: dict[str, Any]) -> dict[s
         if pm_selector is not None:
             metadata["example_selector"] = pm_selector.__name__
 
+    # Data processing functions (show function name)
+    preprocess_fn = pipeline_config.get("preprocess_fn")
+    if preprocess_fn is not None and callable(preprocess_fn):
+        metadata["preprocess_fn"] = getattr(preprocess_fn, "__name__", str(preprocess_fn))
+    postprocess_fn = pipeline_config.get("postprocess_fn")
+    if postprocess_fn is not None and callable(postprocess_fn):
+        metadata["postprocess_fn"] = getattr(postprocess_fn, "__name__", str(postprocess_fn))
+
     return metadata
 
 
