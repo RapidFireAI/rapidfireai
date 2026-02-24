@@ -17,6 +17,7 @@ from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.evals.scheduling.scheduler import Scheduler
 from rapidfireai.automl import ModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import (
+    HYPERPARAM_DISPLAY_KEYS,
     NUM_CPUS_PER_DOC_ACTOR,
     NUM_QUERY_PROCESSING_ACTORS,
     ContextStatus,
@@ -29,6 +30,8 @@ from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, Pip
 from rapidfireai.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.automl import get_runs, get_flattened_config_leaf
 from rapidfireai.evals.utils.serialize import extract_pipeline_config_json
+from rapidfireai.evals.utils.user_config import extract_pipeline_user_config as _extract_pipeline_user_config_fn
+
 
 class Controller:
     """
@@ -650,69 +653,27 @@ class Controller:
 
         return pipeline_ids, pipeline_id_to_config
 
+    def _extract_pipeline_user_config(self, pipeline: Any) -> dict:
+        """Delegate to shared extractor for display in tables and final results."""
+        return _extract_pipeline_user_config_fn(pipeline)
+
     def _build_pipeline_info_dict(self, pipeline_id: int, pipeline_config: dict) -> dict:
         """
-        Build a pipeline info dict (model_name, search_type, rag_k, etc.) from config.
+        Build a pipeline info dict (model_name, user config knobs) from config.
         Used for progress display and for pipeline_id_to_info when including cloned pipelines.
         """
         pipeline = pipeline_config["pipeline"]
         model_name = "Unknown"
-        search_type = None
-        rag_k = None
-        top_n = None
-        chunk_size = None
-        chunk_overlap = None
-        sampling_params = None
-        prompt_manager_k = None
-        model_config = None
-
         if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
             if "model" in pipeline.model_config:
                 model_name = pipeline.model_config["model"]
-            model_config_copy = pipeline.model_config.copy()
-            model_config_copy.pop("model", None)
-            if model_config_copy:
-                model_config = model_config_copy
 
-        if hasattr(pipeline, "rag") and pipeline.rag is not None:
-            rag = pipeline.rag
-            if hasattr(rag, "search_spec") and rag.search_spec is not None:
-                search_type = getattr(rag.search_spec, "search_type", None)
-                rag_k = (rag.search_spec.search_kwargs or {}).get("k", None)
-            else:
-                search_type = getattr(rag, "search_type", None)
-                if hasattr(rag, "search_kwargs") and rag.search_kwargs is not None:
-                    rag_k = rag.search_kwargs.get("k", None)
-            if hasattr(rag, "reranker_spec") and rag.reranker_spec is not None:
-                top_n = (rag.reranker_spec.kwargs or {}).get("top_n", None)
-            elif hasattr(rag, "reranker_kwargs") and rag.reranker_kwargs is not None:
-                top_n = rag.reranker_kwargs.get("top_n", None)
-            if hasattr(rag, "text_splitter") and rag.text_splitter is not None:
-                chunk_size = getattr(rag.text_splitter, "_chunk_size", None)
-                chunk_overlap = getattr(rag.text_splitter, "_chunk_overlap", None)
-
-        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
-            sampling_params = getattr(pipeline, "_user_params", {}).get("sampling_params", None)
-        if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
-            prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
-
-        out = {"pipeline_id": pipeline_id, "pipeline_config": pipeline_config, "model_name": model_name}
-        if search_type is not None:
-            out["search_type"] = search_type
-        if rag_k is not None:
-            out["rag_k"] = rag_k
-        if top_n is not None:
-            out["top_n"] = top_n
-        if chunk_size is not None:
-            out["chunk_size"] = chunk_size
-        if chunk_overlap is not None:
-            out["chunk_overlap"] = chunk_overlap
-        if sampling_params is not None:
-            out["sampling_params"] = sampling_params
-        if prompt_manager_k is not None:
-            out["prompt_manager_k"] = prompt_manager_k
-        if model_config is not None:
-            out["model_config"] = model_config
+        out: dict[str, Any] = {
+            "pipeline_id": pipeline_id,
+            "pipeline_config": pipeline_config,
+            "model_name": model_name,
+        }
+        out.update(self._extract_pipeline_user_config(pipeline))
         return out
 
     def _compute_final_metrics_for_pipelines(
@@ -808,16 +769,14 @@ class Controller:
             if "model_name" in cumulative_metrics:
                 ordered_metrics["model_name"] = cumulative_metrics["model_name"]
 
-            hyperparam_keys = ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                             "sampling_params", "prompt_manager_k", "model_config"]
-            for key in hyperparam_keys:
+            for key in HYPERPARAM_DISPLAY_KEYS:
                 if key in cumulative_metrics:
                     ordered_metrics[key] = cumulative_metrics[key]
 
             if "Samples Processed" in cumulative_metrics:
                 ordered_metrics["Samples Processed"] = cumulative_metrics["Samples Processed"]
 
-            excluded_keys = {"run_id", "model_name", "Samples Processed"} | set(hyperparam_keys)
+            excluded_keys = {"run_id", "model_name", "Samples Processed"} | set(HYPERPARAM_DISPLAY_KEYS)
             for key, value in cumulative_metrics.items():
                 if key not in excluded_keys:
                     ordered_metrics[key] = value
@@ -1001,76 +960,21 @@ class Controller:
             pipeline_aggregators[pipeline_id] = aggregator
             pipeline_results[pipeline_id] = {"results": {}, "metrics": {}, "start_time": None}
 
-        # Initialize progress display table
+        # Initialize progress display table (use shared user-config extraction)
         pipeline_info = []
         pipeline_configs = [pipeline_id_to_config[pipeline_id] for pipeline_id in pipeline_ids]
         for pipeline_id, pipeline_config in zip(pipeline_ids, pipeline_configs, strict=False):
-            # Initialize all variables to None
-            model_name = "Unknown"
-            search_type = None
-            rag_k = None
-            top_n = None
-            chunk_size = None
-            chunk_overlap = None
-            sampling_params = None
-            prompt_manager_k = None
-            model_config = None
-
-            # Extract model name from config
             pipeline = pipeline_config["pipeline"]
+            model_name = "Unknown"
             if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
                 if "model" in pipeline.model_config:
                     model_name = pipeline.model_config["model"]
-                # Extract full model config (excluding the model name)
-                model_config_copy = pipeline.model_config.copy()
-                model_config_copy.pop("model", None)
-                if model_config_copy:  # Only assign if there are other configs
-                    model_config = model_config_copy
-
-            # Extract RAG-related fields
-            if hasattr(pipeline, "rag") and pipeline.rag is not None:
-                search_type = getattr(pipeline.rag, "search_type", None)
-                if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs is not None:
-                    rag_k = pipeline.rag.search_kwargs.get("k", None)
-                if hasattr(pipeline.rag, "reranker_kwargs") and pipeline.rag.reranker_kwargs is not None:
-                    top_n = pipeline.rag.reranker_kwargs.get("top_n", None)
-                if hasattr(pipeline.rag, "text_splitter") and pipeline.rag.text_splitter is not None:
-                    chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)
-                    chunk_overlap = getattr(pipeline.rag.text_splitter, "_chunk_overlap", None)
-
-            # Extract sampling params
-            if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
-                sampling_params = pipeline._user_params.get("sampling_params", None)
-
-            # Extract prompt_manager fields
-            if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
-                prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
-
-            # Build pipeline info dict with all fields (only include non-None values)
             pipeline_info_dict = {
                 "pipeline_id": pipeline_id,
                 "pipeline_config": pipeline_config,
                 "model_name": model_name,
             }
-
-            # Add optional fields only if they're not None
-            if search_type is not None:
-                pipeline_info_dict["search_type"] = search_type
-            if rag_k is not None:
-                pipeline_info_dict["rag_k"] = rag_k
-            if top_n is not None:
-                pipeline_info_dict["top_n"] = top_n
-            if chunk_size is not None:
-                pipeline_info_dict["chunk_size"] = chunk_size
-            if chunk_overlap is not None:
-                pipeline_info_dict["chunk_overlap"] = chunk_overlap
-            if sampling_params is not None:
-                pipeline_info_dict["sampling_params"] = sampling_params
-            if prompt_manager_k is not None:
-                pipeline_info_dict["prompt_manager_k"] = prompt_manager_k
-            if model_config is not None:
-                pipeline_info_dict["model_config"] = model_config
-
+            pipeline_info_dict.update(self._extract_pipeline_user_config(pipeline))
             pipeline_info.append(pipeline_info_dict)
 
         progress_display = PipelineProgressDisplay(pipeline_info, num_shards)

@@ -24,8 +24,6 @@ class PromptManager:
         instructions_file_path (str): Path to a file containing instructions.
         examples (List[Dict[str, str]]): List of example dictionaries for few-shot learning.
         embedding_spec: EmbeddingSpec (cls + kwargs), same unified type as RFLangChainRagSpec.
-        search_spec: Optional SearchSpec; with RFPromptManager kept in _user_params for AutoML expansion.
-        reranker_spec: Optional RerankSpec; with RFPromptManager kept in _user_params for AutoML expansion.
         example_selector_cls (Type[Union[MaxMarginalRelevanceExampleSelector, SemanticSimilarityExampleSelector]]):
             Class for creating example selectors.
         example_prompt_template (PromptTemplate): Template for formatting individual examples.
@@ -40,8 +38,6 @@ class PromptManager:
         instructions_file_path: str = "",
         examples: list[dict[str, str]] = [],
         embedding_spec: Any = None,
-        search_spec: Any = None,
-        reranker_spec: Any = None,
         example_selector_cls: type[MaxMarginalRelevanceExampleSelector | SemanticSimilarityExampleSelector] = None,
         example_prompt_template: PromptTemplate = None,
         k: int = 3,
@@ -57,9 +53,7 @@ class PromptManager:
             examples (List[Dict[str, str]]): List of example dictionaries for few-shot learning.
                 Each dictionary should contain the example data (e.g., {'input': '...', 'output': '...'}).
             embedding_spec: EmbeddingSpec (cls + kwargs), same unified type as RFLangChainRagSpec.
-                Required for few-shot; with RFPromptManager kept in _user_params for AutoML expansion.
-            search_spec: Optional SearchSpec; with RFPromptManager kept in _user_params for AutoML expansion.
-            reranker_spec: Optional RerankSpec; with RFPromptManager kept in _user_params for AutoML expansion.
+                Required for few-shot.
             example_selector_cls (Type[Union[MaxMarginalRelevanceExampleSelector, SemanticSimilarityExampleSelector]]):
                 Class for creating example selectors. Must be either MaxMarginalRelevanceExampleSelector
                 or SemanticSimilarityExampleSelector.
@@ -75,8 +69,6 @@ class PromptManager:
         self.instructions_file_path = instructions_file_path
         self.examples = examples
         self.embedding_spec = embedding_spec
-        self.search_spec = search_spec
-        self.reranker_spec = reranker_spec
         self.example_selector_cls = example_selector_cls
         self.example_prompt_template = example_prompt_template
         self.k = k
@@ -214,7 +206,7 @@ class PromptManager:
             The copied instance will need to be set up by calling
             setup_examples() before it can be used to generate examples.
         """
-        kwargs = dict(
+        return PromptManager(
             instructions=self.instructions,
             instructions_file_path=self.instructions_file_path,
             examples=deepcopy(self.examples),
@@ -223,11 +215,6 @@ class PromptManager:
             example_prompt_template=deepcopy(self.example_prompt_template),
             k=self.k,
         )
-        if self.search_spec is not None:
-            kwargs["search_spec"] = self.search_spec
-        if self.reranker_spec is not None:
-            kwargs["reranker_spec"] = self.reranker_spec
-        return PromptManager(**kwargs)
 
     def __getstate__(self):
         """

@@ -167,14 +167,11 @@ class PipelineProgressDisplay:
                       - pipeline_id (required)
                       - pipeline_config (required)
                       - model_name (required)
-                      - search_type (optional)
-                      - rag_k (optional)
-                      - top_n (optional)
-                      - chunk_size (optional)
-                      - chunk_overlap (optional)
-                      - sampling_params (optional)
-                      - prompt_manager_k (optional)
-                      - model_config (optional)
+                      - plus any user-config keys (search_type, search_kwargs,
+                        embedding_cls, embedding_kwargs, reranker_cls, reranker_kwargs,
+                        text_splitter_params, vector_store_name, sampling_params,
+                        prompt_manager_k, prompt_manager_embedding_cls, prompt_manager_embedding_kwargs,
+                        prompt_manager_example_selector_cls, model_config)
             num_shards: Total number of shards
         """
         self.pipelines = pipelines
@@ -199,12 +196,9 @@ class PipelineProgressDisplay:
                 "status": "ONGOING",
             }
 
-            # Store additional metadata fields (only non-None values)
-            metadata = {}
-            for key in ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                       "sampling_params", "prompt_manager_k", "model_config"]:
-                if key in pipeline_info:
-                    metadata[key] = pipeline_info[key]
+            # Store all user-config metadata (all keys except pipeline_id, pipeline_config, model_name)
+            _skip = {"pipeline_id", "pipeline_config", "model_name"}
+            metadata = {k: v for k, v in pipeline_info.items() if k not in _skip}
             self.pipeline_metadata[pid] = metadata
 
         self.display_handle = None
@@ -240,9 +234,9 @@ class PipelineProgressDisplay:
             metadata = self.pipeline_metadata.get(pid, {})
             all_metadata_fields.update(metadata.keys())
 
-        # Define display order for metadata fields
-        metadata_precedence = ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                              "sampling_params", "prompt_manager_k", "model_config"]
+        # Define display order for metadata fields (match controller's user-config order)
+        from rapidfireai.evals.utils.constants import HYPERPARAM_DISPLAY_KEYS
+        metadata_precedence = HYPERPARAM_DISPLAY_KEYS
         ordered_metadata = []
         remaining_metadata = []
 
@@ -360,11 +354,10 @@ class PipelineProgressDisplay:
         if value is None:
             return "-"
 
-        # Handle dict values (like sampling_params, model_config)
+        # Handle dict values (like sampling_params, model_config, nested user-config)
         if isinstance(value, dict):
-            # Format as compact JSON-like string
+            # Format as compact string
             if field_name == "sampling_params":
-                # Format sampling params more nicely
                 parts = []
                 if "temperature" in value:
                     parts.append(f"temp={value['temperature']}")
@@ -383,9 +376,27 @@ class PipelineProgressDisplay:
                 # Format model config as key=value pairs
                 parts = [f"{k}={v}" for k, v in value.items() if k != "model"]
                 return ", ".join(parts) if parts else "-"
+            elif field_name == "text_splitter_params":
+                t = value.get("text_splitter_type", "")
+                cs = value.get("chunk_size")
+                co = value.get("chunk_overlap")
+                parts = [t] if t else []
+                if cs is not None:
+                    parts.append(f"chunk_size={cs}")
+                if co is not None:
+                    parts.append(f"overlap={co}")
+                return ", ".join(parts) if parts else "-"
+            elif field_name in (
+                "embedding_kwargs",
+                "search_kwargs",
+                "reranker_kwargs",
+                "prompt_manager_embedding_kwargs",
+            ):
+                parts = [f"{k}={v}" for k, v in value.items()]
+                s = ", ".join(parts)
+                return s[:50] + "..." if len(s) > 50 else (s if s else "-")
             else:
-                # Default dict formatting
-                return str(value)[:50]  # Truncate long dicts
+                return str(value)[:50]
 
         # Handle list values
         if isinstance(value, list):
@@ -521,12 +532,9 @@ class PipelineProgressDisplay:
             "status": status,
         }
 
-        # Store metadata
-        metadata_dict = {}
-        for key in ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                   "sampling_params", "prompt_manager_k", "model_config"]:
-            if key in pipeline_info_dict:
-                metadata_dict[key] = pipeline_info_dict[key]
+        # Store metadata (all user-config keys except pipeline_id, pipeline_config, model_name)
+        _skip = {"pipeline_id", "pipeline_config", "model_name"}
+        metadata_dict = {k: v for k, v in pipeline_info_dict.items() if k not in _skip}
         self.pipeline_metadata[pipeline_id] = metadata_dict
 
         # Re-render the display

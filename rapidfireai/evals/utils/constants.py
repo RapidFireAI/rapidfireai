@@ -130,3 +130,22 @@ class DBConfig:
     DEFAULT_MAX_RETRIES: int = 3
     DEFAULT_BASE_DELAY: float = 0.1
     DEFAULT_MAX_DELAY: float = 1.0
+
+
+# User config / hyperparam keys shown in eval tables (live metrics, final metrics, final results).
+HYPERPARAM_DISPLAY_KEYS = [
+    "search_type",
+    "search_kwargs",
+    "embedding_cls",
+    "embedding_kwargs",
+    "reranker_cls",
+    "reranker_kwargs",
+    "text_splitter_params",
+    "vector_store_name",
+    "sampling_params",
+    "prompt_manager_k",
+    "prompt_manager_embedding_cls",
+    "prompt_manager_embedding_kwargs",
+    "prompt_manager_example_selector_cls",
+    "model_config",
+]
