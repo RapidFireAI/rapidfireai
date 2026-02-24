@@ -12,6 +12,9 @@ from transformers import (
 )
 from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
+from rapidfireai.fit.ml.checkpoint_utils import flush_cuda_cache, purge_model_kv_caches
+from rapidfireai.fit.utils.logging import RFLogger
+
 
 class GenerationMetricsCallback(TrainerCallback):
     def __init__(
@@ -43,8 +46,8 @@ class GenerationMetricsCallback(TrainerCallback):
         self.completed_steps = completed_steps
         self.use_fsdp = use_fsdp
 
-        # Always force use_cache=True (model may have it disabled for FSDP training)
-        self.generation_config["use_cache"] = True
+        # Let caller/model defaults decide on KV cache (can cause OOM)
+        self.generation_config.pop("use_cache", None)
 
     def on_evaluate(
         self,
@@ -57,7 +60,19 @@ class GenerationMetricsCallback(TrainerCallback):
         if model is None:
             return
 
-        metrics = self._compute_generation_metrics(model, state.global_step)
+        step = self.completed_steps + state.global_step
+
+        try:
+            metrics = self._compute_generation_metrics(model, state.global_step)
+        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+            if not isinstance(e, torch.cuda.OutOfMemoryError) and "out of memory" not in str(e).lower():
+                raise  # Re-raise non-OOM RuntimeErrors
+            model.train()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+            gc.collect()
+            return
 
         # Ensure metrics are added to log history
         if hasattr(state, "log_history") and state.log_history:
@@ -78,13 +93,12 @@ class GenerationMetricsCallback(TrainerCallback):
                     step=step,
                 )
 
-        # Critical: Switch model back to training mode and ensure training state is restored
+        # Switch model back to training mode
         model.train()
-        # Clear any cached computation graphs or compiled model states
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-        gc.collect()
+
+        if self.use_fsdp:
+            purge_model_kv_caches(model)
+        flush_cuda_cache()
 
     def _prepare_data(self, eval_dataset: Dataset) -> tuple:
         """Prepare batch data for generation with defensive validation"""
@@ -155,12 +169,7 @@ class GenerationMetricsCallback(TrainerCallback):
         generated_ids: torch.Tensor,
         eos_token_ids: list[int],
     ) -> torch.Tensor:
-        """Truncate each sequence at the first EOS token (token-level).
-
-        Replaces every token after the first EOS with ``pad=0`` so that
-        ``batch_decode(skip_special_tokens=True)`` produces clean text
-        without post-EOS garbage.
-        """
+        """Replace tokens after the first EOS with pad=0 for clean decoding."""
         generated_ids = generated_ids.clone()
         for eos_id in eos_token_ids:
             mask = generated_ids == eos_id  # (batch, seq_len)
@@ -181,8 +190,7 @@ class GenerationMetricsCallback(TrainerCallback):
         generation_config: dict | None = None,
         eos_token_ids: list[int] | None = None,
     ) -> tuple[list[str], list[str]]:
-        """Run the autoregressive generation loop over batches and return predictions + references.
-        """
+        """Run autoregressive generation over batches and return predictions + references."""
         predictions = []
         references = []
         num_samples = input_ids.shape[0]
@@ -200,12 +208,10 @@ class GenerationMetricsCallback(TrainerCallback):
                 with torch.inference_mode(), torch.amp.autocast("cuda"):
                     outputs_batch = model.generate(input_ids_batch, **gen_config)
 
-                # Slice to only the newly generated tokens
+                # Keep only newly generated tokens
                 new_tokens = outputs_batch[:, input_ids_batch.shape[1] :]
 
-                # Truncate at real EOS before decoding (FSDP path disables
-                # eos_token_id to keep ranks in sync, so generated sequences
-                # may contain tokens past the natural stopping point).
+                # Truncate at real EOS (disabled during FSDP generation to keep ranks in sync)
                 if eos_token_ids:
                     new_tokens = self._truncate_at_eos(new_tokens, eos_token_ids)
 
@@ -216,8 +222,7 @@ class GenerationMetricsCallback(TrainerCallback):
                 predictions.extend(generated_texts)
                 references.extend(batch_references[i : i + batch_size])
 
-                # Free GPU tensors from this batch immediately to avoid
-                # accumulating KV-cache / output memory across batches.
+                # Free GPU tensors from this batch immediately
                 del outputs_batch, input_ids_batch, new_tokens
                 torch.cuda.empty_cache()
 
@@ -227,8 +232,12 @@ class GenerationMetricsCallback(TrainerCallback):
         return predictions, references
 
     def _compute_generation_metrics(self, model, step: int) -> dict[str, float]:
-        """Generate text and compute BLEU/ROUGE metrics with batch processing.
-        """
+        """Generate text and compute BLEU/ROUGE metrics."""
+        # Free cached memory before generation (more memory-intensive than training)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
         model.eval()
 
         # Prepare data
@@ -244,15 +253,6 @@ class GenerationMetricsCallback(TrainerCallback):
         if input_ids.numel() == 0:
             return {}
 
-        # Enable KV cache for generation (model may have use_cache=False for FSDP training)
-        original_config_use_cache = getattr(model.config, "use_cache", False)
-        original_genconfig_use_cache = getattr(
-            getattr(model, "generation_config", None), "use_cache", None
-        )
-        model.config.use_cache = True
-        if hasattr(model, "generation_config") and model.generation_config is not None:
-            model.generation_config.use_cache = True
-
         # Use a larger batch size for generation (training batch_size=1 is wasteful here)
         gen_batch_size = max(self.batch_size, 4) if self.use_fsdp else self.batch_size
 
@@ -266,21 +266,8 @@ class GenerationMetricsCallback(TrainerCallback):
                     model, input_ids, batch_references
                 )
         finally:
-            # Restore original use_cache settings for training
-            model.config.use_cache = original_config_use_cache
-            if (
-                hasattr(model, "generation_config")
-                and model.generation_config is not None
-                and original_genconfig_use_cache is not None
-            ):
-                model.generation_config.use_cache = original_genconfig_use_cache
-
-            # Free the tokenized eval tensor and release CUDA cached memory
-            # back to the allocator so it doesn't accumulate across eval runs.
             del input_ids
-            # Clear any CUDA graph cache that may have been created during generation
             torch.cuda.empty_cache()
-            # Force Python garbage collection to reclaim CPU memory
             gc.collect()
 
         return metrics
@@ -316,8 +303,7 @@ class GenerationMetricsCallback(TrainerCallback):
         batch_references: list[str],
         gen_batch_size: int = 4,
     ) -> dict[str, float]:
-        """FSDP-aware generation with data sharding across ranks.
-        """
+        """FSDP-aware generation with data sharding across ranks."""
         rank = dist.get_rank() if dist.is_initialized() else 0
         world_size = dist.get_world_size() if dist.is_initialized() else 1
 
@@ -332,24 +318,18 @@ class GenerationMetricsCallback(TrainerCallback):
         shard_references = batch_references[start_idx:end_idx]
         actual_samples_on_this_gpu = shard_input_ids.shape[0]
 
-        # Pad so every rank processes *exactly* samples_per_gpu samples.
-        # This keeps the number of model.generate() calls identical across
-        # ranks, which is required because each forward pass is a collective
-        # NCCL operation.  Padding predictions are stripped before gathering
-        # (see ``predictions[:actual_samples_on_this_gpu]`` below) so they never affect
-        # metric scores.
+        # Pad to keep generate() call count identical across ranks (NCCL collective)
         if actual_samples_on_this_gpu < samples_per_gpu:
             pad_count = samples_per_gpu - actual_samples_on_this_gpu
             pad_ids = input_ids[:pad_count]  # reuse first samples as padding
             shard_input_ids = torch.cat([shard_input_ids, pad_ids], dim=0)
             shard_references = shard_references + batch_references[:pad_count]
 
-        # Disabling eos_token_id forces every rank to execute exactly
+        # Disable eos_token_id to keep ranks in sync; truncate post-generation
         gen_config = dict(self.generation_config)
         saved_eos = gen_config.pop("eos_token_id", None)
 
-        # Resolve the real EOS token ids for post-generation truncation.
-        # Prefer the explicit config value, fall back to the tokenizer.
+        # Resolve real EOS ids for post-generation truncation
         if saved_eos is not None:
             real_eos_ids = saved_eos if isinstance(saved_eos, list) else [saved_eos]
         elif self.tokenizer.eos_token_id is not None:
@@ -368,8 +348,7 @@ class GenerationMetricsCallback(TrainerCallback):
             eos_token_ids=real_eos_ids,
         )
 
-        # Free the per-rank GPU shard immediately; the predictions are
-        # already decoded to Python strings.
+        # Free per-rank GPU shard (predictions already decoded to strings)
         del shard_input_ids
         torch.cuda.empty_cache()
 

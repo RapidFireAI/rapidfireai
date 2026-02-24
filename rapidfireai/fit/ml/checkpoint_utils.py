@@ -1,4 +1,5 @@
 import copy
+import gc
 import json
 import os
 from collections.abc import Callable
@@ -110,16 +111,67 @@ def create_model_instance(
 
 
 def _collect_fsdp_peft_state_dict(model, adapter_name: str = "default"):
-    """Collect PEFT state dict from FSDP model efficiently"""
-    full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
-    with FSDP.state_dict_type(
-        model, StateDictType.FULL_STATE_DICT, full_state_dict_config
-    ):
-        peft_state_dict = get_peft_model_state_dict(
-            model,
-            adapter_name=adapter_name,
-        )
-    return peft_state_dict
+    """Collect PEFT LoRA weights per-layer to avoid expensive root FSDP all-gather.
+
+    Keys are stripped of the adapter name to match ``get_peft_model_state_dict`` format.
+    """
+    import re
+    import torch.distributed as dist
+
+    rank = dist.get_rank() if dist.is_initialized() else 0
+
+    module_to_prefix = {id(m): name for name, m in model.named_modules()}
+
+    lora_fsdp_units = []
+    for module in model.modules():
+        if not isinstance(module, FSDP) or module is model:
+            continue
+        if any("lora_" in name for name, _ in module.named_modules()):
+            lora_fsdp_units.append(module)
+
+    if not lora_fsdp_units:
+        full_cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+        with FSDP.state_dict_type(
+            model, StateDictType.FULL_STATE_DICT, full_cfg
+        ):
+            return get_peft_model_state_dict(model, adapter_name=adapter_name)
+
+    # Strip adapter name from keys to match peft.get_peft_model_state_dict format
+    _adapter_suffix_re = re.compile(re.escape(f".{adapter_name}") + r"$")
+
+    def _strip_adapter_name(key: str) -> str:
+        if "." not in key:
+            return key
+        if key.endswith(f".{adapter_name}"):
+            return key.removesuffix(f".{adapter_name}")
+        key, _, suffix = key.rpartition(".")
+        key = _adapter_suffix_re.sub("", key)
+        return f"{key}.{suffix}"
+
+    peft_state_dict = {}
+    full_cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+
+    for fsdp_unit in lora_fsdp_units:
+        prefix = module_to_prefix.get(id(fsdp_unit), "")
+
+        with FSDP.state_dict_type(
+            fsdp_unit, StateDictType.FULL_STATE_DICT, full_cfg
+        ):
+            sd = fsdp_unit.state_dict()
+
+        if rank == 0 and sd:
+            for k, v in sd.items():
+                if "lora_" not in k and "modules_to_save" not in k:
+                    continue
+                full_key = f"{prefix}.{k}" if prefix else k
+                full_key = full_key.replace("_fsdp_wrapped_module.", "")
+                full_key = _strip_adapter_name(full_key)
+                peft_state_dict[full_key] = (
+                    v if v.device.type == "cpu" else v.cpu().clone()
+                )
+        del sd
+
+    return peft_state_dict if peft_state_dict else None
 
 
 def _collect_fsdp_full_model(model, trainer_config):
@@ -155,6 +207,71 @@ def _collect_fsdp_full_model(model, trainer_config):
     return model_cpu
 
 
+def flush_cuda_cache():
+    """Two-pass gc.collect, synchronize CUDA, empty cache, and reset allocator stats."""
+    gc.collect()
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        try:
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.reset_accumulated_memory_stats()
+        except Exception:
+            pass
+
+
+def purge_model_kv_caches(model):
+    """Clear KV caches and generation artifacts from model and all submodules."""
+    if model is None:
+        return
+    _cache_attrs = ("past_key_values", "_past", "key_cache", "value_cache", "_seen_tokens")
+    for attr in _cache_attrs:
+        if hasattr(model, attr):
+            try:
+                setattr(model, attr, None)
+            except Exception:
+                pass
+    for module in model.modules():
+        for attr in _cache_attrs:
+            if hasattr(module, attr):
+                try:
+                    setattr(module, attr, None)
+                except Exception:
+                    pass
+
+
+def release_model_gpu_memory(model):
+    """Zero all CUDA tensors (FSDP flat_params, params, buffers) on a model."""
+    if model is None:
+        return
+    _empty = torch.empty(0, device="cpu")
+    try:
+        for module in model.modules():
+            handle = getattr(module, "_handle", None)
+            if handle is not None:
+                fp = getattr(handle, "flat_param", None)
+                if fp is not None and hasattr(fp, "data") and fp.data.is_cuda:
+                    fp.data = _empty
+                    fp.grad = None
+    except Exception:
+        pass
+    try:
+        for param in model.parameters():
+            if param.data.is_cuda:
+                param.data = _empty
+            if param.grad is not None:
+                param.grad = None
+    except Exception:
+        pass
+    try:
+        for buf in model.buffers():
+            if buf.is_cuda:
+                buf.data = _empty
+    except Exception:
+        pass
+
+
 def save_checkpoint_to_shared_memory(
     trainer: SFTTrainer | DPOTrainer | GRPOTrainer,
     trainer_config: TrainerConfig,
@@ -162,7 +279,6 @@ def save_checkpoint_to_shared_memory(
     use_fsdp: bool = False,
 ) -> None:
     device = "cpu"
-
     checkpoint = {}
     rank = trainer_config.local_rank if use_fsdp else 0
 
@@ -171,6 +287,8 @@ def save_checkpoint_to_shared_memory(
             adapter_name = trainer_config.config_leaf.get("training_args", {}).get(
                 "model_adapter_name", "default"
             )
+
+            flush_cuda_cache()
             peft_state_dict = _collect_fsdp_peft_state_dict(trainer.model, adapter_name)
             if rank == 0 and peft_state_dict is not None:
                 checkpoint["state_dict"] = {
@@ -190,22 +308,30 @@ def save_checkpoint_to_shared_memory(
 
     if trainer.optimizer is not None:
         if use_fsdp:
-            full_optim_state_dict_config = FullOptimStateDictConfig(
-                offload_to_cpu=True, rank0_only=True
-            )
-            with FSDP.state_dict_type(
-                trainer.model,
-                StateDictType.FULL_STATE_DICT,
-                FullStateDictConfig(offload_to_cpu=True, rank0_only=True),
-                full_optim_state_dict_config,
-            ):
-                optimizer_state = FSDP.optim_state_dict(
-                    trainer.model, trainer.optimizer
+            # Free model GPU memory before optimizer all-gather (zeroed param data is fine
+            # because FSDP.optim_state_dict uses the flat_param object as a dict key).
+            release_model_gpu_memory(trainer.model)
+            flush_cuda_cache()
+
+            try:
+                full_optim_state_dict_config = FullOptimStateDictConfig(
+                    offload_to_cpu=True, rank0_only=True
                 )
-            if optimizer_state is not None and trainer_config.local_rank == 0:
-                checkpoint["optimizer_state"] = move_tensors_to_device(
-                    optimizer_state, device
-                )
+                with FSDP.state_dict_type(
+                    trainer.model,
+                    StateDictType.FULL_STATE_DICT,
+                    FullStateDictConfig(offload_to_cpu=True, rank0_only=True),
+                    full_optim_state_dict_config,
+                ):
+                    optimizer_state = FSDP.optim_state_dict(
+                        trainer.model, trainer.optimizer
+                    )
+                if optimizer_state is not None and trainer_config.local_rank == 0:
+                    checkpoint["optimizer_state"] = move_tensors_to_device(
+                        optimizer_state, device
+                    )
+            except Exception:
+                checkpoint["optimizer_state"] = None
         else:
             checkpoint["optimizer_state"] = move_tensors_to_device(
                 trainer.optimizer.state_dict(), device
@@ -696,6 +822,11 @@ def save_checkpoint_to_disk(
     else:
         trainer.model.save_pretrained(checkpoint_path)
 
+    # Free model GPU memory before optimizer all-gather
+    if use_fsdp and hasattr(trainer.model, "peft_config"):
+        release_model_gpu_memory(trainer.model)
+        flush_cuda_cache()
+
     # Save trainer state (only rank 0 writes to disk)
     if rank == 0:
         trainer_state_path = checkpoint_path / "trainer_state.json"
@@ -709,15 +840,18 @@ def save_checkpoint_to_disk(
             full_optim_state_dict_config = FullOptimStateDictConfig(
                 offload_to_cpu=True, rank0_only=True
             )
-            with FSDP.state_dict_type(
-                trainer.model,
-                StateDictType.FULL_STATE_DICT,
-                FullStateDictConfig(offload_to_cpu=True, rank0_only=True),
-                full_optim_state_dict_config,
-            ):
-                optimizer_state = FSDP.optim_state_dict(
-                    trainer.model, trainer.optimizer
-                )
+            try:
+                with FSDP.state_dict_type(
+                    trainer.model,
+                    StateDictType.FULL_STATE_DICT,
+                    FullStateDictConfig(offload_to_cpu=True, rank0_only=True),
+                    full_optim_state_dict_config,
+                ):
+                    optimizer_state = FSDP.optim_state_dict(
+                        trainer.model, trainer.optimizer
+                    )
+            except Exception:
+                optimizer_state = None
             if rank == 0 and optimizer_state is not None:
                 optimizer_path = checkpoint_path / "optimizer.pt"
                 optimizer_state = move_tensors_to_device(optimizer_state, device)
