@@ -138,6 +138,38 @@ lsof -t -i:8853 | xargs kill -9  # frontend server
 lsof -t -i:8855 | xargs kill -9  # ray dashboard
 ```
 
+## AI-Assisted Development (Claude Code & Cursor)
+
+Get instant IDE context that teaches Claude Code and Cursor the full RapidFire AI API, patterns, and common mistakes.
+
+**Run this from your project root** (the directory where you write your rapidfireai experiments):
+
+```bash
+# Recommended: use the CLI you already have (works on Windows, macOS, Linux)
+rapidfireai install-ide-context
+```
+
+This copies three files into your project:
+
+```
+your-project/
+├── CLAUDE.md                          ← Claude Code: loaded every session
+├── .claude/rules/rapidfireai-api.md   ← Claude Code: full API ref (on demand)
+└── .cursor/rules/rapidfireai.mdc      ← Cursor: auto-applied to .py / .ipynb
+```
+
+Fallback one-liners if you don't have the CLI yet:
+
+```bash
+# macOS / Linux
+curl -sSL https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/ide-context/install.sh | bash
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/ide-context/install.ps1 | iex
+```
+
+See [`ide-context/README.md`](ide-context/README.md) for details.
+
 ## Documentation
 
 Browse or reference the full documentation, example use case tutorials, all API details, dashboard details, and more in the [RapidFire AI Documentation](https://oss-docs.rapidfire.ai).
