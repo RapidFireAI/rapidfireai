@@ -2,10 +2,10 @@
 
 import gc
 import os
+import sys
 import time
 import traceback
 from collections.abc import Callable
-from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from logging import Logger
 from multiprocessing import Process
@@ -19,6 +19,9 @@ import torch
 from rapidfireai.fit.backend.chunks import DatasetChunks
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.ml.checkpoint_utils import (
+    flush_cuda_cache,
+    purge_model_kv_caches,
+    release_model_gpu_memory,
     save_checkpoint_to_disk,
     save_checkpoint_to_shared_memory,
     save_model_to_shared_memory,
@@ -32,12 +35,92 @@ from rapidfireai.fit.utils.constants import (
     WorkerTask,
 )
 from rapidfireai.fit.utils.datapaths import DataPath
+from rapidfireai.utils.distributed_utils import (
+    barrier,
+    cleanup_distributed,
+    is_distributed_initialized,
+    setup_distributed_environment,
+    find_free_port,
+)
 from rapidfireai.fit.utils.exceptions import WorkerException
 from rapidfireai.fit.utils.logging import RFLogger, TrainingLogger
 from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 from rapidfireai.fit.utils.serialize import decode_db_payload
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
+
+
+def _scan_and_release_leaked_cuda_tensors(skip_quantized: bool = False):
+    """Zero all gc-tracked CUDA tensors unreachable by model iteration.
+    """
+    gc.collect()
+    gc.collect()
+
+    bnb_tensor_ids: set[int] = set()
+    if skip_quantized:
+        try:
+            from bitsandbytes.functional import QuantState
+
+            for obj in gc.get_objects():
+                if not isinstance(obj, QuantState):
+                    continue
+                for attr_name in ("absmax", "code", "offset"):
+                    t = getattr(obj, attr_name, None)
+                    if torch.is_tensor(t):
+                        bnb_tensor_ids.add(id(t))
+                # state2 is a nested QuantState for double quantization
+                nested = getattr(obj, "state2", None)
+                if isinstance(nested, QuantState):
+                    for attr_name in ("absmax", "code", "offset"):
+                        t = getattr(nested, attr_name, None)
+                        if torch.is_tensor(t):
+                            bnb_tensor_ids.add(id(t))
+        except ImportError:
+            pass
+
+    _empty = torch.empty(0, device="cpu")
+    for obj in gc.get_objects():
+        if not torch.is_tensor(obj):
+            continue
+        try:
+            if obj.is_cuda and id(obj) not in bnb_tensor_ids:
+                obj.data = _empty
+        except Exception:
+            pass
+
+
+class TeeOutput:
+    """Captures output to a buffer while providing fileno() for vLLM compatibility."""
+
+    def __init__(self, original_stream, buffer):
+        self.original_stream = original_stream
+        self.buffer = buffer
+
+    def write(self, text):
+        """Write only to the buffer, not to the original stream (to suppress notebook output)."""
+        self.buffer.write(text)
+        # Don't write to original_stream to prevent output in notebook
+
+    def flush(self):
+        """Flush the buffer only."""
+        self.buffer.flush()
+        # Don't flush original_stream to prevent output in notebook
+
+    def fileno(self):
+        """Return the original stream's file descriptor (required by vLLM)."""
+        return self.original_stream.fileno()
+
+    def isatty(self):
+        """Check if the original stream is a TTY."""
+        return self.original_stream.isatty()
+
+    def getvalue(self):
+        """Get the captured buffer content."""
+        return self.buffer.getvalue()
+
+    def __getattr__(self, name):
+        """Delegate other attributes to the original stream."""
+        return getattr(self.original_stream, name)
 
 
 class Worker:
@@ -68,7 +151,9 @@ class Worker:
 
         # create logger
         self.logger: Logger = RFLogger().create_logger(f"worker_{worker_id}")
-        self.training_logger: Logger = TrainingLogger().create_logger(f"worker_{worker_id}")
+        self.training_logger: Logger = TrainingLogger().create_logger(
+            f"worker_{worker_id}"
+        )
         self.logger.debug(f"Worker {self.worker_id} initialized with PID {os.getpid()}")
 
         # create database object
@@ -78,13 +163,19 @@ class Worker:
         self.experiment_name: str = self.db.get_running_experiment()["experiment_name"]
 
         # initialize data paths
-        DataPath.initialize(self.experiment_name, self.db.get_experiments_path(self.experiment_name))
+        DataPath.initialize(
+            self.experiment_name, self.db.get_experiments_path(self.experiment_name)
+        )
 
         # create metric logger
-        default_metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
+        default_metric_loggers = RFMetricLogger.get_default_metric_loggers(
+            experiment_name=self.experiment_name
+        )
         self.metric_logger = RFMetricLogger(default_metric_loggers, logger=self.logger)
         if self.metric_logger is None:
-            raise WorkerException("MetricLogger is not initialized. Please check the metric logger configuration.")
+            raise WorkerException(
+                "MetricLogger is not initialized. Please check the metric logger configuration."
+            )
         self.metric_logger.get_experiment(self.experiment_name)
 
         # load datasets
@@ -107,24 +198,89 @@ class Worker:
         self,
         run_id: int,
         chunk_id: int,
+        multi_worker_details: dict[str, Any],
         create_model_fn: Callable,
     ) -> None:
         """Run fit"""
-        self.logger.debug(f"Received run_fit on worker for run {run_id} with chunk {chunk_id}")
+        self.logger.debug(
+            f"Received run_fit on worker for run {run_id} with chunk {chunk_id}"
+        )
 
         # get run details
         run_details = self.db.get_run(run_id)
         config_leaf = run_details["config_leaf"]
         metric_run_id = run_details["metric_run_id"]
 
+        # check if FSDP is enabled
+        use_fsdp = (
+            "training_args" in config_leaf
+            and "fsdp_config" in config_leaf["training_args"]
+        )
+        # Clean up stale vLLM parallel state (critical for sequential GRPO training)
+        if config_leaf.get("trainer_type", "SFT") == "GRPO":
+            try:
+                from vllm.distributed import parallel_state
 
-        # set seed
-        # torch.manual_seed(run_details["seed"])
-        # np.random.seed(run_details["seed"])
-        # random.seed(run_details["seed"])
-        effective_batch_size = config_leaf["training_args"].get("per_device_train_batch_size", 1) * config_leaf[
-            "training_args"
-        ].get("gradient_accumulation_steps", 1)
+                if hasattr(parallel_state, "destroy_model_parallel"):
+                    try:
+                        parallel_state.destroy_model_parallel()
+                    except Exception:
+                        pass  # Ignore if not initialized
+                if hasattr(parallel_state, "destroy_distributed_environment"):
+                    try:
+                        parallel_state.destroy_distributed_environment()
+                    except Exception:
+                        pass  # Ignore if not initialized
+            except (ImportError, AttributeError):
+                pass  # vLLM parallel state cleanup not available
+
+        # Initialize distributed training if FSDP is enabled for this run
+        if use_fsdp:
+            try:
+                os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+                # Get distributed configuration from run details
+                master_addr = multi_worker_details["master_address"]
+                master_port = multi_worker_details["master_port"]
+                world_size = multi_worker_details["world_size"]
+                rank = multi_worker_details["local_rank"]
+                self.logger.debug(
+                    f"Worker {self.worker_id} initializing distributed training for run {run_id} with master_addr {master_addr}, master_port {master_port}, world_size {world_size}, rank {rank}"
+                )
+                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(
+                    map(str, multi_worker_details["worker_ids"])
+                )
+                setup_distributed_environment(
+                    rank=rank,
+                    world_size=world_size,
+                    master_addr=master_addr,
+                    master_port=master_port,
+                )
+                self.logger.debug(
+                    f"Worker {self.worker_id} initialized distributed training for run {run_id}"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to initialize distributed training for run {run_id}: {e}"
+                )
+                raise
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(self.worker_id)
+            if config_leaf.get("trainer_type", "SFT") == "GRPO":
+                master_port = find_free_port()
+                os.environ["MASTER_PORT"] = str(master_port)
+
+        # get effective batch size
+        per_device_train_batch_size = config_leaf["training_args"].get(
+            "per_device_train_batch_size", 1
+        )
+        gradient_accumulation_steps = config_leaf["training_args"].get(
+            "gradient_accumulation_steps", 1
+        )
+        effective_batch_size = (
+            per_device_train_batch_size
+            * gradient_accumulation_steps
+            * multi_worker_details.get("world_size", 1)
+        )
 
         # fetch train dataset chunk
         train_dataset_chunker = DatasetChunks(
@@ -133,7 +289,10 @@ class Worker:
             batch_size=effective_batch_size,
             offset=run_details["chunk_offset"],
         )
-        train_dataset_chunk = train_dataset_chunker.get_chunk(self.train_dataset, chunk_id)
+        train_dataset_chunk = train_dataset_chunker.get_chunk(
+            self.train_dataset, chunk_id
+        )
+
         # create worker config
         trainer_config = TrainerConfig(
             worker_id=self.worker_id,
@@ -142,6 +301,9 @@ class Worker:
             config_leaf=config_leaf,
             total_steps=run_details["total_steps"],
             completed_steps=run_details["completed_steps"],
+            local_rank=multi_worker_details["local_rank"],
+            world_size=multi_worker_details["world_size"],
+            world_worker_ids=multi_worker_details["worker_ids"],
             create_model_fn=create_model_fn,
             train_dataset=train_dataset_chunk,
             eval_dataset=self.eval_dataset,
@@ -149,98 +311,342 @@ class Worker:
             cloned_from=run_details["cloned_from"],
             num_epochs_completed=run_details["num_epochs_completed"],
         )
-        completed_steps = self.db.get_completed_steps(run_id)
-
         # add reward funcs to config_leaf if cloned from a GRPO run
-        if trainer_config.cloned_from is not None and trainer_config.config_leaf.get("trainer_type") == "GRPO":
+        if (
+            trainer_config.cloned_from is not None
+            and trainer_config.config_leaf.get("trainer_type") == "GRPO"
+        ):
             parent_run_details = self.db.get_run(trainer_config.cloned_from)
-            config_leaf["reward_funcs"] = parent_run_details["config_leaf"].get("reward_funcs")
+            config_leaf["reward_funcs"] = parent_run_details["config_leaf"].get(
+                "reward_funcs"
+            )
             self.db.set_run_details(run_id, config_leaf=config_leaf)
 
+        if use_fsdp and is_distributed_initialized():
+            barrier()
+
+        # Redirect stdout/stderr to /dev/null, capture Python-level output for logging
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-            trainer_instance, _ = create_trainer_instance(
-                trainer_config, self.shm_manager, USE_SHARED_MEMORY, self.metric_logger, chunk_id
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+
+        # Redirect to /dev/null to suppress notebook output
+        devnull_fd = None
+        try:
+            with open(os.devnull, "w") as devnull:
+                devnull_fd = devnull.fileno()
+                if hasattr(sys.stdout, "fileno"):
+                    os.dup2(devnull_fd, sys.stdout.fileno())
+                if hasattr(sys.stderr, "fileno"):
+                    os.dup2(devnull_fd, sys.stderr.fileno())
+        except Exception as e:
+            self.logger.debug(f"Could not redirect stdout/stderr to /dev/null: {e}")
+
+        # TeeOutput captures to buffer; fileno() returns /dev/null fd for vLLM
+        tee_stdout = TeeOutput(original_stdout, stdout_buffer)
+        tee_stderr = TeeOutput(original_stderr, stderr_buffer)
+
+        try:
+            sys.stdout = tee_stdout
+            sys.stderr = tee_stderr
+
+            trainer_instance, base_model_name = create_trainer_instance(
+                trainer_config,
+                self.shm_manager,
+                USE_SHARED_MEMORY,
+                self.metric_logger,
+                chunk_id,
+                use_fsdp=use_fsdp,
+            )
+            is_quantized = bool(
+                config_leaf.get("model_kwargs", {}).get("quantization_config") or getattr(trainer_instance.model.config, "quantization_config", None) is not None
+            )
+            # if first time, save checkpoint to disk
+            completed_steps = self.db.get_completed_steps(run_id)
+            if completed_steps == 0 and not USE_SHARED_MEMORY:
+                save_checkpoint_to_disk(
+                    trainer_instance, trainer_config, first=True, use_fsdp=use_fsdp
+                )
+
+            # update base model name in db for run
+            trainer_config.config_leaf["model_name"] = (
+                trainer_instance.model.config._name_or_path
+            )
+            self.db.set_run_details(run_id, config_leaf=trainer_config.config_leaf)
+
+            self.logger.debug(
+                f"Beginning training for run {run_id} on chunk {chunk_id}"
             )
 
-        # if first time, save checkpoint to disk
-        if completed_steps == 0 and not USE_SHARED_MEMORY:
-            save_checkpoint_to_disk(trainer_instance, trainer_config, first=True)
+            # Synchronize all workers before training starts
+            if use_fsdp and is_distributed_initialized():
+                barrier()
 
-        # write logs to user logger
-        if stdout_buffer.getvalue():
-            self.training_logger.info(stdout_buffer.getvalue())
-        if stderr_buffer.getvalue():
-            self.training_logger.error(stderr_buffer.getvalue())
-
-        self.logger.debug(f"Beginning training for run {run_id} on chunk {chunk_id}")
-
-        # Train the model
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+            start_time = time.time()
             trainer_instance.train()
+            end_time = time.time()
+            # Synchronize all workers after training completes
+            if use_fsdp and is_distributed_initialized():
+                barrier()
 
-        # write logs to user logger
-        if stdout_buffer.getvalue():
-            self.training_logger.info(stdout_buffer.getvalue())
-        if stderr_buffer.getvalue():
-            self.training_logger.error(stderr_buffer.getvalue())
+            # update completed steps
+            new_completed_steps = completed_steps + trainer_instance.state.global_step
+            self.db.set_completed_steps(run_id, new_completed_steps)
 
-        # update completed steps
-        new_completed_steps = completed_steps + trainer_instance.state.global_step
-        self.db.set_completed_steps(run_id, new_completed_steps)
+            # update running average runtime in database for scheduler optimization
+            if trainer_config.local_rank == 0:
+                new_runtime_per_batch = (
+                    end_time - start_time
+                ) / train_dataset_chunker.get_chunk_size(chunk_id)
+                running_average_runtime = (
+                    run_details["estimated_runtime"] * completed_steps
+                    + new_runtime_per_batch
+                ) / new_completed_steps
+                self.db.set_estimated_runtime(run_id, running_average_runtime)
 
-        save_strategy = config_leaf.get("training_args", {}).get("save_strategy", "epoch")
-        # Save checkpoints to shared memory
-        if USE_SHARED_MEMORY:
-            save_checkpoint_to_shared_memory(trainer_instance, trainer_config, self.shm_manager)
-            if not trainer_config.config_leaf.get("peft_params"):
-                save_model_to_shared_memory(
-                    trainer_instance.model,
-                    trainer_instance.tokenizer,
-                    trainer_config,
-                    self.shm_manager,
-                    SHMObjectType.FULL_MODEL,
-                    trainer_config.run_id,
+            # save checkpoints
+            if USE_SHARED_MEMORY:
+                if use_fsdp and is_distributed_initialized():
+                    barrier()
+                    self.logger.debug(
+                        f"Worker {self.worker_id} passed barrier after training"
+                    )
+
+                if use_fsdp and torch.cuda.is_available():
+                    try:
+                        if hasattr(trainer_instance, "optimizer") and trainer_instance.optimizer is not None:
+                            trainer_instance.optimizer.zero_grad(set_to_none=True)
+                            for param_group in trainer_instance.optimizer.param_groups:
+                                for p in param_group["params"]:
+                                    if p in trainer_instance.optimizer.state:
+                                        for key in list(trainer_instance.optimizer.state[p].keys()):
+                                            t = trainer_instance.optimizer.state[p][key]
+                                            if torch.is_tensor(t) and t.is_cuda:
+                                                trainer_instance.optimizer.state[p][key] = t.to("cpu")
+                    except Exception:
+                        pass
+
+                    purge_model_kv_caches(trainer_instance.model)
+
+                    try:
+                        if hasattr(trainer_instance, "_memory_tracker"):
+                            trainer_instance._memory_tracker = None
+                    except Exception:
+                        pass
+
+                flush_cuda_cache()
+
+                is_run_finished = (
+                    chunk_id == self.num_chunks - 1
+                    and new_completed_steps >= trainer_config.total_steps
                 )
-            self.logger.debug(f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}")
-            if save_strategy == "chunk" or (save_strategy == "epoch" and chunk_id == self.num_chunks - 1):
+
+                if is_run_finished:
+                    # Skip shared memory for final chunk (flat_param zeroing would corrupt state)
+                    save_checkpoint_to_disk(
+                        trainer_instance,
+                        trainer_config,
+                        last=True,
+                        use_fsdp=use_fsdp,
+                    )
+                    self.logger.debug(
+                        f"Saved final checkpoint to disk for run {run_id} on chunk {chunk_id}"
+                    )
+                else:
+                    save_checkpoint_to_shared_memory(
+                        trainer_instance,
+                        trainer_config,
+                        self.shm_manager,
+                        use_fsdp=use_fsdp,
+                    )
+                    if not config_leaf.get("peft_params") and not use_fsdp:
+                        save_model_to_shared_memory(
+                            trainer_instance.model,
+                            trainer_instance.tokenizer,
+                            trainer_config,
+                            self.shm_manager,
+                            SHMObjectType.FULL_MODEL,
+                            trainer_config.run_id,
+                            use_fsdp=use_fsdp,
+                        )
+                    self.logger.debug(
+                        f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}",
+                        f"and worker {self.worker_id}",
+                    )
+
+                    if use_fsdp and is_distributed_initialized():
+                        barrier()
+
+                    # save checkpoint to disk based on save strategy
+                    save_strategy = trainer_config.config_leaf.get("training_args", {}).get(
+                        "save_strategy", "epoch"
+                    )
+                    if save_strategy == "chunk":
+                        save_checkpoint_to_disk(
+                            trainer_instance,
+                            trainer_config,
+                            completed_steps=new_completed_steps,
+                            use_fsdp=use_fsdp,
+                        )
+                        self.logger.debug(
+                            f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}"
+                        )
+            else:
+                # save checkpoint to disk when not using shared memory
                 save_checkpoint_to_disk(
                     trainer_instance,
                     trainer_config,
                     completed_steps=new_completed_steps,
+                    use_fsdp=use_fsdp,
                 )
-                self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
-        else:  # save checkpoint to disk when not using shared memory
-            save_checkpoint_to_disk(trainer_instance, trainer_config, completed_steps=new_completed_steps)
-            self.logger.debug(f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}")
+                self.logger.debug(
+                    f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}"
+                )
 
-        if chunk_id == self.num_chunks - 1 and new_completed_steps >= trainer_config.total_steps:
-            save_checkpoint_to_disk(trainer_instance, trainer_config, last=True)
-            self.logger.debug(f"Saved final checkpoint for run {run_id} on chunk {chunk_id}")
+            # Save final checkpoint (non-shared-memory path only)
+            if (
+                not USE_SHARED_MEMORY
+                and chunk_id == self.num_chunks - 1
+                and new_completed_steps >= trainer_config.total_steps
+            ):
+                save_checkpoint_to_disk(
+                    trainer_instance, trainer_config, last=True, use_fsdp=use_fsdp
+                )
+                self.logger.debug(
+                    f"Saved final checkpoint for run {run_id} on chunk {chunk_id}"
+                )
 
-        # clean up all references to shared memory objects
-        if hasattr(trainer_instance, "model"):
-            del trainer_instance.model
-        if hasattr(trainer_instance, "ref_model"):
-            del trainer_instance.ref_model
-        if hasattr(trainer_instance, "optimizer"):
-            del trainer_instance.optimizer
-        if hasattr(trainer_instance, "lr_scheduler"):
-            del trainer_instance.lr_scheduler
-        del trainer_instance
+            if use_fsdp and is_distributed_initialized():
+                barrier()
 
-        # run garbage collection
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        except Exception as e:
+            self.logger.error(f"Error during training for run {run_id}: {e}")
+            raise
+        finally:
+            # Cleanup must happen even when training fails to prevent memory leaks
+            try:
+                # Clean up vLLM engine (critical for GRPO with sequential model training)
+                if "trainer_instance" in locals() and hasattr(trainer_instance, "llm"):
+                    try:
+                        if hasattr(trainer_instance.llm, "shutdown"):
+                            trainer_instance.llm.shutdown()
+                        elif hasattr(trainer_instance.llm, "llm_engine"):
+                            if hasattr(trainer_instance.llm.llm_engine, "engine_core"):
+                                if hasattr(
+                                    trainer_instance.llm.llm_engine.engine_core, "shutdown"
+                                ):
+                                    trainer_instance.llm.llm_engine.engine_core.shutdown()
+                        try:
+                            from vllm.distributed import parallel_state
 
-        self.logger.debug(f"Completed training for run {run_id} on chunk {chunk_id}")
+                            if hasattr(parallel_state, "destroy_model_parallel"):
+                                parallel_state.destroy_model_parallel()
+                            if hasattr(parallel_state, "destroy_distributed_environment"):
+                                parallel_state.destroy_distributed_environment()
+                        except (ImportError, AttributeError):
+                            pass
+                        del trainer_instance.llm
+                    except Exception as cleanup_e:
+                        self.logger.debug(f"Error cleaning up vLLM engine: {cleanup_e}")
+                        if hasattr(trainer_instance, "llm"):
+                            try:
+                                del trainer_instance.llm
+                            except Exception:
+                                pass
+
+                # Systematic GPU memory cleanup
+                if "trainer_instance" in locals():
+                    _is_quantized_fsdp = (
+                        use_fsdp and "is_quantized" in dir() and is_quantized
+                    )
+
+                    try:
+                        if hasattr(trainer_instance, "callback_handler"):
+                            trainer_instance.callback_handler.model = None
+                            trainer_instance.callback_handler.optimizer = None
+                            trainer_instance.callback_handler.lr_scheduler = None
+                    except Exception:
+                        pass
+
+                    try:
+                        if hasattr(trainer_instance, "optimizer") and trainer_instance.optimizer is not None:
+                            trainer_instance.optimizer.zero_grad(set_to_none=True)
+                            if hasattr(trainer_instance.optimizer, "state"):
+                                trainer_instance.optimizer.state.clear()
+                            if hasattr(trainer_instance.optimizer, "param_groups"):
+                                for pg in trainer_instance.optimizer.param_groups:
+                                    pg["params"] = []
+                    except Exception:
+                        pass
+
+                    if use_fsdp and not _is_quantized_fsdp:
+                        for attr in ("model", "model_wrapped", "ref_model"):
+                            try:
+                                release_model_gpu_memory(getattr(trainer_instance, attr, None))
+                            except Exception:
+                                pass
+
+                    for attr in ("optimizer", "lr_scheduler", "model_wrapped",
+                                 "model", "ref_model"):
+                        try:
+                            if hasattr(trainer_instance, attr):
+                                delattr(trainer_instance, attr)
+                        except Exception:
+                            pass
+
+                    try:
+                        if hasattr(trainer_instance, "accelerator"):
+                            if hasattr(trainer_instance.accelerator, "free_memory"):
+                                trainer_instance.accelerator.free_memory()
+                            del trainer_instance.accelerator
+                    except Exception:
+                        pass
+
+                    for attr in ("tokenizer", "state", "callback_handler",
+                                 "_memory_tracker", "data_collator"):
+                        try:
+                            if hasattr(trainer_instance, attr):
+                                delattr(trainer_instance, attr)
+                        except Exception:
+                            pass
+
+                    try:
+                        del trainer_instance
+                    except Exception:
+                        pass
+                else:
+                    _is_quantized_fsdp = False
+
+                flush_cuda_cache()
+
+                if torch.cuda.is_available():
+                    if use_fsdp and not _is_quantized_fsdp:
+                        _scan_and_release_leaked_cuda_tensors(
+                            skip_quantized=(
+                                "is_quantized" in dir() and is_quantized
+                            )
+                        )
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+
+                if use_fsdp and is_distributed_initialized():
+                    barrier()
+            except Exception as cleanup_error:
+                self.logger.error(f"Error during cleanup for run {run_id}: {cleanup_error}")
+            finally:
+                sys.stdout = original_stdout
+                sys.stderr = original_stderr
+
+        # Write captured output to training logger
+        if stdout_buffer.getvalue():
+            self.training_logger.info(stdout_buffer.getvalue())
+        if stderr_buffer.getvalue():
+            self.training_logger.error(stderr_buffer.getvalue())
 
     def serve_forever(self) -> None:
-        """This runs in the worker process"""
+        """The main loop for the worker"""
 
         prev_task_id: int | None = None
         while not (self.shutdown_event and self.shutdown_event.is_set()):
@@ -256,16 +662,23 @@ class Worker:
                 task_type = scheduled_task["task_type"]
                 run_id = scheduled_task["run_id"]
                 chunk_id = scheduled_task["chunk_id"]
+                multi_worker_details = scheduled_task["multi_worker_details"]
                 create_model_fn = scheduled_task["config_options"]["create_model_fn"]
                 self.logger.debug(f"Received task {task_type} for run {run_id}")
 
                 if task_type == WorkerTask.TRAIN_VAL:
-                    self.db.set_worker_task_status(self.worker_id, TaskStatus.IN_PROGRESS)
+                    self.db.set_worker_task_status(
+                        self.worker_id, TaskStatus.IN_PROGRESS
+                    )
 
                     # run train and validation function
                     try:
-                        self.run_fit(run_id, chunk_id, create_model_fn)
-                        self.db.set_worker_task_status(self.worker_id, TaskStatus.COMPLETED)
+                        self.run_fit(
+                            run_id, chunk_id, multi_worker_details, create_model_fn
+                        )
+                        self.db.set_worker_task_status(
+                            self.worker_id, TaskStatus.COMPLETED
+                        )
                     except Exception as e:
                         self.logger.opt(exception=True).error(
                             f"Error while running run_fit for run {run_id} and chunk {chunk_id}: {e}"
@@ -275,11 +688,20 @@ class Worker:
                             status=RunStatus.FAILED,
                             error=str(e) + traceback.format_exc(),
                         )
-                        self.db.set_worker_task_status(self.worker_id, TaskStatus.FAILED)
+                        self.db.set_worker_task_status(
+                            self.worker_id, TaskStatus.FAILED
+                        )
                 else:
                     raise WorkerException(f"Invalid task type: {task_type}")
+                if is_distributed_initialized():
+                    cleanup_distributed()
+                    self.logger.debug(
+                        f"Worker {self.worker_id} distributed training cleaned up"
+                    )
             except Exception as e:
-                self.logger.opt(exception=True).error(f"Worker {self.worker_id} error: {e}")
+                self.logger.opt(exception=True).error(
+                    f"Worker {self.worker_id} error: {e}"
+                )
                 self.db.set_experiment_error(str(e) + "\n" + traceback.format_exc())
                 break
 
@@ -291,6 +713,16 @@ class Worker:
         if self.shutdown_event:
             self.shutdown_event.set()
 
+        # Clean up distributed training if enabled
+        if is_distributed_initialized():
+            try:
+                cleanup_distributed()
+                self.logger.debug(
+                    f"Worker {self.worker_id} distributed training cleaned up"
+                )
+            except Exception as e:
+                self.logger.debug(f"Error during distributed cleanup: {e}")
+
         # Close database connection to prevent resource leaks
         try:
             if hasattr(self, "db"):
@@ -300,5 +732,4 @@ class Worker:
 
     def is_alive(self):
         """Check if the worker process is alive"""
-        return self.process and self.process.is_alive()
         return self.process and self.process.is_alive()

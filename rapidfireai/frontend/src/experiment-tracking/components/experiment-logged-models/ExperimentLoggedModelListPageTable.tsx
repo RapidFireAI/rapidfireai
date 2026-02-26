@@ -6,7 +6,7 @@ import {
   Typography,
   useDesignSystemTheme,
 } from '@databricks/design-system';
-import MLFlowAgGrid from '../../../common/components/ag-grid/AgGrid';
+import MLflowAgGrid from '../../../common/components/ag-grid/AgGrid';
 import { useExperimentAgGridTableStyles } from '../experiment-page/components/runs/ExperimentViewRunsTable';
 import type { LoggedModelProto, RunEntity } from '../../types';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -209,7 +209,7 @@ const ExperimentLoggedModelListPageTableImpl = ({
         ].join(' ')}
         ref={containerElement}
       >
-        <MLFlowAgGrid
+        <MLflowAgGrid
           columnDefs={columnDefs}
           rowData={loggedModelsTableRows}
           rowHeight={LOGGED_MODELS_GRID_ROW_HEIGHT}

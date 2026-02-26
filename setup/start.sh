@@ -59,7 +59,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAPIDFIRE_DIR="$SCRIPT_DIR/../rapidfireai"
 RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
-FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
+if [[ -d "$RAPIDFIRE_DIR/frontend_pro" ]]; then
+    FRONTEND_DIR="$RAPIDFIRE_DIR/frontend_pro"
+else
+    FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
+fi
 RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "fit")
 DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
 
@@ -268,7 +272,7 @@ check_startup_issues() {
 
     # Check if ports are available
     if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
-        print_error "MLFlow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
+        print_error "MLflow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
         return 1
     fi
     if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
@@ -690,12 +694,9 @@ start_services() {
 
     # Calculate total services based on mode
     # MLflow runs unless tensorboard-only in Colab
+    # Frontend runs if MLflow runs
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         ((total_services++))
-    fi
-
-    # Frontend runs unless Colab mode
-    if [[ "$RF_COLAB_MODE" != "true" ]]; then
         ((total_services++))
     fi
 
@@ -713,6 +714,8 @@ start_services() {
         else
             print_error "Failed to start MLflow server"
         fi
+    else
+        print_status "⊗ Skipping MLflow (use TensorBoard if in Colab mode)"
     fi
 
     # Start API server (always)
@@ -723,14 +726,14 @@ start_services() {
     fi
 
     # Start frontend server (conditionally)
-    if [[ "$RF_COLAB_MODE" != "true" ]]; then
+    if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         if start_frontend; then
             ((services_started++))
         else
             print_error "Failed to start frontend server"
         fi
     else
-        print_status "⊗ Skipping frontend (using TensorBoard in Colab mode)"
+        print_status "⊗ Skipping frontend (use TensorBoard if in Colab mode)"
     fi
 
     return $((total_services - services_started))

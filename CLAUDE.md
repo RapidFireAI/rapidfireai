@@ -248,7 +248,7 @@ Defined in `db/*.sql` files. Tables include:
 - `RF_EXPERIMENT_PATH`: Base path for experiments (default: `./rapidfire_experiments`)
 - `RF_TUTORIAL_PATH`: Path for tutorial notebooks (default: `./tutorial_notebooks`)
 - `RF_MLFLOW_HOST`: MLflow tracking server Host (default: `localhost`)
-- `RF_MLFLOW_PORT`: MLFlow tracking server Port (default: `8852`)
+- `RF_MLFLOW_PORT`: MLflow tracking server Port (default: `8852`)
 - `USE_SHARED_MEMORY`: Enable shared memory for checkpoints (default: True)
 
 ### Logging

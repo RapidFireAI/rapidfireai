@@ -4882,7 +4882,7 @@
     "description" : "Text for activity description under confirmation modal for model\n               version stage transition"
   },
   "UEDu0c" : {
-    "defaultMessage" : "L'interfaccia utente MLFlow recupera automaticamente le cronologie delle metriche per le esecuzioni attive e aggiorna il grafico delle metriche con un intervallo di {interval} secondi.",
+    "defaultMessage" : "L'interfaccia utente MLflow recupera automaticamente le cronologie delle metriche per le esecuzioni attive e aggiorna il grafico delle metriche con un intervallo di {interval} secondi.",
     "description" : "Helpful tooltip message to explain the automatic metrics plot update"
   },
   "UEG0Tg" : {
@@ -4906,7 +4906,7 @@
     "description" : "Tab name for Python SDK configuration option"
   },
   "UNziH3" : {
-    "defaultMessage" : "I notebook generati da AutoML vengono ora salvati come artefatti MLFlow. Fai clic <link>qui</link> per ulteriori informazioni.",
+    "defaultMessage" : "I notebook generati da AutoML vengono ora salvati come artefatti MLflow. Fai clic <link>qui</link> per ulteriori informazioni.",
     "description" : "Text informing the user of the new AutoML behaviour for trial notebooks"
   },
   "USGj9l" : {
@@ -7326,7 +7326,7 @@
     "description" : "Experiment page > traces table > status label > error"
   },
   "ijp0dl" : {
-    "defaultMessage" : "Consulta <link>la documentazione di MLFlow</link> per maggiori dettagli su come registrare un esempio di input.",
+    "defaultMessage" : "Consulta <link>la documentazione di MLflow</link> per maggiori dettagli su come registrare un esempio di input.",
     "description" : "Message letting users know where they can find information on request format"
   },
   "ik5/Dn" : {

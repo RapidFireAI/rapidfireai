@@ -9,13 +9,13 @@ from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.utils.constants import DispatcherConfig, FrontendConfig, MLFlowConfig, RF_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.utils.constants import DispatcherConfig, FrontendConfig, MLflowConfig, RF_LOG_FILENAME, RF_LOG_PATH
 from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.fit.utils.constants import ControllerTask
 from rapidfireai.fit.utils.exceptions import DispatcherException
 from rapidfireai.fit.utils.logging import RFLogger
 
-CORS_ALLOWED_ORIGINS = ["http://localhost", DispatcherConfig.URL, MLFlowConfig.URL, FrontendConfig.URL]
+CORS_ALLOWED_ORIGINS = ["http://localhost", DispatcherConfig.URL, MLflowConfig.URL, FrontendConfig.URL]
 
 
 class Dispatcher:
@@ -43,7 +43,10 @@ class Dispatcher:
     def _get_logger(self) -> Logger | None:
         """Get the latest logger for the dispatcher"""
         current_experiment_name = self.db.get_running_experiment()["experiment_name"]
-        if self.logger is None or self.logger_experiment_name != current_experiment_name:
+        if (
+            self.logger is None
+            or self.logger_experiment_name != current_experiment_name
+        ):
             self.logger = RFLogger().create_logger("dispatcher")
             self.logger_experiment_name = current_experiment_name
         return self.logger
@@ -55,11 +58,23 @@ class Dispatcher:
             route_prefix = "/dispatcher"
 
             # health check route
-            self.app.add_url_rule(f"{route_prefix}/health-check", "health_check", self.health_check, methods=["GET"])
+            self.app.add_url_rule(
+                f"{route_prefix}/health-check",
+                "health_check",
+                self.health_check,
+                methods=["GET"],
+            )
 
             # UI routes
-            self.app.add_url_rule(f"{route_prefix}/get-all-runs", "get_all_runs", self.get_all_runs, methods=["GET"])
-            self.app.add_url_rule(f"{route_prefix}/get-run", "get_run", self.get_run, methods=["POST"])
+            self.app.add_url_rule(
+                f"{route_prefix}/get-all-runs",
+                "get_all_runs",
+                self.get_all_runs,
+                methods=["GET"],
+            )
+            self.app.add_url_rule(
+                f"{route_prefix}/get-run", "get_run", self.get_run, methods=["POST"]
+            )
             self.app.add_url_rule(
                 f"{route_prefix}/get-all-experiment-names",
                 "get_all_experiment_names",
@@ -81,16 +96,37 @@ class Dispatcher:
 
             # Interactive Control routes
             self.app.add_url_rule(
-                f"{route_prefix}/clone-modify-run", "clone_modify_run", self.clone_modify_run, methods=["POST"]
-            )
-            self.app.add_url_rule(f"{route_prefix}/stop-run", "stop_run", self.stop_run, methods=["POST"])
-            self.app.add_url_rule(f"{route_prefix}/resume-run", "resume_run", self.resume_run, methods=["POST"])
-            self.app.add_url_rule(f"{route_prefix}/delete-run", "delete_run", self.delete_run, methods=["POST"])
-            self.app.add_url_rule(
-                f"{route_prefix}/get-ic-logs", "get_ic_ops_logs", self.get_ic_ops_logs, methods=["POST"]
+                f"{route_prefix}/clone-modify-run",
+                "clone_modify_run",
+                self.clone_modify_run,
+                methods=["POST"],
             )
             self.app.add_url_rule(
-                f"{route_prefix}/get-experiment-logs", "get_experiment_logs", self.get_experiment_logs, methods=["POST"]
+                f"{route_prefix}/stop-run", "stop_run", self.stop_run, methods=["POST"]
+            )
+            self.app.add_url_rule(
+                f"{route_prefix}/resume-run",
+                "resume_run",
+                self.resume_run,
+                methods=["POST"],
+            )
+            self.app.add_url_rule(
+                f"{route_prefix}/delete-run",
+                "delete_run",
+                self.delete_run,
+                methods=["POST"],
+            )
+            self.app.add_url_rule(
+                f"{route_prefix}/get-ic-logs",
+                "get_ic_ops_logs",
+                self.get_ic_ops_logs,
+                methods=["POST"],
+            )
+            self.app.add_url_rule(
+                f"{route_prefix}/get-experiment-logs",
+                "get_experiment_logs",
+                self.get_experiment_logs,
+                methods=["POST"],
             )
         except Exception as e:
             raise DispatcherException(f"Error while registering routes: {e}") from e
@@ -136,7 +172,9 @@ class Dispatcher:
                         "num_epochs_completed": result["num_epochs_completed"],
                         "error": result["error"],
                         "source": result["source"].value if result["source"] else None,
-                        "ended_by": result["ended_by"].value if result["ended_by"] else None,
+                        "ended_by": (
+                            result["ended_by"].value if result["ended_by"] else None
+                        ),
                     }
                 )
             return jsonify(safe_results), 200
@@ -249,7 +287,11 @@ class Dispatcher:
 
             # Validate the ML config text
             # data["warm_start"]: bool indicating if the run should be warm started
-            task = ControllerTask.IC_CLONE_MODIFY_WARM if data["warm_start"] else ControllerTask.IC_CLONE_MODIFY
+            task = (
+                ControllerTask.IC_CLONE_MODIFY_WARM
+                if data["warm_start"]
+                else ControllerTask.IC_CLONE_MODIFY
+            )
 
             # set create models subtask
             _ = self.db.create_ic_ops_task(
@@ -261,12 +303,16 @@ class Dispatcher:
             # log the task
             logger = self._get_logger()
             if logger:
-                logger.info(f"Received clone-modify task with warm start {data['warm_start']} for run_id {run_id}")
+                logger.info(
+                    f"Received clone-modify task with warm start {data['warm_start']} for run_id {run_id}"
+                )
             return jsonify({}), 200
         except ValueError as ve:
             logger = self._get_logger()
             if logger:
-                logger.opt(exception=True).error(f"ValueError in clone_modify_run: {ve}")
+                logger.opt(exception=True).error(
+                    f"ValueError in clone_modify_run: {ve}"
+                )
             return jsonify({"error": str(ve)}), 400
         except TypeError as te:
             logger = self._get_logger()
@@ -276,8 +322,13 @@ class Dispatcher:
         except Exception as e:
             logger = self._get_logger()
             if logger:
-                logger.opt(exception=True).error(f"Unexpected error in clone_modify_run: {e}", exc_info=True)
-            return jsonify({"error": "An unexpected error occurred", "details": str(e)}), 500
+                logger.opt(exception=True).error(
+                    f"Unexpected error in clone_modify_run: {e}", exc_info=True
+                )
+            return (
+                jsonify({"error": "An unexpected error occurred", "details": str(e)}),
+                500,
+            )
 
     def stop_run(self) -> tuple[Response, int]:
         """Stop the run"""
@@ -300,7 +351,9 @@ class Dispatcher:
         except Exception as e:
             logger = self._get_logger()
             if logger:
-                logger.opt(exception=True).error(f"Error in stop_run: {e}", exc_info=True)
+                logger.opt(exception=True).error(
+                    f"Error in stop_run: {e}", exc_info=True
+                )
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def resume_run(self) -> tuple[Response, int]:
@@ -328,7 +381,9 @@ class Dispatcher:
         except Exception as e:
             logger = self._get_logger()
             if logger:
-                logger.opt(exception=True).error(f"Error in resume_run: {e}", exc_info=True)
+                logger.opt(exception=True).error(
+                    f"Error in resume_run: {e}", exc_info=True
+                )
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def delete_run(self) -> tuple[Response, int]:
@@ -356,7 +411,9 @@ class Dispatcher:
         except Exception as e:
             logger = self._get_logger()
             if logger:
-                logger.opt(exception=True).error(f"Error in delete_run: {e}", exc_info=True)
+                logger.opt(exception=True).error(
+                    f"Error in delete_run: {e}", exc_info=True
+                )
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
 
     def get_ic_ops_logs(self) -> tuple[Response, int]:
@@ -375,11 +432,18 @@ class Dispatcher:
 
             # Check if the log file exists
             if not os.path.exists(log_file_path):
-                return jsonify({"error": f"Log file not found for experiment: {experiment_name}"}), 404
+                return (
+                    jsonify(
+                        {
+                            "error": f"Log file not found for experiment: {experiment_name}"
+                        }
+                    ),
+                    404,
+                )
 
             # Read and filter logs for interactive-control entries
             interactive_control_logs = []
-            with open(log_file_path,encoding="utf-8") as f:
+            with open(log_file_path, encoding="utf-8") as f:
                 for line in f:
                     if f"| {experiment_name} | interactive-control |" in line:
                         interactive_control_logs.append(line.strip())
@@ -404,7 +468,7 @@ class Dispatcher:
             log_file_path = os.path.join(RF_LOG_PATH, experiment_name, RF_LOG_FILENAME)
 
             experiment_logs = []
-            with open(log_file_path,encoding="utf-8") as f:
+            with open(log_file_path, encoding="utf-8") as f:
                 for line in f:
                     if f"| {experiment_name} |" in line:
                         experiment_logs.append(line.strip())

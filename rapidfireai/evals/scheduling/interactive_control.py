@@ -19,6 +19,7 @@ from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
 from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.evals.utils.serialize import extract_pipeline_display_metadata
 
 
 class InteractiveControlHandler:
@@ -528,59 +529,9 @@ class InteractiveControlHandler:
         # Update status to ONGOING (will be scheduled in next iteration)
         db.set_pipeline_status(new_pipeline_id, PipelineStatus.ONGOING)
 
-        # Extract model name and metadata for display
-        pipeline = pipeline_config["pipeline"]
-
-        # Extract model name
-        if isinstance(model_config, RFOpenAIAPIModelConfig):
-            # For OpenAI, model name is in model_config.model_config
-            model_name = model_config.model_config.get("model", "Unknown")
-        elif isinstance(model_config, RFvLLMModelConfig):
-            # For vLLM, model name is in model_config.model_config
-            model_name = model_config.model_config.get("model", "Unknown")
-        elif hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-            if "model" in pipeline.model_config:
-                model_name = pipeline.model_config["model"]
-            else:
-                model_name = "Unknown"
-        else:
-            model_name = "Unknown"
-
-        # Extract metadata fields (similar to controller.py)
-        search_type = None
-        rag_k = None
-        top_n = None
-        chunk_size = None
-        chunk_overlap = None
-        sampling_params = None
-        prompt_manager_k = None
-        model_config_dict = None
-
-        if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-            # Extract full model config (excluding the model name)
-            model_config_copy = pipeline.model_config.copy()
-            model_config_copy.pop("model", None)
-            if model_config_copy:  # Only assign if there are other configs
-                model_config_dict = model_config_copy
-
-        # Extract RAG-related fields
-        if hasattr(pipeline, "rag") and pipeline.rag is not None:
-            search_type = getattr(pipeline.rag, "search_type", None)
-            if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs is not None:
-                rag_k = pipeline.rag.search_kwargs.get("k", None)
-            if hasattr(pipeline.rag, "reranker_kwargs") and pipeline.rag.reranker_kwargs is not None:
-                top_n = pipeline.rag.reranker_kwargs.get("top_n", None)
-            if hasattr(pipeline.rag, "text_splitter") and pipeline.rag.text_splitter is not None:
-                chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)
-                chunk_overlap = getattr(pipeline.rag.text_splitter, "_chunk_overlap", None)
-
-        # Extract sampling params from _user_params (dict, not SamplingParams object)
-        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
-            sampling_params = pipeline._user_params.get("sampling_params", None)
-
-        # Extract prompt_manager fields
-        if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
-            prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
+        # Extract display metadata using shared utility
+        display_metadata = extract_pipeline_display_metadata(pipeline_config)
+        model_name = display_metadata.pop("model_name", "Unknown")
 
         # Add to progress display
         if progress_display:
@@ -589,14 +540,7 @@ class InteractiveControlHandler:
                 pipeline_config=pipeline_config,
                 model_name=model_name,
                 status="ONGOING",
-                search_type=search_type,
-                rag_k=rag_k,
-                top_n=top_n,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-                sampling_params=sampling_params,
-                prompt_manager_k=prompt_manager_k,
-                model_config=model_config_dict,
+                **display_metadata,
             )
 
         self.logger.info(

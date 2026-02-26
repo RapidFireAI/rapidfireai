@@ -5,6 +5,7 @@ from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
 from rapidfireai.automl.datatypes import List
+from rapidfireai.automl.automl_utils import filter_evals_runs_valid_reranker
 from rapidfireai.fit.utils.exceptions import AutoMLException
 
 
@@ -30,7 +31,7 @@ def recursive_expand_gridsearch(item: Any):
 class RFGridSearch(AutoMLAlgorithm):
     """Grid search algorithm that generates all hyperparameter combinations."""
 
-    def get_runs(self, seed: int=42) -> list[dict[str, Any]]:
+    def get_runs(self, seed: int = 42) -> list[dict[str, Any]]:
         """Generate all possible hyperparameter combinations for grid search."""
         if not isinstance(seed, int) or seed < 0:
             raise AutoMLException("seed must be a non-negative integer")
@@ -58,15 +59,21 @@ class RFGridSearch(AutoMLAlgorithm):
 
             for peft_config in peft_configs:
                 peft_instances = (
-                    [{}] if peft_config is None else list(recursive_expand_gridsearch(peft_config._user_params))
+                    [{}]
+                    if peft_config is None
+                    else list(recursive_expand_gridsearch(peft_config._user_params))
                 )
                 training_instances = (
                     [{}]
                     if config.training_args is None
-                    else list(recursive_expand_gridsearch(config.training_args._user_params))
+                    else list(
+                        recursive_expand_gridsearch(config.training_args._user_params)
+                    )
                 )
                 model_kwargs_instances = (
-                    [{}] if config.model_kwargs is None else list(recursive_expand_gridsearch(config.model_kwargs))
+                    [{}]
+                    if config.model_kwargs is None
+                    else list(recursive_expand_gridsearch(config.model_kwargs))
                 )
                 ref_model_kwargs_instances = (
                     [{}]
@@ -74,7 +81,9 @@ class RFGridSearch(AutoMLAlgorithm):
                     else list(recursive_expand_gridsearch(config.ref_model_kwargs))
                 )
                 reward_funcs_instances = (
-                    [{}] if config.reward_funcs is None else list(recursive_expand_gridsearch(config.reward_funcs))
+                    [{}]
+                    if config.reward_funcs is None
+                    else list(recursive_expand_gridsearch(config.reward_funcs))
                 )
 
                 # Get additional kwargs for Trainer
@@ -91,13 +100,18 @@ class RFGridSearch(AutoMLAlgorithm):
                     "ref_model_type",
                     "ref_model_kwargs",
                     "reward_funcs",
+                    "num_gpus",
                 }
                 # excluded_attrs = set(config.__dict__.keys()) - set(config.__annotations__.keys())
                 additional_kwargs = {
-                    k: v for k, v in config.__dict__.items() if k not in excluded_attrs and v is not None
+                    k: v
+                    for k, v in config.__dict__.items()
+                    if k not in excluded_attrs and v is not None
                 }
                 additional_kwargs_instances = (
-                    [{}] if not additional_kwargs else list(recursive_expand_gridsearch(additional_kwargs))
+                    [{}]
+                    if not additional_kwargs
+                    else list(recursive_expand_gridsearch(additional_kwargs))
                 )
 
                 # Generate gridsearch combinations
@@ -116,21 +130,26 @@ class RFGridSearch(AutoMLAlgorithm):
                                     "model_kwargs": model_kwargs,
                                     "additional_kwargs": additional_kwargs,
                                 }
+                                num_gpus = getattr(config, "num_gpus", None)
+                                if num_gpus is not None:
+                                    leaf["num_gpus"] = num_gpus
 
-                                if self.trainer_type == "DPO":
-                                    leaf["ref_model_config"] = {
-                                        "model_name": config.ref_model_name,
-                                        "model_type": config.ref_model_type,
-                                    }
-                                    for ref_model_kwargs in ref_model_kwargs_instances:
-                                        leaf["ref_model_config"]["model_kwargs"] = ref_model_kwargs
-                                        runs.append(leaf)
-                                elif self.trainer_type == "GRPO":
-                                    for reward_func in reward_funcs_instances:
-                                        leaf["reward_funcs"] = reward_func
-                                        runs.append(leaf)
-                                else:
+                            if self.trainer_type == "DPO":
+                                leaf["ref_model_config"] = {
+                                    "model_name": config.ref_model_name,
+                                    "model_type": config.ref_model_type,
+                                }
+                                for ref_model_kwargs in ref_model_kwargs_instances:
+                                    leaf["ref_model_config"][
+                                        "model_kwargs"
+                                    ] = ref_model_kwargs
                                     runs.append(leaf)
+                            elif self.trainer_type == "GRPO":
+                                for reward_func in reward_funcs_instances:
+                                    leaf["reward_funcs"] = reward_func
+                                    runs.append(leaf)
+                            else:
+                                runs.append(leaf)
 
         return runs
 
@@ -147,7 +166,7 @@ class RFGridSearch(AutoMLAlgorithm):
                 pipeline = config["pipeline"]
             else:
                 pipeline = None
-                
+
             if pipeline is None:
                 pipelines = [None]
             elif isinstance(pipeline, List):
@@ -156,7 +175,7 @@ class RFGridSearch(AutoMLAlgorithm):
                 pipelines = pipeline
             else:
                 pipelines = [pipeline]
-                
+
             for pipeline in pipelines:
                 pipeline_instances = (
                     [{}]
@@ -167,7 +186,10 @@ class RFGridSearch(AutoMLAlgorithm):
                 additional_kwargs = {
                     k: v
                     for k, v in config.items()
-                    if k!= "pipeline" and k!= "vllm_config" and k != "openai_config" and v is not None
+                    if k != "pipeline"
+                    and k != "vllm_config"
+                    and k != "openai_config"
+                    and v is not None
                 }
                 additional_kwargs_instances = (
                     [{}]
@@ -181,11 +203,11 @@ class RFGridSearch(AutoMLAlgorithm):
                             pipeline_instance = pipeline.__class__(**pipeline_params)
                         else:
                             pipeline_instance = pipeline_params
-                        
+
                         leaf = {
                             "pipeline": pipeline_instance,
                             **additional_kwargs_dict,
                         }
                         runs.append(leaf)
 
-        return runs
+        return filter_evals_runs_valid_reranker(runs)

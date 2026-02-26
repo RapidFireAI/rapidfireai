@@ -3,11 +3,50 @@
 from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
+from rapidfireai.fit.utils.exceptions import AutoMLException
+
+
+def _is_valid_reranker_top_n_vs_k(pipeline: Any) -> bool:
+    """
+    Check if pipeline has valid top_n <= k when reranker with top_n is present.
+    """
+    if pipeline is None or not hasattr(pipeline, "rag") or pipeline.rag is None:
+        return True
+    rag = pipeline.rag
+    if not hasattr(rag, "reranker_kwargs") or not rag.reranker_kwargs:
+        return True
+    top_n = rag.reranker_kwargs.get("top_n")
+    if top_n is None:
+        return True
+    k = None
+    if hasattr(rag, "search_kwargs") and rag.search_kwargs:
+        k = rag.search_kwargs.get("k")
+    if k is None:
+        return True  # No k to compare; user config may be incomplete
+    return top_n <= k
+
+
+def filter_evals_runs_valid_reranker(
+    runs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Filter evals runs to only include configs where reranker top_n <= k.
+    """
+    filtered = [r for r in runs if _is_valid_reranker_top_n_vs_k(r.get("pipeline"))]
+    if not filtered:
+        raise AutoMLException(
+            "No valid configurations: when using a reranker with top_n, "
+            "top_n must be <= k (search_kwargs.k). "
+            "Only add top_n values that are less than or equal to k."
+        )
+    return filtered
 
 # TODO: add code to validate param_config
 
 
-def get_flattened_config_leaf(param_config: dict[str, Any], prefix: str = "") -> dict[str, Any]:
+def get_flattened_config_leaf(
+    param_config: dict[str, Any], prefix: str = ""
+) -> dict[str, Any]:
     """Flattens the param_config dictionary into a single hierarchy"""
     items = []
     for k, v in param_config.items():
@@ -43,7 +82,9 @@ def get_flattened_config_leaf(param_config: dict[str, Any], prefix: str = "") ->
     return dict(items)
 
 
-def get_runs(param_config: AutoMLAlgorithm | dict[str, Any] | list[Any], seed: int) -> list[dict[str, Any]]:
+def get_runs(
+    param_config: AutoMLAlgorithm | dict[str, Any] | list[Any], seed: int
+) -> list[dict[str, Any]]:
     """Get the runs for the given param_config."""
     # FIXME: how do we handle seed for dict and list?
     if isinstance(param_config, AutoMLAlgorithm):

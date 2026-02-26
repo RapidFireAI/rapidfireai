@@ -6,7 +6,7 @@ from mlflow.tracking import MlflowClient
 from typing import Any
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.utils.ping import ping_server
-from rapidfireai.utils.constants import MLFlowConfig
+from rapidfireai.utils.constants import MLflowConfig
 from rapidfireai.evals.utils.logger import RFLogger
 
 
@@ -23,8 +23,8 @@ class MLflowMetricLogger(MetricLogger):
         self.client = None
         self.logger = logger if logger is not None else RFLogger()
         self.init_kwargs = init_kwargs # Not currently used
-        if not ping_server(MLFlowConfig.HOST, MLFlowConfig.PORT, 2):
-            raise ConnectionRefusedError(f"MLflow server not available at {MLFlowConfig.URL}. MLflow logging will be disabled")
+        if not ping_server(MLflowConfig.HOST, MLflowConfig.PORT, 2):
+            raise ConnectionRefusedError(f"MLflow server not available at {MLflowConfig.URL}. MLflow logging will be disabled")
         else:
             mlflow.set_tracking_uri(tracking_uri)
             self.client = MlflowClient(tracking_uri=tracking_uri)

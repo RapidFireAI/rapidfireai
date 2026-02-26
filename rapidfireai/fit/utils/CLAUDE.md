@@ -88,11 +88,11 @@ See `worker_manager.py` for implementation of these workarounds.
 
 **Config Classes**:
 - `DispatcherConfig`: Dispatcher server configuration
-- `MLFlowConfig`: MLFlow server configuration
+- `MLflowConfig`: MLflow server configuration
 
 **Usage**:
 ```python
-from rapidfireai.utils.constants import MLFlowConfig
+from rapidfireai.utils.constants import MLflowConfig
 from rapidfireai.fit.utils.constants import RunStatus
 
 if run['status'] == RunStatus.ONGOING.value:
