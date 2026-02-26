@@ -20,6 +20,8 @@ RF_MLFLOW_PORT=${RF_MLFLOW_PORT:=8852}
 RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=127.0.0.1}
 RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=8853}
 RF_FRONTEND_HOST=${RF_FRONTEND_HOST:=0.0.0.0}
+RF_CONVERGE_AGENT_HOST=${RF_CONVERGE_AGENT_HOST:=0.0.0.0}
+RF_CONVERGE_AGENT_PORT=${RF_CONVERGE_AGENT_PORT:=8860}
 # API server configuration - these should match DispatcherConfig in constants.py
 RF_API_PORT=${RF_API_PORT:=8851}
 RF_API_HOST=${RF_API_HOST:=127.0.0.1}
@@ -27,7 +29,7 @@ RF_API_HOST=${RF_API_HOST:=127.0.0.1}
 RF_DB_PATH="${RF_DB_PATH:=$RF_HOME/db}"
 RF_LOG_PATH="${RF_LOG_PATH:=$RF_HOME/logs}"
 
-RF_TIMEOUT_TIME=${RF_TIMEOUT_TIME:=30}
+RF_TIMEOUT_TIME=${RF_TIMEOUT_TIME:=60}
 
 # Colab mode configuration
 if [ -z "${COLAB_GPU+x}" ]; then
@@ -59,10 +61,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAPIDFIRE_DIR="$SCRIPT_DIR/../rapidfireai"
 RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
-if [[ -d "$RAPIDFIRE_DIR/frontend_pro" ]]; then
-    FRONTEND_DIR="$RAPIDFIRE_DIR/frontend_pro"
+if [[ -d "$RAPIDFIRE_DIR/converge-frontend" ]]; then
+    FRONTEND_DIR="$RAPIDFIRE_DIR/converge-frontend"
+    RF_CONVERGE_ENABLED=${RF_CONVERGE_ENABLED:=true}
 else
     FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
+    RF_CONVERGE_ENABLED=${RF_CONVERGE_ENABLED:=false}
 fi
 RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "fit")
 DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
@@ -294,7 +298,7 @@ wait_for_service() {
     local max_attempts=${4:-$RF_TIMEOUT_TIME}  # Allow custom timeout, default 30 seconds
     local attempt=1
 
-    print_status "Waiting for $service to be ready on $host:$port (timeout: ${max_attempts} attempts)..."
+    print_status "Waiting for $service to be ready (timeout: ${max_attempts} attempts)..."
 
     if command -v nc &> /dev/null; then
         ping_command="$(command -v nc) -z $host $port"
@@ -423,7 +427,7 @@ start_api_server() {
     # Wait for API server to be ready - use longer timeout for API server
     if wait_for_service $RF_API_HOST $RF_API_PORT "API server" $((RF_TIMEOUT_TIME * 2)); then
         print_success "API server started (PID: $api_pid)"
-        print_status "API server available at: http://$RF_API_HOST:$RF_API_PORT"
+        print_status "API server available at: $RF_API_HOST:$RF_API_PORT"
         return 0
     else
         print_error "API server failed to start. Checking for errors..."
@@ -458,6 +462,44 @@ start_api_server() {
 
         return 1
     fi
+}
+
+# Function to start Converge server
+start_converge() {
+    print_status "Starting Converge server..."
+
+    if [[ -d "$RAPIDFIRE_DIR/converge-backend" ]]; then
+        print_error "RapidFire AI Converge Backend directory not found at $RAPIDFIRE_DIR/converge-backend"
+        return 1
+    fi
+
+    if [ "$GEMINI_API_KEY" == "" ]; then
+        print_error "RapidFire AI Converge requires a Gemini API key. Please set the GEMINI_API_KEY environment variable."
+        return 1
+    fi
+
+    cd "$RAPIDFIRE_DIR"
+
+    ${RF_PYTHON_EXECUTABLE} converge-backend/main.py --host $RF_CONVERGE_AGENT_HOST --port $RF_CONVERGE_AGENT_PORT
+
+    local converge_pid=$!
+    cd "$SCRIPT_DIR"  # Return to original directory
+    echo "$converge_pid Converge_Agent" >> "$RF_PID_FILE"
+
+    if wait_for_service $RF_CONVERGE_AGENT_HOST $RF_CONVERGE_AGENT_PORT "Converge agent" $RF_TIMEOUT_TIME; then
+        print_success "Converge agent started (PID: $converge_pid)"
+        return 0
+    else
+        print_error "Converge agent failed to start. Checking for errors..."
+        # Check if there are any Python errors in the process
+        if kill -0 "$converge_pid" 2>/dev/null; then
+            print_status "Converge agent process details:"
+            ps -p "$converge_pid" -o pid,ppid,cmd,etime 2>/dev/null || true
+        fi
+        return 1
+    fi
+
+    return 1
 }
 
 # Function to start frontend server
@@ -617,7 +659,7 @@ show_status() {
 
     # Display appropriate message based on mode
     if [[ "$RF_COLAB_MODE" == "true" ]]; then
-        print_success "🚀 RapidFire running in Colab mode!"
+        print_success "🚀 RapidFire AI running in Colab mode!"
         if [[ "$rf_mode" == "fit" ]]; then
             print_status "📊 Use TensorBoard for metrics visualization:"
             print_status "   In a Colab notebook cell, run:"
@@ -626,25 +668,23 @@ show_status() {
     else
         # if [[ "$rf_mode" == "fit" ]]; then
             if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
-                print_success "🚀 RapidFire Frontend is ready!"
+                print_success "🚀 RapidFire AI Frontend is ready!"
                 print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
                 print_status "   (Click the link above or copy/paste the URL into your browser)"
             else
-                print_error "🚨 RapidFire Frontend is not ready!"
+                print_error "🚨 RapidFire AI Frontend is not ready!"
             fi
         # fi
     fi
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
-        if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
-            print_success "🚀 MLflow server is ready!"
-        else
-            print_error "🚨 MLflow server is not ready!"
+        if ! ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
+            print_error "🚨 Metrics server is not ready!"
         fi
     fi
     if ping_port $RF_API_HOST $RF_API_PORT; then
-        print_success "🚀 RapidFire API server is ready!"
+        print_success "🚀 RapidFire AI API server is ready!"
     else
-        print_error "🚨 RapidFire API server is not ready!"
+        print_error "🚨 RapidFire AI API server is not ready!"
     fi
     # if [[ "$rf_mode" == "evals" ]]; then
     #     if ping_port $RF_RAY_HOST $RF_RAY_PORT; then
@@ -700,6 +740,10 @@ start_services() {
         ((total_services++))
     fi
 
+    if [[ "$RF_CONVERGE_ENABLED" == "true" ]]; then
+        ((total_services++))
+    fi
+
     if [[ ! -d "$RF_LOG_PATH" ]]; then
         print_status "Creating log directory $RF_LOG_PATH..."
         mkdir -p "$RF_LOG_PATH"
@@ -734,6 +778,14 @@ start_services() {
         fi
     else
         print_status "⊗ Skipping frontend (use TensorBoard if in Colab mode)"
+    fi
+
+    if [[ "$RF_CONVERGE_ENABLED" == "true" ]]; then
+        if start_converge; then
+            ((services_started++))
+        else
+            print_error "Failed to start RapidFire AI Converge server"
+        fi
     fi
 
     return $((total_services - services_started))
