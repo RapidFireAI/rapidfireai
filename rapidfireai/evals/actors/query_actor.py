@@ -11,6 +11,11 @@ import os
 from collections.abc import Callable
 from typing import Any
 import ray
+import pickle
+
+from langchain_community.vectorstores import FAISS
+from langchain_postgres import PGVector
+from langchain_pinecone import PineconeVectorStore
 
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
@@ -149,7 +154,7 @@ class QueryProcessingActor:
                 # Ray automatically dereferences ObjectRefs passed to remote actors
                 # So we receive the dict directly, not an ObjectRef
                 # Check RAG components are present and deserialize them
-                if "faiss_index_bytes" in context_generator_ref or "vector_store" in context_generator_ref or "retriever" in context_generator_ref:
+                if context_generator_ref.get("rag_spec_exists", False):
                     search_cfg = context_generator_ref.get("search_cfg", {})
                     default_search_cfg: dict[str, Any] = {
                         "type": "similarity",
@@ -173,85 +178,86 @@ class QueryProcessingActor:
                         if reranker_cls is None:
                             raise ValueError("reranker_cfg must contain a 'class' key (the reranker class)")
 
-                    # Check if FAISS index is present and deserialize the FAISS vector store
-                    if "faiss_index_bytes" in context_generator_ref:
-                        # NOTE: Keep FAISS on CPU for query actors to avoid GPU memory conflicts
-                        # The DocProcessingActor builds the index on GPU (fast), transfers to CPU,
-                        # and shares it. Query actors use CPU FAISS which is still fast for retrieval
-                        # and avoids memory management issues with multiple actors sharing GPUs.
-
-                        self.logger.info("Using CPU-based FAISS for retrieval (avoids GPU memory conflicts)")
-
-                        # Deserialize FAISS index to create an independent copy for this actor
-                        # FAISS indices are not thread-safe, so each actor needs its own copy
-                        import pickle
-                        from langchain_community.vectorstores import FAISS
-                        from langchain_huggingface import HuggingFaceEmbeddings
-
-                        self.logger.info("Deserializing FAISS index for this actor...")
-                        faiss_index = pickle.loads(context_generator_ref["faiss_index_bytes"])
-                        docstore = pickle.loads(context_generator_ref["docstore_bytes"])
-                        index_to_docstore_id = pickle.loads(context_generator_ref["index_to_docstore_id_bytes"])
-                        # embedding_function = pickle.loads(context_generator_ref["embedding_function_bytes"])
-                        embedding_cls = context_generator_ref["embedding_cls"]
-                        embedding_kwargs = context_generator_ref["embedding_kwargs"]
+                    embedding_cls = context_generator_ref.get("embedding_cls", None)
+                    if embedding_cls is not None:
+                        embedding_kwargs = context_generator_ref.get("embedding_kwargs", {})
                         embedding_function = embedding_cls(**embedding_kwargs)
-
-                        # Recreate the embedding function
-                        # embedding_cfg = dict(context_generator_ref["embedding_cfg"])
-                        # if not embedding_cfg:
-                        #     embedding_cls = HuggingFaceEmbeddings
-                        #     embedding_kwargs = {}
-                        # else:
-                        #     cfg = dict(embedding_cfg)
-                        #     embedding_cls = cfg.pop("class", None)
-                        #     if embedding_cls is None:
-                        #         raise ValueError("embedding_cfg must contain a 'class' key (the embedding class)")
-                        #     embedding_kwargs = dict(cfg)
-                        # embedding_function = embedding_cls(**embedding_kwargs)
                         self.logger.info(f"Recreated embedding function: {embedding_cls.__name__}")
+                    else:
+                        embedding_function = None
 
-                        # Create a new FAISS vector store with the deserialized components
-                        vector_store = FAISS(
-                            embedding_function=embedding_function,
-                            index=faiss_index,
-                            docstore=docstore,
-                            index_to_docstore_id=index_to_docstore_id
-                        )
-                        self.logger.info("Created independent FAISS vector store for this actor")
+                    # Recreate the vector store if needed
+                    vector_store = None
+                    if "vector_store_type" in context_generator_ref:
+                        vector_store_type = context_generator_ref.get("vector_store_type")
+                        if vector_store_type == "faiss":
+                            # NOTE: Keep FAISS on CPU for query actors to avoid GPU memory conflicts
+                            # The DocProcessingActor builds the index on GPU (fast), transfers to CPU,
+                            # and shares it. Query actors use CPU FAISS which is still fast for retrieval
+                            # and avoids memory management issues with multiple actors sharing GPUs.
+                            self.logger.info("Using CPU-based FAISS for retrieval (avoids GPU memory conflicts)")
+                            # Deserialize FAISS index to create an independent copy for this actor
+                            # FAISS indices are not thread-safe, so each actor needs its own copy
+                            
+                            self.logger.info("Deserializing FAISS index for this actor...")
+                            faiss_index = pickle.loads(context_generator_ref["faiss_index_bytes"])
+                            docstore = pickle.loads(context_generator_ref["docstore_bytes"])
+                            index_to_docstore_id = pickle.loads(context_generator_ref["index_to_docstore_id_bytes"])
+
+                            if embedding_function is None:
+                                raise ValueError("embedding_function is not set. Vector store cannot be created without an embedding function.")
+                            
+                            # Create a new FAISS vector store with the deserialized components
+                            vector_store = FAISS(
+                                embedding_function=embedding_function,
+                                index=faiss_index,
+                                docstore=docstore,
+                                index_to_docstore_id=index_to_docstore_id
+                            )
+                            self.logger.info("Created independent FAISS vector store for this actor")      
+                        elif vector_store_type == "pgvector":
+                            if embedding_function is None:
+                                raise ValueError("embedding_function is not set. Vector store cannot be created without an embedding function.")
+                            vector_store = PGVector(
+                                embeddings=embedding_function,
+                                connection=context_generator_ref.get("pgvector_connection"), 
+                                collection_name=context_generator_ref.get("pgvector_collection_name"),
+                                use_jsonb=True,
+                            )
+                        elif vector_store_type == "pinecone":
+                            raise NotImplementedError("Pinecone vector store not implemented for query actors")
+                        else:
+                            vector_store = pickle.loads(context_generator_ref["vector_store"])
 
                         # Create the retriever
+                    if vector_store is not None:
                         retriever = vector_store.as_retriever(
                             search_type=search_type,
                             search_kwargs=search_kwargs
                         )
                         self.logger.info(f"Recreated retriever with search_type={search_type}")
                     else:
-                        vector_store = context_generator_ref.get("vector_store")
-                        retriever = context_generator_ref.get("retriever")
+                        retriever = pickle.loads(context_generator_ref["retriever"])
 
                     # Recreate RAG spec with query-time components (config dicts from serialized ref)
                     self.rag_spec = LangChainRagSpec(
                         document_loader=None,
                         text_splitter=None,
                         embedding_cfg=None,
-                        vector_store=vector_store,
+                        vector_store_cfg=None,
                         retriever=retriever,
                         search_cfg={"type": search_type, **search_kwargs},
                         reranker_cfg=reranker_cfg,
                         enable_gpu_search=False,
                         document_template=context_generator_ref.get("template"),
                     )
-                    # Manually set the embedding and template since we bypassed normal initialization
-                    self.rag_spec.embedding = embedding_function
-                    self.rag_spec.template = context_generator_ref.get("template")
-                    self.rag_spec.build_index()
-                    self.logger.info("Recreated RAG spec with retriever and template")
+                    self.rag_spec.build_pipeline()
+                    self.logger.info("Recreated RAG spec with retrieval mode")
 
                 # Set up PromptManager if provided (reinitialize after deserialization)
                 # This can exist with or without RAG components
-                prompt_manager = context_generator_ref.get("prompt_manager")
-                if prompt_manager:
+                if context_generator_ref.get("prompt_manager_exists", False):
+                    prompt_manager = context_generator_ref.get("prompt_manager")
                     # Check if we need to recreate the embedding and fewshot generator
                     # (they are set to None during pickling to avoid unpicklable locks)
                     if not hasattr(prompt_manager, "fewshot_generator") or prompt_manager.fewshot_generator is None:

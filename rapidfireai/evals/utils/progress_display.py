@@ -43,6 +43,7 @@ class ContextBuildingDisplay:
                 "start_time": ctx.get("start_time"),
                 "duration": None,
                 "enable_gpu": ctx.get("enable_gpu", False),
+                "vector_store_info": ctx.get("vector_store_info", None),
             }
             for ctx in contexts_to_build
         }
@@ -74,7 +75,18 @@ class ContextBuildingDisplay:
                 duration = "-"
 
             # Format details
-            details = "FAISS, " + ("GPU" if data["enable_gpu"] else "CPU")
+            vector_store_info = data["vector_store_info"]
+            if vector_store_info is not None:
+                type = vector_store_info.get("type", None)
+                if type == "faiss":
+                    details = "FAISS, " + ("GPU" if data["enable_gpu"] else "CPU")
+                elif type == "pgvector":
+                    collection_name = f' [{vector_store_info.get("collection_name", "")}]'
+                    details = f"PGVector{collection_name}, " + ("GPU" if data["enable_gpu"] else "CPU")
+                elif type == "pinecone":
+                    details = "Pinecone, " + ("GPU" if data["enable_gpu"] else "CPU")
+                else:
+                    details = "Unknown, " + ("GPU" if data["enable_gpu"] else "CPU")
 
             rows.append(
                 {

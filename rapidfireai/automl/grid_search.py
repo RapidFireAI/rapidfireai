@@ -1,5 +1,6 @@
 """Grid search implementation for AutoML training configurations."""
 
+import copy
 from itertools import product
 from typing import Any
 
@@ -19,7 +20,9 @@ def recursive_expand_gridsearch(item: Any):
         keys = list(item.keys())
         value_lists = [list(recursive_expand_gridsearch(item[k])) for k in keys]
         for values in product(*value_lists):
-            yield dict(zip(keys, values, strict=False))
+            # Deep copy ensures values reused across combinations by product() are
+            # independent objects and cannot be mutated by one combination to affect another.
+            yield copy.deepcopy(dict(zip(keys, values, strict=False)))
     elif isinstance(item, List):
         for value in item.values:
             yield from recursive_expand_gridsearch(value)

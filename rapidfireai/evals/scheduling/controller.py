@@ -247,7 +247,7 @@ class Controller:
             if not rag_spec and not prompt_manager:
                 continue
 
-            # Compute context hash
+            # Compute context hash (experiment_name already injected onto each object)
             rag_hash = rag_spec.get_hash() if rag_spec else None
             prompt_hash = prompt_manager.get_hash() if prompt_manager else None
 
@@ -287,6 +287,17 @@ class Controller:
             config_leaves: List of pipeline config dictionaries
             db: Database instance
         """
+        # Inject experiment_name into all rag_specs and prompt_managers so that
+        # get_hash() and build logic can access it without threading it as a parameter.
+        for config_leaf in config_leaves:
+            pipeline_config = config_leaf.get("pipeline")
+            rag_spec = getattr(pipeline_config, "rag", None)
+            prompt_manager = getattr(pipeline_config, "prompt_manager", None)
+            if rag_spec:
+                rag_spec.experiment_name = self.experiment_name
+            if prompt_manager:
+                prompt_manager.experiment_name = self.experiment_name
+
         # Step 1: Collect unique RAG contexts
         unique_contexts = self._collect_unique_contexts(config_leaves)
 
@@ -364,7 +375,12 @@ class Controller:
         for context_info in contexts_to_build:
             rag_spec = context_info["rag"]
             context_info["enable_gpu"] = rag_spec.enable_gpu_search if rag_spec else False
-
+            if rag_spec and rag_spec.vector_store_cfg:
+                context_info["vector_store_info"] = {
+                    "type": rag_spec.vector_store_cfg.get("type", None), # for faiss, pgvector, pinecone
+                    "connection": rag_spec.vector_store_cfg.get("connection", None), # for pgvector
+                    "collection_name": rag_spec.vector_store_cfg.get("collection_name", rag_spec.get_hash()), # for pgvector
+                }
         # Initialize progress display for context building
         context_display = ContextBuildingDisplay(contexts_to_build)
         context_display.start()
