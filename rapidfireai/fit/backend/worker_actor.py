@@ -33,7 +33,6 @@ from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager, USE_SHARED_MEMORY
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
 from rapidfireai.utils.constants import (
-    MLFlowConfig,
     RunStatus,
     SHMObjectType,
     TaskStatus,
@@ -630,7 +629,7 @@ class WorkerActor:
                     self.logger.debug(f"Worker {self.worker_id} distributed training cleaned up")
             except Exception as e:
                 self.logger.exception(f"WorkerActor {self.worker_id} error: {e}")
-                self.db.set_experiment_error(str(e) + "\n" + traceback.format_exc())
+                self.db.set_experiment_error(self.experiment_id, str(e) + "\n" + traceback.format_exc())
                 break
 
         self._cleanup()
