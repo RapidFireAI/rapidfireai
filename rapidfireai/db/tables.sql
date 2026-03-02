@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS runs (
     source TEXT DEFAULT '',
     ended_by TEXT DEFAULT '',
     warm_started_from INTEGER DEFAULT NULL,
-    cloned_from INTEGER DEFAULT NULL
+    cloned_from INTEGER DEFAULT NULL,
+    estimated_runtime REAL DEFAULT 0.0,
+    required_workers INTEGER DEFAULT 0
 );
 
 -- Worker Task table (fit mode)
@@ -70,6 +72,7 @@ CREATE TABLE IF NOT EXISTS worker_task (
     status TEXT NOT NULL,
     run_id INTEGER NOT NULL,
     chunk_id INTEGER NOT NULL,
+    multi_worker_details TEXT DEFAULT '{}',
     config_options TEXT DEFAULT '{}',
     FOREIGN KEY (run_id) REFERENCES runs (run_id)
 );
