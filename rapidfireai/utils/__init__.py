@@ -9,7 +9,7 @@ from .constants import (
     # Configs
     DispatcherConfig,
     FrontendConfig,
-    MLFlowConfig,
+    MLflowConfig,
     JupyterConfig,
     RayConfig,
     ColabConfig,
@@ -60,7 +60,7 @@ __all__ = [
     # Configs
     "DispatcherConfig",
     "FrontendConfig",
-    "MLFlowConfig",
+    "MLflowConfig",
     "JupyterConfig",
     "RayConfig",
     "ColabConfig",
