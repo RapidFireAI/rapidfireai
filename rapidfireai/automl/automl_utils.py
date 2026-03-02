@@ -3,7 +3,7 @@
 from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
-from rapidfireai.fit.utils.exceptions import AutoMLException
+from rapidfireai.utils.exceptions import AutoMLException
 
 
 def _is_valid_reranker_top_n_vs_k(pipeline: Any) -> bool:
