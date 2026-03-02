@@ -1,11 +1,9 @@
 """
 Comprehensive test suite for metric logging abstraction layer.
 
-Tests the MetricLogger interface and all implementations:
+Tests the MetricLogger interface and implementations:
 - MLflowMetricLogger
 - TensorBoardMetricLogger
-- DualMetricLogger
-- create_metric_logger() factory function
 """
 
 import os
@@ -14,90 +12,9 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
-from rapidfireai.fit.utils.metric_logger import (
-    MetricLogger,
-    MLflowMetricLogger,
-    TensorBoardMetricLogger,
-    DualMetricLogger,
-    create_metric_logger,
-)
-
-
-class TestMetricLoggerFactory:
-    """Test suite for create_metric_logger() factory function."""
-
-    def test_create_mlflow_logger(self):
-        """Test creating MLflow logger with valid URI."""
-        logger = create_metric_logger(
-            backend="mlflow",
-            mlflow_tracking_uri="http://localhost:8852"
-        )
-
-        assert isinstance(logger, MLflowMetricLogger)
-
-    def test_create_tensorboard_logger(self, temp_tensorboard_dir):
-        """Test creating TensorBoard logger with valid log_dir."""
-        logger = create_metric_logger(
-            backend="tensorboard",
-            tensorboard_log_dir=temp_tensorboard_dir
-        )
-
-        assert isinstance(logger, TensorBoardMetricLogger)
-
-    def test_create_dual_logger(self, temp_tensorboard_dir):
-        """Test creating Dual logger with both parameters."""
-        logger = create_metric_logger(
-            backend="both",
-            mlflow_tracking_uri="http://localhost:8852",
-            tensorboard_log_dir=temp_tensorboard_dir
-        )
-
-        assert isinstance(logger, DualMetricLogger)
-
-    def test_backend_case_insensitive(self):
-        """Test that backend name is case-insensitive."""
-        logger1 = create_metric_logger(
-            backend="MLFLOW",
-            mlflow_tracking_uri="http://localhost:8852"
-        )
-        logger2 = create_metric_logger(
-            backend="MlFlow",
-            mlflow_tracking_uri="http://localhost:8852"
-        )
-
-        assert isinstance(logger1, MLflowMetricLogger)
-        assert isinstance(logger2, MLflowMetricLogger)
-
-    def test_invalid_backend_name(self):
-        """Test error handling for invalid backend name."""
-        with pytest.raises(ValueError, match="Invalid backend"):
-            create_metric_logger(
-                backend="invalid_backend",
-                mlflow_tracking_uri="http://localhost:8852"
-            )
-
-    def test_missing_mlflow_uri(self):
-        """Test error when mlflow_tracking_uri is missing for mlflow backend."""
-        with pytest.raises(ValueError, match="mlflow_tracking_uri required"):
-            create_metric_logger(backend="mlflow")
-
-    def test_missing_tensorboard_dir(self):
-        """Test error when tensorboard_log_dir is missing for tensorboard backend."""
-        with pytest.raises(ValueError, match="tensorboard_log_dir required"):
-            create_metric_logger(backend="tensorboard")
-
-    def test_missing_both_parameters_for_dual(self):
-        """Test error when both parameters are missing for 'both' backend."""
-        with pytest.raises(ValueError, match="Both mlflow_tracking_uri and tensorboard_log_dir required"):
-            create_metric_logger(backend="both")
-
-    def test_missing_mlflow_uri_for_dual(self, temp_tensorboard_dir):
-        """Test error when only TensorBoard dir provided for 'both' backend."""
-        with pytest.raises(ValueError, match="Both mlflow_tracking_uri and tensorboard_log_dir required"):
-            create_metric_logger(
-                backend="both",
-                tensorboard_log_dir=temp_tensorboard_dir
-            )
+from rapidfireai.metrics.metric_logger import MetricLogger
+from rapidfireai.metrics.metric_mlflow_manager import MLflowMetricLogger
+from rapidfireai.metrics.metric_tensorboard_manager import TensorBoardMetricLogger
 
 
 class TestMLflowMetricLogger:
@@ -277,87 +194,6 @@ class TestTensorBoardMetricLogger:
                 mock_close2.assert_called_once()
 
 
-class TestDualMetricLogger:
-    """Test suite for DualMetricLogger."""
-
-    def test_create_run_calls_both_backends(self, dual_logger, mock_mlflow_manager):
-        """Test that create_run calls both MLflow and TensorBoard."""
-        with patch.object(dual_logger.tensorboard_logger, 'create_run', return_value="run_1") as mock_tb:
-            run_id = dual_logger.create_run("run_1")
-
-            mock_mlflow_manager.create_run.assert_called_once_with("run_1")
-            mock_tb.assert_called_once_with("run_1")
-            assert run_id == "test_run_id"  # Returns MLflow run_id
-
-    def test_log_param_calls_both_backends(self, dual_logger, mock_mlflow_manager):
-        """Test that log_param calls both MLflow and TensorBoard."""
-        with patch.object(dual_logger.tensorboard_logger, 'log_param') as mock_tb:
-            dual_logger.log_param("run_1", "learning_rate", "1e-3")
-
-            mock_mlflow_manager.log_param.assert_called_once_with("run_1", "learning_rate", "1e-3")
-            mock_tb.assert_called_once_with("run_1", "learning_rate", "1e-3")
-
-    def test_log_metric_calls_both_backends(self, dual_logger, mock_mlflow_manager):
-        """Test that log_metric calls both MLflow and TensorBoard with same parameters."""
-        with patch.object(dual_logger.tensorboard_logger, 'log_metric') as mock_tb:
-            dual_logger.log_metric("run_1", "loss", 0.5, step=100)
-
-            mock_mlflow_manager.log_metric.assert_called_once_with("run_1", "loss", 0.5, step=100)
-            mock_tb.assert_called_once_with("run_1", "loss", 0.5, step=100)
-
-    def test_end_run_calls_both_backends(self, dual_logger, mock_mlflow_manager):
-        """Test that end_run calls both MLflow and TensorBoard."""
-        with patch.object(dual_logger.tensorboard_logger, 'end_run') as mock_tb:
-            dual_logger.end_run("run_1")
-
-            mock_mlflow_manager.end_run.assert_called_once_with("run_1")
-            mock_tb.assert_called_once_with("run_1")
-
-    def test_delete_run_only_calls_mlflow(self, dual_logger, mock_mlflow_manager):
-        """Test that delete_run only calls MLflow (TensorBoard doesn't support delete)."""
-        with patch.object(dual_logger.tensorboard_logger, 'delete_run') as mock_tb:
-            dual_logger.delete_run("run_1")
-
-            mock_mlflow_manager.delete_run.assert_called_once_with("run_1")
-            # TensorBoard delete_run is not called
-            mock_tb.assert_not_called()
-
-    def test_get_run_metrics_returns_mlflow_metrics(self, dual_logger, mock_mlflow_manager):
-        """Test that get_run_metrics returns MLflow metrics (primary source)."""
-        metrics = dual_logger.get_run_metrics("run_1")
-
-        mock_mlflow_manager.get_run_metrics.assert_called_once_with("run_1")
-        assert "loss" in metrics
-        assert "accuracy" in metrics
-
-    def test_get_experiment_returns_mlflow_experiment(self, dual_logger, mock_mlflow_manager):
-        """Test that get_experiment returns MLflow experiment ID."""
-        exp_id = dual_logger.get_experiment("test_experiment")
-
-        mock_mlflow_manager.get_experiment.assert_called_once_with("test_experiment")
-        assert exp_id == "test_experiment_id"
-
-    def test_both_backends_receive_identical_data(self, dual_logger, mock_mlflow_manager):
-        """Test that both backends receive identical data for all operations."""
-        with patch.object(dual_logger.tensorboard_logger, 'create_run') as mock_tb_create:
-            with patch.object(dual_logger.tensorboard_logger, 'log_param') as mock_tb_param:
-                with patch.object(dual_logger.tensorboard_logger, 'log_metric') as mock_tb_metric:
-                    # Create run
-                    dual_logger.create_run("run_1")
-                    mock_mlflow_manager.create_run.assert_called_with("run_1")
-                    mock_tb_create.assert_called_with("run_1")
-
-                    # Log param
-                    dual_logger.log_param("run_1", "batch_size", "32")
-                    mock_mlflow_manager.log_param.assert_called_with("run_1", "batch_size", "32")
-                    mock_tb_param.assert_called_with("run_1", "batch_size", "32")
-
-                    # Log metric
-                    dual_logger.log_metric("run_1", "loss", 0.5, step=100)
-                    mock_mlflow_manager.log_metric.assert_called_with("run_1", "loss", 0.5, step=100)
-                    mock_tb_metric.assert_called_with("run_1", "loss", 0.5, step=100)
-
-
 class TestMetricLoggerInterface:
     """Test suite for MetricLogger abstract base class."""
 
@@ -376,7 +212,7 @@ class TestMetricLoggerInterface:
             'get_run_metrics',
         ]
 
-        for implementation in [MLflowMetricLogger, TensorBoardMetricLogger, DualMetricLogger]:
+        for implementation in [MLflowMetricLogger, TensorBoardMetricLogger]:
             for method in required_methods:
                 assert hasattr(implementation, method)
                 assert callable(getattr(implementation, method))
@@ -391,18 +227,12 @@ class TestMetricLoggerInterface:
         logger = TensorBoardMetricLogger(temp_tensorboard_dir)
         assert isinstance(logger, MetricLogger)
 
-    def test_dual_logger_conforms_to_interface(self, temp_tensorboard_dir):
-        """Test that DualMetricLogger conforms to MetricLogger interface."""
-        logger = DualMetricLogger("http://localhost:8852", temp_tensorboard_dir)
-        assert isinstance(logger, MetricLogger)
-
-
 class TestCallbacksIntegration:
     """Test suite for integration with callbacks."""
 
     def test_metric_logging_callback_accepts_metric_logger(self):
         """Test that MetricLoggingCallback accepts metric_logger parameter."""
-        from rapidfireai.ml.callbacks import MetricLoggingCallback
+        from rapidfireai.fit.ml.callbacks import MetricLoggingCallback
 
         mock_logger = Mock(spec=MetricLogger)
         callback = MetricLoggingCallback(
@@ -417,7 +247,7 @@ class TestCallbacksIntegration:
 
     def test_generation_metrics_callback_accepts_metric_logger(self):
         """Test that GenerationMetricsCallback accepts metric_logger parameter."""
-        from rapidfireai.ml.callbacks import GenerationMetricsCallback
+        from rapidfireai.fit.ml.callbacks import GenerationMetricsCallback
         from transformers import AutoTokenizer
         from datasets import Dataset
 
@@ -438,7 +268,7 @@ class TestCallbacksIntegration:
 
     def test_callback_calls_log_metric(self):
         """Test that callback calls metric_logger.log_metric()."""
-        from rapidfireai.ml.callbacks import MetricLoggingCallback
+        from rapidfireai.fit.ml.callbacks import MetricLoggingCallback
         from transformers import TrainerState, TrainerControl, TrainingArguments
 
         mock_logger = Mock(spec=MetricLogger)
@@ -463,7 +293,7 @@ class TestCallbacksIntegration:
 
     def test_callback_step_offset_works_correctly(self):
         """Test that callbacks apply completed_steps offset correctly."""
-        from rapidfireai.ml.callbacks import MetricLoggingCallback
+        from rapidfireai.fit.ml.callbacks import MetricLoggingCallback
         from transformers import TrainerState, TrainerControl, TrainingArguments
 
         mock_logger = Mock(spec=MetricLogger)
