@@ -21,7 +21,7 @@ from rapidfireai.utils.constants import (
     FrontendConfig,
     ICOperation,
     ICStatus,
-    MLFlowConfig,
+    MLflowConfig,
     PipelineStatus,
     RF_LOG_FILENAME,
     RF_LOG_PATH,
@@ -29,7 +29,7 @@ from rapidfireai.utils.constants import (
 )
 from rapidfireai.utils.dispatcher_utils import check_experiment_running
 
-CORS_ALLOWED_ORIGINS = ["http://localhost", DispatcherConfig.URL, MLFlowConfig.URL, FrontendConfig.URL, "*"]
+CORS_ALLOWED_ORIGINS = ["http://localhost", DispatcherConfig.URL, MLflowConfig.URL, FrontendConfig.URL, "*"]
 
 
 class Dispatcher:
