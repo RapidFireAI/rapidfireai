@@ -252,9 +252,6 @@ def install_packages(init_packages: list[str] | None = None):
         if get_compute_capability() >= 8.0:
             packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
         packages.append({"package": "transformers>=4.56.1,<5.0.0", "extra_args": ["--upgrade"]})
-        packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-        packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
 
         packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
 

@@ -423,7 +423,7 @@ class Controller:
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Process the interactive control."""
         # get IC Ops scheduled tasks
-        ic_scheduled_tasks = self.db.get_pending_ic_operations()
+        ic_scheduled_tasks = self.db.get_pending_ic_operations(target_type="run")
 
         # track states for each task(run) and collect clone_modify tasks separately
         run_states = {}

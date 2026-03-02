@@ -10,6 +10,7 @@ import os
 from typing import Any
 
 from rapidfireai.db.db_interface import DatabaseInterface
+from rapidfireai.utils.serialize import decode_db_payload, encode_payload, extract_pipeline_config_json
 from rapidfireai.utils.constants import (
     ContextStatus,
     ControllerTask,
@@ -24,20 +25,6 @@ from rapidfireai.utils.constants import (
     TaskStatus,
     WorkerTask,
 )
-
-
-def encode_payload(payload: object) -> str:
-    """Encode the payload for the database using dill."""
-    import base64
-    import dill
-    return base64.b64encode(dill.dumps(payload)).decode("utf-8")
-
-
-def decode_db_payload(payload: str) -> object:
-    """Decode the payload from the database using dill."""
-    import base64
-    import dill
-    return dill.loads(base64.b64decode(payload))
 
 
 class RfDb:
@@ -787,8 +774,8 @@ class RfDb:
         num_epochs_completed: int | None = None,
         chunk_offset: int | None = None,
         error: str | None = None,
-        source: RunSource | None = None,
-        ended_by: RunEndedBy | None = None,
+        source: RunSource | str | None = None,
+        ended_by: RunEndedBy | str | None = None,
         warm_started_from: int | None = None,
         cloned_from: int | None = None,
     ) -> None:
@@ -804,8 +791,8 @@ class RfDb:
             "num_epochs_completed": num_epochs_completed,
             "chunk_offset": chunk_offset,
             "error": error,
-            "source": source.value if source else None,
-            "ended_by": ended_by.value if ended_by else None,
+            "source": source.value if isinstance(source, RunSource) else source,
+            "ended_by": ended_by.value if isinstance(ended_by, RunEndedBy) else ended_by,
             "warm_started_from": warm_started_from,
             "cloned_from": cloned_from,
         }
@@ -1068,7 +1055,6 @@ class RfDb:
         encoded_config = encode_payload(pipeline_config)
 
         # Extract JSON-serializable data
-        from rapidfireai.utils.serialize import extract_pipeline_config_json
         json_config_dict = extract_pipeline_config_json(pipeline_config)
         json_config_str = json.dumps(json_config_dict) if json_config_dict else "{}"
         flattened_config_str = json.dumps(flattened_config) if flattened_config else "{}"
