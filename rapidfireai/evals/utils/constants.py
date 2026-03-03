@@ -3,6 +3,34 @@ from enum import Enum
 from rapidfireai.utils.colab import get_colab_auth_token
 from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_DB_PATH, ExperimentStatus
 
+# ---------------------------------------------------------------------------
+# Reranker class registry
+# ---------------------------------------------------------------------------
+# Maps the string that appears in the clone-modify dialog (the class __qualname__)
+# back to the live class object so we can restore it after round-tripping through
+# JSON.  Add any new reranker class here to make it available in the UI.
+# ---------------------------------------------------------------------------
+def _build_reranker_registry() -> dict[str, type]:
+    registry: dict[str, type] = {}
+    try:
+        from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+        registry[CrossEncoderReranker.__qualname__] = CrossEncoderReranker
+    except ImportError:
+        pass
+    try:
+        from langchain.retrievers.document_compressors import LLMChainExtractor
+        registry[LLMChainExtractor.__qualname__] = LLMChainExtractor
+    except ImportError:
+        pass
+    try:
+        from langchain_cohere import CohereRerank
+        registry[CohereRerank.__qualname__] = CohereRerank
+    except ImportError:
+        pass
+    return registry
+
+RERANKER_CLASS_REGISTRY: dict[str, type] = _build_reranker_registry()
+
 # Actor Constants
 NUM_QUERY_PROCESSING_ACTORS = 4
 NUM_CPUS_PER_DOC_ACTOR = 2 if os.cpu_count() > 2 else 1

@@ -12,7 +12,7 @@ import json
 import time
 
 from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
-from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, SEARCH_TYPE_KEYS
+from rapidfireai.evals.utils.constants import RERANKER_CLASS_REGISTRY, SEARCH_DEFAULTS, SEARCH_TYPE_KEYS
 
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
@@ -339,13 +339,28 @@ class InteractiveControlHandler:
                     **{k: v for k, v in search_cfg.items() if k != "type"},
                 }
 
-            # reranker_cfg: "class" (display-only in dialog) + kwargs.
-            # The UI serialises the class as its __qualname__ string; we must NOT
-            # overwrite rag.reranker_cls with that string — it must remain the live
-            # class object so build_pipeline() can instantiate it later.
-            # Only kwargs (e.g. top_n) are updated from the user's edits.
+            # reranker_cfg: {"class": "<ClassName>", <kwargs>}
+            # The UI serialises the class as its __qualname__ string.  Resolve it
+            # back to the live class via the registry before storing it so that
+            # build_pipeline() can call it.  If the string doesn't match any known
+            # class we raise a clear error rather than silently storing a string.
             if "reranker_cfg" in rag_config:
                 reranker_cfg = rag_config["reranker_cfg"]
+                if "class" in reranker_cfg:
+                    cls_value = reranker_cfg["class"]
+                    if isinstance(cls_value, type):
+                        # Already a live class (shouldn't normally happen via JSON, but be safe)
+                        rag.reranker_cls = cls_value
+                    elif isinstance(cls_value, str):
+                        resolved = RERANKER_CLASS_REGISTRY.get(cls_value)
+                        if resolved is None:
+                            raise ValueError(
+                                f"Unknown reranker class '{cls_value}'. "
+                                f"Supported classes: {sorted(RERANKER_CLASS_REGISTRY.keys())}. "
+                                f"To use a custom class, add it to RERANKER_CLASS_REGISTRY in "
+                                f"rapidfireai/evals/utils/constants.py."
+                            )
+                        rag.reranker_cls = resolved
                 if rag.reranker_kwargs is None:
                     rag.reranker_kwargs = {}
                 rag.reranker_kwargs.update({k: v for k, v in reranker_cfg.items() if k != "class"})
