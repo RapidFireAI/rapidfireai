@@ -533,9 +533,13 @@ def _configure_training_args(
     if "save_steps" in training_args:
         training_args.pop("save_steps")
 
-    # Configure distributed training arguments for FSDP
+    # Configure distributed training arguments for FSDP.
+    # Each Ray actor sees only its assigned GPU as cuda:0, so the HF Trainer device
+    # index is always 0. trainer_config.local_rank holds the FSDP group rank (used
+    # for conditional logic like "only rank 0 saves checkpoints") and must not be
+    # used as a device index here.
     if use_fsdp:
-        training_args["local_rank"] = trainer_config.local_rank
+        training_args["local_rank"] = 0
         # training_args["dataloader_num_workers"] = trainer_config.world_size  # Avoid multiprocessing issues with FSDP
         training_args["dataloader_pin_memory"] = False
         training_args["remove_unused_columns"] = False  # FSDP requires this
