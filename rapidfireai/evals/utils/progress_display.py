@@ -338,15 +338,7 @@ class PipelineProgressDisplay:
             data = self.pipeline_data[pid]
             all_metric_names.update(data["metrics"].keys())
 
-        # Sort metrics for consistent display order (prefer common metrics first)
-        metric_precedence = ["Accuracy", "Precision", "Recall", "F1 Score", "NDCG@5", "MRR", "Throughput", "Total", "Samples Processed"]
-        ordered_metrics: list[str] = []
-        for metric in metric_precedence:
-            if metric in all_metric_names:
-                ordered_metrics.append(metric)
-        for metric in sorted(all_metric_names):
-            if metric not in ordered_metrics:
-                ordered_metrics.append(metric)
+        ordered_metrics: list[str] = sorted(all_metric_names)
 
         # Flatten metadata for every pipeline and collect the union of all column names
         pipeline_flat_metadata: dict[int, dict] = {}
@@ -357,6 +349,20 @@ class PipelineProgressDisplay:
             flat = self._flatten_metadata(raw)
             pipeline_flat_metadata[pid] = flat
             all_flat_keys.update(flat.keys())
+
+        # Drop any parent key whose dot-notation children are already present.
+        # e.g. if both "embedding_cfg" and "embedding_cfg.class" are in the set,
+        # remove "embedding_cfg" — showing the dict as a string alongside its
+        # individually-flattened members is redundant and confusing.
+        all_flat_keys = {
+            key for key in all_flat_keys
+            if not any(other.startswith(key + ".") for other in all_flat_keys)
+        }
+
+        # Similarly remove any metric-column name that duplicates a metadata parent key
+        # (e.g. "embedding_cfg" added as a raw metric when its children are metadata cols).
+        all_metric_names -= {key for key in all_metric_names if key in all_flat_keys
+                             or any(meta.startswith(key + ".") for meta in all_flat_keys)}
 
         ordered_metadata = sorted(all_flat_keys, key=self._metadata_sort_key)
 

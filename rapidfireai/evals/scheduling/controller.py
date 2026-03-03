@@ -774,10 +774,14 @@ class Controller:
             # Update pipeline status
             db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
             if progress_display:
-                # Update display with final metrics to ensure all metrics are shown
-                # Convert ordered_metrics format to display format with CI info
+                # Update display with final metrics to ensure all metrics are shown.
+                # Exclude config/info keys — they are already shown in the metadata columns
+                # and must not be duplicated into the metrics columns.
+                config_info_keys = {"run_id", "model_name"} | set(hyperparam_keys)
                 display_metrics = {}
                 for metric_name, metric_data in ordered_metrics.items():
+                    if metric_name in config_info_keys:
+                        continue
                     if isinstance(metric_data, dict):
                         display_metrics[metric_name] = {
                             "value": metric_data.get("value", 0),
@@ -1200,6 +1204,17 @@ class Controller:
                             # Accumulate metrics from all completed shards
                             try:
                                 cumulative_metrics = pipeline_config["accumulate_metrics_fn"](pipeline_results[pipeline_id]["metrics"])
+                                # Inject "Samples Processed" so it appears in the live display,
+                                # mirroring what aggregator.py does in the final aggregation path.
+                                actual_samples = sum(
+                                    m.get("value", 0)
+                                    for m in pipeline_results[pipeline_id]["metrics"].get("Samples Processed", [{}])
+                                )
+                                if actual_samples > 0 and "Samples Processed" not in cumulative_metrics:
+                                    cumulative_metrics = {
+                                        "Samples Processed": {"value": actual_samples, "is_algebraic": False},
+                                        **cumulative_metrics,
+                                    }
                                 # Add confidence interval information
                                 metrics_with_ci = aggregator.online_strategy.add_confidence_interval_info(
                                     cumulative_metrics, samples_processed
@@ -1546,15 +1561,30 @@ class Controller:
             db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
             db.set_pipeline_current_shard(pipeline_id, shard_id)
 
-        # PHASE 8: Compute final metrics for each pipeline
+        # PHASE 8: Compute final metrics for each pipeline (including dynamically cloned ones).
+        # pipeline_id_to_config contains all pipelines (originals + clones added via _handle_clone).
+        # pipeline_ids only has the originals registered at startup, so we use the config dict keys.
+        all_pipeline_ids = list(pipeline_id_to_config.keys())
+
+        # Build pipeline_id_to_info for original pipelines from pipeline_info list
         pipeline_id_to_info = {}
         for info_dict in pipeline_info:
-            pipeline_id = info_dict["pipeline_id"]
+            pid = info_dict["pipeline_id"]
             info_copy = {k: v for k, v in info_dict.items() if k not in ["pipeline_config", "pipeline_id"]}
-            pipeline_id_to_info[pipeline_id] = info_copy
+            pipeline_id_to_info[pid] = info_copy
+
+        # For cloned pipelines (not in pipeline_info), pull their display metadata directly
+        # from the progress_display which already has it from add_pipeline().
+        for pid in all_pipeline_ids:
+            if pid not in pipeline_id_to_info and progress_display:
+                clone_metadata = progress_display.pipeline_metadata.get(pid, {})
+                clone_data = progress_display.pipeline_data.get(pid, {})
+                clone_info = {"model_name": clone_data.get("model", "Unknown")}
+                clone_info.update(clone_metadata)
+                pipeline_id_to_info[pid] = clone_info
 
         final_results = self._compute_final_metrics_for_pipelines(
-            pipeline_ids,
+            all_pipeline_ids,
             pipeline_id_to_config,
             pipeline_aggregators,
             pipeline_results,
