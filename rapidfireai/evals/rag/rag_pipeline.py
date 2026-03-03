@@ -308,6 +308,8 @@ class LangChainRagSpec:
             pinecone_spec = pinecone_kwargs.pop("spec", None)
             if pinecone_spec is None:
                 raise ValueError("vector_store_cfg must include a 'spec' key for pinecone")
+
+            pinecone_kwargs.pop("batch_size", None)
             
             pc = Pinecone(api_key=pinecone_api_key)
             if not pc.has_index(self.pinecone_index_name):
@@ -476,12 +478,18 @@ class LangChainRagSpec:
             LangChainRagSpec: A new instance with the same configuration.
         """
         # Build config dicts from current instance for the copy
-        embedding_cfg = {"class": self.embedding_cls, **self.embedding_kwargs}
-        search_cfg = {"type": self.search_type, **self.search_kwargs}
-        reranker_cfg = (
-            {"class": self.reranker_cls, **copy.deepcopy(self.reranker_kwargs)}
-            if self.reranker_cls else None
-        )
+        if self.embedding_cls is not None:
+            embedding_cfg = {"class": self.embedding_cls, **self.embedding_kwargs}
+        else:
+            embedding_cfg = None
+        if self.reranker_cls is not None:
+            reranker_cfg = {"class": self.reranker_cls, **copy.deepcopy(self.reranker_kwargs)}
+        else:
+            reranker_cfg = None
+        if self.search_type:
+            search_cfg = {"type": self.search_type, **self.search_kwargs}
+        else:
+            search_cfg = None
         new_rag = LangChainRagSpec(
             document_loader=self.document_loader,
             text_splitter=self.text_splitter,

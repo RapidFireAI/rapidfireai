@@ -86,7 +86,7 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
             reranker_kwargs = getattr(rag_spec, "reranker_kwargs", None) or {}
             if reranker_cls is not None:
                 rag_config["reranker_cfg"] = {
-                    "class": reranker_cls.__name__,
+                    "class": reranker_cls.__qualname__,
                     **{k: v for k, v in reranker_kwargs.items() if v is not None},
                 }
 
