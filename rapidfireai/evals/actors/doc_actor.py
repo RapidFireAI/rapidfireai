@@ -153,7 +153,13 @@ class DocProcessingActor:
                     self.logger.info(f"PGVector collection name: {rag_spec.pgvector_collection_name}")
 
                 elif rag_spec.vector_store is not None and isinstance(rag_spec.vector_store, PineconeVectorStore):
-                    raise NotImplementedError("Pinecone store not implemented for cross-actor sharing")
+                    self.logger.info("Serializing PineconeVector store for cross-actor sharing...")
+                    components.update({
+                        "vector_store_type": "pinecone",
+                        "pinecone_index_name": rag_spec.pinecone_index_name,
+                        "pinecone_api_key": os.environ.get("PINECONE_API_KEY", None),
+                    })
+                    self.logger.info(f"Pinecone index name: {rag_spec.pinecone_index_name}")
                     
                 else:
                     try:

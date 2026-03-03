@@ -18,7 +18,7 @@ from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPE
 from langchain_community.vectorstores import FAISS
 from langchain_postgres import PGVector
 from langchain_pinecone import PineconeVectorStore
-
+from pinecone import Pinecone
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
@@ -228,7 +228,13 @@ class QueryProcessingActor:
                                 use_jsonb=True,
                             )
                         elif vector_store_type == "pinecone":
-                            raise NotImplementedError("Pinecone vector store not implemented for query actors")
+                            if embedding_function is None:
+                                raise ValueError("embedding_function is not set. Vector store cannot be created without an embedding function.")
+                            pc = Pinecone(api_key=context_generator_ref.get("pinecone_api_key"))
+                            vector_store = PineconeVectorStore(
+                                index=pc.Index(context_generator_ref.get("pinecone_index_name")),
+                                embedding=embedding_function,
+                            )
                         else:
                             vector_store = pickle.loads(context_generator_ref["vector_store"])
 

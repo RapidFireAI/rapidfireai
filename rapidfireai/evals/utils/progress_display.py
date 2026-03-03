@@ -84,7 +84,8 @@ class ContextBuildingDisplay:
                     collection_name = f' [{vector_store_info.get("collection_name", "")}]'
                     details = f"PGVector{collection_name}, " + ("GPU" if data["enable_gpu"] else "CPU")
                 elif type == "pinecone":
-                    details = "Pinecone, " + ("GPU" if data["enable_gpu"] else "CPU")
+                    index_name = f' [{vector_store_info.get("pinecone_index_name", "")}]'
+                    details = f"Pinecone{index_name}, " + ("GPU" if data["enable_gpu"] else "CPU")
                 else:
                     details = "Unknown, " + ("GPU" if data["enable_gpu"] else "CPU")
             else:

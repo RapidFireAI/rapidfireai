@@ -381,6 +381,7 @@ class Controller:
                     "type": rag_spec.vector_store_cfg.get("type", None), # for faiss, pgvector, pinecone
                     "connection": rag_spec.vector_store_cfg.get("connection", None), # for pgvector
                     "collection_name": rag_spec.vector_store_cfg.get("collection_name", rag_spec.get_hash()), # for pgvector
+                    "pinecone_index_name": rag_spec.vector_store_cfg.get("index_name", "rf-" + rag_spec.get_hash()[:42]), # for pinecone
                 }
         # Initialize progress display for context building
         context_display = ContextBuildingDisplay(contexts_to_build)

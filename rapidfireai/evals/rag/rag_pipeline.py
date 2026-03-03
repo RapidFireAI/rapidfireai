@@ -9,17 +9,19 @@ from collections.abc import Callable
 from typing import Any, Optional
 import hashlib
 import json
+import os
 
 from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
 
 import faiss
+from pinecone import Pinecone, ServerlessSpec, PodSpec, ByocSpec
 from langchain_community.document_loaders.base import BaseLoader
 from langchain_core.documents import Document
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
 from langchain_postgres import PGVector
+from langchain_pinecone import PineconeVectorStore
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStore
 from langchain_text_splitters import TextSplitter
@@ -278,8 +280,48 @@ class LangChainRagSpec:
             )
 
         elif type == "pinecone":
-            #TODO: implement pinecone vector store
-            raise NotImplementedError(f"Pinecone vector store not implemented")
+            pinecone_kwargs = copy.deepcopy(self.vector_store_cfg)
+
+            pinecone_kwargs.pop("type", None)
+            pinecone_kwargs.pop("dimension", None)
+
+            if pinecone_kwargs.pop("name", None) is not None:
+                raise ValueError("vector_store_cfg must use the 'index_name' key to specify the index name.")
+            # If user provided an index name, use it; otherwise, use a hash of the RAG configuration
+            # This ensures that each RAG configuration has a unique collection name
+            # Pinecone index names must be <= 45 chars and start with a letter.
+            # Prefix "rf-" (3 chars) + first 42 chars of SHA256 = 45 chars total.
+            _default_index_name = "rf-" + self.get_hash()[:42]
+            self.pinecone_index_name = pinecone_kwargs.pop("index_name", _default_index_name)
+
+            # If user provided a Pinecone API key, use it; otherwise, use the environment variable
+            pinecone_api_key = pinecone_kwargs.pop("pinecone_api_key", os.environ.get("PINECONE_API_KEY", None))
+            if pinecone_api_key is None:
+                raise ValueError("vector_store_cfg must include a 'pinecone_api_key' key for pinecone or set the PINECONE_API_KEY environment variable")
+            else:
+                os.environ["PINECONE_API_KEY"] = pinecone_api_key
+            
+            metric = pinecone_kwargs.pop("metric", "cosine") # "cosine" or "euclidean" or "dotproduct"
+            if metric not in ["cosine", "euclidean", "dotproduct"]:
+                raise ValueError("metric must be one of 'cosine', 'euclidean', or 'dotproduct'")
+            
+            pinecone_spec = pinecone_kwargs.pop("spec", None)
+            if pinecone_spec is None:
+                raise ValueError("vector_store_cfg must include a 'spec' key for pinecone")
+            
+            pc = Pinecone(api_key=pinecone_api_key)
+            if not pc.has_index(self.pinecone_index_name):
+                pc.create_index(
+                    name=self.pinecone_index_name,
+                    dimension=len(self.embedding.embed_query("RapidFire AI is awesome!")),
+                    metric=metric,
+                    spec=pinecone_spec,
+                    **pinecone_kwargs
+                )
+            return PineconeVectorStore(
+                index=pc.Index(self.pinecone_index_name), 
+                embedding=self.embedding
+            )
         else:
             raise NotImplementedError(f"Vector store type {type} not implemented")
             
@@ -488,6 +530,16 @@ class LangChainRagSpec:
         # so it is part of the indexing stage, not retrieval
         rag_dict["enable_gpu_search"] = self.enable_gpu_search
 
-        # Convert to JSON string and hash
-        rag_json = json.dumps(rag_dict, sort_keys=True)
+        # Convert to JSON string and hash.
+        # Use a fallback encoder for objects like ServerlessSpec that aren't
+        # natively JSON serializable — try __dict__ first, then str().
+        def _default(obj):
+            if hasattr(obj, "asdict"):
+                return obj.asdict()
+            try:
+                return vars(obj)
+            except TypeError:
+                return str(obj)
+
+        rag_json = json.dumps(rag_dict, sort_keys=True, default=_default)
         return hashlib.sha256(rag_json.encode()).hexdigest()
