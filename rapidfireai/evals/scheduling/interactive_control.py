@@ -20,6 +20,7 @@ from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
 from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.evals.utils.serialize import extract_pipeline_display_metadata
 
 
 class InteractiveControlHandler:

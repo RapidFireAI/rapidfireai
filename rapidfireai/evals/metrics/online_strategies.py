@@ -126,6 +126,7 @@ class OnlineAggregationStrategy(ABC):
                         "lower_bound": lower,
                         "upper_bound": upper,
                         "margin_of_error": margin_of_error,
+                        "confidence_interval": margin_of_error,
                         "confidence_level": self.confidence_level,
                         "ci_method": self.get_name(),
                     }

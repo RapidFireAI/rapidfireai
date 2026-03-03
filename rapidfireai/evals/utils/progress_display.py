@@ -457,6 +457,18 @@ class PipelineProgressDisplay:
             return str(value)[:50]
         return str(value)
 
+    @staticmethod
+    def _format_nested_dict(d: dict) -> str:
+        """Format a nested dict compactly, preserving one level of nesting."""
+        parts = []
+        for k, v in d.items():
+            if isinstance(v, dict):
+                inner = ", ".join(f"{ik}={iv}" for ik, iv in v.items())
+                parts.append(f"{k}={{{inner}}}")
+            else:
+                parts.append(f"{k}={v}")
+        return ", ".join(parts)
+
     def start(self):
         """Start the live display."""
         df = self._create_dataframe()
