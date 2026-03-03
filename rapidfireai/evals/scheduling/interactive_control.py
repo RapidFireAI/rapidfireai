@@ -12,6 +12,7 @@ import json
 import time
 
 from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
+from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, SEARCH_TYPE_KEYS
 
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
@@ -316,39 +317,38 @@ class InteractiveControlHandler:
             f"prompt_manager={'present' if prompt_manager else 'None'}"
         )
 
-        # Apply RAG configuration changes if present in edited_json
-        # This mirrors the extract_rag_params logic in serialize.py but in reverse:
-        # applies the flattened rag_config back to the nested RAG object structure
+        # Apply RAG retrieval config changes if present in edited_json.
+        # Format mirrors LangChainRagSpec constructor args (search_cfg, reranker_cfg).
+        # Indexing-stage params (embedding_cfg, vector_store_cfg, text_splitter) are
+        # not accepted here — cloned pipelines always reuse the parent's pre-built index.
         if rag is not None and "rag_config" in edited_json:
             rag_config = edited_json["rag_config"]
             self.logger.info(f"Applying RAG config changes: {rag_config}")
 
-            # Map flattened rag_config keys to their locations in the RAG object
-            # This mapping corresponds to extract_rag_params() in serialize.py
+            # search_cfg: {"type": ..., <type-specific kwargs>}
+            # If the search type changes (e.g. parent used similarity, clone uses MMR),
+            # reset to fresh type-specific defaults so the parent's irrelevant kwargs
+            # (e.g. score_threshold) are not carried over.
+            if "search_cfg" in rag_config:
+                search_cfg = rag_config["search_cfg"]
+                new_type = search_cfg.get("type", rag.search_type)
+                rag.search_type = new_type
+                # Start from type-specific defaults, then apply user-provided overrides
+                rag.search_kwargs = {
+                    **SEARCH_DEFAULTS.get(new_type, {}),
+                    **{k: v for k, v in search_cfg.items() if k != "type"},
+                }
 
-            # Direct attribute: search_type
-            if "search_type" in rag_config:
-                rag.search_type = rag_config["search_type"]
-
-            # search_kwargs dict: k, filter, fetch_k, lambda_mult
-            if rag.search_kwargs is None:
-                rag.search_kwargs = {}
-            for key in ["k", "filter", "fetch_k", "lambda_mult"]:
-                if key in rag_config:
-                    rag.search_kwargs[key] = rag_config[key]
-
-            # reranker_kwargs dict: top_n
-            if rag.reranker_kwargs is None:
-                rag.reranker_kwargs = {}
-            if "top_n" in rag_config:
-                rag.reranker_kwargs["top_n"] = rag_config["top_n"]
-
-            # text_splitter attributes: chunk_size, chunk_overlap
-            if rag.text_splitter is not None:
-                if "chunk_size" in rag_config:
-                    rag.text_splitter._chunk_size = rag_config["chunk_size"]
-                if "chunk_overlap" in rag_config:
-                    rag.text_splitter._chunk_overlap = rag_config["chunk_overlap"]
+            # reranker_cfg: "class" (display-only in dialog) + kwargs.
+            # The UI serialises the class as its __qualname__ string; we must NOT
+            # overwrite rag.reranker_cls with that string — it must remain the live
+            # class object so build_pipeline() can instantiate it later.
+            # Only kwargs (e.g. top_n) are updated from the user's edits.
+            if "reranker_cfg" in rag_config:
+                reranker_cfg = rag_config["reranker_cfg"]
+                if rag.reranker_kwargs is None:
+                    rag.reranker_kwargs = {}
+                rag.reranker_kwargs.update({k: v for k, v in reranker_cfg.items() if k != "class"})
 
             self.logger.info(f"RAG config updated successfully")
 
@@ -546,54 +546,69 @@ class InteractiveControlHandler:
         else:
             model_name = "Unknown"
 
-        # Extract metadata fields (similar to controller.py)
-        search_type = None
-        rag_k = None
-        top_n = None
+        # Extract ALL metadata fields for progress display (mirrors controller.py)
+        text_splitter = None
         chunk_size = None
         chunk_overlap = None
+        embedding_cfg = None
+        vector_store_cfg = None
+        search_cfg = None
+        reranker_cfg = None
         sampling_params = None
         prompt_manager_k = None
         model_config_dict = None
 
         if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-            # Extract full model config (excluding the model name)
             model_config_copy = pipeline.model_config.copy()
             model_config_copy.pop("model", None)
-            if model_config_copy:  # Only assign if there are other configs
+            if model_config_copy:
                 model_config_dict = model_config_copy
 
-        # Extract RAG-related fields
         if hasattr(pipeline, "rag") and pipeline.rag is not None:
-            search_type = getattr(pipeline.rag, "search_type", None)
-            if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs is not None:
-                rag_k = pipeline.rag.search_kwargs.get("k", None)
-            if hasattr(pipeline.rag, "reranker_kwargs") and pipeline.rag.reranker_kwargs is not None:
-                top_n = pipeline.rag.reranker_kwargs.get("top_n", None)
-            if hasattr(pipeline.rag, "text_splitter") and pipeline.rag.text_splitter is not None:
-                chunk_size = getattr(pipeline.rag.text_splitter, "_chunk_size", None)
-                chunk_overlap = getattr(pipeline.rag.text_splitter, "_chunk_overlap", None)
+            rag = pipeline.rag
+            # Indexing stage (inherited from parent, read-only)
+            if hasattr(rag, "text_splitter") and rag.text_splitter is not None:
+                text_splitter = type(rag.text_splitter).__name__
+                chunk_size = getattr(rag.text_splitter, "_chunk_size", None)
+                chunk_overlap = getattr(rag.text_splitter, "_chunk_overlap", None)
+            if getattr(rag, "embedding_cls", None) is not None:
+                cls_name = rag.embedding_cls.__name__ if isinstance(rag.embedding_cls, type) else str(rag.embedding_cls)
+                embedding_cfg = {"class": cls_name}
+                if getattr(rag, "embedding_kwargs", None):
+                    embedding_cfg.update(rag.embedding_kwargs)
+            if getattr(rag, "vector_store_cfg", None) is not None:
+                vector_store_cfg = dict(rag.vector_store_cfg)
+            # Retrieval stage (may be modified by clone)
+            if getattr(rag, "search_type", None) is not None:
+                search_cfg = {"type": rag.search_type}
+                if hasattr(rag, "search_kwargs") and rag.search_kwargs:
+                    allowed_keys = SEARCH_TYPE_KEYS.get(rag.search_type, set(rag.search_kwargs.keys()))
+                    search_cfg.update({k: v for k, v in rag.search_kwargs.items() if k in allowed_keys and v is not None})
+            if getattr(rag, "reranker_cls", None) is not None:
+                reranker_cfg = {"class": rag.reranker_cls.__qualname__ if isinstance(rag.reranker_cls, type) else str(rag.reranker_cls)}
+                if hasattr(rag, "reranker_kwargs") and rag.reranker_kwargs:
+                    reranker_cfg.update({k: v for k, v in rag.reranker_kwargs.items() if v is not None})
 
-        # Extract sampling params from _user_params (dict, not SamplingParams object)
         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
             sampling_params = pipeline._user_params.get("sampling_params", None)
 
-        # Extract prompt_manager fields
         if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
             prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
 
-        # Add to progress display
+        # Add to progress display with ALL fields (indexing + retrieval + generation)
         if progress_display:
             progress_display.add_pipeline(
                 pipeline_id=new_pipeline_id,
                 pipeline_config=pipeline_config,
                 model_name=model_name,
                 status="ONGOING",
-                search_type=search_type,
-                rag_k=rag_k,
-                top_n=top_n,
+                text_splitter=text_splitter,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
+                embedding_cfg=embedding_cfg,
+                vector_store_cfg=vector_store_cfg,
+                search_cfg=search_cfg,
+                reranker_cfg=reranker_cfg,
                 sampling_params=sampling_params,
                 prompt_manager_k=prompt_manager_k,
                 model_config=model_config_dict,

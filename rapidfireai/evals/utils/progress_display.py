@@ -87,7 +87,8 @@ class ContextBuildingDisplay:
                     details = "Pinecone, " + ("GPU" if data["enable_gpu"] else "CPU")
                 else:
                     details = "Unknown, " + ("GPU" if data["enable_gpu"] else "CPU")
-
+            else:
+                details = "N/A, " + ("GPU" if data["enable_gpu"] else "CPU")
             rows.append(
                 {
                     "RAG Source ID": ctx_id,
@@ -166,9 +167,42 @@ class PipelineProgressDisplay:
     - Model name
     - Current shard progress (X/Y)
     - Confidence interval
-    - Pipeline configuration fields (search_type, chunk_size, etc.)
+    - Pipeline configuration fields (flattened with dot notation)
     - Other metrics (accuracy, throughput, etc.)
+
+    Dict-valued metadata fields (embedding_cfg, vector_store_cfg, search_cfg, reranker_cfg)
+    are recursively flattened into dot-notation columns, e.g. ``reranker_cfg.top_n``.
+    Keys that match sensitive patterns (api_key, password, etc.) are automatically hidden.
     """
+
+    # Substring patterns — any key whose lowercased name contains one of these strings is hidden.
+    _SENSITIVE_PATTERNS = frozenset({
+        "api_key",
+        "api_secret",
+        "secret",
+        "password",
+        "token",
+        "credentials",
+        "connection",
+        "device",
+    })
+
+    _CFG_FIELDS_TO_FLATTEN = frozenset({
+        "embedding_cfg", "vector_store_cfg", "search_cfg", "reranker_cfg",
+    })
+
+    _METADATA_KEYS = [
+        "text_splitter", "chunk_size", "chunk_overlap", "embedding_cfg", "vector_store_cfg",
+        "search_cfg", "reranker_cfg",
+        "sampling_params", "prompt_manager_k", "model_config",
+    ]
+
+    _METADATA_PREFIX_ORDER = [
+        "text_splitter", "chunk_size", "chunk_overlap",
+        "embedding_cfg", "vector_store_cfg",
+        "search_cfg", "reranker_cfg",
+        "sampling_params", "prompt_manager_k", "model_config",
+    ]
 
     def __init__(self, pipelines: list[dict], num_shards: int):
         """
@@ -179,14 +213,19 @@ class PipelineProgressDisplay:
                       - pipeline_id (required)
                       - pipeline_config (required)
                       - model_name (required)
-                      - search_type (optional)
-                      - rag_k (optional)
-                      - top_n (optional)
-                      - chunk_size (optional)
-                      - chunk_overlap (optional)
-                      - sampling_params (optional)
-                      - prompt_manager_k (optional)
-                      - model_config (optional)
+                      Indexing stage (read-only display):
+                      - text_splitter (optional, str)
+                      - chunk_size (optional, int)
+                      - chunk_overlap (optional, int)
+                      - embedding_cfg (optional, dict)
+                      - vector_store_cfg (optional, dict)
+                      Retrieval stage:
+                      - search_cfg (optional, dict)
+                      - reranker_cfg (optional, dict)
+                      Generation stage:
+                      - sampling_params (optional, dict)
+                      - prompt_manager_k (optional, int)
+                      - model_config (optional, dict)
             num_shards: Total number of shards
         """
         self.pipelines = pipelines
@@ -211,20 +250,89 @@ class PipelineProgressDisplay:
                 "status": "ONGOING",
             }
 
-            # Store additional metadata fields (only non-None values)
             metadata = {}
-            for key in ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                       "sampling_params", "prompt_manager_k", "model_config"]:
+            for key in self._METADATA_KEYS:
                 if key in pipeline_info:
                     metadata[key] = pipeline_info[key]
             self.pipeline_metadata[pid] = metadata
 
         self.display_handle = None
 
+    @staticmethod
+    def _is_sensitive_key(key: str) -> bool:
+        """Check if a key (or any component of a dot-separated key) matches a sensitive pattern."""
+        key_lower = key.lower()
+        for pattern in PipelineProgressDisplay._SENSITIVE_PATTERNS:
+            if pattern in key_lower:
+                return True
+        return False
+
+    @staticmethod
+    def _flatten_dict(prefix: str, d: dict, result: dict | None = None) -> dict:
+        """
+        Recursively flatten a dict into dot-notation keys, skipping sensitive keys.
+
+        Example::
+
+            _flatten_dict("search_cfg", {"type": "similarity", "k": 5})
+            → {"search_cfg.type": "similarity", "search_cfg.k": 5}
+        """
+        if result is None:
+            result = {}
+        for key, value in d.items():
+            flat_key = f"{prefix}.{key}"
+            if PipelineProgressDisplay._is_sensitive_key(str(key)):
+                continue
+            if isinstance(value, dict):
+                PipelineProgressDisplay._flatten_dict(flat_key, value, result)
+            elif isinstance(value, type):
+                result[flat_key] = value.__qualname__
+            else:
+                result[flat_key] = value
+        return result
+
+    def _flatten_metadata(self, metadata: dict) -> dict:
+        """
+        Flatten a pipeline's raw metadata dict for DataFrame display.
+
+        Dict-valued fields listed in ``_CFG_FIELDS_TO_FLATTEN`` are recursively
+        expanded into dot-notation columns.  All other fields are kept as-is
+        (with special formatting for ``sampling_params`` and ``model_config``).
+        """
+        flat: dict[str, Any] = {}
+        for key, value in metadata.items():
+            if key in self._CFG_FIELDS_TO_FLATTEN and isinstance(value, dict):
+                self._flatten_dict(key, value, flat)
+            elif key == "sampling_params" and isinstance(value, dict):
+                parts = []
+                if "temperature" in value:
+                    parts.append(f"temp={value['temperature']}")
+                if "top_p" in value:
+                    parts.append(f"top_p={value['top_p']}")
+                if "top_k" in value:
+                    parts.append(f"top_k={value['top_k']}")
+                if "max_tokens" in value:
+                    parts.append(f"max_tokens={value['max_tokens']}")
+                flat[key] = ", ".join(parts) if parts else str(value)[:50]
+            elif key == "model_config" and isinstance(value, dict):
+                parts = [f"{k}={v}" for k, v in value.items() if k != "model"]
+                flat[key] = ", ".join(parts) if parts else "-"
+            else:
+                flat[key] = value
+        return flat
+
+    @staticmethod
+    def _metadata_sort_key(key: str) -> tuple[int, str]:
+        """Return a sort key so metadata columns appear in a stable, logical order."""
+        for idx, prefix in enumerate(PipelineProgressDisplay._METADATA_PREFIX_ORDER):
+            if key == prefix or key.startswith(prefix + "."):
+                return (idx, key)
+        return (len(PipelineProgressDisplay._METADATA_PREFIX_ORDER), key)
+
     def _create_dataframe(self) -> pd.DataFrame:
         """Create a DataFrame with current pipeline progress data."""
         # Collect all unique metric names across all pipelines
-        all_metric_names = set()
+        all_metric_names: set[str] = set()
         for pipeline_info in self.pipelines:
             pid = pipeline_info["pipeline_id"]
             data = self.pipeline_data[pid]
@@ -232,66 +340,45 @@ class PipelineProgressDisplay:
 
         # Sort metrics for consistent display order (prefer common metrics first)
         metric_precedence = ["Accuracy", "Precision", "Recall", "F1 Score", "NDCG@5", "MRR", "Throughput", "Total", "Samples Processed"]
-        ordered_metrics = []
-        remaining_metrics = []
-
+        ordered_metrics: list[str] = []
         for metric in metric_precedence:
             if metric in all_metric_names:
                 ordered_metrics.append(metric)
-
         for metric in sorted(all_metric_names):
             if metric not in ordered_metrics:
-                remaining_metrics.append(metric)
+                ordered_metrics.append(metric)
 
-        ordered_metrics.extend(remaining_metrics)
-
-        # Collect all unique metadata field names across pipelines (for column consistency)
-        all_metadata_fields = set()
+        # Flatten metadata for every pipeline and collect the union of all column names
+        pipeline_flat_metadata: dict[int, dict] = {}
+        all_flat_keys: set[str] = set()
         for pipeline_info in self.pipelines:
             pid = pipeline_info["pipeline_id"]
-            metadata = self.pipeline_metadata.get(pid, {})
-            all_metadata_fields.update(metadata.keys())
+            raw = self.pipeline_metadata.get(pid, {})
+            flat = self._flatten_metadata(raw)
+            pipeline_flat_metadata[pid] = flat
+            all_flat_keys.update(flat.keys())
 
-        # Define display order for metadata fields
-        metadata_precedence = ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                              "sampling_params", "prompt_manager_k", "model_config"]
-        ordered_metadata = []
-        remaining_metadata = []
-
-        for field in metadata_precedence:
-            if field in all_metadata_fields:
-                ordered_metadata.append(field)
-
-        for field in sorted(all_metadata_fields):
-            if field not in ordered_metadata:
-                remaining_metadata.append(field)
-
-        ordered_metadata.extend(remaining_metadata)
+        ordered_metadata = sorted(all_flat_keys, key=self._metadata_sort_key)
 
         rows = []
         for pipeline_info in self.pipelines:
             pid = pipeline_info["pipeline_id"]
 
-            # Skip if pipeline data not found (shouldn't happen, but defensive)
             if pid not in self.pipeline_data:
                 continue
 
             data = self.pipeline_data[pid]
-            metadata = self.pipeline_metadata.get(pid, {})
+            flat = pipeline_flat_metadata.get(pid, {})
 
-            # Format progress
             progress = f"{data['shard']}/{self.num_shards}"
 
-            # Format confidence interval
             confidence = data["confidence"]
             if confidence != "-" and isinstance(confidence, (int, float)):
                 confidence = f"{confidence:.3f}"
 
-            # Get status
             status = data.get("status", "ONGOING")
 
-            # Start with standard columns (ensure they always exist even if empty)
-            row = {
+            row: dict[str, Any] = {
                 "Run ID": pid,
                 "Model": data.get("model", "-"),
                 "Status": status,
@@ -299,15 +386,9 @@ class PipelineProgressDisplay:
                 "Conf. Interval": str(confidence),
             }
 
-            # Add metadata fields
-            for field_name in ordered_metadata:
-                if field_name in metadata:
-                    value = metadata[field_name]
-                    # Format the value for display
-                    formatted_value = self._format_metadata_field(field_name, value)
-                    row[field_name] = formatted_value
-                else:
-                    row[field_name] = "-"
+            for col_name in ordered_metadata:
+                value = flat.get(col_name)
+                row[col_name] = self._format_value(value)
 
             # Add all metrics with confidence intervals
             for metric_name in ordered_metrics:
@@ -316,17 +397,15 @@ class PipelineProgressDisplay:
                     metric_value = metric_data.get("value", "-")
                     lower_bound = metric_data.get("lower_bound")
                     upper_bound = metric_data.get("upper_bound")
-                    margin_of_error = metric_data.get("margin_of_error")
                     is_algebraic = metric_data.get("is_algebraic", False)
                 else:
                     metric_value = metric_data
-                    lower_bound = upper_bound = margin_of_error = None
+                    lower_bound = upper_bound = None
                     is_algebraic = False
 
                 # Format metric value based on type and name
                 if metric_value != "-":
                     if isinstance(metric_value, (int, float)):
-                        # Format percentages for common metrics (0-1 range)
                         if metric_name in ["Accuracy", "Precision", "Recall", "F1 Score", "NDCG@5", "MRR"]:
                             formatted_value = f"{metric_value:.2%}"
                             # Add confidence interval if available
@@ -358,60 +437,17 @@ class PipelineProgressDisplay:
 
         return pd.DataFrame(rows)
 
-    def _format_metadata_field(self, field_name: str, value: Any) -> str:
-        """
-        Format a metadata field value for display.
-
-        Args:
-            field_name: Name of the metadata field
-            value: Value to format
-
-        Returns:
-            Formatted string representation
-        """
+    @staticmethod
+    def _format_value(value: Any) -> str:
+        """Format a single (already-flattened) metadata value for display."""
         if value is None:
             return "-"
-
-        # Handle dict values (like sampling_params, model_config)
-        if isinstance(value, dict):
-            # Format as compact JSON-like string
-            if field_name == "sampling_params":
-                # Format sampling params more nicely
-                parts = []
-                if "temperature" in value:
-                    parts.append(f"temp={value['temperature']}")
-                if "top_p" in value:
-                    parts.append(f"top_p={value['top_p']}")
-                if "top_k" in value:
-                    parts.append(f"top_k={value['top_k']}")
-                if "max_tokens" in value:
-                    parts.append(f"max_t={value['max_tokens']}")
-                # If we have formatted parts, use them, otherwise show abbreviated dict
-                if parts:
-                    return ", ".join(parts)
-                else:
-                    return str(value)[:50]  # Truncate long dicts
-            elif field_name == "model_config":
-                # Format model config as key=value pairs
-                parts = [f"{k}={v}" for k, v in value.items() if k != "model"]
-                return ", ".join(parts) if parts else "-"
-            else:
-                # Default dict formatting
-                return str(value)[:50]  # Truncate long dicts
-
-        # Handle list values
+        if isinstance(value, type):
+            return value.__qualname__
         if isinstance(value, list):
-            return f"[{', '.join(str(v) for v in value[:5])}]"  # Show first 5 items
-
-        # Handle numeric values
-        if isinstance(value, (int, float)):
-            return str(value)
-
-        # Handle string values
-        if isinstance(value, str):
-            return value
-
-        # Fallback: convert to string
+            return f"[{', '.join(str(v) for v in value[:5])}]"
+        if isinstance(value, dict):
+            return str(value)[:50]
         return str(value)
 
     def start(self):
@@ -535,8 +571,7 @@ class PipelineProgressDisplay:
 
         # Store metadata
         metadata_dict = {}
-        for key in ["search_type", "rag_k", "top_n", "chunk_size", "chunk_overlap",
-                   "sampling_params", "prompt_manager_k", "model_config"]:
+        for key in self._METADATA_KEYS:
             if key in pipeline_info_dict:
                 metadata_dict[key] = pipeline_info_dict[key]
         self.pipeline_metadata[pipeline_id] = metadata_dict

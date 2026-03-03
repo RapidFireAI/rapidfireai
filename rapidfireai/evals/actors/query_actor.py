@@ -13,6 +13,8 @@ from typing import Any
 import ray
 import pickle
 
+from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
+
 from langchain_community.vectorstores import FAISS
 from langchain_postgres import PGVector
 from langchain_pinecone import PineconeVectorStore
@@ -83,6 +85,8 @@ class QueryProcessingActor:
         engine_class: type[InferenceEngine],
         engine_kwargs: dict[str, Any],
         context_generator_ref: dict[str, Any] = None,
+        pipeline_search_cfg: dict[str, Any] | None = None,
+        pipeline_reranker_cfg: dict[str, Any] | None = None,
     ):
         """
         Configure this actor for a specific pipeline.
@@ -94,7 +98,14 @@ class QueryProcessingActor:
         Args:
             engine_class: The inference engine class to instantiate
             engine_kwargs: Kwargs for instantiating the inference engine
-            context_generator_ref: RAG components dict (automatically dereferenced by Ray when passed as ObjectRef)
+            context_generator_ref: Index/embedding components dict shared across pipelines
+                (automatically dereferenced by Ray when passed as ObjectRef).
+                Does NOT contain search_cfg or reranker_cfg — those are pipeline-specific.
+            pipeline_search_cfg: Search configuration from the pipeline's rag_spec
+                ({"type": ..., "k": ..., ...}). Passed separately so clone-modified
+                pipelines can override retrieval params without rebuilding the index.
+            pipeline_reranker_cfg: Reranker configuration from the pipeline's rag_spec
+                ({"class": ..., "top_n": ..., ...}). Same rationale as pipeline_search_cfg.
 
         Raises:
             RuntimeError: If any error occurs during initialization. The original exception
@@ -155,24 +166,16 @@ class QueryProcessingActor:
                 # So we receive the dict directly, not an ObjectRef
                 # Check RAG components are present and deserialize them
                 if context_generator_ref.get("rag_spec_exists", False):
-                    search_cfg = context_generator_ref.get("search_cfg", {})
-                    default_search_cfg: dict[str, Any] = {
-                        "type": "similarity",
-                        "k": 5,
-                        "filter": None,
-                        "fetch_k": 20,
-                        "lambda_mult": 0.5,
-                    }
-                    default_search_cfg.update(search_cfg)
-                    search_type = default_search_cfg.get("type", "similarity")
-                    valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
-                    if search_type not in valid_search_types:
-                        raise ValueError(f"search_cfg['type'] must be one of {valid_search_types}, got: {search_type}")
-                    search_kwargs = dict(default_search_cfg)
-                    search_kwargs.pop("type")
+                    # Retrieval config comes from the pipeline (not the shared context),
+                    # so clone-modified pipelines can override search/reranker params.
+                    search_cfg = pipeline_search_cfg or {}
+                    search_type = search_cfg.get("type", "similarity")
+                    if search_type not in VALID_SEARCH_TYPES:
+                        raise ValueError(f"search_cfg['type'] must be one of {VALID_SEARCH_TYPES}, got: {search_type}")
+                    search_kwargs = {**SEARCH_DEFAULTS[search_type], **{k: v for k, v in search_cfg.items() if k != "type"}}
 
-                    # Create the reranker
-                    reranker_cfg = context_generator_ref.get("reranker_cfg", None)
+                    # Reranker config is also pipeline-specific
+                    reranker_cfg = pipeline_reranker_cfg
                     if reranker_cfg is not None:
                         reranker_cls = reranker_cfg.get("class", None)
                         if reranker_cls is None:

@@ -83,7 +83,7 @@ class DocProcessingActor:
                 - faiss_index_bytes, docstore_bytes, index_to_docstore_id_bytes: (if vector store was built)
                 - embedding_cfg: Config dict with "class" + kwargs (used by query actors)
                 - search_cfg: Config dict with "type" + kwargs (used by query actors)
-                - reranker_cfg: Config dict with "class" + kwargs, or None (used by query actors)
+                - reranker_cfg: Not included — passed pipeline-specifically by the controller
                 - retriever: Retriever object (if provided)
                 - template: Document formatting template
                 - enable_gpu_search: Whether GPU FAISS was used during build
@@ -108,16 +108,15 @@ class DocProcessingActor:
                 rag_spec.build_pipeline()
                 self.logger.info("Document index built successfully")
 
+                # context_generator_ref contains only index/embedding data that is
+                # shared across all pipelines using this context. Retrieval config
+                # (search_cfg, reranker_cfg) is pipeline-specific and is passed
+                # separately by the controller at pipeline-initialization time, so
+                # that clone-modified pipelines can override it independently.
                 components.update({
                     "rag_spec_exists": True,
                     "embedding_cls": rag_spec.embedding_cls,
                     "embedding_kwargs": rag_spec.embedding_kwargs,
-                    "search_cfg": {
-                        "type": rag_spec.search_type, **rag_spec.search_kwargs
-                        } if rag_spec.search_type else None,
-                    "reranker_cfg": {
-                        "class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs
-                        } if rag_spec.reranker_cls is not None else None,
                     "template": rag_spec.template if rag_spec.template is not None else None,
                     "enable_gpu_search": rag_spec.enable_gpu_search if rag_spec.enable_gpu_search is not None else False,
                 })

@@ -10,6 +10,8 @@ from typing import Any, Optional
 import hashlib
 import json
 
+from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
+
 import faiss
 from langchain_community.document_loaders.base import BaseLoader
 from langchain_core.documents import Document
@@ -105,12 +107,6 @@ class LangChainRagSpec:
                 stacklevel=2,
             )
 
-        # if vector_store_cfg and not retriever and not document_loader:
-        #     raise ValueError(
-        #         "document_loader is required when vector_store_cfg is provided "
-        #         "(the vector store will be built from loaded documents)."
-        #     )
-
         # Embedding config can be provided in embedding_cfg or vector_store_cfg
         if not embedding_cfg and (not vector_store_cfg or not vector_store_cfg.get("embedding_cfg", None)):
             # No embedding config provided
@@ -129,23 +125,22 @@ class LangChainRagSpec:
                 raise ValueError("embedding_cfg or vector_store_cfg['embedding_cfg'] must contain a 'class' key (the embedding class)")
             self.embedding_kwargs = dict(cfg) if cfg else {}
 
-        # Parse search_cfg: "type" -> search_type, rest -> search_kwargs
-        default_search_kwargs: dict[str, Any] = {
-            "k": 5,
-            "filter": None,
-            "fetch_k": 20,
-            "lambda_mult": 0.5,
-        }
+        if not vector_store_cfg and not retriever:
+            vector_store_cfg = {"type": "faiss"}
+
+        # Parse search_cfg: "type" -> search_type, rest -> search_kwargs.
+        # Defaults and allowed keys are gated by search type to avoid passing
+        # irrelevant kwargs to LangChain (e.g. fetch_k only makes sense for MMR).
         if not search_cfg:
             self.search_type = "similarity"
-            self.search_kwargs = dict(default_search_kwargs)
+            self.search_kwargs = dict(SEARCH_DEFAULTS["similarity"])
         else:
             cfg = dict(search_cfg)
             self.search_type = cfg.pop("type", "similarity")
-            valid_search_types = {"similarity", "similarity_score_threshold", "mmr"}
-            if self.search_type not in valid_search_types:
-                raise ValueError(f"search_cfg['type'] must be one of {valid_search_types}, got: {self.search_type}")
-            self.search_kwargs = dict(default_search_kwargs)
+            if self.search_type not in VALID_SEARCH_TYPES:
+                raise ValueError(f"search_cfg['type'] must be one of {VALID_SEARCH_TYPES}, got: {self.search_type}")
+            # Start from type-specific defaults then apply user overrides
+            self.search_kwargs = dict(SEARCH_DEFAULTS[self.search_type])
             self.search_kwargs.update(cfg)
 
         # Parse reranker_cfg: "class" -> reranker_cls, rest -> reranker_kwargs
