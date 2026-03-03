@@ -242,14 +242,12 @@ class WorkerActor:
                     f"Worker {self.worker_id} initializing distributed training for run {run_id} "
                     f"with master_addr {master_addr}, master_port {master_port}, world_size {world_size}, rank {rank}"
                 )
-                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(
-                    map(str, multi_worker_details["worker_ids"])
-                )
                 setup_distributed_environment(
                     rank=rank,
                     world_size=world_size,
                     master_addr=master_addr,
                     master_port=master_port,
+                    local_rank=0,
                 )
                 self.logger.debug(
                     f"Worker {self.worker_id} initialized distributed training for run {run_id}"
@@ -281,6 +279,10 @@ class WorkerActor:
         )
         train_dataset_chunk = train_dataset_chunker.get_chunk(self.train_dataset, chunk_id)
 
+        # NOTE: local_rank here is the FSDP group rank (0..N-1), NOT the CUDA device
+        # index. Each Ray actor sees only its assigned GPU as cuda:0, so the device
+        # index is always 0. This rank is used for conditional logic (e.g., only rank 0
+        # saves checkpoints) throughout checkpoint_utils.py and this file.
         trainer_config = TrainerConfig(
             worker_id=self.worker_id,
             run_id=run_id,
