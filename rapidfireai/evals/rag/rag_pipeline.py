@@ -144,12 +144,29 @@ class LangChainRagSpec:
             self.search_kwargs.update(cfg)
 
         # Parse reranker_cfg: "class" -> reranker_cls, rest -> reranker_kwargs
+        # "class" may be an actual class object (from Python code) or a string
+        # __qualname__ (from JSON / the clone-modify dialog).  Always resolve to
+        # the live class via RERANKER_CLASS_REGISTRY so the stored config never
+        # contains a bare string where dill expects a type.
         if not reranker_cfg:
             self.reranker_cls = None
             self.reranker_kwargs = {}
         else:
             cfg = dict(reranker_cfg)
-            self.reranker_cls = cfg.pop("class", None)
+            cls_value = cfg.pop("class", None)
+            if isinstance(cls_value, str):
+                from rapidfireai.evals.utils.constants import RERANKER_CLASS_REGISTRY
+                resolved = RERANKER_CLASS_REGISTRY.get(cls_value)
+                if resolved is None:
+                    raise ValueError(
+                        f"Unknown reranker class '{cls_value}'. "
+                        f"Supported classes: {sorted(RERANKER_CLASS_REGISTRY.keys())}. "
+                        f"To add a new reranker, register it in RERANKER_CLASS_REGISTRY "
+                        f"in rapidfireai/evals/utils/constants.py."
+                    )
+                self.reranker_cls = resolved
+            else:
+                self.reranker_cls = cls_value  # already a live class (or None)
             self.reranker_kwargs = dict(cfg)
 
         self.document_loader = document_loader
