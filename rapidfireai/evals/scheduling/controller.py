@@ -19,6 +19,7 @@ from rapidfireai.automl import ModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import (
     NUM_CPUS_PER_DOC_ACTOR,
     NUM_QUERY_PROCESSING_ACTORS,
+    SEARCH_TYPE_KEYS,
     ContextStatus,
     ExperimentStatus,
     PipelineStatus,
@@ -247,7 +248,7 @@ class Controller:
             if not rag_spec and not prompt_manager:
                 continue
 
-            # Compute context hash
+            # Compute context hash (experiment_name already injected onto each object)
             rag_hash = rag_spec.get_hash() if rag_spec else None
             prompt_hash = prompt_manager.get_hash() if prompt_manager else None
 
@@ -287,6 +288,17 @@ class Controller:
             config_leaves: List of pipeline config dictionaries
             db: Database instance
         """
+        # Inject experiment_name into all rag_specs and prompt_managers so that
+        # get_hash() and build logic can access it without threading it as a parameter.
+        for config_leaf in config_leaves:
+            pipeline_config = config_leaf.get("pipeline")
+            rag_spec = getattr(pipeline_config, "rag", None)
+            prompt_manager = getattr(pipeline_config, "prompt_manager", None)
+            if rag_spec:
+                rag_spec.experiment_name = self.experiment_name
+            if prompt_manager:
+                prompt_manager.experiment_name = self.experiment_name
+
         # Step 1: Collect unique RAG contexts
         unique_contexts = self._collect_unique_contexts(config_leaves)
 
@@ -364,7 +376,13 @@ class Controller:
         for context_info in contexts_to_build:
             rag_spec = context_info["rag"]
             context_info["enable_gpu"] = rag_spec.enable_gpu_search if rag_spec else False
-
+            if rag_spec and rag_spec.vector_store_cfg:
+                context_info["vector_store_info"] = {
+                    "type": rag_spec.vector_store_cfg.get("type", None), # for faiss, pgvector, pinecone
+                    "connection": rag_spec.vector_store_cfg.get("connection", None), # for pgvector
+                    "collection_name": rag_spec.vector_store_cfg.get("collection_name", rag_spec.get_hash()), # for pgvector
+                    "pinecone_index_name": rag_spec.vector_store_cfg.get("index_name", "rf-" + rag_spec.get_hash()[:42]), # for pinecone
+                }
         # Initialize progress display for context building
         context_display = ContextBuildingDisplay(contexts_to_build)
         context_display.start()
@@ -733,13 +751,9 @@ class Controller:
                 ordered_metrics["model_name"] = cumulative_metrics["model_name"]
 
             hyperparam_keys = [
-                "text_splitter", "chunk_size", "chunk_overlap",
-                "embedding_class", "embedding_model", "embedding_kwargs",
-                "vector_store", "search_type", "search_kwargs",
-                "reranker_class", "reranker_model", "reranker_top_n",
-                "gpu_search", "sampling_params",
-                "prompt_manager_k", "example_selector",
-                "generator_type", "preprocess_fn", "postprocess_fn", "model_config",
+                "text_splitter", "chunk_size", "chunk_overlap", "embedding_cfg", "vector_store_cfg",
+                "search_cfg", "reranker_cfg",
+                "sampling_params", "prompt_manager_k", "model_config",
             ]
             for key in hyperparam_keys:
                 if key in cumulative_metrics:
@@ -761,10 +775,14 @@ class Controller:
             # Update pipeline status
             db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
             if progress_display:
-                # Update display with final metrics to ensure all metrics are shown
-                # Convert ordered_metrics format to display format with CI info
+                # Update display with final metrics to ensure all metrics are shown.
+                # Exclude config/info keys — they are already shown in the metadata columns
+                # and must not be duplicated into the metrics columns.
+                config_info_keys = {"run_id", "model_name"} | set(hyperparam_keys)
                 display_metrics = {}
                 for metric_name, metric_data in ordered_metrics.items():
+                    if metric_name in config_info_keys:
+                        continue
                     if isinstance(metric_data, dict):
                         display_metrics[metric_name] = {
                             "value": metric_data.get("value", 0),
@@ -927,15 +945,98 @@ class Controller:
         pipeline_info = []
         pipeline_configs = [pipeline_id_to_config[pipeline_id] for pipeline_id in pipeline_ids]
         for pipeline_id, pipeline_config in zip(pipeline_ids, pipeline_configs, strict=False):
-            metadata = extract_pipeline_display_metadata(pipeline_config)
-            model_name = metadata.pop("model_name", "Unknown")
+            model_name = "Unknown"
+            # Indexing-stage fields (read-only in progress display)
+            text_splitter = None
+            chunk_size = None
+            chunk_overlap = None
+            embedding_cfg = None
+            vector_store_cfg = None
+            # Retrieval-stage fields
+            search_cfg = None
+            reranker_cfg = None
+            # Generation-stage fields
+            sampling_params = None
+            prompt_manager_k = None
+            model_config = None
+
+            # Extract model name from config
+            pipeline = pipeline_config["pipeline"]
+            if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
+                if "model" in pipeline.model_config:
+                    model_name = pipeline.model_config["model"]
+                model_config_copy = pipeline.model_config.copy()
+                model_config_copy.pop("model", None)
+                if model_config_copy:
+                    model_config = model_config_copy
+
+            # Extract ALL RAG fields for display
+            if hasattr(pipeline, "rag") and pipeline.rag is not None:
+                rag = pipeline.rag
+
+                # Indexing stage
+                if hasattr(rag, "text_splitter") and rag.text_splitter is not None:
+                    text_splitter = type(rag.text_splitter).__name__
+                    chunk_size = getattr(rag.text_splitter, "_chunk_size", None)
+                    chunk_overlap = getattr(rag.text_splitter, "_chunk_overlap", None)
+                if getattr(rag, "embedding_cls", None) is not None:
+                    cls_name = rag.embedding_cls.__name__ if isinstance(rag.embedding_cls, type) else str(rag.embedding_cls)
+                    embedding_cfg = {"class": cls_name}
+                    if getattr(rag, "embedding_kwargs", None):
+                        embedding_cfg.update(rag.embedding_kwargs)
+                if getattr(rag, "vector_store_cfg", None) is not None:
+                    vector_store_cfg = dict(rag.vector_store_cfg)
+
+                # Retrieval stage
+                if getattr(rag, "search_type", None) is not None:
+                    search_cfg = {"type": rag.search_type}
+                    if hasattr(rag, "search_kwargs") and rag.search_kwargs:
+                        allowed_keys = SEARCH_TYPE_KEYS.get(rag.search_type, set(rag.search_kwargs.keys()))
+                        search_cfg.update({k: v for k, v in rag.search_kwargs.items() if k in allowed_keys and v is not None})
+                if getattr(rag, "reranker_cls", None) is not None:
+                    reranker_cfg = {"class": rag.reranker_cls.__qualname__ if isinstance(rag.reranker_cls, type) else str(rag.reranker_cls)}
+                    if hasattr(rag, "reranker_kwargs") and rag.reranker_kwargs:
+                        reranker_cfg.update({k: v for k, v in rag.reranker_kwargs.items() if v is not None})
+
+            # Extract sampling params
+            if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
+                sampling_params = pipeline._user_params.get("sampling_params", None)
+
+            # Extract prompt_manager fields
+            if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
+                prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
 
             pipeline_info_dict = {
                 "pipeline_id": pipeline_id,
                 "pipeline_config": pipeline_config,
                 "model_name": model_name,
             }
-            pipeline_info_dict.update(metadata)
+
+            # Add optional fields only if they're not None
+            # Indexing stage (read-only display)
+            if text_splitter is not None:
+                pipeline_info_dict["text_splitter"] = text_splitter
+            if chunk_size is not None:
+                pipeline_info_dict["chunk_size"] = chunk_size
+            if chunk_overlap is not None:
+                pipeline_info_dict["chunk_overlap"] = chunk_overlap
+            if embedding_cfg is not None:
+                pipeline_info_dict["embedding_cfg"] = embedding_cfg
+            if vector_store_cfg is not None:
+                pipeline_info_dict["vector_store_cfg"] = vector_store_cfg
+            # Retrieval stage
+            if search_cfg is not None:
+                pipeline_info_dict["search_cfg"] = search_cfg
+            if reranker_cfg is not None:
+                pipeline_info_dict["reranker_cfg"] = reranker_cfg
+            # Generation stage
+            if sampling_params is not None:
+                pipeline_info_dict["sampling_params"] = sampling_params
+            if prompt_manager_k is not None:
+                pipeline_info_dict["prompt_manager_k"] = prompt_manager_k
+            if model_config is not None:
+                pipeline_info_dict["model_config"] = model_config
+
             pipeline_info.append(pipeline_info_dict)
 
         progress_display = PipelineProgressDisplay(pipeline_info, num_shards)
@@ -1095,6 +1196,17 @@ class Controller:
                             # Accumulate metrics from all completed shards
                             try:
                                 cumulative_metrics = pipeline_config["accumulate_metrics_fn"](pipeline_results[pipeline_id]["metrics"])
+                                # Inject "Samples Processed" so it appears in the live display,
+                                # mirroring what aggregator.py does in the final aggregation path.
+                                actual_samples = sum(
+                                    m.get("value", 0)
+                                    for m in pipeline_results[pipeline_id]["metrics"].get("Samples Processed", [{}])
+                                )
+                                if actual_samples > 0 and "Samples Processed" not in cumulative_metrics:
+                                    cumulative_metrics = {
+                                        "Samples Processed": {"value": actual_samples, "is_algebraic": False},
+                                        **cumulative_metrics,
+                                    }
                                 # Add confidence interval information
                                 metrics_with_ci = aggregator.online_strategy.add_confidence_interval_info(
                                     cumulative_metrics, samples_processed
@@ -1246,8 +1358,28 @@ class Controller:
 
             # Check termination
             if schedule["pipeline_id"] is None:
-                self.logger.info("All pipelines completed all shards!")
-                break
+                # Before breaking, do one extra IC check to catch clone/resume requests
+                # that may have arrived in the DB just after the previous IC check ran.
+                # This closes the narrow race window where all pipelines finish between
+                # the IC poll and this termination check.
+                if not active_tasks:
+                    self.ic_handler.check_and_process_requests(
+                        scheduler=scheduler,
+                        db=db,
+                        num_shards=num_shards,
+                        dataset=dataset,
+                        pipeline_aggregators=pipeline_aggregators,
+                        pipeline_results=pipeline_results,
+                        pipeline_id_to_config=pipeline_id_to_config,
+                        pipeline_to_rate_limiter=pipeline_to_rate_limiter,
+                        pipeline_to_max_completion_tokens=pipeline_to_max_completion_tokens,
+                        progress_display=progress_display,
+                    )
+                    schedule = scheduler.schedule()
+
+                if schedule["pipeline_id"] is None:
+                    self.logger.info("All pipelines completed all shards!")
+                    break
 
             # Check if all actors busy
             if schedule["pipeline_id"] == -1:
@@ -1343,13 +1475,42 @@ class Controller:
                 engine_kwargs["rate_limiter_actor"] = rate_limiter
                 engine_kwargs["max_completion_tokens"] = pipeline_to_max_completion_tokens[pipeline_id]
 
-            ray.get(
-                actor.initialize_for_pipeline.remote(
-                    engine_class=pipeline.get_engine_class(),
-                    engine_kwargs=engine_kwargs,
-                    context_generator_ref=context_generator_ref,
+            # Extract pipeline-specific retrieval config from the rag_spec.
+            # These are passed separately (not baked into context_generator_ref) so that
+            # clone-modified pipelines can override search/reranker params independently
+            # while still sharing the same pre-built index (context_generator_ref).
+            pipeline_search_cfg = None
+            pipeline_reranker_cfg = None
+            if rag_spec is not None:
+                pipeline_search_cfg = {"type": rag_spec.search_type, **rag_spec.search_kwargs}
+                if rag_spec.reranker_cls is not None:
+                    pipeline_reranker_cfg = {"class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs}
+
+            try:
+                ray.get(
+                    actor.initialize_for_pipeline.remote(
+                        engine_class=pipeline.get_engine_class(),
+                        engine_kwargs=engine_kwargs,
+                        context_generator_ref=context_generator_ref,
+                        pipeline_search_cfg=pipeline_search_cfg,
+                        pipeline_reranker_cfg=pipeline_reranker_cfg,
+                    )
                 )
-            )
+            except Exception as init_err:
+                # Mark only this pipeline as FAILED; free the actor and continue.
+                error_msg = str(init_err)
+                self.logger.exception(
+                    f"Pipeline {pipeline_id} ({pipeline_name}) failed to initialize "
+                    f"on actor {actor_id}: {error_msg}"
+                )
+                db.set_actor_task_status(task_id, TaskStatus.FAILED)
+                db.set_actor_task_error(task_id, error_msg)
+                db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
+                db.set_pipeline_error(pipeline_id, error_msg)
+                scheduler.remove_pipeline(pipeline_id)
+                if progress_display:
+                    progress_display.update_pipeline(pipeline_id, status="FAILED")
+                continue
 
             self.logger.debug(f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})")
 
@@ -1383,24 +1544,27 @@ class Controller:
             db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
             db.set_pipeline_current_shard(pipeline_id, shard_id)
 
-        # PHASE 8: Compute final metrics for each pipeline
-        # Use pipeline_id_to_config keys (includes cloned pipelines added during execution)
+        # PHASE 8: Compute final metrics for each pipeline (including dynamically cloned ones).
+        # pipeline_id_to_config contains all pipelines (originals + clones added via _handle_clone).
+        # pipeline_ids only has the originals registered at startup, so we use the config dict keys.
         all_pipeline_ids = list(pipeline_id_to_config.keys())
 
-        # Build pipeline_id_to_info for all pipelines (original + cloned)
+        # Build pipeline_id_to_info for original pipelines from pipeline_info list
         pipeline_id_to_info = {}
         for info_dict in pipeline_info:
             pid = info_dict["pipeline_id"]
             info_copy = {k: v for k, v in info_dict.items() if k not in ["pipeline_config", "pipeline_id"]}
             pipeline_id_to_info[pid] = info_copy
 
-        # Add info for any cloned pipelines not in the original pipeline_info
+        # For cloned pipelines (not in pipeline_info), pull their display metadata directly
+        # from the progress_display which already has it from add_pipeline().
         for pid in all_pipeline_ids:
-            if pid not in pipeline_id_to_info:
-                cloned_metadata = extract_pipeline_display_metadata(pipeline_id_to_config[pid])
-                model_name = cloned_metadata.pop("model_name", "Unknown")
-                cloned_metadata["model_name"] = model_name
-                pipeline_id_to_info[pid] = cloned_metadata
+            if pid not in pipeline_id_to_info and progress_display:
+                clone_metadata = progress_display.pipeline_metadata.get(pid, {})
+                clone_data = progress_display.pipeline_data.get(pid, {})
+                clone_info = {"model_name": clone_data.get("model", "Unknown")}
+                clone_info.update(clone_metadata)
+                pipeline_id_to_info[pid] = clone_info
 
         final_results = self._compute_final_metrics_for_pipelines(
             all_pipeline_ids,

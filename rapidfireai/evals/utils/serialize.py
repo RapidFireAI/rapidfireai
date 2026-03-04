@@ -4,6 +4,7 @@ from typing import Any
 
 import dill
 from rapidfireai.automl.model_config import RFvLLMModelConfig, RFOpenAIAPIModelConfig
+from rapidfireai.evals.utils.constants import SEARCH_TYPE_KEYS
 
 
 def extract_pipeline_display_metadata(pipeline_config: dict[str, Any]) -> dict[str, Any]:
@@ -180,55 +181,40 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
     if "pipeline" in pipeline_config:
         pipeline = pipeline_config["pipeline"]
 
-        # Helper function to extract RAG params
+        # Helper function to extract RAG retrieval params for the clone-modify dialog.
+        # Only exposes retrieval-stage params (search_cfg, reranker_cfg) in the same
+        # format as LangChainRagSpec constructor args. Indexing-stage params
+        # (embedding_cfg, vector_store_cfg, text_splitter) are intentionally excluded
+        # because cloned pipelines always reuse the parent's pre-built index.
         def extract_rag_params(rag_spec):
-            """Extract RAG parameters from rag_spec for JSON storage."""
             if rag_spec is None:
                 return None
 
             rag_config = {}
 
-            # Text splitter
-            if hasattr(rag_spec, "text_splitter") and rag_spec.text_splitter is not None:
-                rag_config["text_splitter"] = type(rag_spec.text_splitter).__name__
-                rag_config["chunk_size"] = getattr(rag_spec.text_splitter, "_chunk_size", None)
-                rag_config["chunk_overlap"] = getattr(rag_spec.text_splitter, "_chunk_overlap", None)
+            # search_cfg: mirrors the search_cfg constructor arg {"type": ..., <type-specific kwargs>}
+            # Only include kwargs relevant to the chosen search type.
+            search_type = getattr(rag_spec, "search_type", None)
+            search_kwargs = getattr(rag_spec, "search_kwargs", None) or {}
+            if search_type is not None:
+                allowed_keys = SEARCH_TYPE_KEYS.get(search_type, set(search_kwargs.keys()))
+                rag_config["search_cfg"] = {
+                    "type": search_type,
+                    **{k: v for k, v in search_kwargs.items() if k in allowed_keys and v is not None},
+                }
 
-            # Embedding
-            if hasattr(rag_spec, "embedding_cls") and rag_spec.embedding_cls is not None:
-                rag_config["embedding_class"] = rag_spec.embedding_cls.__name__
-            if hasattr(rag_spec, "embedding_kwargs") and rag_spec.embedding_kwargs:
-                emb_model = rag_spec.embedding_kwargs.get("model_name")
-                if emb_model is not None:
-                    rag_config["embedding_model"] = emb_model
+            # reranker_cfg: full constructor-style dict including "class" and all kwargs.
+            # The reranker is now instantiated per-pipeline at query time (not at index time),
+            # so the user can change both the class and its kwargs via clone-modify.
+            reranker_cls = getattr(rag_spec, "reranker_cls", None)
+            reranker_kwargs = getattr(rag_spec, "reranker_kwargs", None) or {}
+            if reranker_cls is not None:
+                rag_config["reranker_cfg"] = {
+                    "class": reranker_cls.__qualname__,
+                    **{k: v for k, v in reranker_kwargs.items() if v is not None},
+                }
 
-            # Vector store
-            if hasattr(rag_spec, "vector_store") and rag_spec.vector_store is not None:
-                rag_config["vector_store"] = type(rag_spec.vector_store).__name__
-
-            # Search
-            rag_config["search_type"] = getattr(rag_spec, "search_type", None)
-            if hasattr(rag_spec, "search_kwargs") and rag_spec.search_kwargs is not None:
-                rag_config["search_kwargs"] = rag_spec.search_kwargs
-
-            # Reranker
-            if hasattr(rag_spec, "reranker_cls") and rag_spec.reranker_cls is not None:
-                rag_config["reranker_class"] = rag_spec.reranker_cls.__name__
-            if hasattr(rag_spec, "reranker_kwargs") and rag_spec.reranker_kwargs:
-                reranker_model = rag_spec.reranker_kwargs.get("model_name")
-                if reranker_model is not None:
-                    rag_config["reranker_model"] = reranker_model
-                top_n = rag_spec.reranker_kwargs.get("top_n")
-                if top_n is not None:
-                    rag_config["reranker_top_n"] = top_n
-
-            # GPU search
-            gpu_search = getattr(rag_spec, "enable_gpu_search", None)
-            if gpu_search is not None:
-                rag_config["gpu_search"] = gpu_search
-
-            filtered_rag_config = {k: v for k, v in rag_config.items() if v is not None}
-            return filtered_rag_config if filtered_rag_config else None
+            return rag_config if rag_config else None
 
         if isinstance(pipeline, RFvLLMModelConfig):
             json_config["pipeline_type"] = "vllm"
