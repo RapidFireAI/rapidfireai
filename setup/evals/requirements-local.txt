@@ -22,6 +22,8 @@ langchain-core>=1.0.4
 langchain-community>=0.4.1
 langchain-openai>=1.0.2
 langchain-huggingface>=1.0.0
+langchain-pinecone>=0.2.13
+langchain-postgres>=0.0.17
 
 # Data Manipulation & Display
 unstructured>=0.18.15

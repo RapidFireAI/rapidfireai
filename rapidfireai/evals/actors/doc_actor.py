@@ -13,6 +13,8 @@ import faiss
 import ray
 
 from langchain_community.vectorstores import FAISS
+from langchain_postgres import PGVector
+from langchain_pinecone import PineconeVectorStore
 
 from rapidfireai.evals.rag.prompt_manager import PromptManager
 from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
@@ -81,7 +83,7 @@ class DocProcessingActor:
                 - faiss_index_bytes, docstore_bytes, index_to_docstore_id_bytes: (if vector store was built)
                 - embedding_cfg: Config dict with "class" + kwargs (used by query actors)
                 - search_cfg: Config dict with "type" + kwargs (used by query actors)
-                - reranker_cfg: Config dict with "class" + kwargs, or None (used by query actors)
+                - reranker_cfg: Not included — passed pipeline-specifically by the controller
                 - retriever: Retriever object (if provided)
                 - template: Document formatting template
                 - enable_gpu_search: Whether GPU FAISS was used during build
@@ -94,81 +96,92 @@ class DocProcessingActor:
         self.logger.info("DocProcessingActor: Starting context initialization...")
 
         try:
+            # Serialize FAISS index when built; share flattened RAG config for query actors
+            import pickle
+
+            components = {}
+
             # Build RAG (embeddings, FAISS index) if RAG spec provided
             # If enable_gpu_search=True, this builds on GPU
             if rag_spec:
                 self.logger.info("Building document index...")
-                rag_spec.build_index()
+                rag_spec.build_pipeline()
                 self.logger.info("Document index built successfully")
 
-                # Transfer GPU index to CPU for serialization (if GPU was used and we have a FAISS vector store)
-                if rag_spec.vector_store is not None and rag_spec.enable_gpu_search and isinstance(rag_spec.vector_store, FAISS):
-                    self.logger.info("Transferring FAISS index from GPU to CPU for serialization...")
+                # context_generator_ref contains only index/embedding data that is
+                # shared across all pipelines using this context. Retrieval config
+                # (search_cfg, reranker_cfg) is pipeline-specific and is passed
+                # separately by the controller at pipeline-initialization time, so
+                # that clone-modified pipelines can override it independently.
+                components.update({
+                    "rag_spec_exists": True,
+                    "embedding_cls": rag_spec.embedding_cls,
+                    "embedding_kwargs": rag_spec.embedding_kwargs,
+                    "template": rag_spec.template if rag_spec.template is not None else None,
+                    "enable_gpu_search": rag_spec.enable_gpu_search if rag_spec.enable_gpu_search is not None else False,
+                })
+                
+                if rag_spec.vector_store is not None and isinstance(rag_spec.vector_store, FAISS):
+                    if rag_spec.enable_gpu_search:
+                        # Transfer GPU index to CPU for serialization (if GPU was used and we have a FAISS vector store)
+                        self.logger.info("Transferring FAISS index from GPU to CPU for serialization...")
+                        # Transfer the GPU index to CPU
+                        cpu_index = faiss.index_gpu_to_cpu(rag_spec.vector_store.index)
+                        # Replace GPU index with CPU version
+                        rag_spec.vector_store.index = cpu_index
+                        self.logger.info("FAISS index transferred to CPU successfully")
 
-                    # Transfer the GPU index to CPU
-                    cpu_index = faiss.index_gpu_to_cpu(rag_spec.vector_store.index)
+                    self.logger.info("Serializing FAISS index for cross-actor sharing...")
+                    faiss_index_bytes = pickle.dumps(rag_spec.vector_store.index)
+                    docstore_bytes = pickle.dumps(rag_spec.vector_store.docstore)
+                    index_to_docstore_id_bytes = pickle.dumps(rag_spec.vector_store.index_to_docstore_id)
+                    components.update({
+                        "vector_store_type": "faiss",
+                        "faiss_index_bytes": faiss_index_bytes,
+                        "docstore_bytes": docstore_bytes,
+                        "index_to_docstore_id_bytes": index_to_docstore_id_bytes,
+                    })
+                    self.logger.info(f"FAISS index serialized: {len(faiss_index_bytes)} bytes")
+                
+                elif rag_spec.vector_store is not None and isinstance(rag_spec.vector_store, PGVector):
+                    self.logger.info("Serializing PGVector store for cross-actor sharing...")
+                    components.update({
+                        "vector_store_type": "pgvector",
+                        "pgvector_connection": rag_spec.pgvector_connection,
+                        "pgvector_collection_name": rag_spec.pgvector_collection_name,
+                    })
+                    self.logger.info(f"PGVector collection name: {rag_spec.pgvector_collection_name}")
 
-                    # Replace GPU index with CPU version
-                    rag_spec.vector_store.index = cpu_index
-                    self.logger.info("FAISS index transferred to CPU successfully")
+                elif rag_spec.vector_store is not None and isinstance(rag_spec.vector_store, PineconeVectorStore):
+                    self.logger.info("Serializing PineconeVector store for cross-actor sharing...")
+                    components.update({
+                        "vector_store_type": "pinecone",
+                        "pinecone_index_name": rag_spec.pinecone_index_name,
+                        "pinecone_api_key": os.environ.get("PINECONE_API_KEY", None),
+                    })
+                    self.logger.info(f"Pinecone index name: {rag_spec.pinecone_index_name}")
+                    
+                else:
+                    try:
+                        vector_store_bytes = pickle.dumps(rag_spec.vector_store)
+                        retriever_bytes = pickle.dumps(rag_spec.retriever)
+                        components.update({
+                            "vector_store": vector_store_bytes,
+                            "retriever": retriever_bytes,
+                        })
+                    except Exception as e:
+                        self.logger.exception(f"Failed to serialize vector store or retriever: {e}")
+                        raise RuntimeError(f"Failed to serialize vector store or retriever: {e}") from e
 
             # Set up PromptManager if provided
             if prompt_manager:
                 self.logger.info("Setting up PromptManager...")
                 prompt_manager.setup_examples()
                 self.logger.info("PromptManager setup successfully")
-
-            # Serialize FAISS index when built; share flattened RAG config for query actors
-            import pickle
-
-            components = {}
-
-            if rag_spec:
-                # Serialize FAISS index only when we built one (vector_store is set)
-                if rag_spec.vector_store is not None and isinstance(rag_spec.vector_store, FAISS):
-                    faiss_index = rag_spec.vector_store.index
-                    docstore = rag_spec.vector_store.docstore
-                    index_to_docstore_id = rag_spec.vector_store.index_to_docstore_id
-                    # embedding_function = rag_spec.vector_store.embedding_function
-                    embedding_cls = rag_spec.embedding_cls
-                    embedding_kwargs = rag_spec.embedding_kwargs
-
-                    self.logger.info("Serializing FAISS index for cross-actor sharing...")
-                    faiss_index_bytes = pickle.dumps(faiss_index)
-                    docstore_bytes = pickle.dumps(docstore)
-                    index_to_docstore_id_bytes = pickle.dumps(index_to_docstore_id)
-                    # embedding_function_bytes = pickle.dumps(embedding_function)
-                    self.logger.info(f"FAISS index serialized: {len(faiss_index_bytes)} bytes")
-
-                    components.update({
-                        "faiss_index_bytes": faiss_index_bytes,
-                        "docstore_bytes": docstore_bytes,
-                        "index_to_docstore_id_bytes": index_to_docstore_id_bytes,
-                        "embedding_cls": embedding_cls,
-                        "embedding_kwargs": embedding_kwargs,
-                        # "embedding_function_bytes": embedding_function_bytes
-                    })
-                else:
-                    components.update({
-                        "vector_store": rag_spec.vector_store if rag_spec.vector_store is not None else None,
-                        "retriever": rag_spec.retriever if rag_spec.retriever is not None else None,
-                    })
-
-                # Package config dicts for query actors to reconstruct LangChainRagSpec
                 components.update({
-                    "search_cfg": {
-                        "type": rag_spec.search_type, **rag_spec.search_kwargs
-                        } if rag_spec.search_type else None,
-                    "reranker_cfg": {
-                        "class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs
-                        } if rag_spec.reranker_cls is not None else None,
-                    "template": rag_spec.template if rag_spec.template is not None else None,
-                    "enable_gpu_search": rag_spec.enable_gpu_search if rag_spec.enable_gpu_search is not None else False,
+                    "prompt_manager_exists": True,
+                    "prompt_manager": prompt_manager,
                 })
-
-            # Add prompt_manager if provided (works with or without RAG)
-            if prompt_manager:
-                components["prompt_manager"] = prompt_manager
 
             self.logger.info("DocProcessingActor: Context components ready for sharing")
             return components

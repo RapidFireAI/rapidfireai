@@ -84,6 +84,7 @@ class PromptManager:
         self.example_selector_cls = example_selector_cls
         self.example_prompt_template = example_prompt_template
         self.k = k
+        self.experiment_name: str | None = None  # Injected by Controller before use
 
     def setup_examples(self) -> None:
         """
@@ -268,6 +269,7 @@ class PromptManager:
             SHA256 hash string
         """
         prompt_dict = {
+            "experiment_name": self.experiment_name or "unknown",
             "instructions": self.instructions,
             "k": self.k,  # Number of fewshot examples to retrieve
             "embedding_cls": self.embedding_cls.__name__ if self.embedding_cls else None,
