@@ -368,6 +368,7 @@ def create_trainer_instance(
     metric_logger=None,
     chunk_id: int = 0,
     use_fsdp: bool = False,
+    db=None,
 ) -> tuple[SFTTrainer | DPOTrainer | GRPOTrainer | None, str]:
     """
     Create a trainer instance with proper state restoration.
@@ -446,6 +447,7 @@ def create_trainer_instance(
             formatting_func,
             global_step_args,
             use_fsdp=use_fsdp,
+            db=db,
         )
     )
 
@@ -698,6 +700,7 @@ def _setup_callbacks(
     formatting_func,
     global_step_args,
     use_fsdp=False,
+    db=None,
 ):
     """Setup callbacks for the trainer."""
     callbacks = []
@@ -709,6 +712,8 @@ def _setup_callbacks(
             completed_steps=trainer_config.completed_steps,
             chunk_id=chunk_id,
             num_epochs_completed=trainer_config.num_epochs_completed,
+            db=db,
+            run_id=trainer_config.run_id,
         )
         callbacks.append(metric_callback)
 

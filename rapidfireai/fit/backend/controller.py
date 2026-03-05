@@ -308,6 +308,9 @@ class Controller:
                 # TODO: commented out to prevent clone of deleted runs issue (see Issue # 22)
                 # self._clear_run_from_shm(run_id)
 
+                # cancel any scheduled worker tasks so workers don't pick them up
+                self.db.cancel_worker_tasks_for_run(run_id)
+
                 # delete run from MetricLogger
                 metric_run_id = self.db.get_run(run_id)["metric_run_id"]
                 self.metric_logger.delete_run(metric_run_id)
