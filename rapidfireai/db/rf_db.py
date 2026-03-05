@@ -948,6 +948,15 @@ class RfDb:
         """
         self.db.execute(query, (status.value, worker_id), commit=True)
 
+    def cancel_worker_tasks_for_run(self, run_id: int) -> None:
+        """Cancel all scheduled worker tasks for a given run."""
+        query = """
+        UPDATE worker_task
+        SET status = ?
+        WHERE run_id = ? AND status = ?
+        """
+        self.db.execute(query, (TaskStatus.SKIPPED.value, run_id, TaskStatus.SCHEDULED.value), commit=True)
+
     # ============================================================================
     # FIT MODE: PROGRESS TABLE METHODS
     # ============================================================================

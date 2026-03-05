@@ -339,6 +339,7 @@ class WorkerActor:
                 self.metric_logger,
                 chunk_id,
                 use_fsdp=use_fsdp,
+                db=self.db,
             )
             is_quantized = bool(
                 config_leaf.get("model_kwargs", {}).get("quantization_config")
