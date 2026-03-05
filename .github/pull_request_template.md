@@ -2,11 +2,11 @@
 - Brief description of the changes in this PR. Include breaking changes or any unusual behavior.
 
 ## Changelog Content
-### Added
+### Additions
 - Items added in this PR, this content is directly copied into CHANGELOG.md on release. Should be as brief as possible. Include any issues addressed.
 ### Changes
 - Items changed in this PR, this content is directly copied into CHANGELOG.md on release. Should be as brief as possible. Include any issues addressed.
-### Fixed
+### Fixes
 - Items fixed in this PR, this content is directly copied into CHANGELOG.md on release. Should be as brief as possible. Include any issues addressed.
 
 ## Testing

@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
 ## [v0.15.0]
 
-### Added
+### Additions
 - combines new vector store integrations for postgres and pinecone along with a round of bugfixes
 
 ### Changes
