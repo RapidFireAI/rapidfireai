@@ -33,12 +33,12 @@ from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager, USE_SHARED_MEMORY
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
 from rapidfireai.utils.constants import (
+    MLflowConfig,
     RunStatus,
     SHMObjectType,
     TaskStatus,
     WorkerTask,
 )
-from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.utils.distributed_utils import (
     barrier,
     cleanup_distributed,
@@ -50,9 +50,6 @@ from rapidfireai.utils.exceptions import WorkerException
 from rapidfireai.utils.logging import RFLogger, TrainingLogger
 from rapidfireai.metrics import RFMetricLogger
 from rapidfireai.utils.serialize import decode_db_payload
-from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
-from rapidfireai.fit.utils.trainer_config import TrainerConfig
-from rapidfireai.utils.constants import MLflowConfig
 
 
 def _scan_and_release_leaked_cuda_tensors(skip_quantized: bool = False):
