@@ -13,6 +13,36 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.15.0]
+
+### Additions
+- combines new vector store integrations for postgres and pinecone along with a round of bugfixes
+
+### Changes
+- Add community notebooks from AI Winter 2025 competition winners
+- Integrated multi-GPU training via Fully Sharded Data Parallelism (FSDP), enabling large models to be distributed across multiple GPUs.
+- Added Sanity Automation Test for SFT
+- Disable starting frontend with rapidfireai start if RF_MLFLOW_ENABLED is not enabled
+- Standardized MLflow and TensorBoard naming throughout
+- Downsampled fsdp large and fsdp medium notebooks for demo purposes, Increased eval batch size for fsdp-large notebook, Changed fsdp evaluation such that each GPU's model.generate() will handle different batch
+- Added component independence to rag pipeline.
+- Coupled "_cls" and "kwargs" attributes into a "_cfg" attribute for embedding, search, and reranker in RFLangChainRagSpec, RFPromptManager
+- FSDP LoRA State Dict Collection (_collect_fsdp_peft_state_dict)
+- GPU Memory Cleanup Utilities
+- Added constraint to enforce top_n <= top_k across reranker and search categories in grid search and random search
+- Fixed cloned run metrics not appearing in the notebook display table and result_dict
+- Fixed display table and result_dict to show all user-configurable knobs
+- run_evals changes: Added plots for confidence intervals for metrics, Removed the lower_bound and upper_bound plots
+- Added plots for confidence intervals for metrics, Removed the lower_bound and upper_bound plots
+
+
+### Fixes
+- Various changes to tutorial notebooks [Issue #173](https://github.com/RapidFireAI/rapidfireai/issues/173)
+- [Issue #187](https://github.com/RapidFireAI/rapidfireai/issues/187)
+- [Issue #188](https://github.com/RapidFireAI/rapidfireai/issues/188)
+- [Issue #189](https://github.com/RapidFireAI/rapidfireai/issues/189)
+- Type checking for default search knobs
+
 
 ## [v0.14.0]
 
