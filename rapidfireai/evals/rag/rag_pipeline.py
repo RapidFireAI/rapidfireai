@@ -281,38 +281,6 @@ class LangChainRagSpec:
                 search_type=self.search_type, search_kwargs=self.search_kwargs
             )
 
-    def copy(self) -> "LangChainRagSpec":
-        """
-        Create a deep copy of the LangChainRagSpec object.
-
-        This method creates a new instance with the same configuration but independent
-        vector store and retriever instances. Useful for creating variations of a
-        RAG setup without affecting the original.
-
-        Returns:
-            LangChainRagSpec: A new instance with the same configuration.
-        """
-        # Build config dicts from current instance for the copy
-        embedding_cfg = {"class": self.embedding_cls, **self.embedding_kwargs}
-        search_cfg = {"type": self.search_type, **self.search_kwargs}
-        reranker_cfg = (
-            {"class": self.reranker_cls, **copy.deepcopy(self.reranker_kwargs)}
-            if self.reranker_cls else None
-        )
-        new_rag = LangChainRagSpec(
-            document_loader=self.document_loader,
-            text_splitter=self.text_splitter,
-            embedding_cfg=embedding_cfg,
-            vector_store=copy.deepcopy(self.vector_store) if self.vector_store else None,
-            retriever=copy.deepcopy(self.retriever) if self.retriever else None,
-            search_cfg=search_cfg,
-            reranker_cfg=reranker_cfg,
-            enable_gpu_search=self.enable_gpu_search,
-        )
-
-        return new_rag
->>>>>>> dd404e0 (formatting changes)
-
     def _load_documents(self) -> builtins.list[Document]:
         """
         Load documents using the configured document loader.
