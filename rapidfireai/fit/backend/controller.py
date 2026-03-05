@@ -24,17 +24,16 @@ from rapidfireai.utils.constants import (
     ExperimentTask,
     ICOperation,
     ICStatus,
+    MLflowConfig,
     RunEndedBy,
     RunSource,
     RunStatus,
     TaskStatus,
     WorkerTask,
 )
-from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.utils.distributed_utils import find_free_port
 from rapidfireai.utils.exceptions import ControllerException, NoGPUsFoundException
 from rapidfireai.utils.logging import RFLogger
-from rapidfireai.utils.constants import MLflowConfig
 from rapidfireai.metrics import RFMetricLogger
 from rapidfireai.utils.os_utils import mkdir_p
 from rapidfireai.utils.serialize import encode_payload
