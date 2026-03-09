@@ -474,7 +474,7 @@ export const ExperimentViewRunsControlsFilters = React.memo(
               />
             </LegacyTooltip>
           )}
-          {!shouldEnableExperimentPageAutoRefresh() && <ExperimentViewRefreshButton refreshRuns={refreshRuns} />}
+          <ExperimentViewRefreshButton refreshRuns={refreshRuns} />
           {/* TODO: Add tooltip to guide users to this button */}
           {!isComparingExperiments && (
             <DropdownMenu.Root>
