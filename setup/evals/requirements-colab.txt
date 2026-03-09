@@ -32,8 +32,10 @@ requests==2.32.5
 vllm==0.11.0
 faiss-gpu-cu12
 fsspec>=2023.1.0,<=2025.3.0
-flashinfer-python>=0.5.3
-flashinfer-cubin>=0.5.3
+# flashinfer excluded: v0.5.x requires compute capability >= 8.0 (sm_80+)
+# Colab T4 is sm_75; flashinfer's CUTLASS CuTE DSL also JIT-compiles at import
+# time inside vLLM's MP subprocess before CUDA is initialized, causing NVVM errors.
+# vLLM 0.11.0 falls back to built-in implementations without flashinfer.
 
 # MLflow dashboard dependencies
 mlflow>=3.2.0
@@ -42,3 +44,6 @@ flask-cors>=5.0.1
 
 # Logging
 loguru
+
+
+numpy==2.0.1
