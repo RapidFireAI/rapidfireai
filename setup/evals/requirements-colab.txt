@@ -44,4 +44,4 @@ flask-cors>=5.0.1
 loguru
 
 
-numpy==2.0.2
+numpy==2.0.1
