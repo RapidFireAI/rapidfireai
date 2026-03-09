@@ -8,7 +8,8 @@ ray>=2.51.0
 ray[default]>=2.51.0
 
 # LLM Inference
-transformers>=4.56.1,<5.0.0
+# transformers>=4.56.1,<5.0.0
+transformers==4.56.1
 
 # OpenAI API
 openai>=1.106.1
