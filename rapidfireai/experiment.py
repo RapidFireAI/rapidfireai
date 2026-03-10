@@ -141,6 +141,7 @@ class Experiment:
         # Suppress verbose third-party library logging
         os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
         os.environ.setdefault("RAY_LOG_TO_STDERR", "0")
+        os.environ.setdefault("MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT", "true")
         # Disable Ray and other verbose logging
         os.environ["RAY_DISABLE_IMPORT_WARNING"] = "1"
         os.environ["RAY_DEDUP_LOGS"] = "0"
