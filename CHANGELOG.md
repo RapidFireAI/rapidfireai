@@ -13,6 +13,14 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [v0.15.1]
+
+### Changes
+- Re-added Refresh button(sync icon) to MLflow dashboard
+- Updated pinecone and pgvector rag notebooks
+- Remove flashinfer and pin numpy to 2.0.1 for Colab to handle restrictions on limits of Google Colab
+
+
 ## [v0.15.0]
 
 ### Additions
