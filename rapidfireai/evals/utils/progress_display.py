@@ -74,31 +74,31 @@ class ContextBuildingDisplay:
             else:
                 duration = "-"
 
-            # Format details
+            # Format vector store columns
             vector_store_info = data["vector_store_info"]
+            row = {
+                "RAG Source ID": ctx_id,
+                "Status": status,
+                "Duration": duration,
+                "Device": "GPU" if data["enable_gpu"] else "CPU",
+            }
             if vector_store_info is not None:
-                type = vector_store_info.get("type", None)
-                if type == "faiss":
-                    details = "FAISS, " + ("GPU" if data["enable_gpu"] else "CPU")
-                elif type == "pgvector":
-                    collection_name = f' [{vector_store_info.get("collection_name", "")}]'
-                    details = f"PGVector{collection_name}, " + ("GPU" if data["enable_gpu"] else "CPU")
-                elif type == "pinecone":
-                    index_name = f' [{vector_store_info.get("pinecone_index_name", "")}]'
-                    details = f"Pinecone{index_name}, " + ("GPU" if data["enable_gpu"] else "CPU")
+                raw_type = vector_store_info.get("type", None)
+                if raw_type == "faiss":
+                    row["Vector Store"] = "FAISS"
+                elif raw_type == "pgvector":
+                    row["Vector Store"] = "PGVector"
+                    row["Connection"] = vector_store_info.get("pgvector_connection", "-")
+                    row["Collection Name"] = vector_store_info.get("pgvector_collection_name", "-")
+                elif raw_type == "pinecone":
+                    row["Vector Store"] = "Pinecone"
+                    row["Index Name"] = vector_store_info.get("pinecone_index_name", "-")
+                    row["Namespace"] = vector_store_info.get("pinecone_namespace", "-")
+                    if row["Namespace"] == "":
+                        row["Namespace"] = "''"
                 else:
-                    details = "Unknown, " + ("GPU" if data["enable_gpu"] else "CPU")
-            else:
-                details = "N/A, " + ("GPU" if data["enable_gpu"] else "CPU")
-            rows.append(
-                {
-                    "RAG Source ID": ctx_id,
-                    "Status": status,
-                    "Duration": duration,
-                    "Details": details,
-                }
-            )
-
+                    row["Vector Store"] = raw_type or "Unknown"
+            rows.append(row)
         return pd.DataFrame(rows)
 
     def start(self):

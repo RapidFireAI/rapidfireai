@@ -377,11 +377,16 @@ class Controller:
             rag_spec = context_info["rag"]
             context_info["enable_gpu"] = rag_spec.enable_gpu_search if rag_spec else False
             if rag_spec and rag_spec.vector_store_cfg:
+                type = rag_spec.vector_store_cfg.get("type", None)
+                connection = rag_spec.vector_store_cfg.get("connection", "-")
+                collection_name = rag_spec.vector_store_cfg.get("collection_name", rag_spec.get_hash()) if type == "pgvector" else "-"
+                index_namespace = rag_spec.vector_store_cfg.get("index_namespace", ("rf-" + rag_spec.get_hash()[:42], "")) if type == "pinecone" else ("-", "-")
                 context_info["vector_store_info"] = {
-                    "type": rag_spec.vector_store_cfg.get("type", None), # for faiss, pgvector, pinecone
-                    "connection": rag_spec.vector_store_cfg.get("connection", None), # for pgvector
-                    "collection_name": rag_spec.vector_store_cfg.get("collection_name", rag_spec.get_hash()), # for pgvector
-                    "pinecone_index_name": rag_spec.vector_store_cfg.get("index_name", "rf-" + rag_spec.get_hash()[:42]), # for pinecone
+                    "type": type,
+                    "pgvector_connection": connection,
+                    "pgvector_collection_name": collection_name,
+                    "pinecone_index_name": index_namespace[0],
+                    "pinecone_namespace": index_namespace[1],
                 }
         # Initialize progress display for context building
         context_display = ContextBuildingDisplay(contexts_to_build)
@@ -1486,6 +1491,10 @@ class Controller:
                 if rag_spec.reranker_cls is not None:
                     pipeline_reranker_cfg = {"class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs}
 
+            pipeline_model_name = "Unknown"
+            if hasattr(pipeline, "model_config") and pipeline.model_config:
+                pipeline_model_name = pipeline.model_config.get("model", "Unknown")
+
             try:
                 ray.get(
                     actor.initialize_for_pipeline.remote(
@@ -1494,6 +1503,8 @@ class Controller:
                         context_generator_ref=context_generator_ref,
                         pipeline_search_cfg=pipeline_search_cfg,
                         pipeline_reranker_cfg=pipeline_reranker_cfg,
+                        pipeline_id=pipeline_id,
+                        model_name=pipeline_model_name,
                     )
                 )
             except Exception as init_err:
