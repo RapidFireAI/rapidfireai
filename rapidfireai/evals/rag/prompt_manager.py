@@ -9,6 +9,8 @@ import hashlib
 import json
 import asyncio
 import concurrent.futures
+import mlflow
+from mlflow.entities import SpanType
 
 class PromptManager:
     """
@@ -85,6 +87,8 @@ class PromptManager:
         self.example_prompt_template = example_prompt_template
         self.k = k
         self.experiment_name: str | None = None  # Injected by Controller before use
+        self.pipeline_id: int | None = None       # Injected by Actor before use
+        self.model_name: str | None = None        # Injected by Actor before use
 
     def setup_examples(self) -> None:
         """
@@ -160,6 +164,7 @@ class PromptManager:
         """
         return self.instructions
 
+    @mlflow.trace(name="get_fewshot_examples", span_type=SpanType.CHAIN)
     def get_fewshot_examples(self, user_queries: list[str]) -> list[str]:
         """
         Generate few-shot examples formatted according to the template.
@@ -178,10 +183,23 @@ class PromptManager:
             This method requires that setup_examples() has been called first to set up
             the fewshot_generator.
         """
+        span = mlflow.get_current_active_span()
+        if span is not None:
+            if self.experiment_name is not None:
+                span.set_attribute("experiment_name", self.experiment_name)
+            if self.pipeline_id is not None:
+                span.set_attribute("pipeline_id", self.pipeline_id)
+            if self.model_name is not None:
+                span.set_attribute("model_name", self.model_name)
+
         async def gather_examples():
             """Async helper to gather all examples concurrently"""
+            async def _fetch(instructions: str, query: str) -> str:
+                return await self.fewshot_generator.aformat(user_query=query)
+
+            traced_fetch_examples = mlflow.trace(func=_fetch, span_type=SpanType.RETRIEVER, name="fetch_examples")
             tasks = [
-                self.fewshot_generator.aformat(user_query=user_query)
+                traced_fetch_examples(instructions=self.instructions, query=user_query)
                 for user_query in user_queries
             ]
             return await asyncio.gather(*tasks)
