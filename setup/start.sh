@@ -182,6 +182,9 @@ cleanup() {
         pkill -f "gunicorn.*rapidfireai.$RAPIDFIRE_MODE.dispatcher" 2>/dev/null || true
         # Only kill Flask server if we're not in Colab (frontend doesn't run in Colab)
         pkill -f "python.*rapidfireai/frontend/server.py" 2>/dev/null || true
+        # Stop Converge if it was running
+        pkill -f "converge start" 2>/dev/null || true
+        pkill -f "uvicorn.*main:app" 2>/dev/null || true
     fi
 
     print_success "All services stopped"
@@ -575,6 +578,38 @@ start_frontend() {
     return 0
 }
 
+# Function to start Converge (backend + frontend) via converge CLI
+start_converge() {
+    print_status "Starting Converge services..."
+
+    # converge start runs in the foreground with its own monitor loop,
+    # so we launch it in the background and track it like other services.
+    print_status "Converge logs will be written to: $RF_LOG_PATH/converge.log"
+
+    if command -v setsid &> /dev/null; then
+        setsid converge start --force > "$RF_LOG_PATH/converge.log" 2>&1 &
+    else
+        nohup converge start --force > "$RF_LOG_PATH/converge.log" 2>&1 &
+    fi
+
+    local converge_pid=$!
+    echo "$converge_pid Converge" >> "$RF_PID_FILE"
+
+    # Wait for the Converge frontend to be ready on the frontend port
+    if wait_for_service $RF_FRONTEND_HOST $RF_FRONTEND_PORT "Converge frontend" $RF_TIMEOUT_TIME; then
+        print_success "Converge started (PID: $converge_pid)"
+        return 0
+    else
+        print_error "Converge failed to start. Checking logs..."
+        if [[ -f "$RF_LOG_PATH/converge.log" ]]; then
+            echo "=== Last 30 lines of converge.log ==="
+            tail -30 "$RF_LOG_PATH/converge.log"
+            echo "=== End of logs ==="
+        fi
+        return 1
+    fi
+}
+
 # Function to conditionally start frontend based on mode
 start_frontend_if_needed() {
     # In Colab mode, always skip frontend
@@ -727,10 +762,18 @@ start_services() {
 
     # Start frontend server (conditionally)
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
-        if start_frontend; then
-            ((services_started++))
+        if command -v converge &> /dev/null; then
+            if start_converge; then
+                ((services_started++))
+            else
+                print_error "Failed to start Converge"
+            fi
         else
-            print_error "Failed to start frontend server"
+            if start_frontend; then
+                ((services_started++))
+            else
+                print_error "Failed to start frontend server"
+            fi
         fi
     else
         print_status "⊗ Skipping frontend (use TensorBoard if in Colab mode)"
@@ -794,7 +837,7 @@ main() {
 
         # Show summary of all log files for debugging
         print_status "=== Startup Failure Summary ==="
-        for log_file in "mlflow.log" "api.log" "frontend.log"; do
+        for log_file in "mlflow.log" "api.log" "frontend.log" "converge.log"; do
             if [[ -f "$RF_LOG_PATH/$log_file" ]]; then
                 echo ""
                 print_status "=== $log_file ==="
