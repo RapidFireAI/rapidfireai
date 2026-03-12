@@ -242,8 +242,8 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
         packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         if evals:
             packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
-            packages.append({"package": "flashinfer-python", "extra_args": []})
-            packages.append({"package": "flashinfer-cubin", "extra_args": []})
+            packages.append({"package": "flashinfer-python", "extra_args": ["--upgrade"]})
+            packages.append({"package": "flashinfer-cubin", "extra_args": ["--upgrade"]})
             if cuda_major + (cuda_minor / 10.0) >= 12.8:
                 packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
             if get_compute_capability() >= 8.0:

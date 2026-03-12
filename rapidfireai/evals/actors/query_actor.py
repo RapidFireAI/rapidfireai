@@ -10,9 +10,11 @@ import hashlib
 import os
 from collections.abc import Callable
 from typing import Any
+import mlflow
 import ray
 import pickle
 
+from rapidfireai.utils.constants import MLflowConfig
 from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
 
 from langchain_community.vectorstores import FAISS
@@ -56,6 +58,10 @@ class QueryProcessingActor:
             experiment_path: Path to experiment logs/artifacts
             actor_id: Index of this actor (for logging and identification)
         """
+        mlflow.langchain.autolog()
+        mlflow.openai.autolog()
+        mlflow.set_tracking_uri(str(MLflowConfig.URL))
+        mlflow.set_experiment(experiment_name)
         # AWS Fix: Initialize CUDA context early to prevent CUBLAS_STATUS_NOT_INITIALIZED
         # This must happen BEFORE any torch operations (including embedding/LLM model loading)
         if "CUDA_VISIBLE_DEVICES" in os.environ and os.environ["CUDA_VISIBLE_DEVICES"]:
@@ -87,6 +93,8 @@ class QueryProcessingActor:
         context_generator_ref: dict[str, Any] = None,
         pipeline_search_cfg: dict[str, Any] | None = None,
         pipeline_reranker_cfg: dict[str, Any] | None = None,
+        pipeline_id: int | None = None,
+        model_name: str | None = None,
     ):
         """
         Configure this actor for a specific pipeline.
@@ -106,6 +114,8 @@ class QueryProcessingActor:
                 pipelines can override retrieval params without rebuilding the index.
             pipeline_reranker_cfg: Reranker configuration from the pipeline's rag_spec
                 ({"class": ..., "top_n": ..., ...}). Same rationale as pipeline_search_cfg.
+            pipeline_id: ID of the pipeline, matching the ID shown in the progress display.
+            model_name: Model name used by this pipeline, matching the name shown in the progress display.
 
         Raises:
             RuntimeError: If any error occurs during initialization. The original exception
@@ -234,6 +244,9 @@ class QueryProcessingActor:
                             vector_store = PineconeVectorStore(
                                 index=pc.Index(context_generator_ref.get("pinecone_index_name")),
                                 embedding=embedding_function,
+                                namespace=context_generator_ref.get("pinecone_namespace"),
+                                text_key=context_generator_ref.get("pinecone_text_key"),
+                                distance_strategy=context_generator_ref.get("pinecone_distance_strategy"),
                             )
                         else:
                             vector_store = pickle.loads(context_generator_ref["vector_store"])
@@ -274,6 +287,16 @@ class QueryProcessingActor:
                         prompt_manager.setup_examples()
                     self.prompt_manager = prompt_manager
                     self.logger.info("Recreated prompt manager")
+
+            # Inject pipeline identity into rag_spec for MLflow span attributes
+            if self.rag_spec is not None:
+                self.rag_spec.pipeline_id = pipeline_id
+                self.rag_spec.model_name = model_name
+            
+            # Inject pipeline identity into prompt manager for MLflow span attributes
+            if self.prompt_manager is not None:
+                self.prompt_manager.pipeline_id = pipeline_id
+                self.prompt_manager.model_name = model_name
 
         except Exception as e:
             # Convert any exception to RuntimeError to ensure it can be properly serialized by Ray.
@@ -331,18 +354,26 @@ class QueryProcessingActor:
             if hasattr(batch_data, "to_dict"):
                 batch_data = batch_data.to_dict()
 
-            # Stage 1: Preprocess - build prompts with context/examples
-            if preprocess_fn:
-                batch_data = preprocess_fn(batch_data, self.rag_spec, self.prompt_manager)
+            with mlflow.start_span(name=f"rag_pipeline", span_type=mlflow.entities.SpanType.CHAIN) as span:
+                if self.rag_spec is not None and self.rag_spec.pipeline_id is not None:
+                    span.set_attribute("pipeline_id", self.rag_spec.pipeline_id)
+                if self.rag_spec is not None and self.rag_spec.model_name is not None:
+                    span.set_attribute("model_name", self.rag_spec.model_name)
 
-            # Stage 2: Generate using the inference engine
-            prompts = batch_data["prompts"]
-            generated_texts = self.inference_engine.generate(prompts)
-            batch_data["generated_text"] = generated_texts
+                # Stage 1: Preprocess - build prompts with context/examples
+                if preprocess_fn:
+                    with mlflow.start_span(name="preprocess", span_type=mlflow.entities.SpanType.CHAIN):
+                        batch_data = preprocess_fn(batch_data, self.rag_spec, self.prompt_manager)
 
-            # Stage 3: Postprocess - extract answers, format results
-            if postprocess_fn:
-                batch_data = postprocess_fn(batch_data)
+                # Stage 2: Generate using the inference engine
+                prompts = batch_data["prompts"]
+                generated_texts = self.inference_engine.generate(prompts)
+                batch_data["generated_text"] = generated_texts
+
+                # Stage 3: Postprocess - extract answers, format results
+                if postprocess_fn:
+                    with mlflow.start_span(name="postprocess", span_type=mlflow.entities.SpanType.CHAIN):
+                        batch_data = postprocess_fn(batch_data)
 
             # Stage 4: Compute metrics
             batch_metrics = {}

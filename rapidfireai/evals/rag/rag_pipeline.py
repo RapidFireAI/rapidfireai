@@ -10,6 +10,8 @@ from typing import Any, Optional
 import hashlib
 import json
 import os
+import mlflow
+from mlflow.entities import SpanType
 
 from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
 
@@ -21,6 +23,7 @@ from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
 from langchain_postgres import PGVector
 from langchain_pinecone import PineconeVectorStore
+from langchain_pinecone._utilities import DistanceStrategy
 from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStore
@@ -184,6 +187,8 @@ class LangChainRagSpec:
         self.enable_gpu_search = enable_gpu_search
         self.reranker = None
         self.experiment_name: str | None = None  # Injected by Controller before use
+        self.pipeline_id: int | None = None       # Injected by Actor before use
+        self.model_name: str | None = None        # Injected by Actor before use
 
     @staticmethod
     def default_template(doc: Document) -> str:
@@ -281,48 +286,61 @@ class LangChainRagSpec:
 
         elif type == "pinecone":
             pinecone_kwargs = copy.deepcopy(self.vector_store_cfg)
-
-            pinecone_kwargs.pop("type", None)
-            pinecone_kwargs.pop("dimension", None)
+            pinecone_kwargs.pop("type", None)       # ignore
+            pinecone_kwargs.pop("dimension", None)  # Computed from embedding
+            pinecone_kwargs.pop("batch_size", None) # Used in _build_vector_store()
 
             if pinecone_kwargs.pop("name", None) is not None:
-                raise ValueError("vector_store_cfg must use the 'index_name' key to specify the index name.")
-            # If user provided an index name, use it; otherwise, use a hash of the RAG configuration
-            # This ensures that each RAG configuration has a unique collection name
-            # Pinecone index names must be <= 45 chars and start with a letter.
-            # Prefix "rf-" (3 chars) + first 42 chars of SHA256 = 45 chars total.
-            _default_index_name = "rf-" + self.get_hash()[:42]
-            self.pinecone_index_name = pinecone_kwargs.pop("index_name", _default_index_name)
+                raise ValueError("vector_store_cfg must use the 'index_namespace' key to specify the index namespace pair.")
 
-            # If user provided a Pinecone API key, use it; otherwise, use the environment variable
             pinecone_api_key = pinecone_kwargs.pop("pinecone_api_key", os.environ.get("PINECONE_API_KEY", None))
             if pinecone_api_key is None:
                 raise ValueError("vector_store_cfg must include a 'pinecone_api_key' key for pinecone or set the PINECONE_API_KEY environment variable")
-            else:
-                os.environ["PINECONE_API_KEY"] = pinecone_api_key
-            
-            metric = pinecone_kwargs.pop("metric", "cosine") # "cosine" or "euclidean" or "dotproduct"
-            if metric not in ["cosine", "euclidean", "dotproduct"]:
-                raise ValueError("metric must be one of 'cosine', 'euclidean', or 'dotproduct'")
-            
-            pinecone_spec = pinecone_kwargs.pop("spec", None)
-            if pinecone_spec is None:
-                raise ValueError("vector_store_cfg must include a 'spec' key for pinecone")
+            os.environ["PINECONE_API_KEY"] = pinecone_api_key
 
-            pinecone_kwargs.pop("batch_size", None)
-            
+            self.pinecone_text_key = pinecone_kwargs.pop("text_key", "text")
+            # Pinecone index names must be <= 45 chars and start with a letter.
+            # Prefix "rf-" (3 chars) + first 42 chars of SHA256 = 45 chars total.
+            _default_index_namespace = ("rf-" + self.get_hash()[:42], "")
+            _distance_strategy_by_metric = {
+                "cosine": DistanceStrategy.COSINE,
+                "euclidean": DistanceStrategy.EUCLIDEAN_DISTANCE,
+                "dotproduct": DistanceStrategy.MAX_INNER_PRODUCT,
+            }
+
             pc = Pinecone(api_key=pinecone_api_key)
-            if not pc.has_index(self.pinecone_index_name):
-                pc.create_index(
-                    name=self.pinecone_index_name,
-                    dimension=len(self.embedding.embed_query("RapidFire AI is awesome!")),
-                    metric=metric,
-                    spec=pinecone_spec,
-                    **pinecone_kwargs
-                )
+
+            if "index_namespace" in pinecone_kwargs:
+                # read_or_update mode: connect to an existing index
+                self.pinecone_index_name, self.pinecone_namespace = tuple(pinecone_kwargs.pop("index_namespace"))
+                if not pc.has_index(self.pinecone_index_name):
+                    raise ValueError(f"Pinecone index {self.pinecone_index_name} does not exist")
+                metric = pc.describe_index(self.pinecone_index_name).metric
+            else:
+                # create mode: provision a new index from spec
+                pinecone_spec = pinecone_kwargs.pop("spec", None)
+                if pinecone_spec is None:
+                    raise ValueError("vector_store_cfg must include a 'spec' key for pinecone")
+                metric = pinecone_kwargs.pop("metric", "cosine") # "cosine" or "euclidean" or "dotproduct"
+                if metric not in ["cosine", "euclidean", "dotproduct"]:
+                    raise ValueError("metric must be one of 'cosine', 'euclidean', or 'dotproduct'")
+                self.pinecone_index_name, self.pinecone_namespace = _default_index_namespace
+                if not pc.has_index(self.pinecone_index_name):
+                    pc.create_index(
+                        name=self.pinecone_index_name,
+                        dimension=len(self.embedding.embed_query("RapidFire AI is awesome!")),
+                        metric=metric,
+                        spec=pinecone_spec,
+                        **pinecone_kwargs
+                    )
+
+            self.pinecone_distance_strategy = _distance_strategy_by_metric[metric]
             return PineconeVectorStore(
-                index=pc.Index(self.pinecone_index_name), 
-                embedding=self.embedding
+                index=pc.Index(self.pinecone_index_name),
+                embedding=self.embedding,
+                namespace=self.pinecone_namespace,
+                text_key=self.pinecone_text_key,
+                distance_strategy=self.pinecone_distance_strategy
             )
         else:
             raise NotImplementedError(f"Vector store type {type} not implemented")
@@ -342,30 +360,6 @@ class LangChainRagSpec:
         batch_size = self.vector_store_cfg.get("batch_size", 128) if self.vector_store_cfg else 128
         for i in range(0, len(documents), batch_size):
             self.vector_store.add_documents(documents=documents[i: i + batch_size])
-
-    def _rerank_docs(self, batch_queries: list[str], batch_docs: list[list[Document]]) -> list[list[Document]]:
-        """
-        Optionally rerank batch documents using the configured BaseDocumentCompressor.
-        
-        The reranker (BaseDocumentCompressor) is applied to each query's document list 
-        individually using the compress_documents() method, which requires both the 
-        query and documents as input.
-        
-        Args:
-            batch_queries: A list of query strings corresponding to each document list.
-            batch_docs: A batch of document lists where each inner list contains
-                       documents for a single query.
-            
-        Returns:
-            List[List[Document]]: The batch of documents, reranked if a reranker
-                                 (BaseDocumentCompressor) is configured, otherwise 
-                                 returned as-is. Maintains the same structure as input.
-        """
-        if self.reranker:
-            # Apply reranker to each query's documents individually
-            return [self.reranker.compress_documents(docs, query) 
-                    for query, docs in zip(batch_queries, batch_docs)]
-        return batch_docs
 
     def build_pipeline(self) -> None:
         """
@@ -424,6 +418,7 @@ class LangChainRagSpec:
                 search_type=self.search_type, search_kwargs=self.search_kwargs
             )
 
+    @mlflow.trace(name="get_context", span_type=SpanType.CHAIN)
     def get_context(self, batch_queries: list[str], use_reranker: bool = True, serialize: bool = True) -> list[str]:
         """
         Retrieve and serialize relevant context documents for batch queries.
@@ -445,12 +440,18 @@ class LangChainRagSpec:
         """
         if not self.retriever:
             raise ValueError("retriever not configured. Call build_pipeline() first.")
+
+        span = mlflow.get_current_active_span()
+        if span is not None:
+            if self.pipeline_id is not None:
+                span.set_attribute("pipeline_id", self.pipeline_id)
+            if self.model_name is not None:
+                span.set_attribute("model_name", self.model_name)
         
-        # Batch retrieval
-        batch_docs = self.retriever.batch(batch_queries)
+        batch_docs = self._retrieve_docs(batch_queries=batch_queries)
         
         # Optionally rerank
-        if use_reranker:
+        if use_reranker and self.reranker:
             batch_docs = self._rerank_docs(batch_queries=batch_queries, batch_docs=batch_docs)
         
         # Serialize documents
@@ -459,12 +460,62 @@ class LangChainRagSpec:
         else:
             return batch_docs
 
+    @mlflow.trace(name="retrieve_documents")
+    def _retrieve_docs(self, batch_queries: list[str]) -> list[list[Document]]:
+        """
+        Retrieve documents for batch queries.
+        """
+        return self.retriever.batch(batch_queries)
+
+    @mlflow.trace(name="rerank_documents")
+    def _rerank_docs(self, batch_queries: list[str], batch_docs: list[list[Document]]) -> list[list[Document]]:
+        """
+        Optionally rerank batch documents using the configured BaseDocumentCompressor.
+        
+        The reranker (BaseDocumentCompressor) is applied to each query's document list 
+        individually using the compress_documents() method, which requires both the 
+        query and documents as input.
+        
+        Args:
+            batch_queries: A list of query strings corresponding to each document list.
+            batch_docs: A batch of document lists where each inner list contains
+                       documents for a single query.
+            
+        Returns:
+            List[List[Document]]: The batch of documents, reranked if a reranker
+                                 (BaseDocumentCompressor) is configured, otherwise 
+                                 returned as-is. Maintains the same structure as input.
+        """
+        results = []
+        for query, docs in zip(batch_queries, batch_docs):
+            with mlflow.start_span(name="rerank", span_type=SpanType.RETRIEVER) as span:
+                span.set_inputs({
+                    "query": query,
+                    "documents": [{"page_content": d.page_content, "metadata": d.metadata} for d in docs],
+                })
+                reranked = self.reranker.compress_documents(docs, query)
+                span.set_outputs([
+                    {"page_content": d.page_content, "metadata": {**d.metadata, "rank": i}}
+                    for i, d in enumerate(reranked)
+                ])
+            results.append(reranked)
+        return results
+    
+    @mlflow.trace(name="serialize_documents", span_type=SpanType.RETRIEVER)
     def serialize_documents(self, batch_docs: list[list[Document]]) -> list[str]:
         """
         Serialize batch documents into formatted strings for context injection.
         """
-        separator = "\n\n"
-        return [separator.join([self.template(d) for d in docs]) for docs in batch_docs]
+        results = []
+        for docs in batch_docs:
+            with mlflow.start_span(name="serialize", span_type=SpanType.RETRIEVER) as span:
+                span.set_inputs(
+                    {"documents": [{"page_content": d.page_content, "metadata": d.metadata} for d in docs]}
+                )
+                serialized = "\n\n".join([self.template(d) for d in docs])
+                span.set_outputs({"serialized_context": serialized})
+            results.append(serialized)
+        return results
     
     def copy(self) -> "LangChainRagSpec":
         """
