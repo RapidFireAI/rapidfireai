@@ -286,52 +286,57 @@ class LangChainRagSpec:
 
         elif type == "pinecone":
             pinecone_kwargs = copy.deepcopy(self.vector_store_cfg)
-
-            pinecone_kwargs.pop("type", None)
-            pinecone_kwargs.pop("dimension", None)
+            pinecone_kwargs.pop("type", None)       # ignore
+            pinecone_kwargs.pop("dimension", None)  # Computed from embedding
+            pinecone_kwargs.pop("batch_size", None) # Used in _build_vector_store()
 
             if pinecone_kwargs.pop("name", None) is not None:
                 raise ValueError("vector_store_cfg must use the 'index_namespace' key to specify the index namespace pair.")
-            # If user provided an index name, use it; otherwise, use a hash of the RAG configuration
-            # This ensures that each RAG configuration has a unique collection name
-            # Pinecone index names must be <= 45 chars and start with a letter.
-            # Prefix "rf-" (3 chars) + first 42 chars of SHA256 = 45 chars total.
-            _default_index_namespace = ("rf-" + self.get_hash()[:42], "")
-            pinecone_index_namespace = tuple(pinecone_kwargs.pop("index_namespace", _default_index_namespace))
-            self.pinecone_index_name = pinecone_index_namespace[0]
-            self.pinecone_namespace = pinecone_index_namespace[1]
 
-            # If user provided a Pinecone API key, use it; otherwise, use the environment variable
             pinecone_api_key = pinecone_kwargs.pop("pinecone_api_key", os.environ.get("PINECONE_API_KEY", None))
             if pinecone_api_key is None:
                 raise ValueError("vector_store_cfg must include a 'pinecone_api_key' key for pinecone or set the PINECONE_API_KEY environment variable")
-            else:
-                os.environ["PINECONE_API_KEY"] = pinecone_api_key
-            
-            metric = pinecone_kwargs.pop("metric", "cosine") # "cosine" or "euclidean" or "dotproduct"
-            if metric not in ["cosine", "euclidean", "dotproduct"]:
-                raise ValueError("metric must be one of 'cosine', 'euclidean', or 'dotproduct'")
+            os.environ["PINECONE_API_KEY"] = pinecone_api_key
 
             self.pinecone_text_key = pinecone_kwargs.pop("text_key", "text")
-            self.pinecone_distance_strategy = pinecone_kwargs.pop("distance_strategy", DistanceStrategy.COSINE) # DistanceStrategy.COSINE, DistanceStrategy.EUCLIDEAN_DISTANCE, DistanceStrategy.MAX_INNER_PRODUCT
+            # Pinecone index names must be <= 45 chars and start with a letter.
+            # Prefix "rf-" (3 chars) + first 42 chars of SHA256 = 45 chars total.
+            _default_index_namespace = ("rf-" + self.get_hash()[:42], "")
+            _distance_strategy_by_metric = {
+                "cosine": DistanceStrategy.COSINE,
+                "euclidean": DistanceStrategy.EUCLIDEAN_DISTANCE,
+                "dotproduct": DistanceStrategy.MAX_INNER_PRODUCT,
+            }
 
-            pinecone_spec = pinecone_kwargs.pop("spec", None)
-            if pinecone_spec is None:
-                raise ValueError("vector_store_cfg must include a 'spec' key for pinecone")
-
-            pinecone_kwargs.pop("batch_size", None)
-            
             pc = Pinecone(api_key=pinecone_api_key)
-            if not pc.has_index(self.pinecone_index_name):
-                pc.create_index(
-                    name=self.pinecone_index_name,
-                    dimension=len(self.embedding.embed_query("RapidFire AI is awesome!")),
-                    metric=metric,
-                    spec=pinecone_spec,
-                    **pinecone_kwargs
-                )
+
+            if "index_namespace" in pinecone_kwargs:
+                # read_or_update mode: connect to an existing index
+                self.pinecone_index_name, self.pinecone_namespace = tuple(pinecone_kwargs.pop("index_namespace"))
+                if not pc.has_index(self.pinecone_index_name):
+                    raise ValueError(f"Pinecone index {self.pinecone_index_name} does not exist")
+                metric = pc.describe_index(self.pinecone_index_name).metric
+            else:
+                # create mode: provision a new index from spec
+                pinecone_spec = pinecone_kwargs.pop("spec", None)
+                if pinecone_spec is None:
+                    raise ValueError("vector_store_cfg must include a 'spec' key for pinecone")
+                metric = pinecone_kwargs.pop("metric", "cosine") # "cosine" or "euclidean" or "dotproduct"
+                if metric not in ["cosine", "euclidean", "dotproduct"]:
+                    raise ValueError("metric must be one of 'cosine', 'euclidean', or 'dotproduct'")
+                self.pinecone_index_name, self.pinecone_namespace = _default_index_namespace
+                if not pc.has_index(self.pinecone_index_name):
+                    pc.create_index(
+                        name=self.pinecone_index_name,
+                        dimension=len(self.embedding.embed_query("RapidFire AI is awesome!")),
+                        metric=metric,
+                        spec=pinecone_spec,
+                        **pinecone_kwargs
+                    )
+
+            self.pinecone_distance_strategy = _distance_strategy_by_metric[metric]
             return PineconeVectorStore(
-                index=pc.Index(self.pinecone_index_name), 
+                index=pc.Index(self.pinecone_index_name),
                 embedding=self.embedding,
                 namespace=self.pinecone_namespace,
                 text_key=self.pinecone_text_key,
