@@ -459,7 +459,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument(
         "--converge",
         choices=["all", "none", "backend", "frontend"],
-        default="all",
+        default=os.getenv("RF_CONVERGE_MODE", "all"),
         help="Converge mode: all (default, start converge backend+frontend), none (use original frontend, do not start converge), backend (only converge backend), frontend (only converge frontend)",
     )
 

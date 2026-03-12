@@ -200,7 +200,7 @@ cleanup() {
         pkill -f "python.*rapidfireai/frontend/server.py" 2>/dev/null || true
         # Stop Converge if it was running
         pkill -f "converge start" 2>/dev/null || true
-        pkill -f "uvicorn.*main:app" 2>/dev/null || true
+        pkill -f "uvicorn.*converge" 2>/dev/null || true
     fi
 
     print_success "All services stopped"
