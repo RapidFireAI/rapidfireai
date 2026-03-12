@@ -107,6 +107,11 @@ print_warning() {
     echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
 }
 
+# Return 0 if rapidfireai-pro pip package is installed
+has_rapidfireai_pro() {
+    ${RF_PIP_EXECUTABLE} show rapidfireai-pro >/dev/null 2>&1
+}
+
 # Function to setup Python environment
 setup_python_env() {
     print_status "Setting up Python environment..."
@@ -796,7 +801,7 @@ start_services() {
                 fi
                 ;;
             backend|frontend|all)
-                if command -v converge &> /dev/null; then
+                if has_rapidfireai_pro; then
                     if start_converge; then
                         ((services_started++))
                     else
@@ -810,7 +815,7 @@ start_services() {
                             print_error "Failed to start frontend server"
                         fi
                     else
-                        print_error "Converge not found in PATH (required for --converge=$RF_CONVERGE_MODE)"
+                        print_error "rapidfireai-pro is not installed (required for --converge=$RF_CONVERGE_MODE)"
                     fi
                 fi
                 ;;
