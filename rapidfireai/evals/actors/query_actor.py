@@ -292,6 +292,11 @@ class QueryProcessingActor:
             if self.rag_spec is not None:
                 self.rag_spec.pipeline_id = pipeline_id
                 self.rag_spec.model_name = model_name
+            
+            # Inject pipeline identity into prompt manager for MLflow span attributes
+            if self.prompt_manager is not None:
+                self.prompt_manager.pipeline_id = pipeline_id
+                self.prompt_manager.model_name = model_name
 
         except Exception as e:
             # Convert any exception to RuntimeError to ensure it can be properly serialized by Ray.
