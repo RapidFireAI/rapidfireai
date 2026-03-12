@@ -33,7 +33,6 @@ from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager, USE_SHARED_MEMORY
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
 from rapidfireai.utils.constants import (
-    MLflowConfig,
     RunStatus,
     SHMObjectType,
     TaskStatus,

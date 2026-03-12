@@ -73,7 +73,7 @@ class LangChainRagSpec:
         search_cfg: Optional[dict[str, Any]] | None = None,
         reranker_cfg: Optional[dict[str, Any]] | None = None,
         enable_gpu_search: bool = False,
-        document_template: Callable[[Document], str] | None | None = None,
+        document_template: Callable[[Document], str] | None = None,
     ) -> None:
         """
         Initialize the RAG specification with LangChain components.
@@ -169,7 +169,7 @@ class LangChainRagSpec:
                         f"Unknown reranker class '{cls_value}'. "
                         f"Supported classes: {sorted(RERANKER_CLASS_REGISTRY.keys())}. "
                         f"To add a new reranker, register it in RERANKER_CLASS_REGISTRY "
-                        f"in rapidfireai/evals/utils/constants.py."
+                        f"in rapidfireai/utils/constants.py."
                     )
                 self.reranker_cls = resolved
             else:

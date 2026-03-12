@@ -21,7 +21,6 @@ from rapidfireai.utils.constants import (
     RERANKER_CLASS_REGISTRY, SEARCH_DEFAULTS, SEARCH_TYPE_KEYS,
 )
 from rapidfireai.utils.logging import RFLogger
-from rapidfireai.evals.utils.serialize import extract_pipeline_display_metadata
 
 
 class InteractiveControlHandler:
@@ -363,7 +362,7 @@ class InteractiveControlHandler:
                                 f"Unknown reranker class '{cls_value}'. "
                                 f"Supported classes: {sorted(RERANKER_CLASS_REGISTRY.keys())}. "
                                 f"To use a custom class, add it to RERANKER_CLASS_REGISTRY in "
-                                f"rapidfireai/evals/utils/constants.py."
+                                f"rapidfireai/utils/constants.py."
                             )
                         rag.reranker_cls = resolved
                 if rag.reranker_kwargs is None:

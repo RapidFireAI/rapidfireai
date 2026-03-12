@@ -27,7 +27,6 @@ from rapidfireai.utils.constants import (
 )
 from rapidfireai.utils.logging import RFLogger
 from rapidfireai.utils.serialize import extract_pipeline_config_json
-from rapidfireai.evals.utils.serialize import extract_pipeline_display_metadata
 
 class Controller:
     """
