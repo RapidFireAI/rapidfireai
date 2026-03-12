@@ -174,6 +174,9 @@ cleanup() {
         rm -f "$RF_PID_FILE"
     fi
 
+    # Stop Ray cluster
+    stop_ray
+
     # Final cleanup - ONLY if NOT in Colab mode
     # Colab mode skips this to avoid killing Jupyter/IPython infrastructure
     if [[ "$RF_COLAB_MODE" != "true" ]]; then
@@ -312,6 +315,47 @@ wait_for_service() {
 
     print_error "$service failed to start within expected time (${max_attempts}s)"
     return 1
+}
+
+# Function to start Ray head node
+start_ray() {
+    print_status "Starting Ray head node..."
+
+    # Check if ray is installed
+    if ! command -v ray &> /dev/null; then
+        print_error "ray is not installed or not in PATH"
+        return 1
+    fi
+
+    # Check if Ray is already running
+    if ray status &>/dev/null 2>&1; then
+        print_success "Ray cluster already running, skipping start"
+        return 0
+    fi
+
+    # Start Ray head node with dashboard
+    ray start --head \
+        --dashboard-host="$RF_RAY_HOST" \
+        --dashboard-port="$RF_RAY_PORT" \
+        --disable-usage-stats \
+        > "$RF_LOG_PATH/ray.log" 2>&1
+
+    if [ $? -eq 0 ]; then
+        print_success "Ray head node started (dashboard at http://$RF_RAY_HOST:$RF_RAY_PORT)"
+        return 0
+    else
+        print_error "Failed to start Ray head node. Check $RF_LOG_PATH/ray.log"
+        return 1
+    fi
+}
+
+# Function to stop Ray cluster
+stop_ray() {
+    if ray status &>/dev/null 2>&1; then
+        print_status "Stopping Ray cluster..."
+        ray stop --force 2>/dev/null || true
+        print_success "Ray cluster stopped"
+    fi
 }
 
 # Function to start MLflow server
@@ -646,19 +690,24 @@ show_status() {
     else
         print_error "🚨 RapidFire API server is not ready!"
     fi
-    # if [[ "$rf_mode" == "evals" ]]; then
-    #     if ping_port $RF_RAY_HOST $RF_RAY_PORT; then
-    #         print_success "🚀 RapidFire Ray server is ready!"
-    #     else
-    #         print_error "🚨 RapidFire Ray server is not ready!"
-    #     fi
-    # fi
+    if ping_port $RF_RAY_HOST $RF_RAY_PORT; then
+        print_success "🚀 Ray cluster is ready! (dashboard at http://$RF_RAY_HOST:$RF_RAY_PORT)"
+    else
+        print_error "🚨 Ray cluster is not running!"
+    fi
 
     # Show log file status
     echo ""
     print_status "Log files:"
 
-    # Always check api.log
+    # Always check ray.log and api.log
+    if [[ -f "$RF_LOG_PATH/ray.log" ]]; then
+        local size=$(du -h "$RF_LOG_PATH/ray.log" | cut -f1)
+        print_status "- $RF_LOG_PATH/ray.log: $size"
+    else
+        print_warning "- $RF_LOG_PATH/ray.log: not found"
+    fi
+
     if [[ -f "$RF_LOG_PATH/api.log" ]]; then
         local size=$(du -h "$RF_LOG_PATH/api.log" | cut -f1)
         print_status "- $RF_LOG_PATH/api.log: $size"
@@ -690,7 +739,7 @@ show_status() {
 # Function to start services based on mode
 start_services() {
     local services_started=0
-    local total_services=1  # API server always runs
+    local total_services=2  # Ray + API server always run
 
     # Calculate total services based on mode
     # MLflow runs unless tensorboard-only in Colab
@@ -706,6 +755,13 @@ start_services() {
     fi
 
     print_status "Starting $total_services service(s)..."
+
+    # Start Ray head node (always)
+    if start_ray; then
+        ((services_started++))
+    else
+        print_error "Failed to start Ray head node"
+    fi
 
     # Start MLflow server (conditionally)
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
@@ -748,7 +804,7 @@ main() {
     trap cleanup SIGINT SIGTERM EXIT
 
     # Check for required commands
-    for cmd in mlflow gunicorn; do
+    for cmd in ray mlflow gunicorn; do
         if ! command -v $cmd &> /dev/null; then
             print_error "$cmd is not installed or not in PATH"
             exit 1
