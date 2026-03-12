@@ -23,7 +23,7 @@ from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
 from langchain_postgres import PGVector
 from langchain_pinecone import PineconeVectorStore
-from langchain_pinecone._utilities import DistanceStrategy, maximal_marginal_relevance
+from langchain_pinecone._utilities import DistanceStrategy
 from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStore
