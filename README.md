@@ -356,6 +356,7 @@ used to overwrite the defaults.
 - `RF_PID_FILE` - File to store process ids of started services (default: ${RF_HOME}/rapidfire_pids.txt)
 - `RF_PYTHON_EXECUTABLE` - Python executable (default: python3 falls back to python if not found)
 - `RF_PIP_EXECUTABLE` - pip executable (default: pip3 falls back to pip if not found)
+- `RF_CONVERGE_MODE` - Whether to use Rapidfire AI Converge frontend and backend if available (default: all)
 
 ## Community & Governance
 

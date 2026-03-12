@@ -41,3 +41,6 @@ mlflow>=3.2.0
 gunicorn>=23.0.0
 flask-cors>=5.0.1
 loguru
+
+numpy==2.0.1
+protobuf<6.0.0
