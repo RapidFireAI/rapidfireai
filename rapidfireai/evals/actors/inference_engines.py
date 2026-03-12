@@ -11,6 +11,9 @@ import os
 from abc import ABC, abstractmethod
 from typing import Any
 
+import mlflow
+from mlflow.entities import SpanType
+
 
 class InferenceEngine(ABC):
     """Abstract base class for model inference engines."""
@@ -61,10 +64,12 @@ class VLLMInferenceEngine(InferenceEngine):
 
         # Disable VLLM's logging for cleaner output
         model_config["disable_log_stats"] = True
+        self.model_name = model_config.get("model", "unknown")
         self.llm = LLM(**model_config)
         self.tokenizer = self.llm.get_tokenizer()
         self.sampling_params = sampling_params
 
+    @mlflow.trace(name="vllm_generate", span_type=SpanType.LLM)
     def generate(self, prompts: list, **kwargs) -> list[str]:
         """
         Generate responses using VLLM.
@@ -75,6 +80,10 @@ class VLLMInferenceEngine(InferenceEngine):
         Returns:
             List of generated text strings
         """
+        span = mlflow.get_current_active_span()
+        if span is not None:
+            span.set_attribute("model", self.model_name)
+
         # Apply chat template to format prompts
         formatted_prompts = [
             self.tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True) for prompt in prompts
@@ -83,8 +92,26 @@ class VLLMInferenceEngine(InferenceEngine):
         # Generate with VLLM (disable internal progress bar to avoid tqdm issues)
         outputs = self.llm.generate(formatted_prompts, sampling_params=self.sampling_params, use_tqdm=False)
 
-        # Extract generated text
-        return [out.outputs[0].text for out in outputs]
+        # Create a child span per prompt-output pair
+        results = []
+        for i, (prompt, output) in enumerate(zip(prompts, outputs)):
+            generated_text = output.outputs[0].text
+            with mlflow.start_span(name=f"prompt_{i}", span_type=SpanType.LLM) as child_span:
+                child_span.set_inputs({
+                    "messages": prompt,
+                    "formatted_prompt": formatted_prompts[i],
+                })
+                child_span.set_outputs({"generated_text": generated_text})
+                child_span.set_attributes({
+                    "model": self.model_name,
+                    "index": i,
+                    "finish_reason": output.outputs[0].finish_reason,
+                    "prompt_tokens": len(output.prompt_token_ids),
+                    "completion_tokens": len(output.outputs[0].token_ids),
+                })
+            results.append(generated_text)
+
+        return results
 
     def cleanup(self):
         """Clean up VLLM resources."""

@@ -1,3 +1,8 @@
+###
+# This file is deprecated and will be removed in the future.
+# It is no longer used in the project.
+###
+
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any

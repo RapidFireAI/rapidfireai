@@ -158,6 +158,9 @@ class DocProcessingActor:
                         "vector_store_type": "pinecone",
                         "pinecone_index_name": rag_spec.pinecone_index_name,
                         "pinecone_api_key": os.environ.get("PINECONE_API_KEY", None),
+                        "pinecone_namespace": rag_spec.pinecone_namespace,
+                        "pinecone_text_key": rag_spec.pinecone_text_key,
+                        "pinecone_distance_strategy": rag_spec.pinecone_distance_strategy,
                     })
                     self.logger.info(f"Pinecone index name: {rag_spec.pinecone_index_name}")
                     
