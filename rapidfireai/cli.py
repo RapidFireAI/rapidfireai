@@ -23,6 +23,7 @@ from rapidfireai.utils.gpu_info import get_compute_capability
 
 from .version import __version__
 
+RF_CONVERGE_MODE = os.getenv("RF_CONVERGE_MODE", "all")
 
 def get_script_path():
     """Get the path to the start.sh script.
@@ -459,7 +460,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument(
         "--converge",
         choices=["all", "none", "backend", "frontend"],
-        default="all",
+        default=RF_CONVERGE_MODE,
         help="Converge mode: all (default, start converge backend+frontend), none (use original frontend, do not start converge), backend (only converge backend), frontend (only converge frontend)",
     )
 
