@@ -72,11 +72,74 @@ class Experiment:
         else:
             self._init_evals_mode()
 
-    def _init_fit_mode(self) -> None:
-        """Initialize fit-specific components."""
-        # Import Ray
+    def _init_ray(self) -> None:
+        """
+        Initialize or connect to a shared Ray cluster.
+
+        If Ray is already initialized in this process, reuses the existing connection.
+        If a Ray cluster is already running externally (e.g., started via `rapidfireai start`),
+        connects to it. Otherwise, starts a new local cluster.
+
+        After connecting, kills any stale actors from previous experiments to free
+        GPU/CPU resources for the new experiment.
+        """
         import ray
 
+        self._ray = ray
+
+        # Set env vars needed by both modes before any Ray interaction
+        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+        os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
+        os.environ.setdefault("RAY_LOG_TO_STDERR", "0")
+        os.environ.setdefault("MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT", "true")
+        os.environ["RAY_DISABLE_IMPORT_WARNING"] = "1"
+        os.environ["RAY_DEDUP_LOGS"] = "0"
+        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
+
+        already_initialized = ray.is_initialized()
+
+        if not already_initialized:
+            ray_runtime_env = {
+                "env_vars": {
+                    "CUDA_LAUNCH_BLOCKING": "0",
+                    "CUDA_MODULE_LOADING": "LAZY",
+                    "TF_CPP_MIN_LOG_LEVEL": "3",
+                    "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
+                    "NCCL_NET": "Socket",
+                    "NCCL_IB_DISABLE": "1",
+                }
+            }
+
+            try:
+                ray.init(
+                    address="auto",
+                    ignore_reinit_error=True,
+                    runtime_env=ray_runtime_env,
+                )
+            except ConnectionError:
+                ray.init(
+                    logging_level=logging.ERROR,
+                    log_to_driver=False,
+                    configure_logging=True,
+                    include_dashboard=True,
+                    dashboard_host=RayConfig.HOST,
+                    dashboard_port=RayConfig.PORT,
+                    _metrics_export_port=None,
+                    runtime_env=ray_runtime_env,
+                )
+
+            if ColabConfig.ON_COLAB:
+                try:
+                    from google.colab.output import eval_js
+
+                    proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
+                    print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
+                except Exception as e:
+                    if hasattr(self, "logger"):
+                        self.logger.warning(f"Colab detected but failed to get proxy URL: {e}")
+
+    def _init_fit_mode(self) -> None:
+        """Initialize fit-specific components."""
         # Import unified modules
         from rapidfireai.db.rf_db import RfDb
         from rapidfireai.utils.exceptions import ExperimentException
@@ -87,19 +150,8 @@ class Experiment:
         # Store exception class for use in methods
         self._ExperimentException = ExperimentException
 
-        # Store ray reference for later use
-        self._ray = ray
-
         # Initialize fit-specific attributes
         self._training_thread: Any = None  # Track background training thread (Colab only)
-
-        # Disable tokenizers parallelism warning when using with Ray/multiprocessing
-        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-        # Suppress verbose third-party library logging
-        os.environ.setdefault("RAY_LOG_TO_STDERR", "0")
-        # Disable Ray and other verbose logging
-        os.environ["RAY_DISABLE_IMPORT_WARNING"] = "1"
-        os.environ["RAY_DEDUP_LOGS"] = "0"
 
         # Create db tables
         try:
@@ -131,55 +183,19 @@ class Experiment:
             self.logger = self.logging_manager.get_logger("Experiment")
             for msg in log_messages:
                 self.logger.info(msg)
-            # Log the version of rapidfireai that is running
             self.logger.info(f"Running RapidFire AI version {__version__}")
         except Exception as e:
             raise ExperimentException(f"Error creating logger: {e}, traceback: {traceback.format_exc()}") from e
 
-        # Initialize Ray with runtime environment for CUDA initialization
-        # This fixes AWS-specific CUDA/cuBLAS initialization issues
+        # Initialize or connect to shared Ray cluster
         try:
-            ray.init(
-                logging_level=logging.ERROR,
-                log_to_driver=False,
-                configure_logging=True,
-                ignore_reinit_error=True,
-                include_dashboard=True,
-                dashboard_host=RayConfig.HOST,
-                dashboard_port=RayConfig.PORT,
-                # Disable metrics export to prevent "Failed to establish connection" errors
-                _metrics_export_port=None,
-                runtime_env={
-                    "env_vars": {
-                        # Force CUDA to initialize properly in Ray actors (AWS fix)
-                        "CUDA_LAUNCH_BLOCKING": "0",
-                        "CUDA_MODULE_LOADING": "LAZY",
-                        "TF_CPP_MIN_LOG_LEVEL": "3",
-                        "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
-                    }
-                },
-            )
+            self._init_ray()
             self.logger.info("Ray initialized successfully")
-
-            # Log Colab Ray dashboard URL
-            if ColabConfig.ON_COLAB:
-                try:
-                    from google.colab.output import eval_js
-
-                    # Get the Colab proxy URL for the Ray dashboard port
-                    proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
-                    print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
-                except Exception as e:
-                    self.logger.warning(f"Colab detected but failed to get proxy URL: {e}")
-
         except Exception as e:
             raise ExperimentException(f"Error initializing Ray: {e}, traceback: {traceback.format_exc()}") from e
 
     def _init_evals_mode(self) -> None:
         """Initialize evals-specific components."""
-        # Import Ray
-        import ray
-
         # Import unified modules
         from rapidfireai.db.rf_db import RfDb
         from rapidfireai.dispatcher import start_dispatcher_thread
@@ -192,20 +208,6 @@ class Experiment:
         # Import evals-specific modules
         from rapidfireai.evals.scheduling.controller import Controller
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
-
-        # Store ray reference for later use
-        self._ray = ray
-
-        # Disable tokenizers parallelism warning when using with Ray/multiprocessing
-        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-        # Suppress verbose third-party library logging
-        os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
-        os.environ.setdefault("RAY_LOG_TO_STDERR", "0")
-        os.environ.setdefault("MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT", "true")
-        # Disable Ray and other verbose logging
-        os.environ["RAY_DISABLE_IMPORT_WARNING"] = "1"
-        os.environ["RAY_DEDUP_LOGS"] = "0"
-        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
 
         # Initialize experiment utils
         self.experiment_utils = ExperimentUtils()
@@ -224,37 +226,8 @@ class Experiment:
         for msg in log_messages:
             self.logger.info(msg)
 
-        # Initialize Ray with runtime environment for CUDA initialization
-        # This fixes AWS-specific CUDA/cuBLAS initialization issues
-        ray.init(
-            logging_level=logging.ERROR,
-            log_to_driver=False,
-            configure_logging=True,
-            ignore_reinit_error=True,
-            include_dashboard=True,
-            dashboard_host=RayConfig.HOST,
-            dashboard_port=RayConfig.PORT,
-            # Disable metrics export to prevent "Failed to establish connection" errors
-            _metrics_export_port=None,
-            runtime_env={
-                "env_vars": {
-                    # Force CUDA to initialize properly in Ray actors (AWS fix)
-                    "CUDA_LAUNCH_BLOCKING": "0",
-                    "CUDA_MODULE_LOADING": "LAZY",
-                    "TF_CPP_MIN_LOG_LEVEL": "3",
-                    "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
-                }
-            },
-        )
-        if ColabConfig.ON_COLAB:
-            try:
-                from google.colab.output import eval_js
-
-                # Get the Colab proxy URL for the dispatcher port
-                proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
-                print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
-            except Exception as e:
-                print(f"⚠️ Colab detected but failed to get proxy URL: {e}")
+        # Initialize or connect to shared Ray cluster
+        self._init_ray()
 
         # Create database reference
         self.db = RfDb()
@@ -628,6 +601,9 @@ class Experiment:
         End the experiment and clean up resources.
 
         Works in both fit and evals modes with mode-specific cleanup.
+        Kills any Ray actors owned by this experiment to free GPU/CPU resources.
+        Ray cluster is intentionally kept alive so subsequent experiments
+        (fit or evals) can reuse it without port conflicts or restart delays.
         """
         from rapidfireai.utils.exceptions import ExperimentException
 
@@ -638,16 +614,20 @@ class Experiment:
                 self.logger.exception(f"Error ending experiment: {e}")
             raise ExperimentException(f"Error ending experiment: {e}, traceback: {traceback.format_exc()}") from e
 
-        # Shutdown Ray (handles actor cleanup)
-        try:
-            self._ray.shutdown()
-            self.logger.info("Ray shutdown complete - all actors terminated")
-            if self.mode == "evals":
-                self.logger.info("Dispatcher will automatically shut down (daemon thread)")
-        except Exception as e:
-            if hasattr(self, "logger"):
-                self.logger.exception(f"Error shutting down Ray: {e}")
-            raise ExperimentException(f"Error shutting down Ray: {e}, traceback: {traceback.format_exc()}") from e
+        # Kill fit workers to free GPU resources for subsequent experiments.
+        # Workers are named fit_worker_0, fit_worker_1, etc. by create_worker_actors().
+        # This is a no-op if no workers exist (e.g., evals mode or already cleaned up).
+        if self._ray.is_initialized():
+            for i in range(16):
+                try:
+                    worker = self._ray.get_actor(f"fit_worker_{i}")
+                    self._ray.kill(worker)
+                except ValueError:
+                    continue
+
+        self.logger.info("Experiment ended. Ray cluster remains active for subsequent experiments.")
+        if self.mode == "evals":
+            self.logger.info("Dispatcher will automatically shut down (daemon thread)")
 
     def get_log_file_path(self, log_type: str | None = None) -> Path:
         """
