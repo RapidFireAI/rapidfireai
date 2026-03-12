@@ -13,7 +13,6 @@ from transformers import (
 from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
 from rapidfireai.fit.ml.checkpoint_utils import flush_cuda_cache, purge_model_kv_caches
-from rapidfireai.utils.logging import RFLogger
 
 
 class GenerationMetricsCallback(TrainerCallback):

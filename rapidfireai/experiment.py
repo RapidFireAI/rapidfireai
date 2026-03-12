@@ -26,7 +26,6 @@ from rapidfireai.utils.constants import (
     RF_MLFLOW_ENABLED,
     RF_TRAINING_LOG_FILENAME,
     get_dispatcher_url,
-    get_dispatcher_headers,
 )
 from rapidfireai.platform.ping import ping_server
 
@@ -202,7 +201,7 @@ class Experiment:
         from rapidfireai.utils.experiment_utils import ExperimentUtils
         from rapidfireai.utils.logging import RFLogger
         from rapidfireai.platform.colab import get_colab_auth_token
-        from rapidfireai.utils.constants import DispatcherConfig, MLflowConfig
+        from rapidfireai.utils.constants import DispatcherConfig
         from rapidfireai.metrics import RFMetricLogger
 
         # Import evals-specific modules

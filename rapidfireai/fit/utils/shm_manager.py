@@ -396,9 +396,6 @@ class SharedMemoryManager:
             _verify_sufficient_model_size(
                 model_data[model_object_type.value], self.logger
             )
-            _verify_sufficient_model_size(
-                model_data[model_object_type.value], self.logger
-            )
 
             # create model entry in registry if needed
             ray.get(self._registry_actor.get_or_create_entry.remote(model_id, {model_object_type: {}}))

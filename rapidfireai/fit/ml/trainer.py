@@ -1,6 +1,5 @@
 import math
 import os
-import warnings
 
 import torch
 from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict
@@ -84,7 +83,7 @@ def create_rf_trainer(
                     self.optimizer.load_state_dict(device_optimizer_state)
                     delattr(self, "_pending_optimizer_state")
             except Exception as e:
-                print(f"Warning: Error restoring FSDP scheduler state: {e}")
+                print(f"Warning: Error restoring optimizer state: {e}")
 
         def restore_fsdp_optimizer_state(self, rank=0):
             from torch.distributed.fsdp.fully_sharded_data_parallel import (

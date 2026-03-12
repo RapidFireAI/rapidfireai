@@ -55,7 +55,7 @@ RF_PID_FILE="${RF_PID_FILE:=$RF_HOME/rapidfire_pids.txt}"
 
 # Directory paths for pip-installed package
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Navigate to rapidfireai/fit directory from setup/fit directory
+# Navigate to rapidfireai package directory from setup directory
 RAPIDFIRE_DIR="$SCRIPT_DIR/../rapidfireai"
 RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
@@ -182,7 +182,7 @@ cleanup() {
     if [[ "$RF_COLAB_MODE" != "true" ]]; then
         # Safe, specific patterns for non-Colab environments
         pkill -f "mlflow server" 2>/dev/null || true
-        pkill -f "gunicorn.*rapidfireai.$RAPIDFIRE_MODE.dispatcher" 2>/dev/null || true
+        pkill -f "gunicorn.*rapidfireai.dispatcher" 2>/dev/null || true
         # Only kill Flask server if we're not in Colab (frontend doesn't run in Colab)
         pkill -f "python.*rapidfireai/frontend/server.py" 2>/dev/null || true
     fi

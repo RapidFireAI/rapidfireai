@@ -24,7 +24,6 @@ from rapidfireai.utils.constants import (
     ExperimentTask,
     ICOperation,
     ICStatus,
-    MLflowConfig,
     RunEndedBy,
     RunSource,
     RunStatus,
@@ -937,8 +936,6 @@ class Controller:
                     self.logger.debug(f"Error killing worker: {e}")
         except Exception as e:
             self.logger.warning(f"Error during graceful shutdown: {e}. Force killing workers...")
-            import contextlib
-
             for worker in self.worker_actors:
                 with contextlib.suppress(Exception):
                     ray.kill(worker)
