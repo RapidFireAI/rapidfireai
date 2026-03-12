@@ -456,6 +456,13 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     parser.add_argument("--log-lines", type=int, default=10, help="Number of lines to log to the console")
 
+    parser.add_argument(
+        "--converge",
+        choices=["all", "none", "backend", "frontend"],
+        default="all",
+        help="Converge mode: all (default, start converge backend+frontend), none (use original frontend, do not start converge), backend (only converge backend), frontend (only converge frontend)",
+    )
+
     args = parser.parse_args()
 
     # Set environment variables from CLI args
@@ -480,6 +487,9 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     # Handle force command separately
     if args.force:
         os.environ["RF_FORCE"] = "true"
+
+    # Converge mode (all|none|backend|frontend) for start script
+    os.environ["RF_CONVERGE_MODE"] = args.converge
 
     # Handle doctor command separately
     if args.command == "doctor":

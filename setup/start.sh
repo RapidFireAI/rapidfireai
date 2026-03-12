@@ -30,6 +30,16 @@ RF_LOG_PATH="${RF_LOG_PATH:=$RF_HOME/logs}"
 
 RF_TIMEOUT_TIME=${RF_TIMEOUT_TIME:=30}
 
+# Converge mode: all (backend+frontend), none (original frontend only), backend, frontend
+RF_CONVERGE_MODE=${RF_CONVERGE_MODE:=all}
+case "$RF_CONVERGE_MODE" in
+    all|none|backend|frontend) ;;
+    *)
+        echo "Invalid RF_CONVERGE_MODE=$RF_CONVERGE_MODE (expected: all, none, backend, frontend)"
+        exit 1
+        ;;
+esac
+
 # Colab mode configuration
 if [ -z "${COLAB_GPU+x}" ]; then
     RF_MLFLOW_ENABLED=${RF_MLFLOW_ENABLED:=true}
@@ -579,24 +589,38 @@ start_frontend() {
     return 0
 }
 
-# Function to start Converge (backend + frontend) via converge CLI
+# Function to start Converge via converge CLI (mode: all | backend | frontend)
 start_converge() {
-    print_status "Starting Converge services..."
+    local mode="${1:-$RF_CONVERGE_MODE}"
+    print_status "Starting Converge ($mode)..."
 
     # converge start runs in the foreground with its own monitor loop,
     # so we launch it in the background and track it like other services.
     print_status "Converge logs will be written to: $RF_LOG_PATH/converge.log"
 
+    local converge_args="--force"
+    case "$mode" in
+        all)   ;;
+        backend)  converge_args="$converge_args backend" ;;
+        frontend) converge_args="$converge_args frontend" ;;
+        *) converge_args="$converge_args" ;;
+    esac
+
     if command -v setsid &> /dev/null; then
-        setsid converge start --force > "$RF_LOG_PATH/converge.log" 2>&1 &
+        setsid converge start $converge_args > "$RF_LOG_PATH/converge.log" 2>&1 &
     else
-        nohup converge start --force > "$RF_LOG_PATH/converge.log" 2>&1 &
+        nohup converge start $converge_args > "$RF_LOG_PATH/converge.log" 2>&1 &
     fi
 
     local converge_pid=$!
     echo "$converge_pid Converge" >> "$RF_PID_FILE"
 
-    # Wait for the Converge frontend to be ready on the frontend port
+    # When starting full stack or frontend, wait for frontend port; backend-only may not serve it
+    if [[ "$mode" == "backend" ]]; then
+        print_success "Converge backend started (PID: $converge_pid)"
+        return 0
+    fi
+
     if wait_for_service $RF_FRONTEND_HOST $RF_FRONTEND_PORT "Converge frontend" $RF_TIMEOUT_TIME; then
         print_success "Converge started (PID: $converge_pid)"
         return 0
@@ -763,19 +787,34 @@ start_services() {
 
     # Start frontend server (conditionally)
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
-        if command -v converge &> /dev/null; then
-            if start_converge; then
-                ((services_started++))
-            else
-                print_error "Failed to start Converge"
-            fi
-        else
-            if start_frontend; then
-                ((services_started++))
-            else
-                print_error "Failed to start frontend server"
-            fi
-        fi
+        case "$RF_CONVERGE_MODE" in
+            none)
+                if start_frontend; then
+                    ((services_started++))
+                else
+                    print_error "Failed to start frontend server"
+                fi
+                ;;
+            backend|frontend|all)
+                if command -v converge &> /dev/null; then
+                    if start_converge; then
+                        ((services_started++))
+                    else
+                        print_error "Failed to start Converge"
+                    fi
+                else
+                    if [[ "$RF_CONVERGE_MODE" == "all" ]]; then
+                        if start_frontend; then
+                            ((services_started++))
+                        else
+                            print_error "Failed to start frontend server"
+                        fi
+                    else
+                        print_error "Converge not found in PATH (required for --converge=$RF_CONVERGE_MODE)"
+                    fi
+                fi
+                ;;
+        esac
     else
         print_status "⊗ Skipping frontend (use TensorBoard if in Colab mode)"
     fi
