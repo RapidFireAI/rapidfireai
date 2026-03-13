@@ -13,7 +13,6 @@ from transformers import (
 from transformers.trainer_utils import IntervalStrategy, SaveStrategy
 
 from rapidfireai.fit.ml.checkpoint_utils import flush_cuda_cache, purge_model_kv_caches
-from rapidfireai.fit.utils.logging import RFLogger
 
 
 class GenerationMetricsCallback(TrainerCallback):
@@ -418,6 +417,8 @@ class MetricLoggingCallback(TrainerCallback):
         completed_steps: int = 0,
         chunk_id: int = 0,
         num_epochs_completed: int = 0,
+        db=None,
+        run_id: int | None = None,
     ):
         self.metric_logger = metric_logger
         self.metric_run_id = metric_run_id
@@ -428,6 +429,20 @@ class MetricLoggingCallback(TrainerCallback):
         ]
         self.chunk_id = chunk_id
         self.num_epochs_completed = num_epochs_completed
+        self.db = db
+        self.run_id = run_id
+
+    def _is_run_deleted(self) -> bool:
+        """Check if the run has been deleted via Interactive Control."""
+        if self.db is None or self.run_id is None:
+            return False
+        try:
+            from rapidfireai.utils.constants import RunStatus
+
+            run = self.db.get_run(self.run_id)
+            return run is not None and run.get("status") == RunStatus.DELETED.value
+        except Exception:
+            return False
 
     def on_log(
         self,
@@ -438,23 +453,30 @@ class MetricLoggingCallback(TrainerCallback):
         **kwargs,
     ):
         """Called when the trainer logs metrics"""
-        if logs is not None:
-            step = self.completed_steps + state.global_step
-            for key, value in logs.items():
-                if isinstance(value, (int, float)) and key not in self.excluded_keys:
-                    try:
-                        if self.metric_logger:
-                            self.metric_logger.log_metric(
-                                self.metric_run_id,
-                                key,
-                                value,
-                                step=step,
-                            )
-                    except Exception as e:
-                        print(
-                            f"Warning: Failed to log metric {key} to tracking backend: {e}"
+        if logs is None:
+            return
+
+        if self._is_run_deleted():
+            control.should_training_stop = True
+            return
+
+        step = self.completed_steps + state.global_step
+        for key, value in logs.items():
+            if isinstance(value, (int, float)) and key not in self.excluded_keys:
+                try:
+                    if self.metric_logger:
+                        self.metric_logger.log_metric(
+                            self.metric_run_id,
+                            key,
+                            value,
+                            step=step,
                         )
-            if "eval_loss" not in logs and "train_runtime" not in logs:
+                except Exception as e:
+                    print(
+                        f"Warning: Failed to log metric {key} to tracking backend: {e}"
+                    )
+        if "eval_loss" not in logs and "train_runtime" not in logs:
+            try:
                 if self.metric_logger:
                     self.metric_logger.log_metric(
                         self.metric_run_id,
@@ -468,6 +490,10 @@ class MetricLoggingCallback(TrainerCallback):
                         self.num_epochs_completed,
                         step=step,
                     )
+            except Exception as e:
+                print(
+                    f"Warning: Failed to log chunk/epoch metrics to tracking backend: {e}"
+                )
 
 
 class LogLevelCallback(TrainerCallback):

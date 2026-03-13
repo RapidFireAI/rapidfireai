@@ -14,18 +14,15 @@ import mlflow
 import ray
 import pickle
 
-from rapidfireai.utils.constants import MLflowConfig
-from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
+from rapidfireai.utils.constants import MLflowConfig, SEARCH_DEFAULTS, VALID_SEARCH_TYPES, RF_EXPERIMENT_PATH
 
 from langchain_community.vectorstores import FAISS
 from langchain_postgres import PGVector
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone
-from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.rag.rag_pipeline import LangChainRagSpec
-from rapidfireai.evals.rag.prompt_manager import PromptManager
-from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.utils.logging import RFLogger
 
 
 @ray.remote
@@ -67,9 +64,10 @@ class QueryProcessingActor:
         if "CUDA_VISIBLE_DEVICES" in os.environ and os.environ["CUDA_VISIBLE_DEVICES"]:
             try:
                 import torch
+
                 if torch.cuda.is_available():
                     # Force CUDA initialization by performing a simple operation
-                    _ = torch.zeros(1, device='cuda')
+                    _ = torch.zeros(1, device="cuda")
                     torch.cuda.synchronize()
             except Exception:
                 # Silently continue if CUDA initialization fails (will use CPU)

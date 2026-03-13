@@ -22,7 +22,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from transformers import AutoTokenizer
 from trl import DPOTrainer, GRPOTrainer, SFTTrainer
 
-from rapidfireai.fit.utils.constants import SHMObjectType
+from rapidfireai.utils.constants import SHMObjectType
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
