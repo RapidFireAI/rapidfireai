@@ -73,20 +73,19 @@ class Experiment:
 
     def _init_ray(self) -> None:
         """
-        Initialize or connect to a shared Ray cluster.
+        Connect to a running Ray cluster started by ``rapidfireai start``.
 
-        If Ray is already initialized in this process, reuses the existing connection.
-        If a Ray cluster is already running externally (e.g., started via `rapidfireai start`),
-        connects to it. Otherwise, starts a new local cluster.
+        If Ray is already initialized in this process (e.g., a previous experiment),
+        reuses the existing connection. On Colab, starts a local cluster automatically
+        since there is no terminal to run the CLI.
 
-        After connecting, kills any stale actors from previous experiments to free
-        GPU/CPU resources for the new experiment.
+        Raises:
+            ConnectionError: If no Ray cluster is running (non-Colab only).
         """
         import ray
 
         self._ray = ray
 
-        # Set env vars needed by both modes before any Ray interaction
         os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
         os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
         os.environ.setdefault("RAY_LOG_TO_STDERR", "0")
@@ -95,47 +94,52 @@ class Experiment:
         os.environ["RAY_DEDUP_LOGS"] = "0"
         os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
 
-        already_initialized = ray.is_initialized()
+        if ray.is_initialized():
+            return
 
-        if not already_initialized:
-            ray_runtime_env = {
-                "env_vars": {
-                    "CUDA_LAUNCH_BLOCKING": "0",
-                    "CUDA_MODULE_LOADING": "LAZY",
-                    "TF_CPP_MIN_LOG_LEVEL": "3",
-                    "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
-                    "NCCL_NET": "Socket",
-                    "NCCL_IB_DISABLE": "1",
-                }
+        ray_runtime_env = {
+            "env_vars": {
+                "CUDA_LAUNCH_BLOCKING": "0",
+                "CUDA_MODULE_LOADING": "LAZY",
+                "TF_CPP_MIN_LOG_LEVEL": "3",
+                "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
+                "NCCL_NET": "Socket",
+                "NCCL_IB_DISABLE": "1",
             }
+        }
 
+        try:
+            ray.init(
+                address="auto",
+                ignore_reinit_error=True,
+                runtime_env=ray_runtime_env,
+            )
+        except ConnectionError:
+            if not ColabConfig.ON_COLAB:
+                raise ConnectionError(
+                    "No running RapidFire cluster found.\n"
+                    "Please run `rapidfireai start` in a terminal before creating an experiment."
+                )
+            ray.init(
+                logging_level=logging.ERROR,
+                log_to_driver=False,
+                configure_logging=True,
+                include_dashboard=True,
+                dashboard_host=RayConfig.HOST,
+                dashboard_port=RayConfig.PORT,
+                _metrics_export_port=None,
+                runtime_env=ray_runtime_env,
+            )
+
+        if ColabConfig.ON_COLAB:
             try:
-                ray.init(
-                    address="auto",
-                    ignore_reinit_error=True,
-                    runtime_env=ray_runtime_env,
-                )
-            except ConnectionError:
-                ray.init(
-                    logging_level=logging.ERROR,
-                    log_to_driver=False,
-                    configure_logging=True,
-                    include_dashboard=True,
-                    dashboard_host=RayConfig.HOST,
-                    dashboard_port=RayConfig.PORT,
-                    _metrics_export_port=None,
-                    runtime_env=ray_runtime_env,
-                )
+                from google.colab.output import eval_js
 
-            if ColabConfig.ON_COLAB:
-                try:
-                    from google.colab.output import eval_js
-
-                    proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
-                    print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
-                except Exception as e:
-                    if hasattr(self, "logger"):
-                        self.logger.warning(f"Colab detected but failed to get proxy URL: {e}")
+                proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
+                print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
+            except Exception as e:
+                if hasattr(self, "logger"):
+                    self.logger.warning(f"Colab detected but failed to get proxy URL: {e}")
 
     def _init_fit_mode(self) -> None:
         """Initialize fit-specific components."""
