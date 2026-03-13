@@ -276,6 +276,65 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     return 0
 
 
+def install_ide_context():
+    """Copy IDE context files (Claude Code + Cursor rules) into the current project directory."""
+    dest = Path.cwd()
+    print("")
+    print("RapidFire AI — IDE Context Installer")
+    print("--------------------------------------")
+    print(f"Installing into: {dest}")
+    print("Run this from your project root — files will be placed in the current directory.")
+    print("")
+
+    try:
+        site_packages_path = site.getsitepackages()[0]
+        source = Path(site_packages_path) / "ide-context"
+
+        if not source.exists():
+            # Fallback for editable / dev installs: look relative to this file
+            source = Path(__file__).parent.parent / "ide-context"
+
+        if not source.exists():
+            print("❌ Could not locate the ide-context directory.")
+            print("   Try reinstalling: pip install --upgrade rapidfireai")
+            return 1
+
+        files_to_copy = [
+            ("CLAUDE.md", "CLAUDE.md"),
+            (".claude/rules/rapidfireai-api.md", ".claude/rules/rapidfireai-api.md"),
+            (".cursor/rules/rapidfireai.mdc", ".cursor/rules/rapidfireai.mdc"),
+        ]
+
+        installed = []
+        for src_rel, dest_rel in files_to_copy:
+            src_path = source / src_rel
+            dest_path = dest / dest_rel
+            if src_path.exists():
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(src_path), str(dest_path))
+                installed.append(f"   {dest_rel}")
+            else:
+                print(f"⚠️  Source file not found, skipping: {src_rel}")
+
+        if installed:
+            print("✅ Installed:")
+            for f in installed:
+                print(f)
+            print("")
+            print("Claude Code and Cursor will now pick up the RapidFire AI context.")
+            print("Restart your IDE or Claude Code session to activate.")
+        else:
+            print("❌ No files were installed. The ide-context source may be incomplete.")
+            return 1
+
+    except Exception as e:
+        print(f"❌ Failed to install IDE context")
+        print(f"   Error: {e}")
+        return 1
+
+    return 0
+
+
 def copy_tutorial_notebooks():
     """Copy the tutorial notebooks to the project."""
     print("Getting tutorial notebooks...")
@@ -409,6 +468,9 @@ Examples:
   # Stop services
   rapidfireai stop
 
+  # Install Claude Code + Cursor context files into your project (run from project root)
+  rapidfireai install-ide-context
+
 For more information, visit: https://github.com/RapidFireAI/rapidfireai
         """
     )
@@ -417,7 +479,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         "command",
         nargs="?",
         default="start",
-        choices=["start", "stop", "status", "restart", "setup", "doctor", "init", "jupyter"],
+        choices=["start", "stop", "status", "restart", "setup", "doctor", "init", "jupyter", "install-ide-context"],
         help="Command to execute (default: start)",
     )
 
@@ -488,7 +550,10 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     # Handle init command separately
     if args.command == "init":
         return run_init(args.evals)
-    
+
+    if args.command == "install-ide-context":
+        return install_ide_context()
+
     if args.command == "jupyter":
         return run_jupyter()
 
