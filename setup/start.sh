@@ -641,8 +641,10 @@ start_converge() {
                 else
                     echo "No converge_backend.log file found"
                 fi
-                return 1
+            else
+                echo "No converge.log file found"
             fi
+            return 1
         fi
     fi
 
@@ -662,8 +664,10 @@ start_converge() {
                 else
                     echo "No converge_frontend.log file found"
                 fi
-                return 1
+            else
+                echo "No converge.log file found"
             fi
+            return 1
         fi
     fi
     return 0
