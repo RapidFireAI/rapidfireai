@@ -39,6 +39,10 @@ case "$RF_CONVERGE_MODE" in
         exit 1
         ;;
 esac
+RF_CONVERGE_BACKEND_HOST=${RF_CONVERGE_BACKEND_HOST:=0.0.0.0}
+RF_CONVERGE_BACKEND_PORT=${RF_CONVERGE_BACKEND_PORT:=8860}
+RF_CONVERGE_FRONTEND_HOST=${RF_CONVERGE_FRONTEND_HOST:=$RF_FRONTEND_HOST}
+RF_CONVERGE_FRONTEND_PORT=${RF_CONVERGE_FRONTEND_PORT:=$RF_FRONTEND_PORT}
 
 # Colab mode configuration
 if [ -z "${COLAB_GPU+x}" ]; then
@@ -621,23 +625,35 @@ start_converge() {
     echo "$converge_pid Converge" >> "$RF_PID_FILE"
 
     # When starting full stack or frontend, wait for frontend port; backend-only may not serve it
-    if [[ "$mode" == "backend" ]]; then
-        print_success "Converge backend started (PID: $converge_pid)"
-        return 0
+    if [[ "$mode" == "backend" ]] || [[ "$mode" == "all" ]]; then
+        if wait_for_service $RF_CONVERGE_BACKEND_HOST $RF_CONVERGE_BACKEND_PORT "Converge backend" $RF_TIMEOUT_TIME; then
+            print_success "Converge backend started (PID: $converge_pid)"
+        else
+            print_error "Converge backend failed to start. Checking logs..."
+            if [[ -f "$RF_LOG_PATH/converge.log" ]]; then
+                echo "=== Last 30 lines of converge.log ==="
+                tail -30 "$RF_LOG_PATH/converge.log"
+                tail -30 "$RF_LOG_PATH/converge_backend.log"
+                echo "=== End of logs ==="
+                return 1
+            fi
     fi
 
-    if wait_for_service $RF_FRONTEND_HOST $RF_FRONTEND_PORT "Converge frontend" $RF_TIMEOUT_TIME; then
-        print_success "Converge started (PID: $converge_pid)"
-        return 0
-    else
-        print_error "Converge failed to start. Checking logs..."
-        if [[ -f "$RF_LOG_PATH/converge.log" ]]; then
-            echo "=== Last 30 lines of converge.log ==="
-            tail -30 "$RF_LOG_PATH/converge.log"
-            echo "=== End of logs ==="
+    if [[ "$mode" == "frontend" ]] || [[ "$mode" == "all" ]]; then
+        if wait_for_service $RF_CONVERGE_FRONTEND_HOST $RF_CONVERGE_FRONTEND_PORT "Converge frontend" $RF_TIMEOUT_TIME; then
+            print_success "Converge frontend started (PID: $converge_pid)"
+        else
+            print_error "Converge frontend failed to start. Checking logs..."
+            if [[ -f "$RF_LOG_PATH/converge.log" ]]; then
+                echo "=== Last 30 lines of converge.log ==="
+                tail -30 "$RF_LOG_PATH/converge.log"
+                tail -30 "$RF_LOG_PATH/converge_frontend.log"
+                echo "=== End of logs ==="
+                return 1
+            fi
         fi
-        return 1
     fi
+    return 0
 }
 
 # Function to conditionally start frontend based on mode
