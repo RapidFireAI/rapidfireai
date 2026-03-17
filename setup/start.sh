@@ -633,8 +633,14 @@ start_converge() {
             if [[ -f "$RF_LOG_PATH/converge.log" ]]; then
                 echo "=== Last 30 lines of converge.log ==="
                 tail -30 "$RF_LOG_PATH/converge.log"
-                tail -30 "$RF_LOG_PATH/converge_backend.log"
-                echo "=== End of logs ==="
+                echo "=== End of log ==="
+                if [[ -f "$RF_LOG_PATH/converge_backend.log" ]]; then
+                    echo "=== Last 30 lines of converge_backend.log ==="
+                    tail -30 "$RF_LOG_PATH/converge_backend.log"
+                    echo "=== End of log ==="
+                else
+                    echo "No converge_backend.log file found"
+                fi
                 return 1
             fi
         fi
@@ -648,8 +654,14 @@ start_converge() {
             if [[ -f "$RF_LOG_PATH/converge.log" ]]; then
                 echo "=== Last 30 lines of converge.log ==="
                 tail -30 "$RF_LOG_PATH/converge.log"
-                tail -30 "$RF_LOG_PATH/converge_frontend.log"
-                echo "=== End of logs ==="
+                echo "=== End of log ==="
+                if [[ -f "$RF_LOG_PATH/converge_frontend.log" ]]; then
+                    echo "=== Last 30 lines of converge_frontend.log ==="
+                    tail -30 "$RF_LOG_PATH/converge_frontend.log"
+                    echo "=== End of log ==="
+                else
+                    echo "No converge_frontend.log file found"
+                fi
                 return 1
             fi
         fi
