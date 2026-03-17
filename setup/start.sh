@@ -637,6 +637,7 @@ start_converge() {
                 echo "=== End of logs ==="
                 return 1
             fi
+        fi
     fi
 
     if [[ "$mode" == "frontend" ]] || [[ "$mode" == "all" ]]; then
