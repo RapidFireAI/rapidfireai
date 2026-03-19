@@ -362,6 +362,8 @@ class QueryProcessingActor:
                 batch_data = batch_data.to_dict()
 
             with mlflow.start_span(name=f"rag_pipeline", span_type=mlflow.entities.SpanType.CHAIN) as span:
+                queries = batch_data.get("query", batch_data.get("question", []))
+                span.set_inputs({"queries": queries[:3] if len(queries) > 3 else queries})
                 if self.rag_spec is not None and self.rag_spec.pipeline_id is not None:
                     span.set_attribute("pipeline_id", self.rag_spec.pipeline_id)
                 if self.rag_spec is not None and self.rag_spec.model_name is not None:
@@ -381,6 +383,9 @@ class QueryProcessingActor:
                 if postprocess_fn:
                     with mlflow.start_span(name="postprocess", span_type=mlflow.entities.SpanType.CHAIN):
                         batch_data = postprocess_fn(batch_data)
+
+                generated = batch_data.get("generated_text", [])
+                span.set_outputs({"generated_text": generated[:3] if len(generated) > 3 else generated})
 
             # Stage 4: Compute metrics
             batch_metrics = {}

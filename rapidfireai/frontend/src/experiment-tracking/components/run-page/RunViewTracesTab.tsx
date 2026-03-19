@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { ExperimentViewTracesTableColumns } from '../traces/TracesView.utils';
 
 const disabledColumns = [ExperimentViewTracesTableColumns.runName];
+const forceVisibleColumns = [ExperimentViewTracesTableColumns.requestId];
 
 /**
  * A run page tab containing the artifact browser
@@ -20,7 +21,7 @@ export const RunViewTracesTab = ({
 
   return (
     <div css={{ flex: 1, minWidth: 0 }}>
-      <TracesView experimentIds={stableExperimentId} runUuid={runUuid} disabledColumns={disabledColumns} />
+      <TracesView experimentIds={stableExperimentId} runUuid={runUuid} disabledColumns={disabledColumns} forceVisibleColumns={forceVisibleColumns} />
     </div>
   );
 };
