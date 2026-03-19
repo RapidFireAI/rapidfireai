@@ -527,7 +527,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
             os.environ["RF_TRACKIO_ENABLED"] = "true"
     if args.tensorboard_log_dir:
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
-    if args.colab or ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
+    if args.colab or (ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None):
         os.environ["RF_COLAB_MODE"] = "true"
 
     # Handle force command separately

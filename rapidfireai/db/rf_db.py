@@ -24,20 +24,7 @@ from rapidfireai.utils.constants import (
     TaskStatus,
     WorkerTask,
 )
-
-
-def encode_payload(payload: object) -> str:
-    """Encode the payload for the database using dill."""
-    import base64
-    import dill
-    return base64.b64encode(dill.dumps(payload)).decode("utf-8")
-
-
-def decode_db_payload(payload: str) -> object:
-    """Decode the payload from the database using dill."""
-    import base64
-    import dill
-    return dill.loads(base64.b64decode(payload))
+from rapidfireai.utils.serialize import decode_db_payload, encode_payload
 
 
 class RfDb:
@@ -269,10 +256,13 @@ class RfDb:
         result = self.db.execute(query, fetch=True)
         return [row[0] for row in result] if result else []
 
-    def get_experiments_path(self, experiment_id: int) -> str:
-        """Get the experiments path for a given experiment."""
-        query = "SELECT experiments_path FROM experiments WHERE experiment_id = ?"
-        result = self.db.execute(query, (experiment_id,), fetch=True)
+    def get_experiments_path(self, experiment_id_or_name: int | str) -> str:
+        """Get the experiments path for a given experiment by ID or name."""
+        if isinstance(experiment_id_or_name, str):
+            query = "SELECT experiments_path FROM experiments WHERE experiment_name = ? ORDER BY experiment_id DESC LIMIT 1"
+        else:
+            query = "SELECT experiments_path FROM experiments WHERE experiment_id = ?"
+        result = self.db.execute(query, (experiment_id_or_name,), fetch=True)
         if result:
             return result[0][0]
         raise Exception("Experiments path not found")
@@ -797,8 +787,8 @@ class RfDb:
         num_epochs_completed: int | None = None,
         chunk_offset: int | None = None,
         error: str | None = None,
-        source: RunSource | None = None,
-        ended_by: RunEndedBy | None = None,
+        source: RunSource | str | None = None,
+        ended_by: RunEndedBy | str | None = None,
         warm_started_from: int | None = None,
         cloned_from: int | None = None,
         estimated_runtime: float | None = None,
@@ -806,7 +796,7 @@ class RfDb:
     ) -> None:
         """Set details of an existing run (fit mode)."""
         columns = {
-            "status": status.value if status else None,
+            "status": status.value if isinstance(status, RunStatus) else status,
             "metric_run_id": metric_run_id,
             "flattened_config": json.dumps(flattened_config) if flattened_config else None,
             "config_leaf": encode_payload(config_leaf) if config_leaf else None,
@@ -816,8 +806,8 @@ class RfDb:
             "num_epochs_completed": num_epochs_completed,
             "chunk_offset": chunk_offset,
             "error": error,
-            "source": source.value if source else None,
-            "ended_by": ended_by.value if ended_by else None,
+            "source": source.value if isinstance(source, RunSource) else source,
+            "ended_by": ended_by.value if isinstance(ended_by, RunEndedBy) else ended_by,
             "warm_started_from": warm_started_from,
             "cloned_from": cloned_from,
             "estimated_runtime": estimated_runtime,
@@ -1371,6 +1361,6 @@ class RfDb:
 
 
 # Backwards compatibility aliases
-RFDatabase = RfDb  # Evals used this name
+RFDatabase = RfDb
 
 __all__ = ["RfDb", "RFDatabase", "encode_payload", "decode_db_payload"]
