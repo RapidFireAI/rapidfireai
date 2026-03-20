@@ -12,7 +12,7 @@ import threading
 import traceback
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
-from waitress import serve
+from werkzeug.serving import make_server
 
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.utils.logger import RFLogger, SafeLoggerAdapter
@@ -979,11 +979,10 @@ def run_dispatcher(host: str = "0.0.0.0", port: int = 8851) -> None:
     try:
         dispatcher = Dispatcher()
 
-        # Enable verbose logging for waitress
-        logging.getLogger("waitress").setLevel(logging.WARNING)
-
-        # Use waitress to serve the Flask app
-        serve(dispatcher.app, host=host, port=port, threads=6)
+        # Use werkzeug threaded server instead of waitress to avoid
+        # select() FD_SETSIZE limit (1024) in notebook environments
+        server = make_server(host, port, dispatcher.app, threaded=True)
+        server.serve_forever()
     except Exception as e:
         # Catch all exceptions to prevent thread crashes
         print(f"CRITICAL: Dispatcher crashed: {e}")
