@@ -420,9 +420,12 @@ class QueryProcessingActor:
 
     def cleanup(self):
         """Clean up inference engine resources."""
-        if self.metric_run_id:
-            mlflow.end_run()
-            self.metric_run_id = None
+        try:
+            if self.metric_run_id:
+                mlflow.end_run()
+                self.metric_run_id = None
+        except Exception:
+            pass
         self.inference_engine.cleanup()
 
 
