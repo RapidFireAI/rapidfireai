@@ -45,5 +45,5 @@ flask-cors>=5.0.1
 # Logging
 loguru
 
-
 numpy==2.0.1
+protobuf<6.0.0
