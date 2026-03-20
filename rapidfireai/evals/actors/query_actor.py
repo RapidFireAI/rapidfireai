@@ -300,6 +300,10 @@ class QueryProcessingActor:
                 self.prompt_manager.pipeline_id = pipeline_id
                 self.prompt_manager.model_name = model_name
 
+            # End any previously active MLflow run (happens when the actor is reused for a second pipeline)
+            if self.metric_run_id:
+                mlflow.end_run()
+
             # Set the active MLflow run so traces are associated with this pipeline's run
             self.metric_run_id = metric_run_id
             if self.metric_run_id:
@@ -416,6 +420,9 @@ class QueryProcessingActor:
 
     def cleanup(self):
         """Clean up inference engine resources."""
+        if self.metric_run_id:
+            mlflow.end_run()
+            self.metric_run_id = None
         self.inference_engine.cleanup()
 
 
