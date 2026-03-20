@@ -13,6 +13,20 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+
+## [v0.15.2]
+
+### Additions
+- MLFlow tracing for rag retrieval, prompt manager, vllm and openai generate accessible through the mlflow dashboard (8852)
+
+### Changes
+- Updates to pinecone vector store: index_name is now index_namespace and accepts a tuple of type (str, str)
+- Updated GitHub action versions
+
+### Fixes
+- flashinfer upgrade flag set for rapidfireai init command
+- Resolve Torch compatibility issues with Flash Attention
+
 ## [v0.15.1]
 
 ### Changes
