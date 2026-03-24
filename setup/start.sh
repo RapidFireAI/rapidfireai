@@ -775,12 +775,39 @@ show_status() {
     fi
 
     # Only check frontend.log if frontend is running
-    if [[ "$RF_COLAB_MODE" != "true" ]]; then
+    if [[ "$RF_COLAB_MODE" != "true" ]] || [[ "$RF_CONVERGE_MODE" == "none" ]] || [[ "$RF_CONVERGE_MODE" == "backend" ]]; then
         if [[ -f "$RF_LOG_PATH/frontend.log" ]]; then
             local size=$(du -h "$RF_LOG_PATH/frontend.log" | cut -f1)
             print_status "- $RF_LOG_PATH/frontend.log: $size"
         else
             print_warning "- $RF_LOG_PATH/frontend.log: not found"
+        fi
+    fi
+
+    if [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" == "frontend" ]]; then
+        if [[ -f "$RF_LOG_PATH/converge_frontend.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/converge_frontend.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/converge_frontend.log: $size"
+        else
+            print_warning "- $RF_LOG_PATH/converge_frontend.log: not found"
+        fi
+    fi
+
+    if [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" == "backend" ]]; then
+        if [[ -f "$RF_LOG_PATH/converge_backend.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/converge_backend.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/converge_backend.log: $size"
+        else
+            print_warning "- $RF_LOG_PATH/converge_backend.log: not found"
+        fi
+    fi
+
+    if [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" == "backend" ]] || [[ "$RF_CONVERGE_MODE" == "frontend" ]]; then
+        if [[ -f "$RF_LOG_PATH/converge.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/converge.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/converge.log: $size"
+        else
+            print_warning "- $RF_LOG_PATH/converge.log: not found"
         fi
     fi
 }
@@ -915,7 +942,7 @@ main() {
 
         # Show summary of all log files for debugging
         print_status "=== Startup Failure Summary ==="
-        for log_file in "mlflow.log" "api.log" "frontend.log" "converge.log"; do
+        for log_file in "mlflow.log" "api.log" "frontend.log" "converge.log" "converge_backend.log" "converge_frontend.log"; do
             if [[ -f "$RF_LOG_PATH/$log_file" ]]; then
                 echo ""
                 print_status "=== $log_file ==="
