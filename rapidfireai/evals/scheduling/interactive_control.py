@@ -20,7 +20,6 @@ from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
 from rapidfireai.evals.utils.logger import RFLogger
-from rapidfireai.evals.utils.serialize import extract_pipeline_display_metadata
 
 
 class InteractiveControlHandler:
@@ -563,11 +562,12 @@ class InteractiveControlHandler:
             model_name = "Unknown"
 
         # Extract ALL metadata fields for progress display (mirrors controller.py)
-        text_splitter = None
-        chunk_size = None
-        chunk_overlap = None
+        # Indexing-stage fields are inherited from the parent and read-only —
+        # cloning cannot change the index, only retrieval/generation settings.
+        text_splitter_cfg = None
         embedding_cfg = None
         vector_store_cfg = None
+        # Retrieval-stage fields (may be modified by clone)
         search_cfg = None
         reranker_cfg = None
         sampling_params = None
@@ -584,9 +584,7 @@ class InteractiveControlHandler:
             rag = pipeline.rag
             # Indexing stage (inherited from parent, read-only)
             if hasattr(rag, "text_splitter") and rag.text_splitter is not None:
-                text_splitter = type(rag.text_splitter).__name__
-                chunk_size = getattr(rag.text_splitter, "_chunk_size", None)
-                chunk_overlap = getattr(rag.text_splitter, "_chunk_overlap", None)
+                text_splitter_cfg = rag.get_text_splitter_cfg()
             if getattr(rag, "embedding_cls", None) is not None:
                 cls_name = rag.embedding_cls.__name__ if isinstance(rag.embedding_cls, type) else str(rag.embedding_cls)
                 embedding_cfg = {"class": cls_name}
@@ -618,9 +616,7 @@ class InteractiveControlHandler:
                 pipeline_config=pipeline_config,
                 model_name=model_name,
                 status="ONGOING",
-                text_splitter=text_splitter,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
+                text_splitter_cfg=text_splitter_cfg,
                 embedding_cfg=embedding_cfg,
                 vector_store_cfg=vector_store_cfg,
                 search_cfg=search_cfg,

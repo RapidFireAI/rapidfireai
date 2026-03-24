@@ -15,13 +15,11 @@ from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.interactive_control import InteractiveControlHandler
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.evals.scheduling.scheduler import Scheduler
-from rapidfireai.automl import ModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import (
     NUM_CPUS_PER_DOC_ACTOR,
     NUM_QUERY_PROCESSING_ACTORS,
     SEARCH_TYPE_KEYS,
     ContextStatus,
-    ExperimentStatus,
     PipelineStatus,
     TaskStatus,
 )
@@ -29,7 +27,7 @@ from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 from rapidfireai.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.automl import get_runs, get_flattened_config_leaf
-from rapidfireai.evals.utils.serialize import extract_pipeline_config_json, extract_pipeline_display_metadata
+from rapidfireai.evals.utils.serialize import extract_pipeline_config_json
 
 class Controller:
     """
@@ -199,10 +197,10 @@ class Controller:
             if hasattr(rag, "search_kwargs") and rag.search_kwargs:
                 for key, value in rag.search_kwargs.items():
                     manager.log_param(run_id, f"rag.{key}", str(value))
-            if hasattr(rag, "chunk_size"):
-                manager.log_param(run_id, "rag.chunk_size", str(rag.chunk_size))
-            if hasattr(rag, "chunk_overlap"):
-                manager.log_param(run_id, "rag.chunk_overlap", str(rag.chunk_overlap))
+            ts_cfg = rag.get_text_splitter_cfg() if hasattr(rag, "get_text_splitter_cfg") else None
+            if ts_cfg:
+                for key, value in ts_cfg.items():
+                    manager.log_param(run_id, f"rag.text_splitter.{key}", str(value))
 
         # Log sampling params (for vLLM)
         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:
@@ -756,7 +754,7 @@ class Controller:
                 ordered_metrics["model_name"] = cumulative_metrics["model_name"]
 
             hyperparam_keys = [
-                "text_splitter", "chunk_size", "chunk_overlap", "embedding_cfg", "vector_store_cfg",
+                "text_splitter_cfg", "embedding_cfg", "vector_store_cfg",
                 "search_cfg", "reranker_cfg",
                 "sampling_params", "prompt_manager_k", "model_config",
             ]
@@ -952,9 +950,7 @@ class Controller:
         for pipeline_id, pipeline_config in zip(pipeline_ids, pipeline_configs, strict=False):
             model_name = "Unknown"
             # Indexing-stage fields (read-only in progress display)
-            text_splitter = None
-            chunk_size = None
-            chunk_overlap = None
+            text_splitter_cfg = None
             embedding_cfg = None
             vector_store_cfg = None
             # Retrieval-stage fields
@@ -981,9 +977,7 @@ class Controller:
 
                 # Indexing stage
                 if hasattr(rag, "text_splitter") and rag.text_splitter is not None:
-                    text_splitter = type(rag.text_splitter).__name__
-                    chunk_size = getattr(rag.text_splitter, "_chunk_size", None)
-                    chunk_overlap = getattr(rag.text_splitter, "_chunk_overlap", None)
+                    text_splitter_cfg = rag.get_text_splitter_cfg()
                 if getattr(rag, "embedding_cls", None) is not None:
                     cls_name = rag.embedding_cls.__name__ if isinstance(rag.embedding_cls, type) else str(rag.embedding_cls)
                     embedding_cfg = {"class": cls_name}
@@ -1019,12 +1013,8 @@ class Controller:
 
             # Add optional fields only if they're not None
             # Indexing stage (read-only display)
-            if text_splitter is not None:
-                pipeline_info_dict["text_splitter"] = text_splitter
-            if chunk_size is not None:
-                pipeline_info_dict["chunk_size"] = chunk_size
-            if chunk_overlap is not None:
-                pipeline_info_dict["chunk_overlap"] = chunk_overlap
+            if text_splitter_cfg is not None:
+                pipeline_info_dict["text_splitter_cfg"] = text_splitter_cfg
             if embedding_cfg is not None:
                 pipeline_info_dict["embedding_cfg"] = embedding_cfg
             if vector_store_cfg is not None:
