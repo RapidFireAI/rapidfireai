@@ -1,6 +1,5 @@
 import math
 import os
-import warnings
 
 import torch
 from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict
@@ -22,7 +21,7 @@ from rapidfireai.fit.ml.checkpoint_utils import (
     restore_trainer_from_disk,
     restore_trainer_from_shared_memory,
 )
-from rapidfireai.fit.utils.constants import SHMObjectType
+from rapidfireai.utils.constants import SHMObjectType
 from rapidfireai.fit.utils.datapaths import DataPath
 from rapidfireai.fit.utils.shm_manager import SharedMemoryManager
 from rapidfireai.fit.utils.trainer_config import TrainerConfig
@@ -84,7 +83,7 @@ def create_rf_trainer(
                     self.optimizer.load_state_dict(device_optimizer_state)
                     delattr(self, "_pending_optimizer_state")
             except Exception as e:
-                print(f"Warning: Error restoring FSDP scheduler state: {e}")
+                print(f"Warning: Error restoring optimizer state: {e}")
 
         def restore_fsdp_optimizer_state(self, rank=0):
             from torch.distributed.fsdp.fully_sharded_data_parallel import (
@@ -368,6 +367,7 @@ def create_trainer_instance(
     metric_logger=None,
     chunk_id: int = 0,
     use_fsdp: bool = False,
+    db=None,
 ) -> tuple[SFTTrainer | DPOTrainer | GRPOTrainer | None, str]:
     """
     Create a trainer instance with proper state restoration.
@@ -446,6 +446,7 @@ def create_trainer_instance(
             formatting_func,
             global_step_args,
             use_fsdp=use_fsdp,
+            db=db,
         )
     )
 
@@ -533,9 +534,13 @@ def _configure_training_args(
     if "save_steps" in training_args:
         training_args.pop("save_steps")
 
-    # Configure distributed training arguments for FSDP
+    # Configure distributed training arguments for FSDP.
+    # Each Ray actor sees only its assigned GPU as cuda:0, so the HF Trainer device
+    # index is always 0. trainer_config.local_rank holds the FSDP group rank (used
+    # for conditional logic like "only rank 0 saves checkpoints") and must not be
+    # used as a device index here.
     if use_fsdp:
-        training_args["local_rank"] = trainer_config.local_rank
+        training_args["local_rank"] = 0
         # training_args["dataloader_num_workers"] = trainer_config.world_size  # Avoid multiprocessing issues with FSDP
         training_args["dataloader_pin_memory"] = False
         training_args["remove_unused_columns"] = False  # FSDP requires this
@@ -694,6 +699,7 @@ def _setup_callbacks(
     formatting_func,
     global_step_args,
     use_fsdp=False,
+    db=None,
 ):
     """Setup callbacks for the trainer."""
     callbacks = []
@@ -705,6 +711,8 @@ def _setup_callbacks(
             completed_steps=trainer_config.completed_steps,
             chunk_id=chunk_id,
             num_epochs_completed=trainer_config.num_epochs_completed,
+            db=db,
+            run_id=trainer_config.run_id,
         )
         callbacks.append(metric_callback)
 

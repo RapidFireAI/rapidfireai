@@ -3,6 +3,7 @@ RAG (Retrieval-Augmented Generation) Specification using LangChain components.
 
 """
 
+import builtins
 import copy
 import warnings
 from collections.abc import Callable
@@ -13,7 +14,7 @@ import os
 import mlflow
 from mlflow.entities import SpanType
 
-from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
+from rapidfireai.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
 
 import faiss
 from pinecone import Pinecone, ServerlessSpec, PodSpec, ByocSpec
@@ -30,6 +31,7 @@ from langchain_core.vectorstores import VectorStore
 from langchain_text_splitters import TextSplitter
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+
 
 class LangChainRagSpec:
     """
@@ -71,7 +73,7 @@ class LangChainRagSpec:
         search_cfg: Optional[dict[str, Any]] | None = None,
         reranker_cfg: Optional[dict[str, Any]] | None = None,
         enable_gpu_search: bool = False,
-        document_template: Optional[Callable[[Document], str]] | None = None,
+        document_template: Callable[[Document], str] | None = None,
     ) -> None:
         """
         Initialize the RAG specification with LangChain components.
@@ -160,14 +162,14 @@ class LangChainRagSpec:
             cfg = dict(reranker_cfg)
             cls_value = cfg.pop("class", None)
             if isinstance(cls_value, str):
-                from rapidfireai.evals.utils.constants import RERANKER_CLASS_REGISTRY
+                from rapidfireai.utils.constants import RERANKER_CLASS_REGISTRY
                 resolved = RERANKER_CLASS_REGISTRY.get(cls_value)
                 if resolved is None:
                     raise ValueError(
                         f"Unknown reranker class '{cls_value}'. "
                         f"Supported classes: {sorted(RERANKER_CLASS_REGISTRY.keys())}. "
                         f"To add a new reranker, register it in RERANKER_CLASS_REGISTRY "
-                        f"in rapidfireai/evals/utils/constants.py."
+                        f"in rapidfireai/utils/constants.py."
                     )
                 self.reranker_cls = resolved
             else:
@@ -194,17 +196,97 @@ class LangChainRagSpec:
     def default_template(doc: Document) -> str:
         """
         Default document formatting template.
-        
+
         Args:
             doc: A langchain Document to format.
-            
+
         Returns:
             Formatted string with metadata and content.
         """
         metadata = "; ".join([f"{k}: {v}" for k, v in doc.metadata.items()])
         return f"{metadata}:\n{doc.page_content}"
 
-    def _load_documents(self) -> list[Document]:
+    def build_index(self) -> None:
+        """
+        Create the embedding instance and ensure a retriever is available.
+
+        - If a retriever was provided at init, it is used as-is (embedding is still
+          created for any callers that need it).
+        - If a vector_store was provided but no retriever, a retriever is created from
+          it via as_retriever(search_type=..., search_kwargs=...).
+        - If neither retriever nor vector_store was provided, a FAISS vector store is
+          created, documents are loaded (and optionally split if text_splitter is set),
+          added to FAISS, and a retriever is created from the vector store.
+
+        FAISS index type when building:
+        - enable_gpu_search=True: IndexFlatL2 on GPU (exact L2 search).
+        - enable_gpu_search=False: IndexHNSWFlat on CPU (approximate HNSW search).
+
+        Raises:
+            Exception: If embedding instantiation fails.
+            ImportError: If faiss (or faiss-gpu) is not available when building index.
+        """
+        # Create embedding instance with provided configuration
+        self.embedding = self.embedding_cls(**self.embedding_kwargs)
+
+        if self.reranker_cls:
+            if self.reranker_cls is CrossEncoderReranker:
+                hf_model_name = self.reranker_kwargs.pop("model_name", "cross-encoder/ms-marco-MiniLM-L6-v2")
+                hf_model_kwargs = self.reranker_kwargs.pop("model_kwargs", {})
+
+                self.reranker = self.reranker_cls(
+                    model=HuggingFaceCrossEncoder(model_name=hf_model_name, model_kwargs=hf_model_kwargs),
+                    **self.reranker_kwargs,
+                )
+            else:
+                self.reranker = self.reranker_cls(**self.reranker_kwargs)
+
+        # Initialize vector store and retriever based on provided parameters
+        if not self.retriever and not self.vector_store:
+            try:
+                if self.enable_gpu_search:
+                    # Use GPU-accelerated FAISS vector store with exact search (L2 distance) by default
+                    # FAISS vector store will be built (adding documents) in _build_vector_store() method
+                    self.vector_store = FAISS(
+                        embedding_function=self.embedding,
+                        index=faiss.IndexFlatL2(len(self.embedding.embed_query("RapidFire AI is awesome!"))),
+                        docstore=InMemoryDocstore(),
+                        index_to_docstore_id={},
+                    )
+
+                else:
+                    # Use CPU-based Implementation of FAISS with approximate search HNSW
+                    # TODO: move these to constants.py
+                    M = 16  # good default value: controls the number of bidirectional connections of each node
+                    ef_construction = 64  # 4-8x of M: Size of dynamic candidate list during construction
+                    ef_search = 32  # 2-4x of M: Size of dynamic candidate list during search
+
+                    hnsw_index = faiss.IndexHNSWFlat(len(self.embedding.embed_query("RapidFire AI is awesome!")), M)
+                    hnsw_index.hnsw.efConstruction = ef_construction
+                    hnsw_index.hnsw.efSearch = ef_search
+
+                    self.vector_store = FAISS(
+                        embedding_function=self.embedding,
+                        index=hnsw_index,
+                        docstore=InMemoryDocstore(),
+                        index_to_docstore_id={},
+                    )
+
+            except ImportError as e:
+                raise ImportError(
+                    "FAISS is required for GPU similarity search. Install it with: pip install faiss-gpu"
+                ) from e
+
+            self._build_vector_store()
+            self.retriever = self.vector_store.as_retriever(
+                search_type=self.search_type, search_kwargs=self.search_kwargs
+            )
+        elif not self.retriever:
+            self.retriever = self.vector_store.as_retriever(
+                search_type=self.search_type, search_kwargs=self.search_kwargs
+            )
+
+    def _load_documents(self) -> builtins.list[Document]:
         """
         Load documents using the configured document loader.
 
@@ -213,7 +295,7 @@ class LangChainRagSpec:
         """
         return self.document_loader.load() if self.document_loader is not None else []
 
-    def _split_documents(self, documents: list[Document]) -> list[Document]:
+    def _split_documents(self, documents: builtins.list[Document]) -> builtins.list[Document]:
         """
         Split documents into smaller chunks using the configured text splitter.
 
@@ -360,6 +442,31 @@ class LangChainRagSpec:
         batch_size = self.vector_store_cfg.get("batch_size", 128) if self.vector_store_cfg else 128
         for i in range(0, len(documents), batch_size):
             self.vector_store.add_documents(documents=documents[i: i + batch_size])
+
+    def _rerank_docs(
+        self, batch_queries: builtins.list[str], batch_docs: builtins.list[builtins.list[Document]]
+    ) -> builtins.list[builtins.list[Document]]:
+        """
+        Optionally rerank batch documents using the configured BaseDocumentCompressor.
+
+        The reranker (BaseDocumentCompressor) is applied to each query's document list
+        individually using the compress_documents() method, which requires both the
+        query and documents as input.
+
+        Args:
+            batch_queries: A list of query strings corresponding to each document list.
+            batch_docs: A batch of document lists where each inner list contains
+                       documents for a single query.
+
+        Returns:
+            List[List[Document]]: The batch of documents, reranked if a reranker
+                                 (BaseDocumentCompressor) is configured, otherwise
+                                 returned as-is. Maintains the same structure as input.
+        """
+        if self.reranker:
+            return [self.reranker.compress_documents(docs, query) 
+                    for query, docs in zip(batch_queries, batch_docs)]
+        return batch_docs
 
     def build_pipeline(self) -> None:
         """

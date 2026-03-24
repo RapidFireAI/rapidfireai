@@ -1,19 +1,14 @@
 """
 Constants for the RapidFire AI package
+
+This module contains constants, configuration classes, and enums.
 """
+
 import os
 from enum import Enum
-from rapidfireai.utils.colab import is_running_in_colab
+
+from rapidfireai.platform.colab import is_running_in_colab
 from rapidfireai.utils.os_utils import mkdir_p
-
-
-class ExperimentStatus(str, Enum):
-    """Shared status values for experiments (used by both fit and evals)."""
-
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
 
 
 if is_running_in_colab():
@@ -28,12 +23,54 @@ RF_TENSORBOARD_LOG_DIR = os.getenv("RF_TENSORBOARD_LOG_DIR", f"{RF_EXPERIMENT_PA
 RF_TRAINING_LOG_FILENAME = os.getenv("RF_TRAINING_LOG_FILENAME", "training.log")
 RF_TRAINER_OUTPUT = os.getenv("RF_TRAINER_OUTPUT", os.path.join(RF_HOME, "trainer_output"))
 
+# Evals Actor Constants
+NUM_QUERY_PROCESSING_ACTORS = 4
+NUM_CPUS_PER_DOC_ACTOR = 2 if os.cpu_count() > 2 else 1
+
+# Rate Limiting Constants
+MAX_RATE_LIMIT_RETRIES = 5
+RATE_LIMIT_BACKOFF_BASE = 2
+
+# ---------------------------------------------------------------------------
+# Reranker class registry
+# ---------------------------------------------------------------------------
+def _build_reranker_registry() -> dict[str, type]:
+    registry: dict[str, type] = {}
+    try:
+        from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+        registry[CrossEncoderReranker.__qualname__] = CrossEncoderReranker
+    except ImportError:
+        pass
+    try:
+        from langchain.retrievers.document_compressors import LLMChainExtractor
+        registry[LLMChainExtractor.__qualname__] = LLMChainExtractor
+    except ImportError:
+        pass
+    try:
+        from langchain_cohere import CohereRerank
+        registry[CohereRerank.__qualname__] = CohereRerank
+    except ImportError:
+        pass
+    return registry
+
+RERANKER_CLASS_REGISTRY: dict[str, type] = _build_reranker_registry()
+
+# RAG search type defaults
+VALID_SEARCH_TYPES = {"similarity", "similarity_score_threshold", "mmr"}
+SEARCH_DEFAULTS: dict[str, dict] = {
+    "similarity":                 {"k": 5, "filter": None},
+    "similarity_score_threshold": {"k": 5, "filter": None, "score_threshold": 0.5},
+    "mmr":                        {"k": 5, "filter": None, "fetch_k": 20, "lambda_mult": 0.5},
+}
+SEARCH_TYPE_KEYS: dict[str, set] = {search_type: set(defaults.keys()) for search_type, defaults in SEARCH_DEFAULTS.items()}
+
 try:
     mkdir_p(RF_LOG_PATH)
     mkdir_p(RF_HOME)
 except (PermissionError, OSError) as e:
     print(f"Error creating directory: {e}")
     raise
+
 
 class DispatcherConfig:
     """Class to manage the dispatcher configuration"""
@@ -44,6 +81,7 @@ class DispatcherConfig:
 
     def __str__(self):
         return f"DispatcherConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
+
 
 # Frontend Constants
 class FrontendConfig:
@@ -56,6 +94,7 @@ class FrontendConfig:
     def __str__(self):
         return f"FrontendConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
 
+
 # MLflow Constants
 class MLflowConfig:
     """Class to manage the MLflow configuration"""
@@ -66,6 +105,7 @@ class MLflowConfig:
 
     def __str__(self):
         return f"MLflowConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
+
 
 # Jupyter Constants
 class JupyterConfig:
@@ -78,6 +118,7 @@ class JupyterConfig:
     def __str__(self):
         return f"JupyterConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
 
+
 # Ray Constants
 class RayConfig:
     """Class to manage the Ray configuration"""
@@ -89,6 +130,7 @@ class RayConfig:
     def __str__(self):
         return f"RayConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
 
+
 # Colab Constants
 class ColabConfig:
     """Class to manage the Colab configuration"""
@@ -99,6 +141,198 @@ class ColabConfig:
     def __str__(self):
         return f"ColabConfig(ON_COLAB={self.ON_COLAB}, RF_COLAB_MODE={self.RF_COLAB_MODE})"
 
+
 RF_MLFLOW_ENABLED = os.getenv("RF_MLFLOW_ENABLED", "true" if not ColabConfig.ON_COLAB else "false")
 RF_TENSORBOARD_ENABLED = os.getenv("RF_TENSORBOARD_ENABLED", "false" if not ColabConfig.ON_COLAB else "true")
 RF_TRACKIO_ENABLED = os.getenv("RF_TRACKIO_ENABLED", "false")
+RF_TRACKING_BACKEND = os.getenv("RF_TRACKING_BACKEND", "mlflow" if not ColabConfig.ON_COLAB else "tensorboard")
+
+
+# ============================================================================
+# UNIFIED STATUS ENUMS (lowercase values for consistency)
+# ============================================================================
+
+
+class ExperimentStatus(str, Enum):
+    """Status for experiments (both fit and evals)."""
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class RunStatus(str, Enum):
+    """Status for fit training runs."""
+
+    NEW = "new"
+    ONGOING = "ongoing"
+    COMPLETED = "completed"
+    STOPPED = "stopped"
+    DELETED = "deleted"
+    FAILED = "failed"
+
+
+class PipelineStatus(str, Enum):
+    """Status for evals inference pipelines."""
+
+    NEW = "new"
+    ONGOING = "ongoing"
+    COMPLETED = "completed"
+    STOPPED = "stopped"
+    DELETED = "deleted"
+    FAILED = "failed"
+
+
+class ContextStatus(str, Enum):
+    """Status for RAG contexts (evals mode)."""
+
+    NEW = "new"
+    ONGOING = "ongoing"
+    COMPLETED = "completed"
+    DELETED = "deleted"
+    FAILED = "failed"
+
+
+class TaskStatus(str, Enum):
+    """Status for worker tasks (fit) and actor tasks (evals)."""
+
+    SCHEDULED = "scheduled"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"  # Fit-specific
+
+
+class ICOperation(str, Enum):
+    """Interactive control operation types."""
+
+    STOP = "stop"
+    RESUME = "resume"
+    DELETE = "delete"
+    CLONE = "clone"
+    CLONE_WARM = "clone_warm"  # Fit-specific (warm-start)
+
+
+class ICStatus(str, Enum):
+    """Status for interactive control operations."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+# ============================================================================
+# FIT-SPECIFIC ENUMS
+# ============================================================================
+
+
+class ExperimentTask(str, Enum):
+    """Fit-mode experiment tasks (current_task column)."""
+
+    IDLE = "idle"
+    CREATE_MODELS = "create_models"
+    IC_OPS = "ic_ops"
+    RUN_FIT = "run_fit"
+
+
+class ControllerTask(str, Enum):
+    """Fit-mode controller tasks."""
+
+    RUN_FIT = "run_fit"
+    CREATE_MODELS = "create_models"
+    IC_DELETE = "ic_delete"
+    IC_STOP = "ic_stop"
+    IC_RESUME = "ic_resume"
+    IC_CLONE_MODIFY = "ic_clone_modify"
+    IC_CLONE_MODIFY_WARM = "ic_clone_modify_warm"
+    EPOCH_BOUNDARY = "epoch_boundary"
+    GET_RUN_METRICS = "get_run_metrics"
+
+
+class WorkerTask(str, Enum):
+    """Fit-mode worker tasks."""
+
+    CREATE_MODELS = "create_models"
+    TRAIN_VAL = "train_val"
+
+
+class RunSource(str, Enum):
+    """How a fit run was created."""
+
+    SHA = "sha"  # Successive Halving Algorithm
+    INITIAL = "initial"
+    INTERACTIVE_CONTROL = "interactive_control"
+
+
+class RunEndedBy(str, Enum):
+    """How a fit run was ended."""
+
+    SHA = "sha"  # Successive Halving Algorithm
+    EPOCH_COMPLETED = "epoch_completed"
+    INTERACTIVE_CONTROL = "interactive_control"
+    TOLERANCE = "tolerance"
+
+
+class LogType(str, Enum):
+    """Log file types."""
+
+    RF_LOG = "rf_log"
+    TRAINING_LOG = "training_log"
+
+
+class SHMObjectType(str, Enum):
+    """Types of objects stored in shared memory (fit mode)."""
+
+    BASE_MODEL = "base_model"
+    FULL_MODEL = "full_model"
+    REF_FULL_MODEL = "ref_full_model"
+    REF_STATE_DICT = "ref_state_dict"
+    CHECKPOINTS = "checkpoints"
+
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+
+def get_dispatcher_url() -> str:
+    """
+    Auto-detect dispatcher URL based on environment.
+
+    Returns:
+        - In Google Colab: Uses Colab's kernel proxy URL
+        - In Jupyter/Local: Uses localhost URL
+    """
+    if ColabConfig.ON_COLAB:
+        try:
+            from google.colab.output import eval_js
+
+            proxy_url = eval_js(f"google.colab.kernel.proxyPort({DispatcherConfig.PORT})")
+            print(f"🌐 Google Colab detected. Dispatcher URL: {proxy_url}")
+            return proxy_url
+        except Exception as e:
+            print(f"⚠️ Colab detected but failed to get proxy URL: {e}")
+            return DispatcherConfig.URL
+    else:
+        return DispatcherConfig.URL
+
+
+def get_dispatcher_headers() -> dict[str, str]:
+    """
+    Get the HTTP headers needed for dispatcher API requests.
+
+    Returns:
+        Dictionary with required headers, including Authorization header in Colab
+    """
+    from rapidfireai.platform.colab import get_colab_auth_token
+
+    headers = {"Content-Type": "application/json"}
+
+    auth_token = get_colab_auth_token()
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
+    return headers

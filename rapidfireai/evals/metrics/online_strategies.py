@@ -3,9 +3,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
-from typing_extensions import override
-
 from scipy.stats import norm
+from typing_extensions import override
 
 
 class OnlineAggregationStrategy(ABC):

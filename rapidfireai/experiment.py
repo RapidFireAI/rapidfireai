@@ -1,31 +1,43 @@
 """
-This module contains the unified Experiment class for both fit and evals modes.
+RapidFire AI Experiment Module
+
+The Experiment class is the main entry point for running training (fit) or
+inference (evals) experiments.
 """
 
 import logging
-import multiprocessing as mp
 import os
 import time
 import traceback
 from collections.abc import Callable
-from typing import Any
 from pathlib import Path
-from rapidfireai.utils.ping import ping_server
+from typing import Any
 
 import pandas as pd
+
 from rapidfireai.utils.constants import (
-    ColabConfig, 
-    RayConfig, 
-    RF_EXPERIMENT_PATH, 
-    RF_LOG_FILENAME, 
-    RF_TRAINING_LOG_FILENAME, 
+    ColabConfig,
+    DispatcherConfig,
+    ExperimentStatus,
+    RayConfig,
+    RF_EXPERIMENT_PATH,
+    RF_LOG_FILENAME,
     RF_LOG_PATH,
-    RF_MLFLOW_ENABLED
+    RF_MLFLOW_ENABLED,
+    RF_TRAINING_LOG_FILENAME,
+    get_dispatcher_url,
 )
+from rapidfireai.platform.ping import ping_server
 
 
 class Experiment:
-    """Unified Experiment class for both fit and evals modes."""
+    """
+    Main experiment class for RapidFire AI.
+
+    Supports two modes:
+    - fit: Training experiments with hyperparameter search
+    - evals: Inference experiments with pipeline management
+    """
 
     def __init__(
         self,
@@ -59,21 +71,89 @@ class Experiment:
         else:
             self._init_evals_mode()
 
+    def _init_ray(self) -> None:
+        """
+        Connect to a running Ray cluster started by ``rapidfireai start``.
+
+        If Ray is already initialized in this process (e.g., a previous experiment),
+        reuses the existing connection. On Colab, starts a local cluster automatically
+        since there is no terminal to run the CLI.
+
+        Raises:
+            ConnectionError: If no Ray cluster is running (non-Colab only).
+        """
+        import ray
+
+        self._ray = ray
+
+        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+        os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
+        os.environ.setdefault("RAY_LOG_TO_STDERR", "0")
+        os.environ.setdefault("MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT", "true")
+        os.environ["RAY_DISABLE_IMPORT_WARNING"] = "1"
+        os.environ["RAY_DEDUP_LOGS"] = "0"
+        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
+
+        if ray.is_initialized():
+            return
+
+        ray_runtime_env = {
+            "env_vars": {
+                "CUDA_LAUNCH_BLOCKING": "0",
+                "CUDA_MODULE_LOADING": "LAZY",
+                "TF_CPP_MIN_LOG_LEVEL": "3",
+                "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
+                "NCCL_NET": "Socket",
+                "NCCL_IB_DISABLE": "1",
+            }
+        }
+
+        try:
+            ray.init(
+                address="auto",
+                ignore_reinit_error=True,
+                runtime_env=ray_runtime_env,
+            )
+        except ConnectionError:
+            if not ColabConfig.ON_COLAB:
+                raise ConnectionError(
+                    "No running RapidFire cluster found.\n"
+                    "Please run `rapidfireai start` in a terminal before creating an experiment."
+                )
+            ray.init(
+                logging_level=logging.ERROR,
+                log_to_driver=False,
+                configure_logging=True,
+                include_dashboard=True,
+                dashboard_host=RayConfig.HOST,
+                dashboard_port=RayConfig.PORT,
+                _metrics_export_port=None,
+                runtime_env=ray_runtime_env,
+            )
+
+        if ColabConfig.ON_COLAB:
+            try:
+                from google.colab.output import eval_js
+
+                proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
+                print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
+            except Exception as e:
+                if hasattr(self, "logger"):
+                    self.logger.warning(f"Colab detected but failed to get proxy URL: {e}")
+
     def _init_fit_mode(self) -> None:
         """Initialize fit-specific components."""
-        # Import fit-specific modules
-        from rapidfireai.fit.db.rf_db import RfDb
-        from rapidfireai.fit.utils.exceptions import ExperimentException
-        from rapidfireai.fit.utils.experiment_utils import ExperimentUtils
-        from rapidfireai.fit.utils.logging import RFLogger
+        # Import unified modules
+        from rapidfireai.db.rf_db import RfDb
+        from rapidfireai.utils.exceptions import ExperimentException
+        from rapidfireai.utils.experiment_utils import ExperimentUtils
+        from rapidfireai.utils.logging import RFLogger
         from rapidfireai.version import __version__
 
         # Store exception class for use in methods
         self._ExperimentException = ExperimentException
 
         # Initialize fit-specific attributes
-        self.log_server_process: mp.Process | None = None
-        self.worker_processes: list[mp.Process] = []
         self._training_thread: Any = None  # Track background training thread (Colab only)
 
         # Create db tables
@@ -99,53 +179,38 @@ class Experiment:
 
         # Create logger
         try:
-            self.logger = RFLogger().create_logger("experiment")
+            self.logging_manager = RFLogger(
+                experiment_name=self.experiment_name,
+                experiment_path=self.experiment_path,
+            )
+            self.logger = self.logging_manager.get_logger("Experiment")
             for msg in log_messages:
                 self.logger.info(msg)
-            # Log the version of rapidfireai that is running
             self.logger.info(f"Running RapidFire AI version {__version__}")
         except Exception as e:
             raise ExperimentException(f"Error creating logger: {e}, traceback: {traceback.format_exc()}") from e
 
-        # Setup signal handlers for graceful shutdown
+        # Initialize or connect to shared Ray cluster
         try:
-            self.experiment_utils.setup_signal_handlers(self.worker_processes)
+            self._init_ray()
+            self.logger.info("Ray initialized successfully")
         except Exception as e:
-            if hasattr(self, "logger"):
-                self.logger.opt(exception=True).error(f"Error setting up signal handlers: {e}")
-            raise ExperimentException(
-                f"Error setting up signal handlers: {e}, traceback: {traceback.format_exc()}"
-            ) from e
+            raise ExperimentException(f"Error initializing Ray: {e}, traceback: {traceback.format_exc()}") from e
 
     def _init_evals_mode(self) -> None:
         """Initialize evals-specific components."""
-        # Import evals-specific modules
-        import ray
-
-        from rapidfireai.evals.db import RFDatabase
-        from rapidfireai.evals.dispatcher import start_dispatcher_thread
-        from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.utils.colab import get_colab_auth_token
+        # Import unified modules
+        from rapidfireai.db.rf_db import RfDb
+        from rapidfireai.dispatcher import start_dispatcher_thread
+        from rapidfireai.utils.experiment_utils import ExperimentUtils
+        from rapidfireai.utils.logging import RFLogger
+        from rapidfireai.platform.colab import get_colab_auth_token
         from rapidfireai.utils.constants import DispatcherConfig
-        from rapidfireai.evals.utils.constants import get_dispatcher_url
-        from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
-        from rapidfireai.evals.utils.logger import RFLogger
-        from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+        from rapidfireai.metrics import RFMetricLogger
+
+        # Import evals-specific modules
+        from rapidfireai.evals.scheduling.controller import Controller
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
-
-        # Store ray reference for later use
-        self._ray = ray
-
-        # Disable tokenizers parallelism warning when using with Ray/multiprocessing
-        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-        # Suppress verbose third-party library logging
-        os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
-        os.environ.setdefault("RAY_LOG_TO_STDERR", "0")
-        os.environ.setdefault("MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT", "true")
-        # Disable Ray and other verbose logging
-        os.environ["RAY_DISABLE_IMPORT_WARNING"] = "1"
-        os.environ["RAY_DEDUP_LOGS"] = "0"
-        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
 
         # Initialize experiment utils
         self.experiment_utils = ExperimentUtils()
@@ -164,40 +229,11 @@ class Experiment:
         for msg in log_messages:
             self.logger.info(msg)
 
-        # Initialize Ray with runtime environment for CUDA initialization
-        # This fixes AWS-specific CUDA/cuBLAS initialization issues
-        ray.init(
-            logging_level=logging.ERROR,
-            log_to_driver=False,
-            configure_logging=True,
-            ignore_reinit_error=True,
-            include_dashboard=True,
-            dashboard_host=RayConfig.HOST,
-            dashboard_port=RayConfig.PORT,
-            # Disable metrics export to prevent "Failed to establish connection" errors
-            _metrics_export_port=None,
-            runtime_env={
-                "env_vars": {
-                    # Force CUDA to initialize properly in Ray actors (AWS fix)
-                    "CUDA_LAUNCH_BLOCKING": "0",
-                    "CUDA_MODULE_LOADING": "LAZY",
-                    "TF_CPP_MIN_LOG_LEVEL": "3",
-                    "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
-                }
-            },
-        )
-        if ColabConfig.ON_COLAB:
-            try:
-                from google.colab.output import eval_js
-
-                # Get the Colab proxy URL for the dispatcher port
-                proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
-                print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
-            except Exception as e:
-                print(f"⚠️ Colab detected but failed to get proxy URL: {e}")
+        # Initialize or connect to shared Ray cluster
+        self._init_ray()
 
         # Create database reference
-        self.db = RFDatabase()
+        self.db = RfDb()
 
         try:
             metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
@@ -212,8 +248,6 @@ class Experiment:
             self.logger.warning(f"Failed to initialize MetricLogger: {e}. MetricLogger logging will be disabled.")
             self.metric_loggers = None
 
-
-        
         # Initialize the controller
         self.controller = Controller(
             experiment_name=self.experiment_name,
@@ -223,12 +257,17 @@ class Experiment:
 
         # Start dispatcher in background thread for interactive control
         if ping_server(DispatcherConfig.HOST, DispatcherConfig.PORT, 2):
-            self.logger.info(f"Using existing dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
+            self.logger.info(
+                f"Using existing dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}."
+            )
             self.dispatcher_thread = None
-            
         else:
-            self.logger.info(f"Starting new dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
-            self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
+            self.logger.info(
+                f"Starting new dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}."
+            )
+            self.dispatcher_thread = start_dispatcher_thread(
+                host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger
+            )
 
         # Initialize notebook UI controller with auth token for Colab
         self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
@@ -262,13 +301,29 @@ class Experiment:
             raise ValueError("run_fit() is only available in 'fit' mode")
 
         from rapidfireai.fit.backend.controller import Controller
-
-        ExperimentException = self._ExperimentException
+        from rapidfireai.utils.exceptions import ExperimentException
 
         # Check if training is already running
         if self._training_thread is not None and self._training_thread.is_alive():
             print("⚠️  Training is already running in background. Please wait for it to complete.")
             return
+
+        # Auto-detect resources from Ray cluster (similar to evals)
+        available_gpus = self._ray.cluster_resources().get("GPU", 0)
+        available_cpus = self._ray.cluster_resources().get("CPU", 0)
+
+        # For fit mode: 1 GPU per worker (training requires full GPU)
+        num_workers = int(available_gpus) if available_gpus > 0 else 1
+        gpus_per_worker = 1 if available_gpus > 0 else 0
+        cpus_per_worker = max(1, int(available_cpus / num_workers)) if num_workers > 0 else 1
+
+        if available_gpus == 0:
+            self.logger.warning("No GPUs detected. Training will run on CPU (not recommended).")
+        else:
+            self.logger.info(
+                f"Detected {int(available_gpus)} GPU(s), {int(available_cpus)} CPU(s). "
+                f"Creating {num_workers} worker(s) with {gpus_per_worker} GPU(s) each."
+            )
 
         if ColabConfig.ON_COLAB:
             # Run Controller in background thread to keep kernel responsive
@@ -285,13 +340,19 @@ class Experiment:
                 sys.stdout = StringIO()
 
                 try:
-                    controller = Controller(self.experiment_id, self.experiment_name)
+                    controller = Controller(
+                        self.experiment_id,
+                        self.experiment_name,
+                        num_workers=num_workers,
+                        gpus_per_worker=gpus_per_worker,
+                        cpus_per_worker=cpus_per_worker,
+                    )
                     controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations)
                 except Exception as e:
                     # Restore stdout for error logging
                     sys.stdout = old_stdout
                     if hasattr(self, "logger"):
-                        self.logger.opt(exception=True).error(f"Error in background training: {e}")
+                        self.logger.exception(f"Error in background training: {e}")
                     display(HTML(f'<p style="color: red; font-weight: bold;">❌ Error in background training: {e}</p>'))
                 finally:
                     # Restore stdout
@@ -324,11 +385,17 @@ class Experiment:
         else:
             # Original blocking behavior for non-Colab environments
             try:
-                controller = Controller(self.experiment_id, self.experiment_name)
+                controller = Controller(
+                    self.experiment_id,
+                    self.experiment_name,
+                    num_workers=num_workers,
+                    gpus_per_worker=gpus_per_worker,
+                    cpus_per_worker=cpus_per_worker,
+                )
                 controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations)
             except Exception as e:
                 if hasattr(self, "logger"):
-                    self.logger.opt(exception=True).error(f"Error running fit: {e}")
+                    self.logger.exception(f"Error running fit: {e}")
                 raise ExperimentException(f"Error running fit: {e}, traceback: {traceback.format_exc()}") from e
 
     def run_evals(
@@ -363,16 +430,14 @@ class Experiment:
         if self.mode != "evals":
             raise ValueError("run_evals() is only available in 'evals' mode")
 
-        from rapidfireai.evals.utils.constants import ExperimentStatus
-
         # Auto-detect resources if not provided
         available_gpus = self._ray.cluster_resources().get("GPU", 0)
         available_cpus = self._ray.cluster_resources().get("CPU", 0)
 
         if gpus_per_actor is None:
-            gpus_per_actor = available_gpus if available_gpus > 1 else available_gpus/2
+            gpus_per_actor = available_gpus if available_gpus > 1 else available_gpus / 2
         if cpus_per_actor is None:
-            cpus_per_actor = available_cpus if available_cpus > 2 else available_cpus/2
+            cpus_per_actor = available_cpus if available_cpus > 2 else available_cpus / 2
         if num_actors is None:
             # Default to number of GPUs, or 1 if no GPUs available
             num_actors = int(gpus_per_actor) if gpus_per_actor > 0 else 1
@@ -426,8 +491,6 @@ class Experiment:
             self.db.set_experiment_error(self.experiment_id, str(e))
             raise
 
-
-
         return results
 
     def get_results(self) -> pd.DataFrame:
@@ -443,7 +506,7 @@ class Experiment:
         if self.mode != "fit":
             raise ValueError("get_results() is only available in 'fit' mode")
 
-        ExperimentException = self._ExperimentException
+        from rapidfireai.utils.exceptions import ExperimentException
 
         try:
             runs_info_df = self.experiment_utils.get_runs_info()
@@ -458,7 +521,7 @@ class Experiment:
                 return pd.DataFrame(columns=["run_id", "step"])
 
             # Lazy import - only import when we actually have metric runs to fetch
-            from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+            from rapidfireai.metrics import RFMetricLogger
             try:
                 metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
                 self.metric_loggers = RFMetricLogger(metric_loggers, logger=self.logger)
@@ -494,7 +557,7 @@ class Experiment:
 
         except Exception as e:
             if hasattr(self, "logger"):
-                self.logger.opt(exception=True).error(f"Error getting results: {e}")
+                self.logger.exception(f"Error getting results: {e}")
             raise ExperimentException(f"Error getting results: {e}, traceback: {traceback.format_exc()}") from e
 
     def get_runs_info(self) -> pd.DataFrame:
@@ -510,13 +573,13 @@ class Experiment:
         if self.mode != "fit":
             raise ValueError("get_runs_info() is only available in 'fit' mode")
 
-        ExperimentException = self._ExperimentException
+        from rapidfireai.utils.exceptions import ExperimentException
 
         try:
             return self.experiment_utils.get_runs_info()
         except Exception as e:
             if hasattr(self, "logger"):
-                self.logger.opt(exception=True).error(f"Error getting run info: {e}")
+                self.logger.exception(f"Error getting run info: {e}")
             raise ExperimentException(f"Error getting run info: {e}, traceback: {traceback.format_exc()}") from e
 
     def cancel_current(self) -> None:
@@ -525,53 +588,48 @@ class Experiment:
 
         Works in both fit and evals modes.
         """
-        if self.mode == "fit":
-            ExperimentException = self._ExperimentException
-            try:
-                self.experiment_utils.cancel_current(internal=False)
-            except Exception as e:
-                if hasattr(self, "logger"):
-                    self.logger.opt(exception=True).error(f"Error canceling current task: {e}")
-                raise ExperimentException(
-                    f"Error canceling current task: {e}, traceback: {traceback.format_exc()}"
-                ) from e
-        else:
-            # Eval mode
+        from rapidfireai.utils.exceptions import ExperimentException
+
+        try:
             self.experiment_utils.cancel_current(internal=False)
+        except Exception as e:
+            if hasattr(self, "logger"):
+                self.logger.exception(f"Error canceling current task: {e}")
+            raise ExperimentException(
+                f"Error canceling current task: {e}, traceback: {traceback.format_exc()}"
+            ) from e
 
     def end(self) -> None:
         """
         End the experiment and clean up resources.
 
         Works in both fit and evals modes with mode-specific cleanup.
+        Kills any Ray actors owned by this experiment to free GPU/CPU resources.
+        Ray cluster is intentionally kept alive so subsequent experiments
+        (fit or evals) can reuse it without port conflicts or restart delays.
         """
-        if self.mode == "fit":
-            ExperimentException = self._ExperimentException
+        from rapidfireai.utils.exceptions import ExperimentException
 
-            try:
-                self.experiment_utils.end_experiment(internal=False)
-            except Exception as e:
-                if hasattr(self, "logger"):
-                    self.logger.opt(exception=True).error(f"Error ending experiment: {e}")
-                raise ExperimentException(f"Error ending experiment: {e}, traceback: {traceback.format_exc()}") from e
-
-            # Shutdown all child processes
-            try:
-                self.experiment_utils.shutdown_workers(self.worker_processes)
-            except Exception as e:
-                if hasattr(self, "logger"):
-                    self.logger.opt(exception=True).error(f"Error shutting down RapidFire processes: {e}")
-                raise ExperimentException(
-                    f"Error shutting down RapidFire processes: {e}, traceback: {traceback.format_exc()}"
-                ) from e
-        else:
-            # Eval mode
-            # Use experiment_utils to end the experiment properly
+        try:
             self.experiment_utils.end_experiment(internal=False)
+        except Exception as e:
+            if hasattr(self, "logger"):
+                self.logger.exception(f"Error ending experiment: {e}")
+            raise ExperimentException(f"Error ending experiment: {e}, traceback: {traceback.format_exc()}") from e
 
-            # Clean shutdown Ray
-            self._ray.shutdown()
-            self.logger.info("All actors shut down")
+        # Kill fit workers to free GPU resources for subsequent experiments.
+        # Workers are named fit_worker_0, fit_worker_1, etc. by create_worker_actors().
+        # This is a no-op if no workers exist (e.g., evals mode or already cleaned up).
+        if self._ray.is_initialized():
+            for i in range(16):
+                try:
+                    worker = self._ray.get_actor(f"fit_worker_{i}")
+                    self._ray.kill(worker)
+                except ValueError:
+                    continue
+
+        self.logger.info("Experiment ended. Ray cluster remains active for subsequent experiments.")
+        if self.mode == "evals":
             self.logger.info("Dispatcher will automatically shut down (daemon thread)")
 
     def get_log_file_path(self, log_type: str | None = None) -> Path:
