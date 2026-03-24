@@ -300,13 +300,12 @@ class QueryProcessingActor:
                 self.prompt_manager.pipeline_id = pipeline_id
                 self.prompt_manager.model_name = model_name
 
-            # Clear any previously active MLflow run from the local stack without terminating it
-            # on the server (the controller's metric_manager.end_run() handles that later).
-            # This is needed because mlflow.start_run() raises if a run is already active.
-            from mlflow.tracking.fluent import _active_run_stack
-
-            active_run_stack = _active_run_stack.get()
-            active_run_stack.clear()
+            # End any previously active MLflow run on this actor (happens when reused for a second pipeline).
+            # This marks the previous run as FINISHED on the server, but that's fine:
+            # the controller uses MlflowClient (not the fluent API) for final metric logging,
+            # which works on terminated runs, and its own end_run() is idempotent.
+            if self.metric_run_id:
+                mlflow.end_run()
 
             # Set the active MLflow run so traces are associated with this pipeline's run
             self.metric_run_id = metric_run_id
