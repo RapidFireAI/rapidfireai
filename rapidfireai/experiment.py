@@ -176,6 +176,7 @@ class Experiment:
             )
         except Exception as e:
             raise ExperimentException(f"Error creating experiment: {e}, traceback: {traceback.format_exc()}") from e
+        self.db.update_experiment_config(self.experiment_id, mode=self.mode)
 
         # Create logger
         try:
@@ -234,6 +235,7 @@ class Experiment:
 
         # Create database reference
         self.db = RfDb()
+        self.db.update_experiment_config(self.experiment_id, mode=self.mode)
 
         try:
             metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)

@@ -214,10 +214,13 @@ class Dispatcher:
         try:
             experiment = self.db.get_running_experiment()
 
-            # Detect mode by checking if we have runs or pipelines
-            has_runs = len(self.db.get_all_runs()) > 0
-            has_pipelines = len(self.db.get_all_pipelines()) > 0
-            mode = "fit" if has_runs else ("evals" if has_pipelines else "unknown")
+            # Prefer explicit mode persisted on the running experiment.
+            mode = experiment.get("config", {}).get("mode")
+            if mode not in ("fit", "evals"):
+                # Backward-compatible fallback for older experiments without mode in config.
+                has_runs = len(self.db.get_all_runs()) > 0
+                has_pipelines = len(self.db.get_all_pipelines()) > 0
+                mode = "fit" if has_runs else ("evals" if has_pipelines else "unknown")
 
             return jsonify({
                 "experiment_id": experiment["experiment_id"],
