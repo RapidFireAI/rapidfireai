@@ -86,6 +86,7 @@ class QueryProcessingActor:
         self.prompt_manager = None  # Prompt manager for few-shot examples
         self.current_engine_config_hash = None  # Track currently loaded model
         self.metric_run_id = None  # MLflow run ID for trace association
+        self.mlflow_enabled = False  # Whether MLflow is the active metric backend
 
     def initialize_for_pipeline(
         self,
@@ -97,6 +98,7 @@ class QueryProcessingActor:
         pipeline_id: int | None = None,
         model_name: str | None = None,
         metric_run_id: str | None = None,
+        mlflow_enabled: bool = False,
     ):
         """
         Configure this actor for a specific pipeline.
@@ -300,17 +302,23 @@ class QueryProcessingActor:
                 self.prompt_manager.pipeline_id = pipeline_id
                 self.prompt_manager.model_name = model_name
 
-            # End any previously active MLflow run on this actor (happens when reused for a second pipeline).
-            # This marks the previous run as FINISHED on the server, but that's fine:
-            # the controller uses MlflowClient (not the fluent API) for final metric logging,
-            # which works on terminated runs, and its own end_run() is idempotent.
-            if self.metric_run_id:
-                mlflow.end_run()
+            # Only manage MLflow run context if MLflow is the active metric backend.
+            # When using TensorBoard/Trackio only, metric_run_id is a plain run name
+            # (not an MLflow UUID) and calling mlflow.start_run() would fail.
+            self.mlflow_enabled = mlflow_enabled
+            if self.mlflow_enabled:
+                # End any previously active MLflow run (actor reuse for a second pipeline).
+                # This marks the previous run as FINISHED on the server, but that's fine:
+                # the controller uses MlflowClient (not the fluent API) for final metric
+                # logging, which works on terminated runs, and its own end_run() is idempotent.
+                if self.metric_run_id:
+                    mlflow.end_run()
 
-            # Set the active MLflow run so traces are associated with this pipeline's run
-            self.metric_run_id = metric_run_id
-            if self.metric_run_id:
-                mlflow.start_run(run_id=self.metric_run_id)
+                self.metric_run_id = metric_run_id
+                if self.metric_run_id:
+                    mlflow.start_run(run_id=self.metric_run_id)
+            else:
+                self.metric_run_id = None
 
         except Exception as e:
             # Convert any exception to RuntimeError to ensure it can be properly serialized by Ray.

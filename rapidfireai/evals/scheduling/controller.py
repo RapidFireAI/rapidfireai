@@ -1498,6 +1498,19 @@ class Controller:
             pipeline_data = db.get_pipeline(pipeline_id)
             metric_run_id = pipeline_data.get("metric_run_id") if pipeline_data else None
 
+            # Check if MLflow is the metric backend (vs TensorBoard/Trackio only)
+            mlflow_enabled = False
+            if self.metric_manager:
+                from rapidfireai.utils.metric_logger import MetricLoggerType
+
+                if hasattr(self.metric_manager, "metric_loggers"):
+                    mlflow_enabled = any(
+                        logger.type == MetricLoggerType.MLFLOW
+                        for logger in self.metric_manager.metric_loggers.values()
+                    )
+                elif hasattr(self.metric_manager, "type"):
+                    mlflow_enabled = self.metric_manager.type == MetricLoggerType.MLFLOW
+
             try:
                 ray.get(
                     actor.initialize_for_pipeline.remote(
@@ -1509,6 +1522,7 @@ class Controller:
                         pipeline_id=pipeline_id,
                         model_name=pipeline_model_name,
                         metric_run_id=metric_run_id,
+                        mlflow_enabled=mlflow_enabled,
                     )
                 )
             except Exception as init_err:
