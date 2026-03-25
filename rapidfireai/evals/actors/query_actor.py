@@ -16,6 +16,7 @@ import pickle
 
 from rapidfireai.utils.constants import MLflowConfig
 from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
+from rapidfireai.evals.utils.mlflow_utils import setup_mlflow, mlflow_start_span
 
 from langchain_community.vectorstores import FAISS
 from langchain_postgres import PGVector
@@ -58,10 +59,7 @@ class QueryProcessingActor:
             experiment_path: Path to experiment logs/artifacts
             actor_id: Index of this actor (for logging and identification)
         """
-        mlflow.langchain.autolog()
-        mlflow.openai.autolog()
-        mlflow.set_tracking_uri(str(MLflowConfig.URL))
-        mlflow.set_experiment(experiment_name)
+        setup_mlflow(experiment_name)
         # AWS Fix: Initialize CUDA context early to prevent CUBLAS_STATUS_NOT_INITIALIZED
         # This must happen BEFORE any torch operations (including embedding/LLM model loading)
         if "CUDA_VISIBLE_DEVICES" in os.environ and os.environ["CUDA_VISIBLE_DEVICES"]:
@@ -354,15 +352,19 @@ class QueryProcessingActor:
             if hasattr(batch_data, "to_dict"):
                 batch_data = batch_data.to_dict()
 
-            with mlflow.start_span(name=f"rag_pipeline", span_type=mlflow.entities.SpanType.CHAIN) as span:
-                if self.rag_spec is not None and self.rag_spec.pipeline_id is not None:
-                    span.set_attribute("pipeline_id", self.rag_spec.pipeline_id)
-                if self.rag_spec is not None and self.rag_spec.model_name is not None:
-                    span.set_attribute("model_name", self.rag_spec.model_name)
+            with mlflow_start_span(name="rag_pipeline", span_type=mlflow.entities.SpanType.CHAIN) as span:
+                # prompt_manager attributes take precedence over rag_spec when both are present
+                for source in (self.rag_spec, self.prompt_manager):
+                    if source is None:
+                        continue
+                    if (pipeline_id := getattr(source, "pipeline_id", None)) is not None:
+                        span.set_attribute("pipeline_id", pipeline_id)
+                    if (model_name := getattr(source, "model_name", None)) is not None:
+                        span.set_attribute("model_name", model_name)
 
                 # Stage 1: Preprocess - build prompts with context/examples
                 if preprocess_fn:
-                    with mlflow.start_span(name="preprocess", span_type=mlflow.entities.SpanType.CHAIN):
+                    with mlflow_start_span(name="preprocess", span_type=mlflow.entities.SpanType.CHAIN):
                         batch_data = preprocess_fn(batch_data, self.rag_spec, self.prompt_manager)
 
                 # Stage 2: Generate using the inference engine
@@ -372,7 +374,7 @@ class QueryProcessingActor:
 
                 # Stage 3: Postprocess - extract answers, format results
                 if postprocess_fn:
-                    with mlflow.start_span(name="postprocess", span_type=mlflow.entities.SpanType.CHAIN):
+                    with mlflow_start_span(name="postprocess", span_type=mlflow.entities.SpanType.CHAIN):
                         batch_data = postprocess_fn(batch_data)
 
             # Stage 4: Compute metrics

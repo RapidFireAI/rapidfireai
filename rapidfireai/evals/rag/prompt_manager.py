@@ -11,6 +11,7 @@ import asyncio
 import concurrent.futures
 import mlflow
 from mlflow.entities import SpanType
+from rapidfireai.evals.utils.mlflow_utils import mlflow_trace, mlflow_get_current_active_span
 
 class PromptManager:
     """
@@ -164,7 +165,7 @@ class PromptManager:
         """
         return self.instructions
 
-    @mlflow.trace(name="get_fewshot_examples", span_type=SpanType.CHAIN)
+    @mlflow_trace(name="get_fewshot_examples", span_type=SpanType.CHAIN)
     def get_fewshot_examples(self, user_queries: list[str]) -> list[str]:
         """
         Generate few-shot examples formatted according to the template.
@@ -183,7 +184,7 @@ class PromptManager:
             This method requires that setup_examples() has been called first to set up
             the fewshot_generator.
         """
-        span = mlflow.get_current_active_span()
+        span = mlflow_get_current_active_span()
         if span is not None:
             if self.experiment_name is not None:
                 span.set_attribute("experiment_name", self.experiment_name)
@@ -197,7 +198,7 @@ class PromptManager:
             async def _fetch(instructions: str, query: str) -> str:
                 return await self.fewshot_generator.aformat(user_query=query)
 
-            traced_fetch_examples = mlflow.trace(func=_fetch, span_type=SpanType.RETRIEVER, name="fetch_examples")
+            traced_fetch_examples = mlflow_trace(func=_fetch, span_type=SpanType.RETRIEVER, name="fetch_examples")
             tasks = [
                 traced_fetch_examples(instructions=self.instructions, query=user_query)
                 for user_query in user_queries

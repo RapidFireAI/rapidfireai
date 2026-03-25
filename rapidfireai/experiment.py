@@ -164,6 +164,19 @@ class Experiment:
         for msg in log_messages:
             self.logger.info(msg)
 
+        # Start dispatcher early so its listening socket gets a low file-descriptor
+        # number.  If started after ray.init(), Ray's internal sockets (GCS, raylet,
+        # dashboard, object store, …) will have consumed the low fd numbers already.
+        # With 10+ actors on an 8-vCPU machine Ray oversubscribes and opens extra
+        # scheduling/queuing sockets, pushing fds over the 1024 limit that
+        # select() can handle — crashing waitress even with asyncore_use_poll=True.
+        if ping_server(DispatcherConfig.HOST, DispatcherConfig.PORT, 2):
+            self.logger.info(f"Using existing dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
+            self.dispatcher_thread = None
+        else:
+            self.logger.info(f"Starting dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
+            self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
+
         # Initialize Ray with runtime environment for CUDA initialization
         # This fixes AWS-specific CUDA/cuBLAS initialization issues
         ray.init(
@@ -220,15 +233,6 @@ class Experiment:
             experiment_path=self.experiment_path,
             metric_manager=self.metric_loggers,
         )
-
-        # Start dispatcher in background thread for interactive control
-        if ping_server(DispatcherConfig.HOST, DispatcherConfig.PORT, 2):
-            self.logger.info(f"Using existing dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
-            self.dispatcher_thread = None
-            
-        else:
-            self.logger.info(f"Starting new dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
-            self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
 
         # Initialize notebook UI controller with auth token for Colab
         self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
@@ -339,7 +343,7 @@ class Experiment:
         seed: int = 42,
         num_actors: int = None,
         gpus_per_actor: int = None,
-        cpus_per_actor: int = None,
+        cpus_per_actor: float = None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Run multi-config inference experiment with fair round-robin scheduling.
@@ -369,13 +373,36 @@ class Experiment:
         available_gpus = self._ray.cluster_resources().get("GPU", 0)
         available_cpus = self._ray.cluster_resources().get("CPU", 0)
 
-        if gpus_per_actor is None:
-            gpus_per_actor = available_gpus if available_gpus > 1 else available_gpus/2
-        if cpus_per_actor is None:
-            cpus_per_actor = available_cpus if available_cpus > 2 else available_cpus/2
-        if num_actors is None:
-            # Default to number of GPUs, or 1 if no GPUs available
-            num_actors = int(gpus_per_actor) if gpus_per_actor > 0 else 1
+        def get_cpus_to_set_aside(num_actors: int) -> int:
+            """Get the number of CPUs to set aside for driver and other processes"""
+            return (num_actors + 3) // 4 # 1 CPU set aside for driver and other processes per 4 actors.
+
+        def get_num_actors_by_available_cpus(available_cpus: int) -> int:
+            """Get the number of actors by available CPUs"""
+            if available_cpus <= 2:
+                return 2
+            elif available_cpus <= 4:
+                return 4
+            elif available_cpus <= 32:
+                return 8
+            elif available_cpus <= 128:
+                return 16
+            else:
+                return 32
+
+        if available_gpus > 0:
+            # GPU + CPU machine
+            # 1 GPU per actor; revisit for multi-GPU scale later
+            gpus_per_actor = 1  
+            # set num_actors to the available GPUs if not provided or is greater than the available GPUs
+            num_actors = available_gpus if num_actors is None or num_actors > available_gpus else num_actors
+        else:
+            # CPU-only machine
+            gpus_per_actor = 0
+            # Get number of actors by available CPUs
+            num_actors = get_num_actors_by_available_cpus(available_cpus) if num_actors is None else num_actors
+
+        cpus_per_actor = float((available_cpus - get_cpus_to_set_aside(num_actors)) / num_actors)
 
         if gpus_per_actor == 0:
             self.logger.warning("No GPUs available. Be sure to use external APIs for inference.")
@@ -416,8 +443,8 @@ class Experiment:
                 num_shards=num_shards,
                 seed=seed,
                 num_actors=num_actors,
-                num_gpus=gpus_per_actor,
-                num_cpus=cpus_per_actor,
+                num_gpus_per_actor=gpus_per_actor,
+                num_cpus_per_actor=cpus_per_actor,
             )
         except Exception as e:
             self.logger.exception("Error running multi-config experiment")

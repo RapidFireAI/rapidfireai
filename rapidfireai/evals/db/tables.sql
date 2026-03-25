@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS experiments (
     metric_experiment_id TEXT,
     num_shards INTEGER DEFAULT 0,
     num_actors INTEGER NOT NULL,
-    num_cpus INTEGER,
-    num_gpus INTEGER,
+    num_cpus_per_actor REAL,
+    num_gpus_per_actor INTEGER,
     status TEXT NOT NULL,  -- 'running', 'completed', 'failed'
     error TEXT DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

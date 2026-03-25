@@ -31,9 +31,6 @@ def _build_reranker_registry() -> dict[str, type]:
 
 RERANKER_CLASS_REGISTRY: dict[str, type] = _build_reranker_registry()
 
-# Actor Constants
-NUM_QUERY_PROCESSING_ACTORS = 4
-NUM_CPUS_PER_DOC_ACTOR = 2 if os.cpu_count() > 2 else 1
 
 # RAG search type defaults — keys are type-specific; only include kwargs relevant
 # to each search type so irrelevant params are never forwarded to LangChain.

@@ -13,6 +13,7 @@ from typing import Any
 
 import mlflow
 from mlflow.entities import SpanType
+from rapidfireai.evals.utils.mlflow_utils import mlflow_trace, mlflow_start_span, mlflow_get_current_active_span
 
 
 class InferenceEngine(ABC):
@@ -69,7 +70,7 @@ class VLLMInferenceEngine(InferenceEngine):
         self.tokenizer = self.llm.get_tokenizer()
         self.sampling_params = sampling_params
 
-    @mlflow.trace(name="vllm_generate", span_type=SpanType.LLM)
+    @mlflow_trace(name="vllm_generate", span_type=SpanType.LLM)
     def generate(self, prompts: list, **kwargs) -> list[str]:
         """
         Generate responses using VLLM.
@@ -80,7 +81,7 @@ class VLLMInferenceEngine(InferenceEngine):
         Returns:
             List of generated text strings
         """
-        span = mlflow.get_current_active_span()
+        span = mlflow_get_current_active_span()
         if span is not None:
             span.set_attribute("model", self.model_name)
 
@@ -96,7 +97,7 @@ class VLLMInferenceEngine(InferenceEngine):
         results = []
         for i, (prompt, output) in enumerate(zip(prompts, outputs)):
             generated_text = output.outputs[0].text
-            with mlflow.start_span(name=f"prompt_{i}", span_type=SpanType.LLM) as child_span:
+            with mlflow_start_span(name=f"prompt_{i}", span_type=SpanType.LLM) as child_span:
                 child_span.set_inputs({
                     "messages": prompt,
                     "formatted_prompt": formatted_prompts[i],

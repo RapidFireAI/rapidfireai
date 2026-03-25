@@ -16,8 +16,6 @@ from rapidfireai.evals.scheduling.interactive_control import InteractiveControlH
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.evals.scheduling.scheduler import Scheduler
 from rapidfireai.evals.utils.constants import (
-    NUM_CPUS_PER_DOC_ACTOR,
-    NUM_QUERY_PROCESSING_ACTORS,
     SEARCH_TYPE_KEYS,
     ContextStatus,
     PipelineStatus,
@@ -426,14 +424,11 @@ class Controller:
                 device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
                 if device and str(device).startswith("cuda"):
                     needs_gpu = True
-            system_num_gpus = ray.available_resources().get("GPU", 0)
-            if system_num_gpus > 1:
+            if needs_gpu and self.cluster_num_gpus > 0:
                 num_gpus_for_actor = 1
-            elif system_num_gpus > 0:
-                num_gpus_for_actor = 0.5
             else:
                 num_gpus_for_actor = 0
-            num_cpus_for_actor = NUM_CPUS_PER_DOC_ACTOR
+            num_cpus_for_actor = self.num_cpus_per_actor
 
             # Create DocProcessingActor
             # Ray will queue actors if resources aren't immediately available
@@ -519,50 +514,6 @@ class Controller:
         context_display.stop()
 
         self.logger.info(f"Completed parallel context building for {num_contexts} context(s)")
-
-    def create_query_actors(
-        self,
-        engine_class: type[InferenceEngine],
-        engine_kwargs: dict[str, Any],
-        context_generator_ref: ray.ObjectRef | None,
-    ) -> list:
-        """
-        Create query processing actors with the specified inference engine.
-
-        Args:
-            engine_class: The inference engine class to instantiate (VLLMInferenceEngine or OpenAIInferenceEngine)
-            engine_kwargs: Kwargs to pass to engine constructor
-            context_generator_ref: Ray ObjectRef to shared RAG components in object store
-            gpus_per_actor: GPUs per actor
-            cpus_per_actor: CPUs per actor
-
-        Returns:
-            List of Ray actor handles
-        """
-        num_actors = self.num_actors or NUM_QUERY_PROCESSING_ACTORS
-        gpus_per_actor = self.num_gpus // num_actors
-        cpus_per_actor = self.num_cpus // num_actors
-
-        assert gpus_per_actor > 0, (
-            "Not enough GPUs available. Got {self.num_gpus} GPUs and {num_actors} actors, need at least 1 GPU per actor"
-        )
-        assert cpus_per_actor > 0, (
-            "Not enough CPUs available. Got {self.num_cpus} CPUs and {num_actors} actors, need at least 1 CPU per actor"
-        )
-
-        actors = []
-        for i in range(num_actors):
-            actor = QueryProcessingActor.options(num_gpus=gpus_per_actor, num_cpus=cpus_per_actor).remote(
-                engine_class=engine_class,
-                engine_kwargs=engine_kwargs,
-                context_generator_ref=context_generator_ref,
-                experiment_name=self.experiment_name,
-                experiment_path=self.experiment_path,
-                actor_id=i,
-            )
-            actors.append(actor)
-
-        return actors
 
     def _register_pipelines(
         self,
@@ -862,8 +813,8 @@ class Controller:
         num_shards: int,
         seed: int = 42,
         num_actors: int = None,
-        num_gpus: int = None,
-        num_cpus: int = None,
+        num_gpus_per_actor: int = None,
+        num_cpus_per_actor: float = None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Run multi-pipeline inference with fair round-robin scheduling.
@@ -877,13 +828,21 @@ class Controller:
             dataset: Dataset to process
             num_shards: Number of shards to split the dataset into
             seed: Random seed for reproducibility (default: 42)
-            num_actors: Total number of actors
-            num_gpus: Total number of GPUs available
-            num_cpus: Total number of CPUs available
+            num_actors: Number of query processing actors to spawn
+            num_gpus_per_actor: GPUs per actor (0 = CPU-only)
+            num_cpus_per_actor: CPUs per actor (may be fractional)
 
         Returns:
             Dict mapping pipeline_id to (aggregated_results, cumulative_metrics) tuple
         """
+        # Store resource allocation on self so every downstream method (_setup_context_generators,
+        # _create_vllm_actors, etc.) can read them without re-querying Ray.
+        self.num_actors = num_actors
+        self.num_gpus_per_actor = num_gpus_per_actor
+        self.num_cpus_per_actor = num_cpus_per_actor
+        # Total GPUs across the cluster (each query actor gets exactly self.num_gpus GPUs).
+        self.cluster_num_gpus = self.num_actors * self.num_gpus
+
         # Initialize database
         db = RFDatabase()
 
@@ -904,11 +863,8 @@ class Controller:
         # Actors are created without any pipeline or context information
         # They will receive pipeline-specific context when scheduled
         query_actors = []
-        gpus_per_actor = num_gpus // num_actors if num_actors > 0 else 0
-        cpus_per_actor = num_cpus // num_actors if num_actors > 0 else 1
-
-        for i in range(num_actors):
-            actor = QueryProcessingActor.options(num_gpus=gpus_per_actor, num_cpus=cpus_per_actor).remote(
+        for i in range(self.num_actors):
+            actor = QueryProcessingActor.options(num_gpus=self.num_gpus_per_actor, num_cpus=self.num_cpus_per_actor).remote(
                 experiment_name=self.experiment_name,
                 experiment_path=self.experiment_path,
                 actor_id=i,
