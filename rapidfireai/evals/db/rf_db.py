@@ -63,7 +63,7 @@ class RFDatabase:
             if "num_cpus_per_actor" not in columns:
                 self.db.conn.execute("ALTER TABLE experiments ADD COLUMN num_cpus_per_actor REAL")
             if "num_gpus_per_actor" not in columns:
-                self.db.conn.execute("ALTER TABLE experiments ADD COLUMN num_gpus_per_actor INTEGER")
+                self.db.conn.execute("ALTER TABLE experiments ADD COLUMN num_gpus_per_actor REAL")
             self.db.conn.commit()
         except Exception:
             pass
@@ -90,7 +90,7 @@ class RFDatabase:
         experiment_name: str,
         num_actors: int,
         num_cpus_per_actor: float = None,
-        num_gpus_per_actor: int = None,
+        num_gpus_per_actor: float = None,
         metric_experiment_id: str = None,
         status: ExperimentStatus = ExperimentStatus.RUNNING,
         num_shards: int = 0,
@@ -102,7 +102,7 @@ class RFDatabase:
             experiment_name: Name of the experiment
             num_actors: Number of query processing actors
             num_cpus_per_actor: CPUs per actor (fractional, e.g. 3.75)
-            num_gpus_per_actor: GPUs per actor
+            num_gpus_per_actor: GPUs per actor (fractional, e.g. 1.0)
             metric_experiment_id: Optional MetricLogger experiment ID
             status: Initial status (default: ExperimentStatus.RUNNING)
             num_shards: Number of shards for the dataset (default: 0)
@@ -169,7 +169,7 @@ class RFDatabase:
         experiment_id: int,
         num_actors: int,
         num_cpus_per_actor: float = None,
-        num_gpus_per_actor: int = None,
+        num_gpus_per_actor: float = None,
     ):
         """
         Update resource allocation for an experiment.
@@ -178,7 +178,7 @@ class RFDatabase:
             experiment_id: ID of the experiment
             num_actors: Number of actors
             num_cpus_per_actor: CPUs per actor (fractional, e.g. 3.75)
-            num_gpus_per_actor: GPUs per actor
+            num_gpus_per_actor: GPUs per actor (fractional, e.g. 1.0)
         """
         query = "UPDATE experiments SET num_actors = ?, num_cpus_per_actor = ?, num_gpus_per_actor = ? WHERE experiment_id = ?"
         self.db.execute(

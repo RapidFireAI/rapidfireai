@@ -342,7 +342,7 @@ class Experiment:
         num_shards: int = 4,
         seed: int = 42,
         num_actors: int = None,
-        gpus_per_actor: int = None,
+        gpus_per_actor: float = None,
         cpus_per_actor: float = None,
     ) -> dict[int, tuple[dict, dict]]:
         """
@@ -369,38 +369,38 @@ class Experiment:
 
         from rapidfireai.evals.utils.constants import ExperimentStatus
 
-        # Auto-detect resources if not provided
-        available_gpus = self._ray.cluster_resources().get("GPU", 0)
-        available_cpus = self._ray.cluster_resources().get("CPU", 0)
+        # Auto-detect resources if not provided.
+        # Ray returns all cluster_resources() values as float; keep as float throughout,
+        # except num_actors which must be int for range() / scheduling arithmetic.
+        available_gpus: float = self._ray.cluster_resources().get("GPU", 0.0)
+        available_cpus: float = self._ray.cluster_resources().get("CPU", 0.0)
 
         def get_cpus_to_set_aside(num_actors: int) -> int:
             """Get the number of CPUs to set aside for driver and other processes"""
             return (num_actors + 3) // 4 # 1 CPU set aside for driver and other processes per 4 actors.
 
-        def get_num_actors_by_available_cpus(available_cpus: int) -> int:
+        def get_num_actors_by_available_cpus(available_cpus: float) -> int:
             """Get the number of actors by available CPUs"""
-            if available_cpus <= 2:
+            if available_cpus <= 2.0:
                 return 2
-            elif available_cpus <= 4:
+            elif available_cpus <= 4.0:
                 return 4
-            elif available_cpus <= 32:
+            elif available_cpus <= 32.0:
                 return 8
-            elif available_cpus <= 128:
+            elif available_cpus <= 128.0:
                 return 16
             else:
                 return 32
 
         if available_gpus > 0:
-            # GPU + CPU machine
-            # 1 GPU per actor; revisit for multi-GPU scale later
-            gpus_per_actor = 1  
-            # set num_actors to the available GPUs if not provided or is greater than the available GPUs
-            num_actors = available_gpus if num_actors is None or num_actors > available_gpus else num_actors
+            # GPU + CPU machine — 1 GPU per actor; revisit for multi-GPU scale later
+            gpus_per_actor = 1.0
+            # num_actors must be int; cap at available GPUs if not provided or exceeds them
+            num_actors = int(available_gpus) if num_actors is None or num_actors > available_gpus else int(num_actors)
         else:
             # CPU-only machine
-            gpus_per_actor = 0
-            # Get number of actors by available CPUs
-            num_actors = get_num_actors_by_available_cpus(available_cpus) if num_actors is None else num_actors
+            gpus_per_actor = 0.0
+            num_actors = get_num_actors_by_available_cpus(available_cpus) if num_actors is None else int(num_actors)
 
         cpus_per_actor = float((available_cpus - get_cpus_to_set_aside(num_actors)) / num_actors)
 

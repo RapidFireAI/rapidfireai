@@ -16,7 +16,7 @@ from pathlib import Path
 from importlib.resources import files
 from rapidfireai.utils.get_ip_address import get_ip_address
 from rapidfireai.utils.python_info import get_python_info
-from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabConfig
+from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabConfig, MLflowConfig
 from rapidfireai.utils.doctor import get_doctor_info
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME
 from rapidfireai.utils.gpu_info import get_compute_capability
@@ -360,16 +360,20 @@ def run_jupyter():
             app.initialize(argv=['--ServerApp.custom_display_url='])
         
         dispatcher_port = DispatcherConfig.PORT
+        mlflow_port = MLflowConfig.PORT
 
         if os.getenv("TERM_PROGRAM") == "vscode":
             print(f"VSCode detected, port {app.port} should automatically be forwarded to localhost")
             print(f"Manually forward port {dispatcher_port} to localhost, using the Ports tab in VSCode/Cursor/etc.")
+            print(f"Manually forward port {mlflow_port} to localhost, using the Ports tab in VSCode/Cursor/etc.")
         else:
             os_username = os.getenv("USER", os.getenv("LOGNAME", "username"))
             print(f"Manually forward port {app.port} to localhost")
             print(f"Manually forward port {dispatcher_port} to localhost")
+            print(f"Manually forward port {mlflow_port} to localhost")
             print(f"For example using ssh:")
-            print(f"    ssh -L {app.port}:localhost:{app.port} -L {dispatcher_port}:localhost:{dispatcher_port} {os_username}@{get_ip_address()}")
+            #TODO: MLFLOW port forwarding
+            print(f"    ssh -L {app.port}:localhost:{app.port} -L {dispatcher_port}:localhost:{dispatcher_port} -L {mlflow_port}:localhost:{mlflow_port} {os_username}@{get_ip_address()}")
         print("If there is a problem, try running jupyter manually with:")
         print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''")
         print("\n\nAfter forwarding the ports above, access the Jupyter notebook at:")

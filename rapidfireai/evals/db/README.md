@@ -23,7 +23,7 @@ exp_id = db.create_experiment(
     num_shards=5,
     num_actors=4,
     num_cpus_per_actor=2.5, # Can be fraction
-    num_gpus_per_actor=1 # only 1 GPU per actor supported currently
+    num_gpus_per_actor=1.0 # only 1 GPU per actor supported currently
 )
 
 # Create pipeline

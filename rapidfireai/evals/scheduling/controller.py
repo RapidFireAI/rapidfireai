@@ -813,7 +813,7 @@ class Controller:
         num_shards: int,
         seed: int = 42,
         num_actors: int = None,
-        num_gpus_per_actor: int = None,
+        num_gpus_per_actor: float = None,
         num_cpus_per_actor: float = None,
     ) -> dict[int, tuple[dict, dict]]:
         """
@@ -829,8 +829,8 @@ class Controller:
             num_shards: Number of shards to split the dataset into
             seed: Random seed for reproducibility (default: 42)
             num_actors: Number of query processing actors to spawn
-            num_gpus_per_actor: GPUs per actor (0 = CPU-only)
-            num_cpus_per_actor: CPUs per actor (may be fractional)
+            num_gpus_per_actor: GPUs per actor (float, e.g. 1.0 or 0.0)
+            num_cpus_per_actor: CPUs per actor (float, e.g. 3.75)
 
         Returns:
             Dict mapping pipeline_id to (aggregated_results, cumulative_metrics) tuple

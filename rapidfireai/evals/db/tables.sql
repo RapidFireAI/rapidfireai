@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS experiments (
     num_shards INTEGER DEFAULT 0,
     num_actors INTEGER NOT NULL,
     num_cpus_per_actor REAL,
-    num_gpus_per_actor INTEGER,
+    num_gpus_per_actor REAL,
     status TEXT NOT NULL,  -- 'running', 'completed', 'failed'
     error TEXT DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
