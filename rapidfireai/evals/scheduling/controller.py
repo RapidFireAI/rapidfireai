@@ -1441,6 +1441,9 @@ class Controller:
             if hasattr(pipeline, "model_config") and pipeline.model_config:
                 pipeline_model_name = pipeline.model_config.get("model", "Unknown")
 
+            pipeline_data = db.get_pipeline(pipeline_id)
+            metric_run_id = pipeline_data.get("metric_run_id") if pipeline_data else None
+
             try:
                 ray.get(
                     actor.initialize_for_pipeline.remote(
@@ -1451,6 +1454,7 @@ class Controller:
                         pipeline_reranker_cfg=pipeline_reranker_cfg,
                         pipeline_id=pipeline_id,
                         model_name=pipeline_model_name,
+                        metric_run_id=metric_run_id,
                     )
                 )
             except Exception as init_err:

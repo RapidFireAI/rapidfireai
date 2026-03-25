@@ -83,6 +83,7 @@ class QueryProcessingActor:
         self.rag_spec = None  # RAG specification with retriever, template, etc.
         self.prompt_manager = None  # Prompt manager for few-shot examples
         self.current_engine_config_hash = None  # Track currently loaded model
+        self.metric_run_id = None  # MLflow run ID for trace association
 
     def initialize_for_pipeline(
         self,
@@ -93,6 +94,7 @@ class QueryProcessingActor:
         pipeline_reranker_cfg: dict[str, Any] | None = None,
         pipeline_id: int | None = None,
         model_name: str | None = None,
+        metric_run_id: str | None = None,
     ):
         """
         Configure this actor for a specific pipeline.
@@ -296,6 +298,18 @@ class QueryProcessingActor:
                 self.prompt_manager.pipeline_id = pipeline_id
                 self.prompt_manager.model_name = model_name
 
+            # End any previously active MLflow run on this actor (happens when reused for a second pipeline).
+            # This marks the previous run as FINISHED on the server, but that's fine:
+            # the controller uses MlflowClient (not the fluent API) for final metric logging,
+            # which works on terminated runs, and its own end_run() is idempotent.
+            if self.metric_run_id:
+                mlflow.end_run()
+
+            # Set the active MLflow run so traces are associated with this pipeline's run
+            self.metric_run_id = metric_run_id
+            if self.metric_run_id:
+                mlflow.start_run(run_id=self.metric_run_id)
+
         except Exception as e:
             # Convert any exception to RuntimeError to ensure it can be properly serialized by Ray.
             error_type = type(e).__name__
@@ -353,6 +367,8 @@ class QueryProcessingActor:
                 batch_data = batch_data.to_dict()
 
             with mlflow_start_span(name="rag_pipeline", span_type=mlflow.entities.SpanType.CHAIN) as span:
+                queries = batch_data.get("query", batch_data.get("question", []))
+                span.set_inputs({"queries": queries[:3] if len(queries) > 3 else queries})
                 # prompt_manager attributes take precedence over rag_spec when both are present
                 for source in (self.rag_spec, self.prompt_manager):
                     if source is None:
@@ -376,6 +392,9 @@ class QueryProcessingActor:
                 if postprocess_fn:
                     with mlflow_start_span(name="postprocess", span_type=mlflow.entities.SpanType.CHAIN):
                         batch_data = postprocess_fn(batch_data)
+
+                generated = batch_data.get("generated_text", [])
+                span.set_outputs({"generated_text": generated[:3] if len(generated) > 3 else generated})
 
             # Stage 4: Compute metrics
             batch_metrics = {}
