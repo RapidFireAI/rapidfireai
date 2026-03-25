@@ -16,7 +16,7 @@ import pickle
 
 from rapidfireai.utils.constants import MLflowConfig
 from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
-from rapidfireai.evals.utils.mlflow_utils import setup_mlflow, mlflow_start_span
+from rapidfireai.evals.utils.mlflow_utils import setup_mlflow, mlflow_start_span, is_mlflow_enabled
 
 from langchain_community.vectorstores import FAISS
 from langchain_postgres import PGVector
@@ -302,12 +302,15 @@ class QueryProcessingActor:
             # This marks the previous run as FINISHED on the server, but that's fine:
             # the controller uses MlflowClient (not the fluent API) for final metric logging,
             # which works on terminated runs, and its own end_run() is idempotent.
-            if self.metric_run_id:
+            if self.metric_run_id and is_mlflow_enabled():
                 mlflow.end_run()
 
-            # Set the active MLflow run so traces are associated with this pipeline's run
+            # Set the active MLflow run so traces are associated with this pipeline's run.
+            # metric_run_id is a real MLflow UUID only when MLflow is enabled; when disabled
+            # RFMetricLogger falls back to a plain run-name string which mlflow.start_run()
+            # cannot accept, so the call must also be gated on is_mlflow_enabled().
             self.metric_run_id = metric_run_id
-            if self.metric_run_id:
+            if self.metric_run_id and is_mlflow_enabled():
                 mlflow.start_run(run_id=self.metric_run_id)
 
         except Exception as e:

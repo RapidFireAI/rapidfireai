@@ -4,6 +4,9 @@ from typing import Any
 
 import dill
 
+from rapidfireai.automl import RFvLLMModelConfig, RFOpenAIAPIModelConfig
+from rapidfireai.evals.utils.constants import SEARCH_TYPE_KEYS
+
 
 def encode_payload(payload: object) -> str:
     """Encode the payload for the database"""

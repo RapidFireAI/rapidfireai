@@ -561,20 +561,18 @@ class LangChainRagSpec:
 
         The returned dict always contains:
 
-        - ``type``: class name (e.g. ``"RecursiveCharacterTextSplitter"``)
+        - ``type``: human-readable splitter label.  For plain splitters this
+          is just the class name (e.g. ``"RecursiveCharacterTextSplitter"``).
+          When a custom tokenizer is detected the label is extended, e.g.
+          ``"RecursiveCharacterTextSplitter(tiktoken:cl100k_base)"`` or
+          ``"RecursiveCharacterTextSplitter(hf:bert-base-uncased)"``.
         - ``chunk_size``, ``chunk_overlap``, ``keep_separator``,
           ``add_start_index``, ``strip_whitespace``: splitter parameters
 
-        And optionally:
-
-        - ``tokenizer``: present when the splitter was created via
-          ``from_tiktoken_encoder`` (``"tiktoken:<encoding>"``) or
-          ``from_huggingface_tokenizer`` (``"hf:<name_or_path>"``).
-
-        The tokenizer key is extracted by inspecting the ``_length_function``
+        The tokenizer suffix is extracted by inspecting the ``_length_function``
         closure, since neither LangChain factory method stores the tokenizer
-        as a public attribute. For ``from_tiktoken_encoder``, the value uses
-        the resolved encoding name (e.g. ``model_name="gpt-4"`` →
+        as a public attribute. For ``from_tiktoken_encoder``, the resolved
+        encoding name is used (e.g. ``model_name="gpt-4"`` →
         ``"tiktoken:cl100k_base"``); this is intentional because two model
         names that share an encoding tokenize identically and should produce
         the same hash.
@@ -601,11 +599,11 @@ class LangChainRagSpec:
                     pass
             enc = closure_map.get("enc")
             if enc is not None and hasattr(enc, "name"):
-                cfg["tokenizer"] = f"tiktoken:{enc.name}"
+                cfg["type"] = f"{class_name}(tiktoken:{enc.name})"
             else:
                 tokenizer = closure_map.get("tokenizer")
                 if tokenizer is not None and hasattr(tokenizer, "name_or_path") and tokenizer.name_or_path:
-                    cfg["tokenizer"] = f"hf:{tokenizer.name_or_path}"
+                    cfg["type"] = f"{class_name}(hf:{tokenizer.name_or_path})"
         return cfg
 
     def get_hash(self) -> str:

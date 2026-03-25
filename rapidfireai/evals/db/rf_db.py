@@ -54,13 +54,17 @@ class RFDatabase:
         except Exception:
             pass
     
-        # Migration: Add metric_experiment_id to experiments table if they don't exist
+        # Migration: Add missing columns to experiments table if they don't exist
         try:
             cursor = self.db.conn.execute("PRAGMA table_info(experiments)")
             columns = [row[1] for row in cursor.fetchall()]
             if "metric_experiment_id" not in columns:
                 self.db.conn.execute("ALTER TABLE experiments ADD COLUMN metric_experiment_id TEXT")
-                self.db.conn.commit()
+            if "num_cpus_per_actor" not in columns:
+                self.db.conn.execute("ALTER TABLE experiments ADD COLUMN num_cpus_per_actor REAL")
+            if "num_gpus_per_actor" not in columns:
+                self.db.conn.execute("ALTER TABLE experiments ADD COLUMN num_gpus_per_actor INTEGER")
+            self.db.conn.commit()
         except Exception:
             pass
 

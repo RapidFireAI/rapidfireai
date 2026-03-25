@@ -840,8 +840,8 @@ class Controller:
         self.num_actors = num_actors
         self.num_gpus_per_actor = num_gpus_per_actor
         self.num_cpus_per_actor = num_cpus_per_actor
-        # Total GPUs across the cluster (each query actor gets exactly self.num_gpus GPUs).
-        self.cluster_num_gpus = self.num_actors * self.num_gpus
+        # Total GPUs across the cluster (each actor gets exactly self.num_gpus_per_actor GPUs).
+        self.cluster_num_gpus = self.num_actors * self.num_gpus_per_actor
 
         # Initialize database
         db = RFDatabase()
