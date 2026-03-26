@@ -13,7 +13,7 @@ import os
 import mlflow
 from mlflow.entities import SpanType
 
-from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
+from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES, PINECONE_SOURCE_TAG
 
 import faiss
 from pinecone import Pinecone, ServerlessSpec, PodSpec, ByocSpec
@@ -308,7 +308,10 @@ class LangChainRagSpec:
                 "dotproduct": DistanceStrategy.MAX_INNER_PRODUCT,
             }
 
-            pc = Pinecone(api_key=pinecone_api_key)
+            pc = Pinecone(
+                api_key=pinecone_api_key, 
+                source_tag=PINECONE_SOURCE_TAG,
+            )
 
             if "index_namespace" in pinecone_kwargs:
                 # read_or_update mode: connect to an existing index

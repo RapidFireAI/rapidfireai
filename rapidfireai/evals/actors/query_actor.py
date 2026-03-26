@@ -15,7 +15,7 @@ import ray
 import pickle
 
 from rapidfireai.utils.constants import MLflowConfig
-from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
+from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES, PINECONE_SOURCE_TAG
 from rapidfireai.evals.utils.mlflow_utils import setup_mlflow, mlflow_start_span, is_mlflow_enabled
 
 from langchain_community.vectorstores import FAISS
@@ -240,7 +240,10 @@ class QueryProcessingActor:
                         elif vector_store_type == "pinecone":
                             if embedding_function is None:
                                 raise ValueError("embedding_function is not set. Vector store cannot be created without an embedding function.")
-                            pc = Pinecone(api_key=context_generator_ref.get("pinecone_api_key"))
+                            pc = Pinecone(
+                                api_key=context_generator_ref.get("pinecone_api_key"),
+                                source_tag=PINECONE_SOURCE_TAG,
+                            )
                             vector_store = PineconeVectorStore(
                                 index=pc.Index(context_generator_ref.get("pinecone_index_name")),
                                 embedding=embedding_function,

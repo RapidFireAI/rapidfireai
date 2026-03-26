@@ -43,6 +43,9 @@ SEARCH_DEFAULTS: dict[str, dict] = {
 # Keys shown/accepted per search type (used by serialize and interactive_control)
 SEARCH_TYPE_KEYS: dict[str, set] = {search_type: set(defaults.keys()) for search_type, defaults in SEARCH_DEFAULTS.items()}
 
+# Pinecone Source Tag
+PINECONE_SOURCE_TAG = "rapidfireai"
+
 # Rate Limiting Constants
 # Maximum number of retries for rate-limited API calls
 MAX_RATE_LIMIT_RETRIES = 5
