@@ -177,6 +177,38 @@ class Experiment:
             self.logger.info(f"Starting dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
             self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
 
+        # Initialize Ray with runtime environment for CUDA initialization
+        # This fixes AWS-specific CUDA/cuBLAS initialization issues
+        ray.init(
+            logging_level=logging.ERROR,
+            log_to_driver=False,
+            configure_logging=True,
+            ignore_reinit_error=True,
+            include_dashboard=True,
+            dashboard_host=RayConfig.HOST,
+            dashboard_port=RayConfig.PORT,
+            # Disable metrics export to prevent "Failed to establish connection" errors
+            _metrics_export_port=None,
+            runtime_env={
+                "env_vars": {
+                    # Force CUDA to initialize properly in Ray actors (AWS fix)
+                    "CUDA_LAUNCH_BLOCKING": "0",
+                    "CUDA_MODULE_LOADING": "LAZY",
+                    "TF_CPP_MIN_LOG_LEVEL": "3",
+                    "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
+                }
+            },
+        )
+        if ColabConfig.ON_COLAB:
+            try:
+                from google.colab.output import eval_js
+
+                # Get the Colab proxy URL for the dispatcher port
+                proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
+                print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
+            except Exception as e:
+                print(f"⚠️ Colab detected but failed to get proxy URL: {e}")
+
         # Create database reference
         self.db = RFDatabase()
 
@@ -192,6 +224,8 @@ class Experiment:
         except Exception as e:
             self.logger.warning(f"Failed to initialize MetricLogger: {e}. MetricLogger logging will be disabled.")
             self.metric_loggers = None
+
+
         
         # Initialize the controller
         self.controller = Controller(
@@ -335,15 +369,11 @@ class Experiment:
 
         from rapidfireai.evals.utils.constants import ExperimentStatus
 
-        # Detect available resources directly from the OS/hardware so we can
-        # compute the CPU cap *before* calling ray.init() — avoiding a double
-        # init/shutdown cycle.
-        try:
-            import torch
-            available_gpus: float = float(torch.cuda.device_count()) if torch.cuda.is_available() else 0.0
-        except Exception:
-            available_gpus: float = 0.0
-        available_cpus: float = float(os.cpu_count() or 1)
+        # Auto-detect resources if not provided.
+        # Ray returns all cluster_resources() values as float; keep as float throughout,
+        # except num_actors which must be int for range() / scheduling arithmetic.
+        available_gpus: float = self._ray.cluster_resources().get("GPU", 0.0)
+        available_cpus: float = self._ray.cluster_resources().get("CPU", 0.0)
 
         def get_cpus_to_set_aside(num_actors: int) -> int:
             """Get the number of CPUs to set aside for driver and other processes"""
@@ -376,21 +406,9 @@ class Experiment:
         cpus_for_ray = available_cpus - cpus_to_set_aside
         cpus_per_actor = float(cpus_for_ray / num_actors)
 
-        # Initialize Ray with a hard CPU cap so the driver process and OS always
-        # have `cpus_to_set_aside` cores free. Doing this here (rather than in
-        # __init__) lets us compute the cap from the actual num_actors first,
-        # and avoids an extra shutdown/reinit cycle.
         self.logger.info(
             f"Initializing Ray: {cpus_for_ray} CPUs available to scheduler "
             f"({cpus_to_set_aside} set aside for driver/OS), {available_gpus} GPUs"
-        )
-
-        if gpus_per_actor == 0:
-            self.logger.warning("No GPUs available. Be sure to use external APIs for inference.")
-
-        self.logger.info(
-            f"Running multi-config experiment with {num_shards} shard(s), "
-            f"({gpus_per_actor} GPUs per actor, {cpus_per_actor} CPUs per actor, {num_actors} actors)"
         )
 
         self._ray.init(
@@ -414,14 +432,13 @@ class Experiment:
             },
         )
 
-        if ColabConfig.ON_COLAB:
-            try:
-                from google.colab.output import eval_js
+        if gpus_per_actor == 0:
+            self.logger.warning("No GPUs available. Be sure to use external APIs for inference.")
 
-                proxy_url = eval_js(f"google.colab.kernel.proxyPort({RayConfig.PORT})")
-                print(f"🌐 Google Colab detected. Ray dashboard URL: {proxy_url}")
-            except Exception as e:
-                print(f"⚠️ Colab detected but failed to get proxy URL: {e}")
+        self.logger.info(
+            f"Running multi-config experiment with {num_shards} shard(s), "
+            f"({gpus_per_actor} GPUs per actor, {cpus_per_actor} CPUs per actor, {num_actors} actors)"
+        )
 
         # Reset states of any existing pipelines/contexts/tasks from previous runs
         # (in case run_evals() is called multiple times on the same experiment)
@@ -463,6 +480,8 @@ class Experiment:
             self.db.set_experiment_status(self.experiment_id, ExperimentStatus.FAILED)
             self.db.set_experiment_error(self.experiment_id, str(e))
             raise
+
+
 
         return results
 
