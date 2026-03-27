@@ -59,6 +59,74 @@ class Experiment:
         else:
             self._init_evals_mode()
 
+    def _auto_detect_resources(self) -> dict[str, float]:
+        """
+        Detect available hardware resources and compute Ray actor allocation.
+
+        Queries the host OS and PyTorch (when available) to determine how many
+        GPUs and logical CPUs are present, then derives a sensible default actor
+        count and per-actor resource budget without requiring Ray to be running.
+
+        On GPU machines, one actor is allocated per GPU (1 GPU each).
+        On CPU-only machines, the actor count is chosen from a fixed tier table
+        based on logical CPU count, and a small number of CPUs are reserved for
+        the driver process and OS overhead.
+
+        Returns:
+            A dict with the following keys:
+
+            cpus_for_ray   – CPUs to hand to Ray (total minus driver/OS reserve).
+            gpus_for_ray   – total GPUs visible to Ray (equals system GPU count).
+            num_actors     – number of Ray actors to spawn.
+            gpus_per_actor – GPU fraction assigned to each actor (1.0 or 0.0).
+            cpus_per_actor – CPU budget assigned to each actor.
+        """
+        try:
+            import torch
+            available_gpus: float = float(torch.cuda.device_count()) if torch.cuda.is_available() else 0.0
+        except Exception:
+            available_gpus: float = 0.0
+
+        gpus_for_ray: float = available_gpus
+
+        available_cpus: float = float(os.cpu_count() or 1)
+
+        def _cpus_to_set_aside(num_actors: int) -> int:
+            # Reserve 1 CPU per 4 actors for the driver process and OS overhead.
+            return (num_actors + 3) // 4
+
+        def _num_actors_for_cpus(available_cpus: float) -> int:
+            if available_cpus <= 2.0:
+                return 2
+            elif available_cpus <= 4.0:
+                return 4
+            elif available_cpus <= 32.0:
+                return 8
+            elif available_cpus <= 128.0:
+                return 16
+            else:
+                return 32
+
+        if available_gpus > 0:
+            # GPU machine — 1 actor per GPU; revisit for multi-GPU actors later.
+            gpus_per_actor: float = 1.0
+            num_actors: int = int(available_gpus)
+        else:
+            # CPU-only machine — tier the actor count by available CPUs.
+            gpus_per_actor = 0.0
+            num_actors = _num_actors_for_cpus(available_cpus)
+
+        cpus_for_ray: float = available_cpus - _cpus_to_set_aside(num_actors)
+        cpus_per_actor: float = cpus_for_ray / num_actors
+
+        return {
+            "cpus_for_ray": cpus_for_ray,
+            "gpus_for_ray": gpus_for_ray,
+            "num_actors": num_actors,
+            "gpus_per_actor": gpus_per_actor,
+            "cpus_per_actor": cpus_per_actor
+        }
+
     def _init_fit_mode(self) -> None:
         """Initialize fit-specific components."""
         # Import fit-specific modules
@@ -164,22 +232,25 @@ class Experiment:
         for msg in log_messages:
             self.logger.info(msg)
 
-        # Start dispatcher early so its listening socket gets a low file-descriptor
-        # number.  If started after ray.init(), Ray's internal sockets (GCS, raylet,
-        # dashboard, object store, …) will have consumed the low fd numbers already.
-        # With 10+ actors on an 8-vCPU machine Ray oversubscribes and opens extra
-        # scheduling/queuing sockets, pushing fds over the 1024 limit that
-        # select() can handle — crashing waitress even with asyncore_use_poll=True.
-        if ping_server(DispatcherConfig.HOST, DispatcherConfig.PORT, 2):
-            self.logger.info(f"Using existing dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
-            self.dispatcher_thread = None
-        else:
-            self.logger.info(f"Starting dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
-            self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
+        self._ray_resource_config = self._auto_detect_resources()
+        print(f"Allocating {self._ray_resource_config['cpus_for_ray']} CPUs and {self._ray_resource_config['gpus_for_ray']} GPUs to the experiment")
+        self.logger.info(f"Allocating {self._ray_resource_config['cpus_for_ray']} CPUs and {self._ray_resource_config['gpus_for_ray']} GPUs to the experiment")
+        self.logger.info(
+            f"Auto-detected resources: {self._ray_resource_config['num_actors']} actors, "
+            f"{self._ray_resource_config['gpus_per_actor']} GPUs per actor, "
+            f"{self._ray_resource_config['cpus_per_actor']} CPUs per actor"
+        )
 
         # Initialize Ray with runtime environment for CUDA initialization
         # This fixes AWS-specific CUDA/cuBLAS initialization issues
+
+        self.logger.info(
+            f"Initializing Ray: {self._ray_resource_config['cpus_for_ray']} CPUs and {self._ray_resource_config['gpus_for_ray']} GPUs"
+        )
+
         ray.init(
+            num_cpus=int(self._ray_resource_config['cpus_for_ray']),
+            num_gpus=int(self._ray_resource_config['gpus_for_ray']),
             logging_level=logging.ERROR,
             log_to_driver=False,
             configure_logging=True,
@@ -224,8 +295,6 @@ class Experiment:
         except Exception as e:
             self.logger.warning(f"Failed to initialize MetricLogger: {e}. MetricLogger logging will be disabled.")
             self.metric_loggers = None
-
-
         
         # Initialize the controller
         self.controller = Controller(
@@ -233,6 +302,15 @@ class Experiment:
             experiment_path=self.experiment_path,
             metric_manager=self.metric_loggers,
         )
+
+        # Start dispatcher in background thread for interactive control
+        if ping_server(DispatcherConfig.HOST, DispatcherConfig.PORT, 2):
+            self.logger.info(f"Using existing dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
+            self.dispatcher_thread = None
+            
+        else:
+            self.logger.info(f"Starting new dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
+            self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
 
         # Initialize notebook UI controller with auth token for Colab
         self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
@@ -369,68 +447,46 @@ class Experiment:
 
         from rapidfireai.evals.utils.constants import ExperimentStatus
 
-        # Auto-detect resources if not provided.
-        # Ray returns all cluster_resources() values as float; keep as float throughout,
-        # except num_actors which must be int for range() / scheduling arithmetic.
-        available_gpus: float = self._ray.cluster_resources().get("GPU", 0.0)
-        available_cpus: float = self._ray.cluster_resources().get("CPU", 0.0)
+        available_cpus = self._ray_resource_config['cpus_for_ray']
+        available_gpus = self._ray_resource_config['gpus_for_ray']
 
-        def get_cpus_to_set_aside(num_actors: int) -> int:
-            """Get the number of CPUs to set aside for driver and other processes"""
-            return (num_actors + 3) // 4 # 1 CPU set aside for driver and other processes per 4 actors.
+        if num_actors is None:
+            num_actors = self._ray_resource_config['num_actors']
+        if gpus_per_actor is None:
+            gpus_per_actor = self._ray_resource_config['gpus_per_actor']
+        if cpus_per_actor is None:
+            cpus_per_actor = self._ray_resource_config['cpus_per_actor']
 
-        def get_num_actors_by_available_cpus(available_cpus: float) -> int:
-            """Get the number of actors by available CPUs"""
-            if available_cpus <= 2.0:
-                return 2
-            elif available_cpus <= 4.0:
-                return 4
-            elif available_cpus <= 32.0:
-                return 8
-            elif available_cpus <= 128.0:
-                return 16
-            else:
-                return 32
+        # Clamp resource requests to what's actually available
+        original = (num_actors, gpus_per_actor, cpus_per_actor)
 
+        # If using GPUs
         if available_gpus > 0:
-            # GPU + CPU machine — 1 GPU per actor; revisit for multi-GPU scale later
-            gpus_per_actor = 1.0
-            # num_actors must be int; cap at available GPUs if not provided or exceeds them
-            num_actors = int(available_gpus) if num_actors is None or num_actors > available_gpus else int(num_actors)
-        else:
-            # CPU-only machine
-            gpus_per_actor = 0.0
-            num_actors = get_num_actors_by_available_cpus(available_cpus) if num_actors is None else int(num_actors)
+            # Requested more actors than available GPUs
+            if num_actors > available_gpus:
+                num_actors = available_gpus
+                gpus_per_actor = 1.0
+                cpus_per_actor = available_cpus / num_actors
+            # Requested more GPUs per actor than 1.0
+            elif gpus_per_actor > 1.0:
+                gpus_per_actor = 1.0
 
-        cpus_to_set_aside = get_cpus_to_set_aside(num_actors)
-        cpus_for_ray = available_cpus - cpus_to_set_aside
-        cpus_per_actor = float(cpus_for_ray / num_actors)
+        # Overallocation of CPUs
+        if num_actors * cpus_per_actor > available_cpus:
+            if available_gpus > 0:
+                # Reduce cpus_per_actor to the available CPUs. Actors are already less than or equal to available GPUs (<= 8)
+                cpus_per_actor = available_cpus / num_actors
+            else:
+                # Reduce actors to the available CPUs.
+                num_actors = int(available_cpus / cpus_per_actor)
 
-        self.logger.info(
-            f"Initializing Ray: {cpus_for_ray} CPUs available to scheduler "
-            f"({cpus_to_set_aside} set aside for driver/OS), {available_gpus} GPUs"
-        )
-
-        self._ray.init(
-            num_cpus=cpus_for_ray,
-            num_gpus=available_gpus,
-            logging_level=logging.ERROR,
-            log_to_driver=False,
-            configure_logging=True,
-            ignore_reinit_error=True,
-            include_dashboard=True,
-            dashboard_host=RayConfig.HOST,
-            dashboard_port=RayConfig.PORT,
-            _metrics_export_port=None,
-            runtime_env={
-                "env_vars": {
-                    "CUDA_LAUNCH_BLOCKING": "0",
-                    "CUDA_MODULE_LOADING": "LAZY",
-                    "TF_CPP_MIN_LOG_LEVEL": "3",
-                    "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
-                }
-            },
-        )
+        if (num_actors, gpus_per_actor, cpus_per_actor) != original:
+            msg = (
+                "Resource limits exceeded — scaling down to fit available hardware: "
+                f"num_actors={num_actors}, gpus_per_actor={gpus_per_actor}, cpus_per_actor={cpus_per_actor}"
+            )
+            print(msg)
+            self.logger.warning(msg)
 
         if gpus_per_actor == 0:
             self.logger.warning("No GPUs available. Be sure to use external APIs for inference.")
@@ -470,9 +526,9 @@ class Experiment:
                 dataset=dataset,
                 num_shards=num_shards,
                 seed=seed,
-                num_actors=num_actors,
-                num_gpus_per_actor=gpus_per_actor,
-                num_cpus_per_actor=cpus_per_actor,
+                num_actors=int(num_actors),
+                num_gpus_per_actor=float(gpus_per_actor),
+                num_cpus_per_actor=float(cpus_per_actor),
             )
         except Exception as e:
             self.logger.exception("Error running multi-config experiment")
@@ -480,8 +536,6 @@ class Experiment:
             self.db.set_experiment_status(self.experiment_id, ExperimentStatus.FAILED)
             self.db.set_experiment_error(self.experiment_id, str(e))
             raise
-
-
 
         return results
 
