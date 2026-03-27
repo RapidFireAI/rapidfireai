@@ -34,6 +34,17 @@ class RFLogger:
         # Check if we are in a Ray worker process
         is_ray_worker = os.environ.get("RAY_WORKER_MODE") == "WORKER"
 
+        # Reset the file handler when the experiment changes (e.g. second run in the
+        # same Jupyter kernel).  Without this the class-level singleton keeps pointing
+        # at the first experiment's log file, so Experiment-level logs never appear in
+        # the current experiment's directory.
+        if not is_ray_worker and RFLogger._experiment_name != experiment_name:
+            if RFLogger._file_handler is not None:
+                logging.getLogger().removeHandler(RFLogger._file_handler)
+                RFLogger._file_handler.close()
+                RFLogger._file_handler = None
+            RFLogger._experiment_name = experiment_name
+
         # Only set up the file handler on the Controller/Experiment process
         # Ray workers will forward their logs to the driver's logging system
         if not is_ray_worker and RFLogger._file_handler is None:

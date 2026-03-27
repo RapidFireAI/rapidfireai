@@ -111,7 +111,7 @@ rapidfireai start
 rapidfireai jupyter
 
 # Forward these ports if you installed rapidfireai on a remote machine
-ssh -L 8850:localhost:8850 -L 8851:localhost:8851 -L 8853:localhost:8853 username@remote-machine
+ssh -L 8850:localhost:8850 -L 8851:localhost:8851 -L 8853:localhost:8853 -L 8852:localhost:8852 username@remote-machine
 
 # Open the URL provided by the jupyter notebook command above via your browser
 # Open an example notebook from ./tutorial_notebooks/rag-contexteng/ and start experiment

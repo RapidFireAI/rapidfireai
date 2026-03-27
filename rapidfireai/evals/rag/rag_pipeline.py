@@ -13,7 +13,7 @@ import os
 import mlflow
 from mlflow.entities import SpanType
 
-from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
+from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES, PINECONE_SOURCE_TAG
 
 import faiss
 from pinecone import Pinecone, ServerlessSpec, PodSpec, ByocSpec
@@ -308,7 +308,10 @@ class LangChainRagSpec:
                 "dotproduct": DistanceStrategy.MAX_INNER_PRODUCT,
             }
 
-            pc = Pinecone(api_key=pinecone_api_key)
+            pc = Pinecone(
+                api_key=pinecone_api_key, 
+                source_tag=PINECONE_SOURCE_TAG,
+            )
 
             if "index_namespace" in pinecone_kwargs:
                 # read_or_update mode: connect to an existing index
@@ -554,6 +557,58 @@ class LangChainRagSpec:
 
         return new_rag
 
+    def get_text_splitter_cfg(self) -> dict[str, Any] | None:
+        """
+        Return a configuration dict describing the text splitter, or ``None``
+        if no splitter is set.
+
+        The returned dict always contains:
+
+        - ``type``: human-readable splitter label.  For plain splitters this
+          is just the class name (e.g. ``"RecursiveCharacterTextSplitter"``).
+          When a custom tokenizer is detected the label is extended, e.g.
+          ``"RecursiveCharacterTextSplitter(tiktoken:cl100k_base)"`` or
+          ``"RecursiveCharacterTextSplitter(hf:bert-base-uncased)"``.
+        - ``chunk_size``, ``chunk_overlap``, ``keep_separator``,
+          ``add_start_index``, ``strip_whitespace``: splitter parameters
+
+        The tokenizer suffix is extracted by inspecting the ``_length_function``
+        closure, since neither LangChain factory method stores the tokenizer
+        as a public attribute. For ``from_tiktoken_encoder``, the resolved
+        encoding name is used (e.g. ``model_name="gpt-4"`` →
+        ``"tiktoken:cl100k_base"``); this is intentional because two model
+        names that share an encoding tokenize identically and should produce
+        the same hash.
+        """
+        if self.text_splitter is None:
+            return None
+        class_name = type(self.text_splitter).__name__
+        cfg = {
+            "type": class_name,
+            "chunk_size": getattr(self.text_splitter, "_chunk_size", None),
+            "chunk_overlap": getattr(self.text_splitter, "_chunk_overlap", None),
+            "keep_separator": getattr(self.text_splitter, "_keep_separator", False),
+            "add_start_index": getattr(self.text_splitter, "_add_start_index", False),
+            "strip_whitespace": getattr(self.text_splitter, "_strip_whitespace", True),
+        }
+        fn = getattr(self.text_splitter, "_length_function", None)
+        if fn is not None and callable(fn) and getattr(fn, "__closure__", None):
+            free_vars = getattr(fn.__code__, "co_freevars", ())
+            closure_map = {}
+            for var_name, cell in zip(free_vars, fn.__closure__):
+                try:
+                    closure_map[var_name] = cell.cell_contents
+                except ValueError:
+                    pass
+            enc = closure_map.get("enc")
+            if enc is not None and hasattr(enc, "name"):
+                cfg["type"] = f"{class_name}(tiktoken:{enc.name})"
+            else:
+                tokenizer = closure_map.get("tokenizer")
+                if tokenizer is not None and hasattr(tokenizer, "name_or_path") and tokenizer.name_or_path:
+                    cfg["type"] = f"{class_name}(hf:{tokenizer.name_or_path})"
+        return cfg
+
     def get_hash(self) -> str:
         """
         Generate a unique hash for this RAG configuration.
@@ -573,10 +628,7 @@ class LangChainRagSpec:
 
         # Text splitter configuration (optional)
         if self.text_splitter is not None:
-            text_splitter = self.text_splitter
-            rag_dict["chunk_size"] = getattr(text_splitter, "_chunk_size", None)
-            rag_dict["chunk_overlap"] = getattr(text_splitter, "_chunk_overlap", None)
-            rag_dict["text_splitter_type"] = type(text_splitter).__name__
+            rag_dict["text_splitter"] = self.get_text_splitter_cfg()
 
         # Embedding configuration
         rag_dict["embedding_cls"] = self.embedding_cls.__name__ if self.embedding_cls else None

@@ -15,7 +15,8 @@ import ray
 import pickle
 
 from rapidfireai.utils.constants import MLflowConfig
-from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES
+from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES, PINECONE_SOURCE_TAG
+from rapidfireai.evals.utils.mlflow_utils import setup_mlflow, mlflow_start_span, is_mlflow_enabled
 
 from langchain_community.vectorstores import FAISS
 from langchain_postgres import PGVector
@@ -58,10 +59,7 @@ class QueryProcessingActor:
             experiment_path: Path to experiment logs/artifacts
             actor_id: Index of this actor (for logging and identification)
         """
-        mlflow.langchain.autolog()
-        mlflow.openai.autolog()
-        mlflow.set_tracking_uri(str(MLflowConfig.URL))
-        mlflow.set_experiment(experiment_name)
+        setup_mlflow(experiment_name)
         # AWS Fix: Initialize CUDA context early to prevent CUBLAS_STATUS_NOT_INITIALIZED
         # This must happen BEFORE any torch operations (including embedding/LLM model loading)
         if "CUDA_VISIBLE_DEVICES" in os.environ and os.environ["CUDA_VISIBLE_DEVICES"]:
@@ -85,6 +83,7 @@ class QueryProcessingActor:
         self.rag_spec = None  # RAG specification with retriever, template, etc.
         self.prompt_manager = None  # Prompt manager for few-shot examples
         self.current_engine_config_hash = None  # Track currently loaded model
+        self.metric_run_id = None  # MLflow run ID for trace association
 
     def initialize_for_pipeline(
         self,
@@ -95,6 +94,7 @@ class QueryProcessingActor:
         pipeline_reranker_cfg: dict[str, Any] | None = None,
         pipeline_id: int | None = None,
         model_name: str | None = None,
+        metric_run_id: str | None = None,
     ):
         """
         Configure this actor for a specific pipeline.
@@ -240,7 +240,10 @@ class QueryProcessingActor:
                         elif vector_store_type == "pinecone":
                             if embedding_function is None:
                                 raise ValueError("embedding_function is not set. Vector store cannot be created without an embedding function.")
-                            pc = Pinecone(api_key=context_generator_ref.get("pinecone_api_key"))
+                            pc = Pinecone(
+                                api_key=context_generator_ref.get("pinecone_api_key"),
+                                source_tag=PINECONE_SOURCE_TAG,
+                            )
                             vector_store = PineconeVectorStore(
                                 index=pc.Index(context_generator_ref.get("pinecone_index_name")),
                                 embedding=embedding_function,
@@ -298,6 +301,21 @@ class QueryProcessingActor:
                 self.prompt_manager.pipeline_id = pipeline_id
                 self.prompt_manager.model_name = model_name
 
+            # End any previously active MLflow run on this actor (happens when reused for a second pipeline).
+            # This marks the previous run as FINISHED on the server, but that's fine:
+            # the controller uses MlflowClient (not the fluent API) for final metric logging,
+            # which works on terminated runs, and its own end_run() is idempotent.
+            if self.metric_run_id and is_mlflow_enabled():
+                mlflow.end_run()
+
+            # Set the active MLflow run so traces are associated with this pipeline's run.
+            # metric_run_id is a real MLflow UUID only when MLflow is enabled; when disabled
+            # RFMetricLogger falls back to a plain run-name string which mlflow.start_run()
+            # cannot accept, so the call must also be gated on is_mlflow_enabled().
+            self.metric_run_id = metric_run_id
+            if self.metric_run_id and is_mlflow_enabled():
+                mlflow.start_run(run_id=self.metric_run_id)
+
         except Exception as e:
             # Convert any exception to RuntimeError to ensure it can be properly serialized by Ray.
             error_type = type(e).__name__
@@ -354,15 +372,21 @@ class QueryProcessingActor:
             if hasattr(batch_data, "to_dict"):
                 batch_data = batch_data.to_dict()
 
-            with mlflow.start_span(name=f"rag_pipeline", span_type=mlflow.entities.SpanType.CHAIN) as span:
-                if self.rag_spec is not None and self.rag_spec.pipeline_id is not None:
-                    span.set_attribute("pipeline_id", self.rag_spec.pipeline_id)
-                if self.rag_spec is not None and self.rag_spec.model_name is not None:
-                    span.set_attribute("model_name", self.rag_spec.model_name)
+            with mlflow_start_span(name="rag_pipeline", span_type=mlflow.entities.SpanType.CHAIN) as span:
+                queries = batch_data.get("query", batch_data.get("question", []))
+                span.set_inputs({"queries": queries[:3] if len(queries) > 3 else queries})
+                # prompt_manager attributes take precedence over rag_spec when both are present
+                for source in (self.rag_spec, self.prompt_manager):
+                    if source is None:
+                        continue
+                    if (pipeline_id := getattr(source, "pipeline_id", None)) is not None:
+                        span.set_attribute("pipeline_id", pipeline_id)
+                    if (model_name := getattr(source, "model_name", None)) is not None:
+                        span.set_attribute("model_name", model_name)
 
                 # Stage 1: Preprocess - build prompts with context/examples
                 if preprocess_fn:
-                    with mlflow.start_span(name="preprocess", span_type=mlflow.entities.SpanType.CHAIN):
+                    with mlflow_start_span(name="preprocess", span_type=mlflow.entities.SpanType.CHAIN):
                         batch_data = preprocess_fn(batch_data, self.rag_spec, self.prompt_manager)
 
                 # Stage 2: Generate using the inference engine
@@ -372,8 +396,11 @@ class QueryProcessingActor:
 
                 # Stage 3: Postprocess - extract answers, format results
                 if postprocess_fn:
-                    with mlflow.start_span(name="postprocess", span_type=mlflow.entities.SpanType.CHAIN):
+                    with mlflow_start_span(name="postprocess", span_type=mlflow.entities.SpanType.CHAIN):
                         batch_data = postprocess_fn(batch_data)
+
+                generated = batch_data.get("generated_text", [])
+                span.set_outputs({"generated_text": generated[:3] if len(generated) > 3 else generated})
 
             # Stage 4: Compute metrics
             batch_metrics = {}

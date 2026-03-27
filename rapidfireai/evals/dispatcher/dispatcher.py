@@ -983,7 +983,7 @@ def run_dispatcher(host: str = "0.0.0.0", port: int = 8851) -> None:
         logging.getLogger("waitress").setLevel(logging.WARNING)
 
         # Use waitress to serve the Flask app
-        serve(dispatcher.app, host=host, port=port, threads=6)
+        serve(dispatcher.app, host=host, port=port, threads=6, asyncore_use_poll=True)
     except Exception as e:
         # Catch all exceptions to prevent thread crashes
         print(f"CRITICAL: Dispatcher crashed: {e}")

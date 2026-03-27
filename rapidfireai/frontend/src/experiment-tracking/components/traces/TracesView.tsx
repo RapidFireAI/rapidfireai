@@ -23,6 +23,7 @@ export const TracesView = ({
   runUuid,
   loggedModelId,
   disabledColumns,
+  forceVisibleColumns,
   baseComponentId = runUuid ? 'mlflow.run.traces' : 'mlflow.experiment_page.traces',
 }: {
   experimentIds: string[];
@@ -39,6 +40,10 @@ export const TracesView = ({
    * Disabled columns are hidden and are not available to be toggled at all.
    */
   disabledColumns?: ExperimentViewTracesTableColumns[];
+  /**
+   * Columns that should always be visible, overriding user's hidden column preferences.
+   */
+  forceVisibleColumns?: ExperimentViewTracesTableColumns[];
   /**
    * The base component ID for the traces view. If not provided, will be inferred from the other props.
    */
@@ -141,8 +146,11 @@ export const TracesView = ({
   );
 
   const allHiddenColumns = useMemo(
-    () => [...(uiState.hiddenColumns ?? []), ...allDisabledColumns],
-    [uiState, allDisabledColumns],
+    () =>
+      [...(uiState.hiddenColumns ?? []), ...allDisabledColumns].filter(
+        (col) => !forceVisibleColumns?.includes(col as ExperimentViewTracesTableColumns),
+      ),
+    [uiState, allDisabledColumns, forceVisibleColumns],
   );
 
   return (

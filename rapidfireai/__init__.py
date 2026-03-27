@@ -2,6 +2,9 @@
 RapidFire AI
 """
 
+import warnings
+warnings.filterwarnings("ignore", message="Can't initialize NVML")
+
 from .version import __version__, __version_info__
 
 __author__ = "RapidFire AI Inc."

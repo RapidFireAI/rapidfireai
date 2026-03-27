@@ -31,9 +31,6 @@ def _build_reranker_registry() -> dict[str, type]:
 
 RERANKER_CLASS_REGISTRY: dict[str, type] = _build_reranker_registry()
 
-# Actor Constants
-NUM_QUERY_PROCESSING_ACTORS = 4
-NUM_CPUS_PER_DOC_ACTOR = 2 if os.cpu_count() > 2 else 1
 
 # RAG search type defaults — keys are type-specific; only include kwargs relevant
 # to each search type so irrelevant params are never forwarded to LangChain.
@@ -45,6 +42,9 @@ SEARCH_DEFAULTS: dict[str, dict] = {
 }
 # Keys shown/accepted per search type (used by serialize and interactive_control)
 SEARCH_TYPE_KEYS: dict[str, set] = {search_type: set(defaults.keys()) for search_type, defaults in SEARCH_DEFAULTS.items()}
+
+# Pinecone Source Tag
+PINECONE_SOURCE_TAG = "rapidfireai"
 
 # Rate Limiting Constants
 # Maximum number of retries for rate-limited API calls

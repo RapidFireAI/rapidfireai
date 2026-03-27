@@ -84,8 +84,8 @@ export enum ExperimentViewTracesTableColumns {
 
 export const ExperimentViewTracesTableColumnLabels: Record<ExperimentViewTracesTableColumns, MessageDescriptor> = {
   [ExperimentViewTracesTableColumns.requestId]: defineMessage({
-    defaultMessage: 'Request ID',
-    description: 'Experiment page > traces table > request id column header',
+    defaultMessage: 'Trace ID',
+    description: 'Experiment page > traces table > trace id column header',
   }),
   [ExperimentViewTracesTableColumns.traceName]: defineMessage({
     defaultMessage: 'Trace name',

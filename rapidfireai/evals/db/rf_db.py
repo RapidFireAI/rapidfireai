@@ -54,13 +54,17 @@ class RFDatabase:
         except Exception:
             pass
     
-        # Migration: Add metric_experiment_id to experiments table if they don't exist
+        # Migration: Add missing columns to experiments table if they don't exist
         try:
             cursor = self.db.conn.execute("PRAGMA table_info(experiments)")
             columns = [row[1] for row in cursor.fetchall()]
             if "metric_experiment_id" not in columns:
                 self.db.conn.execute("ALTER TABLE experiments ADD COLUMN metric_experiment_id TEXT")
-                self.db.conn.commit()
+            if "num_cpus_per_actor" not in columns:
+                self.db.conn.execute("ALTER TABLE experiments ADD COLUMN num_cpus_per_actor REAL")
+            if "num_gpus_per_actor" not in columns:
+                self.db.conn.execute("ALTER TABLE experiments ADD COLUMN num_gpus_per_actor REAL")
+            self.db.conn.commit()
         except Exception:
             pass
 
@@ -85,8 +89,8 @@ class RFDatabase:
         self,
         experiment_name: str,
         num_actors: int,
-        num_cpus: int = None,
-        num_gpus: int = None,
+        num_cpus_per_actor: float = None,
+        num_gpus_per_actor: float = None,
         metric_experiment_id: str = None,
         status: ExperimentStatus = ExperimentStatus.RUNNING,
         num_shards: int = 0,
@@ -97,8 +101,8 @@ class RFDatabase:
         Args:
             experiment_name: Name of the experiment
             num_actors: Number of query processing actors
-            num_cpus: Number of CPUs allocated
-            num_gpus: Number of GPUs allocated
+            num_cpus_per_actor: CPUs per actor (fractional, e.g. 3.75)
+            num_gpus_per_actor: GPUs per actor (fractional, e.g. 1.0)
             metric_experiment_id: Optional MetricLogger experiment ID
             status: Initial status (default: ExperimentStatus.RUNNING)
             num_shards: Number of shards for the dataset (default: 0)
@@ -108,7 +112,7 @@ class RFDatabase:
         """
         query = """
         INSERT INTO experiments (
-            experiment_name, num_actors, num_shards, num_cpus, num_gpus,
+            experiment_name, num_actors, num_shards, num_cpus_per_actor, num_gpus_per_actor,
             metric_experiment_id, status, error
         ) VALUES (?, ?, ?, ?, ?, ?, ?, '')
         """
@@ -118,8 +122,8 @@ class RFDatabase:
                 experiment_name,
                 num_actors,
                 num_shards,
-                num_cpus,
-                num_gpus,
+                num_cpus_per_actor,
+                num_gpus_per_actor,
                 metric_experiment_id,
                 status.value,
             ),
@@ -164,8 +168,8 @@ class RFDatabase:
         self,
         experiment_id: int,
         num_actors: int,
-        num_cpus: int = None,
-        num_gpus: int = None,
+        num_cpus_per_actor: float = None,
+        num_gpus_per_actor: float = None,
     ):
         """
         Update resource allocation for an experiment.
@@ -173,12 +177,12 @@ class RFDatabase:
         Args:
             experiment_id: ID of the experiment
             num_actors: Number of actors
-            num_cpus: Number of CPUs (optional)
-            num_gpus: Number of GPUs (optional)
+            num_cpus_per_actor: CPUs per actor (fractional, e.g. 3.75)
+            num_gpus_per_actor: GPUs per actor (fractional, e.g. 1.0)
         """
-        query = "UPDATE experiments SET num_actors = ?, num_cpus = ?, num_gpus = ? WHERE experiment_id = ?"
+        query = "UPDATE experiments SET num_actors = ?, num_cpus_per_actor = ?, num_gpus_per_actor = ? WHERE experiment_id = ?"
         self.db.execute(
-            query, (num_actors, num_cpus, num_gpus, experiment_id), commit=True
+            query, (num_actors, num_cpus_per_actor, num_gpus_per_actor, experiment_id), commit=True
         )
 
     def reset_all_tables(self, experiments_table: bool = False) -> None:
@@ -260,7 +264,7 @@ class RFDatabase:
             Experiment dictionary with all fields, or None if not found
         """
         query = """
-        SELECT experiment_id, experiment_name, num_actors, num_cpus, num_gpus,
+        SELECT experiment_id, experiment_name, num_actors, num_cpus_per_actor, num_gpus_per_actor,
                metric_experiment_id, status, num_shards, error, created_at
         FROM experiments
         WHERE experiment_id = ?
@@ -272,8 +276,8 @@ class RFDatabase:
                 "experiment_id": row[0],
                 "experiment_name": row[1],
                 "num_actors": row[2],
-                "num_cpus": row[3],
-                "num_gpus": row[4],
+                "num_cpus_per_actor": row[3],
+                "num_gpus_per_actor": row[4],
                 "metric_experiment_id": row[5],
                 "status": row[6],
                 "num_shards": row[7],
@@ -316,7 +320,7 @@ class RFDatabase:
         """
         query = """
         SELECT experiment_id, experiment_name, metric_experiment_id, num_shards,
-               num_actors, num_cpus, num_gpus, status, error, created_at
+               num_actors, num_cpus_per_actor, num_gpus_per_actor, status, error, created_at
         FROM experiments
         WHERE status = ?
         ORDER BY experiment_id DESC
@@ -331,8 +335,8 @@ class RFDatabase:
                 "metric_experiment_id": row[2],
                 "num_shards": row[3],
                 "num_actors": row[4],
-                "num_cpus": row[5],
-                "num_gpus": row[6],
+                "num_cpus_per_actor": row[5],
+                "num_gpus_per_actor": row[6],
                 "status": row[7],
                 "error": row[8],
                 "created_at": row[9],

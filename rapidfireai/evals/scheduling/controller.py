@@ -15,13 +15,9 @@ from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.interactive_control import InteractiveControlHandler
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.evals.scheduling.scheduler import Scheduler
-from rapidfireai.automl import ModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import (
-    NUM_CPUS_PER_DOC_ACTOR,
-    NUM_QUERY_PROCESSING_ACTORS,
     SEARCH_TYPE_KEYS,
     ContextStatus,
-    ExperimentStatus,
     PipelineStatus,
     TaskStatus,
 )
@@ -29,7 +25,7 @@ from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 from rapidfireai.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.automl import get_runs, get_flattened_config_leaf
-from rapidfireai.evals.utils.serialize import extract_pipeline_config_json, extract_pipeline_display_metadata
+from rapidfireai.evals.utils.serialize import extract_pipeline_config_json
 
 class Controller:
     """
@@ -199,10 +195,10 @@ class Controller:
             if hasattr(rag, "search_kwargs") and rag.search_kwargs:
                 for key, value in rag.search_kwargs.items():
                     manager.log_param(run_id, f"rag.{key}", str(value))
-            if hasattr(rag, "chunk_size"):
-                manager.log_param(run_id, "rag.chunk_size", str(rag.chunk_size))
-            if hasattr(rag, "chunk_overlap"):
-                manager.log_param(run_id, "rag.chunk_overlap", str(rag.chunk_overlap))
+            ts_cfg = rag.get_text_splitter_cfg() if hasattr(rag, "get_text_splitter_cfg") else None
+            if ts_cfg:
+                for key, value in ts_cfg.items():
+                    manager.log_param(run_id, f"rag.text_splitter.{key}", str(value))
 
         # Log sampling params (for vLLM)
         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:
@@ -428,14 +424,11 @@ class Controller:
                 device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
                 if device and str(device).startswith("cuda"):
                     needs_gpu = True
-            system_num_gpus = ray.available_resources().get("GPU", 0)
-            if system_num_gpus > 1:
+            if needs_gpu and self.cluster_num_gpus > 0:
                 num_gpus_for_actor = 1
-            elif system_num_gpus > 0:
-                num_gpus_for_actor = 0.5
             else:
                 num_gpus_for_actor = 0
-            num_cpus_for_actor = NUM_CPUS_PER_DOC_ACTOR
+            num_cpus_for_actor = self.num_cpus_per_actor
 
             # Create DocProcessingActor
             # Ray will queue actors if resources aren't immediately available
@@ -521,50 +514,6 @@ class Controller:
         context_display.stop()
 
         self.logger.info(f"Completed parallel context building for {num_contexts} context(s)")
-
-    def create_query_actors(
-        self,
-        engine_class: type[InferenceEngine],
-        engine_kwargs: dict[str, Any],
-        context_generator_ref: ray.ObjectRef | None,
-    ) -> list:
-        """
-        Create query processing actors with the specified inference engine.
-
-        Args:
-            engine_class: The inference engine class to instantiate (VLLMInferenceEngine or OpenAIInferenceEngine)
-            engine_kwargs: Kwargs to pass to engine constructor
-            context_generator_ref: Ray ObjectRef to shared RAG components in object store
-            gpus_per_actor: GPUs per actor
-            cpus_per_actor: CPUs per actor
-
-        Returns:
-            List of Ray actor handles
-        """
-        num_actors = self.num_actors or NUM_QUERY_PROCESSING_ACTORS
-        gpus_per_actor = self.num_gpus // num_actors
-        cpus_per_actor = self.num_cpus // num_actors
-
-        assert gpus_per_actor > 0, (
-            "Not enough GPUs available. Got {self.num_gpus} GPUs and {num_actors} actors, need at least 1 GPU per actor"
-        )
-        assert cpus_per_actor > 0, (
-            "Not enough CPUs available. Got {self.num_cpus} CPUs and {num_actors} actors, need at least 1 CPU per actor"
-        )
-
-        actors = []
-        for i in range(num_actors):
-            actor = QueryProcessingActor.options(num_gpus=gpus_per_actor, num_cpus=cpus_per_actor).remote(
-                engine_class=engine_class,
-                engine_kwargs=engine_kwargs,
-                context_generator_ref=context_generator_ref,
-                experiment_name=self.experiment_name,
-                experiment_path=self.experiment_path,
-                actor_id=i,
-            )
-            actors.append(actor)
-
-        return actors
 
     def _register_pipelines(
         self,
@@ -756,7 +705,7 @@ class Controller:
                 ordered_metrics["model_name"] = cumulative_metrics["model_name"]
 
             hyperparam_keys = [
-                "text_splitter", "chunk_size", "chunk_overlap", "embedding_cfg", "vector_store_cfg",
+                "text_splitter_cfg", "embedding_cfg", "vector_store_cfg",
                 "search_cfg", "reranker_cfg",
                 "sampling_params", "prompt_manager_k", "model_config",
             ]
@@ -864,8 +813,8 @@ class Controller:
         num_shards: int,
         seed: int = 42,
         num_actors: int = None,
-        num_gpus: int = None,
-        num_cpus: int = None,
+        num_gpus_per_actor: float = None,
+        num_cpus_per_actor: float = None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Run multi-pipeline inference with fair round-robin scheduling.
@@ -879,13 +828,21 @@ class Controller:
             dataset: Dataset to process
             num_shards: Number of shards to split the dataset into
             seed: Random seed for reproducibility (default: 42)
-            num_actors: Total number of actors
-            num_gpus: Total number of GPUs available
-            num_cpus: Total number of CPUs available
+            num_actors: Number of query processing actors to spawn
+            num_gpus_per_actor: GPUs per actor (float, e.g. 1.0 or 0.0)
+            num_cpus_per_actor: CPUs per actor (float, e.g. 3.75)
 
         Returns:
             Dict mapping pipeline_id to (aggregated_results, cumulative_metrics) tuple
         """
+        # Store resource allocation on self so every downstream method (_setup_context_generators,
+        # _create_vllm_actors, etc.) can read them without re-querying Ray.
+        self.num_actors = num_actors
+        self.num_gpus_per_actor = num_gpus_per_actor
+        self.num_cpus_per_actor = num_cpus_per_actor
+        # Total GPUs across the cluster (each actor gets exactly self.num_gpus_per_actor GPUs).
+        self.cluster_num_gpus = self.num_actors * self.num_gpus_per_actor
+
         # Initialize database
         db = RFDatabase()
 
@@ -906,11 +863,8 @@ class Controller:
         # Actors are created without any pipeline or context information
         # They will receive pipeline-specific context when scheduled
         query_actors = []
-        gpus_per_actor = num_gpus // num_actors if num_actors > 0 else 0
-        cpus_per_actor = num_cpus // num_actors if num_actors > 0 else 1
-
-        for i in range(num_actors):
-            actor = QueryProcessingActor.options(num_gpus=gpus_per_actor, num_cpus=cpus_per_actor).remote(
+        for i in range(self.num_actors):
+            actor = QueryProcessingActor.options(num_gpus=self.num_gpus_per_actor, num_cpus=self.num_cpus_per_actor).remote(
                 experiment_name=self.experiment_name,
                 experiment_path=self.experiment_path,
                 actor_id=i,
@@ -952,9 +906,7 @@ class Controller:
         for pipeline_id, pipeline_config in zip(pipeline_ids, pipeline_configs, strict=False):
             model_name = "Unknown"
             # Indexing-stage fields (read-only in progress display)
-            text_splitter = None
-            chunk_size = None
-            chunk_overlap = None
+            text_splitter_cfg = None
             embedding_cfg = None
             vector_store_cfg = None
             # Retrieval-stage fields
@@ -981,9 +933,7 @@ class Controller:
 
                 # Indexing stage
                 if hasattr(rag, "text_splitter") and rag.text_splitter is not None:
-                    text_splitter = type(rag.text_splitter).__name__
-                    chunk_size = getattr(rag.text_splitter, "_chunk_size", None)
-                    chunk_overlap = getattr(rag.text_splitter, "_chunk_overlap", None)
+                    text_splitter_cfg = rag.get_text_splitter_cfg()
                 if getattr(rag, "embedding_cls", None) is not None:
                     cls_name = rag.embedding_cls.__name__ if isinstance(rag.embedding_cls, type) else str(rag.embedding_cls)
                     embedding_cfg = {"class": cls_name}
@@ -1019,12 +969,8 @@ class Controller:
 
             # Add optional fields only if they're not None
             # Indexing stage (read-only display)
-            if text_splitter is not None:
-                pipeline_info_dict["text_splitter"] = text_splitter
-            if chunk_size is not None:
-                pipeline_info_dict["chunk_size"] = chunk_size
-            if chunk_overlap is not None:
-                pipeline_info_dict["chunk_overlap"] = chunk_overlap
+            if text_splitter_cfg is not None:
+                pipeline_info_dict["text_splitter_cfg"] = text_splitter_cfg
             if embedding_cfg is not None:
                 pipeline_info_dict["embedding_cfg"] = embedding_cfg
             if vector_store_cfg is not None:
@@ -1495,6 +1441,9 @@ class Controller:
             if hasattr(pipeline, "model_config") and pipeline.model_config:
                 pipeline_model_name = pipeline.model_config.get("model", "Unknown")
 
+            pipeline_data = db.get_pipeline(pipeline_id)
+            metric_run_id = pipeline_data.get("metric_run_id") if pipeline_data else None
+
             try:
                 ray.get(
                     actor.initialize_for_pipeline.remote(
@@ -1505,6 +1454,7 @@ class Controller:
                         pipeline_reranker_cfg=pipeline_reranker_cfg,
                         pipeline_id=pipeline_id,
                         model_name=pipeline_model_name,
+                        metric_run_id=metric_run_id,
                     )
                 )
             except Exception as init_err:

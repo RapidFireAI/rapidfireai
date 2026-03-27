@@ -189,17 +189,18 @@ class PipelineProgressDisplay:
     })
 
     _CFG_FIELDS_TO_FLATTEN = frozenset({
-        "embedding_cfg", "vector_store_cfg", "search_cfg", "reranker_cfg",
+        "text_splitter_cfg", "embedding_cfg", "vector_store_cfg", "search_cfg", "reranker_cfg",
     })
 
     _METADATA_KEYS = [
-        "text_splitter", "chunk_size", "chunk_overlap", "embedding_cfg", "vector_store_cfg",
+        "text_splitter_cfg",
+        "embedding_cfg", "vector_store_cfg",
         "search_cfg", "reranker_cfg",
         "sampling_params", "prompt_manager_k", "model_config",
     ]
 
     _METADATA_PREFIX_ORDER = [
-        "text_splitter", "chunk_size", "chunk_overlap",
+        "text_splitter_cfg",
         "embedding_cfg", "vector_store_cfg",
         "search_cfg", "reranker_cfg",
         "sampling_params", "prompt_manager_k", "model_config",
@@ -215,9 +216,9 @@ class PipelineProgressDisplay:
                       - pipeline_config (required)
                       - model_name (required)
                       Indexing stage (read-only display):
-                      - text_splitter (optional, str)
-                      - chunk_size (optional, int)
-                      - chunk_overlap (optional, int)
+                      - text_splitter_cfg (optional, dict with keys: type, chunk_size,
+                        chunk_overlap, keep_separator, add_start_index, strip_whitespace,
+                        and optionally tokenizer)
                       - embedding_cfg (optional, dict)
                       - vector_store_cfg (optional, dict)
                       Retrieval stage:
