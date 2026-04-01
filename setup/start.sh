@@ -29,9 +29,24 @@ RF_DB_PATH="${RF_DB_PATH:=$RF_HOME/db}"
 RF_LOG_PATH="${RF_LOG_PATH:=$RF_HOME/logs}"
 
 RF_TIMEOUT_TIME=${RF_TIMEOUT_TIME:=30}
+RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
+RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
+
+if ! command -v $RF_PYTHON_EXECUTABLE &> /dev/null; then
+    RF_PYTHON_EXECUTABLE=python
+fi
+
+if ! command -v $RF_PIP_EXECUTABLE &> /dev/null; then
+    RF_PIP_EXECUTABLE=pip
+fi
 
 # Converge mode: all (backend+frontend), none (original frontend only), backend, frontend
 RF_CONVERGE_MODE=${RF_CONVERGE_MODE:=all}
+CONVERGE_FOUND=$(${RF_PIP_EXECUTABLE} show rapidfireai-pro >/dev/null 2>&1; echo $?)
+if [[ $CONVERGE_FOUND -ne 0 ]]; then
+    RF_CONVERGE_MODE="none"
+fi
+
 case "$RF_CONVERGE_MODE" in
     all|none|backend|frontend) ;;
     *)
@@ -74,24 +89,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAPIDFIRE_DIR="$SCRIPT_DIR/../rapidfireai"
 RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
-if [[ -d "$RAPIDFIRE_DIR/frontend_pro" ]]; then
-    FRONTEND_DIR="$RAPIDFIRE_DIR/frontend_pro"
-else
-    FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
-fi
+FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
+
 RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "fit")
 DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
 
-RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
-RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
 
-if ! command -v $RF_PYTHON_EXECUTABLE &> /dev/null; then
-    RF_PYTHON_EXECUTABLE=python
-fi
-
-if ! command -v $RF_PIP_EXECUTABLE &> /dev/null; then
-    RF_PIP_EXECUTABLE=pip
-fi
 
 
 # Function to print colored output
@@ -775,12 +778,39 @@ show_status() {
     fi
 
     # Only check frontend.log if frontend is running
-    if [[ "$RF_COLAB_MODE" != "true" ]]; then
+    if [[ "$RF_COLAB_MODE" != "true" ]] && [[ "$RF_CONVERGE_MODE" == "none" ]]; then
         if [[ -f "$RF_LOG_PATH/frontend.log" ]]; then
             local size=$(du -h "$RF_LOG_PATH/frontend.log" | cut -f1)
             print_status "- $RF_LOG_PATH/frontend.log: $size"
         else
             print_warning "- $RF_LOG_PATH/frontend.log: not found"
+        fi
+    fi
+
+    if [[ "$RF_CONVERGE_MODE" != "none" ]]; then
+        if [[ -f "$RF_LOG_PATH/converge.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/converge.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/converge.log: $size"
+        else
+            print_warning "- $RF_LOG_PATH/converge.log: not found"
+        fi
+    fi
+
+    if [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" != "frontend" ]]; then
+        if [[ -f "$RF_LOG_PATH/converge_frontend.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/converge_frontend.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/converge_frontend.log: $size"
+        else
+            print_warning "- $RF_LOG_PATH/converge_frontend.log: not found"
+        fi
+    fi
+
+    if [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" != "backend" ]]; then
+        if [[ -f "$RF_LOG_PATH/converge_backend.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/converge_backend.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/converge_backend.log: $size"
+        else
+            print_warning "- $RF_LOG_PATH/converge_backend.log: not found"
         fi
     fi
 }
@@ -915,7 +945,7 @@ main() {
 
         # Show summary of all log files for debugging
         print_status "=== Startup Failure Summary ==="
-        for log_file in "mlflow.log" "api.log" "frontend.log" "converge.log"; do
+        for log_file in "mlflow.log" "api.log" "frontend.log" "converge.log" "converge_frontend.log" "converge_backend.log"; do
             if [[ -f "$RF_LOG_PATH/$log_file" ]]; then
                 echo ""
                 print_status "=== $log_file ==="
