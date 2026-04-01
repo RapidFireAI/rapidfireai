@@ -1,9 +1,8 @@
 import asyncio
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-
-import tiktoken
 
 
 class RequestStatus(Enum):
@@ -27,7 +26,19 @@ class RequestRecord:
     actual_tokens: int | None = None  # Actual usage, known only after completion
 
 
-class OpenAIRateLimiter:
+# ---------------------------------------------------------------------------
+# Base class — all sliding-window logic lives here
+# ---------------------------------------------------------------------------
+
+class BaseRateLimiter(ABC):
+    """
+    Sliding-window rate limiter shared by all API backends.
+
+    Subclasses must implement:
+    - ``_init_encoders()``: set up whatever is needed for token counting
+    - ``count_prompt_tokens(messages, model_name) -> int``: count input tokens
+    """
+
     def __init__(
         self,
         model_rate_limits: dict[str, dict[str, int]],
@@ -37,17 +48,14 @@ class OpenAIRateLimiter:
         logger=None,
     ):
         """
-        Initialize the rate limiter with sliding window tracking and per-model rate limits.
-
         Args:
             model_rate_limits: Dict mapping model name to rate limits, e.g.
-                {"gpt-4": {"rpm": 500, "tpm": 50000}, "gpt-3.5-turbo": {"rpm": 1000, "tpm": 100000}}
-            max_completion_tokens: Maximum completion tokens per request
-            limit_safety_ratio: Safety margin as percentage of limits (default 0.98 = 98%)
-            minimum_wait_time: Minimum wait time when rate limited (default 3.0 seconds)
-            logger: Optional logger instance for logging rate limit messages
+                {"gpt-4": {"rpm": 500, "tpm": 50000}}
+            max_completion_tokens: Maximum output/completion tokens per request
+            limit_safety_ratio: Safety margin as fraction of limits (default 0.98)
+            minimum_wait_time: Minimum wait time when rate limited (seconds)
+            logger: Optional logger instance
         """
-        # Configuration
         self.limit_safety_ratio = limit_safety_ratio
         self.minimum_wait_time = minimum_wait_time
         self.max_completion_tokens = max_completion_tokens
@@ -79,136 +87,107 @@ class OpenAIRateLimiter:
             for model, limits in model_rate_limits.items()
         }
 
-        # Request tracking
-        self._request_counter = 0  # Unique ID generator
-
-        # Current requests (sliding 60-second window) - used for rate limiting
-        self._current_requests: dict[int, RequestRecord] = {}  # request_id -> RequestRecord
-
-        # Historical requests (all requests since start) - never deleted
-        self._all_requests: dict[int, RequestRecord] = {}  # request_id -> RequestRecord
-
-        # For token counting - support multiple models
-        self.encoders: dict[str, tiktoken.Encoding] = {}
-
-        # Initialize encoders for all models
-        for model_name in self.model_names:
-            try:
-                self.encoders[model_name] = tiktoken.encoding_for_model(model_name)
-            except KeyError:
-                # Fallback to cl100k_base encoding if model not recognized
-                print(f"Warning: Model '{model_name}' not recognized, using cl100k_base encoding")
-                self.encoders[model_name] = tiktoken.get_encoding("cl100k_base")
-
-        # Thread safety
+        self._request_counter = 0
+        self._current_requests: dict[int, RequestRecord] = {}
+        self._all_requests: dict[int, RequestRecord] = {}
         self._lock = asyncio.Lock()
-
-        # Last cleanup time
         self._last_cleanup = time.time()
-
-        # Start time for tracking session duration
         self._start_time = time.time()
 
-    def count_prompt_tokens(self, messages, model_name: str):
+        self._init_encoders()
+
+    # ------------------------------------------------------------------
+    # Subclass hooks
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def _init_encoders(self) -> None:
+        """Set up token-counting resources (encoders, clients, etc.)."""
+
+    @abstractmethod
+    def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
         """
-        Count tokens in input messages for a specific model.
+        Count the number of tokens in *messages* for *model_name*.
 
         Args:
-            messages: List of message dicts with 'role' and 'content'
-            model_name: Name of the model to use for token counting
+            messages: List of message dicts with at least a ``"content"`` key.
+            model_name: Model to count tokens for.
 
         Returns:
-            int: Number of tokens in the messages
+            Estimated token count of the prompt.
         """
-        # Get the encoder for this model
-        if model_name not in self.encoders:
-            raise ValueError(f"Model '{model_name}' not found. Available models: {list(self.encoders.keys())}")
 
-        encoding = self.encoders[model_name]
+    # ------------------------------------------------------------------
+    # Common token estimation
+    # ------------------------------------------------------------------
 
-        total_tokens = 0
-        for message in messages:
-            # Message formatting overhead
-            total_tokens += 4  # role + content formatting
-            total_tokens += len(encoding.encode(message.get("content", "")))
-        total_tokens += 2  # conversation start/end tokens
-        return total_tokens
-
-    def estimate_total_tokens(self, messages, model_name: str):
+    def estimate_total_tokens(self, messages: list[dict], model_name: str) -> int:
         """
-        Estimate total tokens: prompt + completion for a specific model.
+        Estimate total tokens: prompt tokens + max output tokens.
 
         Args:
-            messages: List of message dicts with 'role' and 'content'
-            model_name: Name of the model to use for token counting
+            messages: List of message dicts
+            model_name: Model name for token counting
 
         Returns:
-            int: Estimated total tokens (prompt + max completion)
+            Estimated total tokens (prompt + max output)
         """
-        prompt_tokens = self.count_prompt_tokens(messages, model_name)
-        return prompt_tokens + self.max_completion_tokens
+        return self.count_prompt_tokens(messages, model_name) + self.max_completion_tokens
 
-    def _cleanup_old_requests(self):
-        """Remove requests older than 1 minute from the sliding window (not from history)"""
+    # ------------------------------------------------------------------
+    # Sliding-window bookkeeping (identical for all backends)
+    # ------------------------------------------------------------------
+
+    def _cleanup_old_requests(self) -> None:
+        """Remove requests older than 60 s from the sliding window."""
         current_time = time.time()
-
-        # Only cleanup every minimum_wait_time seconds to reduce overhead
         if current_time - self._last_cleanup < self.minimum_wait_time:
             return
-
         self._last_cleanup = current_time
         minute_ago = current_time - 60
-
-        # Remove old requests from current window (but keep in history)
-        expired_ids = [req_id for req_id, record in self._current_requests.items() if record.timestamp < minute_ago]
-
-        for req_id in expired_ids:
+        expired = [
+            req_id
+            for req_id, record in self._current_requests.items()
+            if record.timestamp < minute_ago
+        ]
+        for req_id in expired:
             del self._current_requests[req_id]
 
-    def _calculate_current_usage(self, model_name: str):
+    def _calculate_current_usage(self, model_name: str) -> tuple[int, int]:
         """
-        Calculate current RPM and TPM usage in the sliding window for a specific model.
+        Calculate RPM and TPM usage in the current sliding window for *model_name*.
 
-        For pending requests: use projected_tokens
-        For completed requests: use actual_tokens
-
-        Args:
-            model_name: Model name to calculate usage for
-
-        Returns:
-            Tuple of (current_rpm, current_tpm) for this model
+        Pending requests use ``projected_tokens``; completed ones use ``actual_tokens``.
         """
         current_rpm = 0
         current_tpm = 0
-
         for record in self._current_requests.values():
             if record.model_name != model_name:
                 continue
-
             current_rpm += 1
-
             if record.status == RequestStatus.COMPLETED and record.actual_tokens is not None:
                 current_tpm += record.actual_tokens
             else:
-                # Use projected tokens for pending requests
                 current_tpm += record.projected_tokens
-
         return current_rpm, current_tpm
 
-    async def acquire_slot(self, estimated_tokens: int, model_name: str):
+    async def acquire_slot(
+        self, estimated_tokens: int, model_name: str
+    ) -> tuple[bool, float, int | None]:
         """
-        Try to acquire a slot for a new request for a specific model.
+        Try to acquire a slot for a new request.
 
         Args:
             estimated_tokens: Projected token usage for this request
-            model_name: Name of the model making the request
+            model_name: Model name for the request
 
         Returns:
-            Tuple of (can_proceed: bool, wait_time: float, request_id: Optional[int])
+            ``(can_proceed, wait_time, request_id)``
         """
         if model_name not in self.enforced_rpm_limits:
             raise ValueError(
-                f"Model '{model_name}' not found in rate limits. Available models: {list(self.enforced_rpm_limits.keys())}"
+                f"Model '{model_name}' not found in rate limits. "
+                f"Available models: {list(self.enforced_rpm_limits.keys())}"
             )
 
         async with self._lock:
@@ -218,48 +197,37 @@ class OpenAIRateLimiter:
             enforced_rpm_limit = self.enforced_rpm_limits[model_name]
             enforced_tpm_limit = self.enforced_tpm_limits[model_name]
 
-            # Check if this request would exceed enforced RPM limit for this model
+            def _wait_time_for_model() -> float:
+                model_requests = [
+                    r for r in self._current_requests.values() if r.model_name == model_name
+                ]
+                if model_requests:
+                    oldest = min(r.timestamp for r in model_requests)
+                    return max(self.minimum_wait_time, 60 - (time.time() - oldest))
+                return self.minimum_wait_time
+
             if current_rpm >= enforced_rpm_limit:
-                # Find the oldest request for this model to determine wait time
-                model_requests = [r for r in self._current_requests.values() if r.model_name == model_name]
-                if model_requests:
-                    oldest_timestamp = min(record.timestamp for record in model_requests)
-                    wait_time = max(self.minimum_wait_time, 60 - (time.time() - oldest_timestamp))
-                else:
-                    wait_time = self.minimum_wait_time
-
-                # Throttled logging: only log 1 in 500 messages
+                wait_time = _wait_time_for_model()
                 self._rate_limit_message_counter += 1
-                if self.logger and (self._rate_limit_message_counter % self._log_throttle_ratio == 0):
+                if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
                     self.logger.info(
-                        f"RPM limit hit for {model_name} - waiting {wait_time:.1f}s "
+                        f"RPM limit hit for {model_name} — waiting {wait_time:.1f}s "
                         f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
                     )
                 return False, wait_time, None
 
-            # Check if this request would exceed enforced TPM limit for this model
             if current_tpm + estimated_tokens >= enforced_tpm_limit:
-                # Find the oldest request for this model to determine wait time
-                model_requests = [r for r in self._current_requests.values() if r.model_name == model_name]
-                if model_requests:
-                    oldest_timestamp = min(record.timestamp for record in model_requests)
-                    wait_time = max(self.minimum_wait_time, 60 - (time.time() - oldest_timestamp))
-                else:
-                    wait_time = self.minimum_wait_time
-
-                # Throttled logging: only log 1 in 500 messages
+                wait_time = _wait_time_for_model()
                 self._rate_limit_message_counter += 1
-                if self.logger and (self._rate_limit_message_counter % self._log_throttle_ratio == 0):
+                if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
                     self.logger.info(
-                        f"TPM limit hit for {model_name} - waiting {wait_time:.1f}s "
+                        f"TPM limit hit for {model_name} — waiting {wait_time:.1f}s "
                         f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
                     )
                 return False, wait_time, None
 
-            # Reserve the slot
             request_id = self._request_counter
             self._request_counter += 1
-
             record = RequestRecord(
                 request_id=request_id,
                 timestamp=time.time(),
@@ -268,11 +236,8 @@ class OpenAIRateLimiter:
                 model_name=model_name,
                 actual_tokens=None,
             )
-
-            # Add to both current window and full history
             self._current_requests[request_id] = record
-            self._all_requests[request_id] = record
-
+            self._all_requests[request_id] = record # Potentially could become a long list resulting in heavy memory usage
             return True, 0, request_id
 
     async def update_actual_usage(
@@ -280,126 +245,193 @@ class OpenAIRateLimiter:
         request_id: int | None,
         actual_tokens: int = 0,
         status: RequestStatus = RequestStatus.COMPLETED,
-    ):
+    ) -> None:
         """
         Update request with actual token usage and status after completion.
 
         Args:
-            request_id: The ID of the request to update
-            actual_tokens: Actual token usage from the API response (default 0 for failed requests)
-            status: Status of the request (COMPLETED, FAILED, or EMPTY_RESPONSE)
+            request_id: ID of the request to update (no-op if ``None``)
+            actual_tokens: Actual token usage from the API response
+            status: Final status of the request
         """
         if request_id is None:
             return
-
         async with self._lock:
-            # Update in current window (if still there)
-            if request_id in self._current_requests:
-                record = self._current_requests[request_id]
-                record.status = status
-                record.actual_tokens = actual_tokens
+            for store in (self._current_requests, self._all_requests):
+                if request_id in store:
+                    store[request_id].status = status
+                    store[request_id].actual_tokens = actual_tokens
 
-            # Always update in historical records
-            if request_id in self._all_requests:
-                record = self._all_requests[request_id]
-                record.status = status
-                record.actual_tokens = actual_tokens
-            # If request_id not found in either, something went wrong (shouldn't happen)
-
-    async def get_current_usage(self):
+    async def get_current_usage(self) -> dict:
         """
-        Get current rate limit usage statistics per model.
+        Return current and historical usage statistics per model.
 
         Returns:
-            Dict with current usage information per model (both sliding window and historical)
+            Dict with per-model stats and session-level aggregates.
         """
         async with self._lock:
             self._cleanup_old_requests()
 
-            # Aggregate stats per model
             per_model_stats = {}
             for model_name in self.model_names:
                 current_rpm, current_tpm = self._calculate_current_usage(model_name)
 
-                # Count current requests by status for this model (sliding window)
                 model_current = [r for r in self._current_requests.values() if r.model_name == model_name]
-                current_pending = sum(1 for r in model_current if r.status == RequestStatus.PENDING)
-                current_completed = sum(1 for r in model_current if r.status == RequestStatus.COMPLETED)
-                current_failed = sum(1 for r in model_current if r.status == RequestStatus.FAILED)
-                current_empty = sum(1 for r in model_current if r.status == RequestStatus.EMPTY_RESPONSE)
-
-                # Count all historical requests by status for this model
                 model_all = [r for r in self._all_requests.values() if r.model_name == model_name]
-                total_pending = sum(1 for r in model_all if r.status == RequestStatus.PENDING)
-                total_completed = sum(1 for r in model_all if r.status == RequestStatus.COMPLETED)
-                total_failed = sum(1 for r in model_all if r.status == RequestStatus.FAILED)
-                total_empty = sum(1 for r in model_all if r.status == RequestStatus.EMPTY_RESPONSE)
 
-                # Calculate total historical tokens for this model
+                def _count_by_status(records, s):
+                    return sum(1 for r in records if r.status == s)
+
                 total_tokens = sum(
                     r.actual_tokens if r.actual_tokens is not None else r.projected_tokens
                     for r in model_all
                 )
+                enf_rpm = self.enforced_rpm_limits[model_name]
+                enf_tpm = self.enforced_tpm_limits[model_name]
+                act_rpm = self.actual_rpm_limits[model_name]
+                act_tpm = self.actual_tpm_limits[model_name]
 
                 per_model_stats[model_name] = {
-                    # Current sliding window (60 seconds)
                     "current_requests": current_rpm,
                     "current_tokens": current_tpm,
-                    "current_pending_requests": current_pending,
-                    "current_completed_requests": current_completed,
-                    "current_failed_requests": current_failed,
-                    "current_empty_response_requests": current_empty,
-                    # Historical (all time since start)
+                    "current_pending_requests": _count_by_status(model_current, RequestStatus.PENDING),
+                    "current_completed_requests": _count_by_status(model_current, RequestStatus.COMPLETED),
+                    "current_failed_requests": _count_by_status(model_current, RequestStatus.FAILED),
+                    "current_empty_response_requests": _count_by_status(model_current, RequestStatus.EMPTY_RESPONSE),
                     "total_requests": len(model_all),
                     "total_tokens": total_tokens,
-                    "total_pending_requests": total_pending,
-                    "total_completed_requests": total_completed,
-                    "total_failed_requests": total_failed,
-                    "total_empty_response_requests": total_empty,
-                    # Actual API limits
-                    "actual_rpm_limit": self.actual_rpm_limits[model_name],
-                    "actual_tpm_limit": self.actual_tpm_limits[model_name],
-                    # Enforced limits (with safety margin)
-                    "enforced_rpm_limit": self.enforced_rpm_limits[model_name],
-                    "enforced_tpm_limit": self.enforced_tpm_limits[model_name],
-                    # Utilization against enforced limits (current window)
-                    "rpm_utilization": current_rpm / self.enforced_rpm_limits[model_name]
-                    if self.enforced_rpm_limits[model_name] > 0
-                    else 0,
-                    "tpm_utilization": current_tpm / self.enforced_tpm_limits[model_name]
-                    if self.enforced_tpm_limits[model_name] > 0
-                    else 0,
-                    # Utilization against actual limits (shows safety buffer)
-                    "actual_rpm_utilization": current_rpm / self.actual_rpm_limits[model_name]
-                    if self.actual_rpm_limits[model_name] > 0
-                    else 0,
-                    "actual_tpm_utilization": current_tpm / self.actual_tpm_limits[model_name]
-                    if self.actual_tpm_limits[model_name] > 0
-                    else 0,
+                    "total_pending_requests": _count_by_status(model_all, RequestStatus.PENDING),
+                    "total_completed_requests": _count_by_status(model_all, RequestStatus.COMPLETED),
+                    "total_failed_requests": _count_by_status(model_all, RequestStatus.FAILED),
+                    "total_empty_response_requests": _count_by_status(model_all, RequestStatus.EMPTY_RESPONSE),
+                    "actual_rpm_limit": act_rpm,
+                    "actual_tpm_limit": act_tpm,
+                    "enforced_rpm_limit": enf_rpm,
+                    "enforced_tpm_limit": enf_tpm,
+                    "rpm_utilization": current_rpm / enf_rpm if enf_rpm > 0 else 0,
+                    "tpm_utilization": current_tpm / enf_tpm if enf_tpm > 0 else 0,
+                    "actual_rpm_utilization": current_rpm / act_rpm if act_rpm > 0 else 0,
+                    "actual_tpm_utilization": current_tpm / act_tpm if act_tpm > 0 else 0,
                 }
 
-            # Session duration
             session_duration = time.time() - self._start_time
-
-            # Overall totals (across all models)
             total_all_requests = len(self._all_requests)
             total_all_tokens = sum(
                 r.actual_tokens if r.actual_tokens is not None else r.projected_tokens
                 for r in self._all_requests.values()
             )
-
             return {
                 "per_model": per_model_stats,
-                # Overall session info
                 "session_duration_seconds": session_duration,
-                "average_requests_per_minute": (total_all_requests / session_duration * 60)
-                if session_duration > 0
-                else 0,
-                "average_tokens_per_minute": (total_all_tokens / session_duration * 60)
-                if session_duration > 0
-                else 0,
-                # Configuration
+                "average_requests_per_minute": (
+                    total_all_requests / session_duration * 60 if session_duration > 0 else 0
+                ),
+                "average_tokens_per_minute": (
+                    total_all_tokens / session_duration * 60 if session_duration > 0 else 0
+                ),
                 "limit_safety_ratio": self.limit_safety_ratio,
                 "minimum_wait_time": self.minimum_wait_time,
                 "supported_models": self.model_names,
             }
+
+
+# ---------------------------------------------------------------------------
+# OpenAI — tiktoken-based token counting
+# ---------------------------------------------------------------------------
+
+class OpenAIRateLimiter(BaseRateLimiter):
+    """Rate limiter for OpenAI API endpoints. Uses tiktoken for token counting."""
+
+    def __init__(
+        self,
+        model_rate_limits: dict[str, dict[str, int]],
+        max_completion_tokens: int = 150,
+        limit_safety_ratio: float = 0.98,
+        minimum_wait_time: float = 3.0,
+        logger=None,
+    ):
+        super().__init__(
+            model_rate_limits=model_rate_limits,
+            max_completion_tokens=max_completion_tokens,
+            limit_safety_ratio=limit_safety_ratio,
+            minimum_wait_time=minimum_wait_time,
+            logger=logger,
+        )
+
+    def _init_encoders(self) -> None:
+        import tiktoken
+
+        self.encoders: dict = {}
+        for model_name in self.model_names:
+            try:
+                self.encoders[model_name] = tiktoken.encoding_for_model(model_name)
+            except KeyError:
+                print(f"Warning: Model '{model_name}' not recognised by tiktoken, using cl100k_base")
+                self.encoders[model_name] = tiktoken.get_encoding("cl100k_base")
+
+    def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
+        """Count tokens using tiktoken. Includes OpenAI message-formatting overhead."""
+        if model_name not in self.encoders:
+            raise ValueError(
+                f"Model '{model_name}' not found. Available: {list(self.encoders.keys())}"
+            )
+        encoding = self.encoders[model_name]
+        total = 2  # conversation start/end tokens
+        for message in messages:
+            total += 4  # per-message role/content overhead
+            total += len(encoding.encode(message.get("content", "")))
+        return total
+
+
+# ---------------------------------------------------------------------------
+# Google Gemini — character-based token estimation
+# ---------------------------------------------------------------------------
+
+class GoogleGeminiRateLimiter(BaseRateLimiter):
+    """
+    Rate limiter for Google Gemini API endpoints.
+
+    Gemini uses a proprietary SentencePiece tokenizer that cannot be run
+    offline without the full model weights. An exact count requires an API
+    call (``client.models.count_tokens``), which would add latency and cost.
+    Instead we use the widely-accepted offline approximation of **4 characters
+    per token** for English-like text. This is intentionally conservative
+    (slightly overestimates) to stay safely under the rate limits.
+    """
+
+    _CHARS_PER_TOKEN = 4
+
+    def __init__(
+        self,
+        model_rate_limits: dict[str, dict[str, int]],
+        max_completion_tokens: int = 150,
+        limit_safety_ratio: float = 0.98,
+        minimum_wait_time: float = 3.0,
+        logger=None,
+    ):
+        super().__init__(
+            model_rate_limits=model_rate_limits,
+            max_completion_tokens=max_completion_tokens,
+            limit_safety_ratio=limit_safety_ratio,
+            minimum_wait_time=minimum_wait_time,
+            logger=logger,
+        )
+
+    def _init_encoders(self) -> None:
+        # No offline encoder available for Gemini; count_prompt_tokens uses
+        # character-based approximation instead.
+        pass
+
+    def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
+        """
+        Estimate token count via character length (~4 chars per token).
+
+        Includes a small per-message overhead to mirror the formatting cost
+        accounted for in the OpenAI implementation.
+        """
+        total = 2  # conversation framing
+        for message in messages:
+            total += 4  # per-message overhead
+            content = message.get("content", "")
+            total += max(1, len(content) // self._CHARS_PER_TOKEN)
+        return total

@@ -75,6 +75,7 @@ def setup_mlflow(experiment_name: str) -> bool:
     try:
         mlflow.langchain.autolog()
         mlflow.openai.autolog()
+        mlflow.gemini.autolog()
         mlflow.set_tracking_uri(str(MLflowConfig.URL))
         mlflow.set_experiment(experiment_name)
         return True

@@ -11,13 +11,12 @@ Handles dynamic pipeline management operations during experiment execution:
 import json
 import time
 
-from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
 from rapidfireai.evals.utils.constants import RERANKER_CLASS_REGISTRY, SEARCH_DEFAULTS, SEARCH_TYPE_KEYS
 
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
-from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig
+from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig, RFGeminiAPIModelConfig
 from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
 from rapidfireai.evals.utils.logger import RFLogger
 
@@ -375,6 +374,8 @@ class InteractiveControlHandler:
                 pipeline_type = "vllm"
             elif isinstance(parent_model_config, RFOpenAIAPIModelConfig):
                 pipeline_type = "openai"
+            elif isinstance(parent_model_config, RFGeminiAPIModelConfig):
+                pipeline_type = "gemini"
             else:
                 raise ValueError("Cannot determine pipeline type from parent")
 
@@ -419,8 +420,30 @@ class InteractiveControlHandler:
                 max_completion_tokens=edited_json.get("max_completion_tokens", parent_max_completion_tokens),
             )
 
+        elif pipeline_type.lower() == "gemini":
+            # Get parent's baseline config from _user_params (original dicts)
+            parent_client_config = parent_model_config._user_params.get("client_config", {})
+            parent_model_config_dict = parent_model_config._user_params.get("model_config", {})
+            parent_rpm = parent_model_config._user_params.get("rpm_limit", 500)
+            parent_tpm = parent_model_config._user_params.get("tpm_limit", 1_000_000)
+            parent_max_completion_tokens = parent_model_config._user_params.get("max_completion_tokens", None)
+
+            # Apply edits from JSON using key-by-key merging (user values override parent values)
+            client_config = {**parent_client_config, **edited_json.get("client_config", {})}
+            model_config_dict = {**parent_model_config_dict, **edited_json.get("model_config", {})}
+
+            model_config = RFGeminiAPIModelConfig(
+                client_config=client_config,
+                model_config=model_config_dict,
+                rag=rag,
+                prompt_manager=prompt_manager,
+                rpm_limit=edited_json.get("rpm_limit", parent_rpm),
+                tpm_limit=edited_json.get("tpm_limit", parent_tpm),
+                max_completion_tokens=edited_json.get("max_completion_tokens", parent_max_completion_tokens),
+            )
+
         else:
-            raise ValueError(f"Unknown pipeline_type: {pipeline_type}. Supported types: 'vllm', 'openai'")
+            raise ValueError(f"Unknown pipeline_type: {pipeline_type}. Supported types: 'vllm', 'openai', 'gemini'")
 
         # Build complete pipeline_config structure (inherit from parent if not in JSON)
         parent_batch_size = parent_full_config.get("batch_size", 32)
@@ -500,30 +523,36 @@ class InteractiveControlHandler:
             except Exception as e:
                 self.logger.warning(f"Failed to create MLflow run for cloned pipeline {new_pipeline_id}: {e}")
 
-        # Reuse experiment-wide rate limiter actor for OpenAI pipelines
-        # Since rate limiting is now at the experiment level, all OpenAI pipelines share the same rate limiter
-        if isinstance(model_config, RFOpenAIAPIModelConfig) and pipeline_to_rate_limiter is not None:
-            # Get the shared rate limiter actor from any existing OpenAI pipeline
+        # Reuse experiment-wide rate limiter actor for API pipelines (OpenAI or Gemini).
+        # Each backend has its own shared rate limiter; find the one that matches the cloned pipeline's type.
+        if isinstance(model_config, (RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig)) and pipeline_to_rate_limiter is not None:
+            backend_type = RFOpenAIAPIModelConfig if isinstance(model_config, RFOpenAIAPIModelConfig) else RFGeminiAPIModelConfig
+            backend_name = "OpenAI" if isinstance(model_config, RFOpenAIAPIModelConfig) else "Gemini"
+
             existing_rate_limiter = None
             for pid, rate_limiter_actor in pipeline_to_rate_limiter.items():
-                if rate_limiter_actor is not None:
+                if rate_limiter_actor is None:
+                    continue
+                sibling_pipeline = pipeline_id_to_config.get(pid, {}).get("pipeline")
+                if isinstance(sibling_pipeline, backend_type):
                     existing_rate_limiter = rate_limiter_actor
                     break
 
             if existing_rate_limiter:
-                # Reuse the experiment-wide rate limiter
                 pipeline_to_rate_limiter[new_pipeline_id] = existing_rate_limiter
-                self.logger.info(f"Cloned OpenAI pipeline {new_pipeline_id} will use experiment-wide rate limiter")
+                self.logger.info(f"Cloned {backend_name} pipeline {new_pipeline_id} will use experiment-wide rate limiter")
             else:
-                # This should not happen - experiment should always have a rate limiter for OpenAI pipelines
                 raise RuntimeError(
-                    f"Cannot clone OpenAI pipeline {new_pipeline_id}: no experiment-wide rate limiter found. "
-                    "This suggests the experiment was not properly configured with OpenAI rate limits."
+                    f"Cannot clone {backend_name} pipeline {new_pipeline_id}: no experiment-wide rate limiter found. "
+                    f"This suggests the experiment was not properly configured with {backend_name} rate limits."
                 )
 
-            # Register max_completion_tokens for the cloned OpenAI pipeline
+            # Register max_completion_tokens for the cloned pipeline
             if pipeline_to_max_completion_tokens is not None:
-                max_completion_tokens = model_config.model_config.get("max_completion_tokens", 150)
+                if isinstance(model_config, RFGeminiAPIModelConfig):
+                    max_completion_tokens = model_config.model_config.get("max_output_tokens", 150)
+                else:
+                    max_completion_tokens = model_config.model_config.get("max_completion_tokens", 150)
                 pipeline_to_max_completion_tokens[new_pipeline_id] = max_completion_tokens
 
         # Initialize aggregator for the new pipeline
@@ -547,17 +576,10 @@ class InteractiveControlHandler:
         pipeline = pipeline_config["pipeline"]
 
         # Extract model name
-        if isinstance(model_config, RFOpenAIAPIModelConfig):
-            # For OpenAI, model name is in model_config.model_config
-            model_name = model_config.model_config.get("model", "Unknown")
-        elif isinstance(model_config, RFvLLMModelConfig):
-            # For vLLM, model name is in model_config.model_config
+        if isinstance(model_config, (RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFvLLMModelConfig)):
             model_name = model_config.model_config.get("model", "Unknown")
         elif hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-            if "model" in pipeline.model_config:
-                model_name = pipeline.model_config["model"]
-            else:
-                model_name = "Unknown"
+            model_name = pipeline.model_config.get("model", "Unknown")
         else:
             model_name = "Unknown"
 
