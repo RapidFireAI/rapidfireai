@@ -1032,7 +1032,7 @@ class Controller:
                         "rpm": pipeline.rpm_limit,
                         "tpm": pipeline.tpm_limit,
                     }
-                    openai_max_completion_tokens_by_model[model_name] = model_config.get("max_completion_tokens", 150)
+                    openai_max_completion_tokens_by_model[model_name] = pipeline.max_completion_tokens
                 elif (openai_model_rate_limits[model_name]["rpm"] != pipeline.rpm_limit or
                       openai_model_rate_limits[model_name]["tpm"] != pipeline.tpm_limit):
                     self.logger.warning(
@@ -1040,10 +1040,7 @@ class Controller:
                         f"Using first encountered values: {openai_model_rate_limits[model_name]}"
                     )
 
-                pipeline_to_max_completion_tokens[pipeline_id] = model_config.get(
-                    "max_completion_tokens",
-                    openai_max_completion_tokens_by_model.get(model_name, 150)
-                )
+                pipeline_to_max_completion_tokens[pipeline_id] = pipeline.max_completion_tokens
                 openai_pipeline_ids.append(pipeline_id)
                 pipeline_to_rate_limiter[pipeline_id] = None
 
@@ -1062,7 +1059,7 @@ class Controller:
                         "rpm": pipeline.rpm_limit,
                         "tpm": pipeline.tpm_limit,
                     }
-                    gemini_max_completion_tokens_by_model[model_name] = model_config.get("max_output_tokens", 150)
+                    gemini_max_completion_tokens_by_model[model_name] = pipeline.max_completion_tokens
                 elif (gemini_model_rate_limits[model_name]["rpm"] != pipeline.rpm_limit or
                       gemini_model_rate_limits[model_name]["tpm"] != pipeline.tpm_limit):
                     self.logger.warning(
@@ -1070,10 +1067,7 @@ class Controller:
                         f"Using first encountered values: {gemini_model_rate_limits[model_name]}"
                     )
 
-                pipeline_to_max_completion_tokens[pipeline_id] = model_config.get(
-                    "max_output_tokens",
-                    gemini_max_completion_tokens_by_model.get(model_name, 150)
-                )
+                pipeline_to_max_completion_tokens[pipeline_id] = pipeline.max_completion_tokens
                 gemini_pipeline_ids.append(pipeline_id)
                 pipeline_to_rate_limiter[pipeline_id] = None
 

@@ -422,16 +422,51 @@ class GoogleGeminiRateLimiter(BaseRateLimiter):
         # character-based approximation instead.
         pass
 
+    # Gemini charges ~258 tokens per image (standard tile budget).
+    # Audio is billed at 32 tokens/second; without duration metadata we use a
+    # conservative fixed estimate. Video frames are similarly opaque offline.
+    _TOKENS_PER_IMAGE = 258
+    _TOKENS_PER_AUDIO_OR_VIDEO = 512
+
+    def _count_part_tokens(self, part: dict) -> int:
+        """Return a token estimate for a single Gemini message part."""
+        if "text" in part:
+            return max(1, len(part["text"]) // self._CHARS_PER_TOKEN)
+
+        mime = None
+        if "inline_data" in part:
+            mime = part["inline_data"].get("mime_type", "")
+        elif "file_data" in part:
+            mime = part["file_data"].get("mime_type", "")
+
+        if mime is not None:
+            if mime.startswith("image/"):
+                return self._TOKENS_PER_IMAGE
+            if mime.startswith(("audio/", "video/")):
+                return self._TOKENS_PER_AUDIO_OR_VIDEO
+
+        # Unknown part type — use a small non-zero placeholder.
+        return 4
+
     def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
         """
-        Estimate token count via character length (~4 chars per token).
+        Estimate token count for Gemini-format messages.
 
-        Includes a small per-message overhead to mirror the formatting cost
-        accounted for in the OpenAI implementation.
+        Each message must follow the Gemini SDK structure::
+
+            {"role": "user", "parts": [{"text": "..."}, ...]}
+
+        Part types handled:
+        - ``{"text": "..."}``                  — character-based estimate (~4 chars/token)
+        - ``{"inline_data": {...}}``            — fixed estimate per modality
+        - ``{"file_data": {...}}``              — fixed estimate per modality
+        - anything else                        — small non-zero placeholder
+
+        Includes a small per-message overhead to account for role/turn framing.
         """
         total = 2  # conversation framing
         for message in messages:
-            total += 4  # per-message overhead
-            content = message.get("content", "")
-            total += max(1, len(content) // self._CHARS_PER_TOKEN)
+            total += 4  # per-message role/turn overhead
+            for part in message.get("parts", []):
+                total += self._count_part_tokens(part)
         return total
