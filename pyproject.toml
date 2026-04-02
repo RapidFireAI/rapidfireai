@@ -84,9 +84,6 @@ colab_evals = [
     "openai>=1.106.1",
     "tiktoken>=0.11.0",
 
-    # Gemini API
-    "google-genai==1.69.0",
-
     # LangChain Ecosystem
     "langchain",
     "langchain-classic",
@@ -94,7 +91,6 @@ colab_evals = [
     "langchain-community",
     "langchain-openai",
     "langchain-huggingface",
-    "langchain-google-genai",
 
     # Statistical Analysis
 
@@ -141,9 +137,6 @@ local_evals = [
     "openai==1.106.1",
     "tiktoken==0.11.0",
 
-    # Gemini API
-    "google-genai==1.69.0",
-
     # LangChain Ecosystem
     "langchain",
     "langchain-classic",
@@ -151,7 +144,6 @@ local_evals = [
     "langchain-community",
     "langchain-openai",
     "langchain-huggingface",
-    "langchain-google-genai",
 
     # Vector Search
     "faiss-gpu-cu12==1.12.0",
@@ -211,9 +203,6 @@ local_fit = [
     "openai==1.106.1",
     "tiktoken==0.11.0",
 
-    # Gemini API
-    "google-genai==1.69.0",
-
     # LangChain Ecosystem
     "langchain",
     "langchain-classic",
@@ -221,7 +210,6 @@ local_fit = [
     "langchain-community",
     "langchain-openai",
     "langchain-huggingface",
-    "langchain-google-genai",
 
     # Vector Search
     "faiss-gpu-cu12==1.12.0",

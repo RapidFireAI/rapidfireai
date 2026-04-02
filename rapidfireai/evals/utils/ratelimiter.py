@@ -428,8 +428,11 @@ class GoogleGeminiRateLimiter(BaseRateLimiter):
     _TOKENS_PER_IMAGE = 258
     _TOKENS_PER_AUDIO_OR_VIDEO = 512
 
-    def _count_part_tokens(self, part: dict) -> int:
+    def _count_part_tokens(self, part: dict | str) -> int:
         """Return a token estimate for a single Gemini message part."""
+        if isinstance(part, str):
+            return max(1, len(part) // self._CHARS_PER_TOKEN)
+
         if "text" in part:
             return max(1, len(part["text"]) // self._CHARS_PER_TOKEN)
 
@@ -457,6 +460,7 @@ class GoogleGeminiRateLimiter(BaseRateLimiter):
             {"role": "user", "parts": [{"text": "..."}, ...]}
 
         Part types handled:
+        - plain ``str``                        — character-based estimate (~4 chars/token)
         - ``{"text": "..."}``                  — character-based estimate (~4 chars/token)
         - ``{"inline_data": {...}}``            — fixed estimate per modality
         - ``{"file_data": {...}}``              — fixed estimate per modality
