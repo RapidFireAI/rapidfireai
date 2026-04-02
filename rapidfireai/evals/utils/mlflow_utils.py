@@ -72,10 +72,23 @@ def setup_mlflow(experiment_name: str) -> bool:
         os.environ["RF_MLFLOW_ENABLED"] = "false"
         return False
 
+    _autolog_integrations = [
+        ("langchain", mlflow.langchain.autolog),
+        ("openai", mlflow.openai.autolog),
+        ("gemini", mlflow.gemini.autolog),
+    ]
+    for integration_name, autolog_fn in _autolog_integrations:
+        try:
+            autolog_fn()
+        except Exception as exc:
+            warnings.warn(
+                f"MLflow {integration_name} autolog failed ({exc}). "
+                f"Tracing for {integration_name} will be unavailable this session.",
+                UserWarning,
+                stacklevel=2,
+            )
+
     try:
-        mlflow.langchain.autolog()
-        mlflow.openai.autolog()
-        mlflow.gemini.autolog()
         mlflow.set_tracking_uri(str(MLflowConfig.URL))
         mlflow.set_experiment(experiment_name)
         return True
