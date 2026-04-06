@@ -313,9 +313,11 @@ check_startup_issues() {
         print_error "MLflow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
         return 1
     fi
-    if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
-        print_error "Frontend $RF_FRONTEND_HOST:$RF_FRONTEND_PORT in use"
-        return 1
+    if [[ "$RF_START_FRONTEND" == "true" ]]; then
+        if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
+            print_error "Frontend $RF_FRONTEND_HOST:$RF_FRONTEND_PORT in use"
+            return 1
+        fi
     fi
     if ping_port $RF_API_HOST $RF_API_PORT; then
         print_error "API port $RF_API_HOST:$RF_API_PORT in use"
@@ -812,7 +814,7 @@ show_status() {
         fi
     fi
 
-    if [[ "$RF_START_FRONTEND" == "true" ]] && { [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" != "frontend" ]]; }; then
+    if [[ "$RF_START_FRONTEND" == "true" ]] && { [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" == "frontend" ]]; }; then
         if [[ -f "$RF_LOG_PATH/converge_frontend.log" ]]; then
             local size=$(du -h "$RF_LOG_PATH/converge_frontend.log" | cut -f1)
             print_status "- $RF_LOG_PATH/converge_frontend.log: $size"
@@ -821,7 +823,7 @@ show_status() {
         fi
     fi
 
-    if [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" != "backend" ]]; then
+    if [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" == "backend" ]]; then
         if [[ -f "$RF_LOG_PATH/converge_backend.log" ]]; then
             local size=$(du -h "$RF_LOG_PATH/converge_backend.log" | cut -f1)
             print_status "- $RF_LOG_PATH/converge_backend.log: $size"
