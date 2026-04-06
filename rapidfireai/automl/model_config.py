@@ -43,6 +43,7 @@ try:
         InferenceEngine,
         OpenAIInferenceEngine,
         VLLMInferenceEngine,
+        GoogleGeminiInferenceEngine,
     )
 
     _EVALS_MODULES_AVAILABLE = True
@@ -53,6 +54,7 @@ except ImportError:
     InferenceEngine = None
     OpenAIInferenceEngine = None
     VLLMInferenceEngine = None
+    GoogleGeminiInferenceEngine = None
     _EVALS_MODULES_AVAILABLE = False
 
 
@@ -424,29 +426,95 @@ if (
             """
             Extract sampling parameters from OpenAI model_config.
 
-            For OpenAI models, sampling parameters are stored directly in model_config
-            (e.g., temperature, top_p, max_completion_tokens).
+            Returns model_config minus non-sampling identity keys (e.g. "model"),
+            which are stored separately in the serialized output.
 
             Returns:
                 Dictionary of sampling parameters.
             """
-            # Extract sampling-related parameters from model_config
-            sampling_keys = [
-                "temperature",
-                "top_p",
-                "max_completion_tokens",
-                "frequency_penalty",
-                "presence_penalty",
-                "seed",
-                "reasoning_effort",  # For o1 models
-            ]
-            return {
-                key: self.model_config.get(key)
-                for key in sampling_keys
-                if key in self.model_config
+            _non_sampling_keys = {"model"}
+            return {k: v for k, v in self.model_config.items() if k not in _non_sampling_keys}
+
+    class RFGeminiAPIModelConfig(ModelConfig):
+        """Google Gemini API model configuration for evals mode."""
+
+        def __init__(
+            self,
+            client_config: dict[str, Any],
+            model_config: dict[str, Any],
+            rag: LangChainRagSpec = None,
+            prompt_manager: PromptManager = None,
+            rpm_limit: int = None,
+            tpm_limit: int = None,
+            max_completion_tokens: int = None,
+        ):
+            """
+            Initialize Google Gemini API model configuration.
+
+            Args:
+                client_config: Gemini client configuration (api_key, vertexai, project, etc.)
+                model_config: Model configuration (model name, temperature, top_p, top_k, etc.)
+                rag: Optional RAG specification (index will be built automatically by Controller)
+                prompt_manager: Optional prompt manager for few-shot examples
+                rpm_limit: Requests per minute limit for this model (required for rate limiting)
+                tpm_limit: Tokens per minute limit for this model (required for rate limiting)
+                max_completion_tokens: Maximum output tokens per request. If None, will be extracted
+                                       from model_config if present, otherwise defaults to 150.
+            """
+            super().__init__()
+            self.client_config = client_config
+            self.model_config = model_config
+            self.rag = rag
+            self.prompt_manager = prompt_manager
+            self.rpm_limit = rpm_limit
+            self.tpm_limit = tpm_limit
+
+            # Extract max_completion_tokens from model_config if not provided
+            if max_completion_tokens is None:
+                max_completion_tokens = model_config.get("max_output_tokens", 150)
+            self.max_completion_tokens = max_completion_tokens
+
+            self._user_params = {
+                "client_config": client_config,
+                "model_config": model_config,
+                "rag": rag,
+                "prompt_manager": prompt_manager,
+                "rpm_limit": rpm_limit,
+                "tpm_limit": tpm_limit,
+                "max_completion_tokens": max_completion_tokens,
             }
+
+        def get_engine_class(self) -> type[InferenceEngine]:
+            """Return GoogleGeminiInferenceEngine class."""
+            return GoogleGeminiInferenceEngine
+
+        def get_engine_kwargs(self) -> dict[str, Any]:
+            """
+            Return configuration for GoogleGeminiInferenceEngine.
+
+            Note: rate_limiter_actor will be added by Controller when creating actors.
+            max_completion_tokens is available via self.max_completion_tokens if needed.
+            """
+            return {
+                "client_config": self.client_config,
+                "model_config": self.model_config,
+            }
+
+        def sampling_params_to_dict(self) -> dict[str, Any]:
+            """
+            Extract sampling parameters from Gemini model_config.
+
+            Returns model_config minus non-sampling identity keys (e.g. "model"),
+            which are stored separately in the serialized output.
+
+            Returns:
+                Dictionary of sampling parameters.
+            """
+            _non_sampling_keys = {"model"}
+            return {k: v for k, v in self.model_config.items() if k not in _non_sampling_keys}
 
 else:
     # Define placeholder classes if dependencies are not available
     RFvLLMModelConfig = None
     RFOpenAIAPIModelConfig = None
+    RFGeminiAPIModelConfig = None

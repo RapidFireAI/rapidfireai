@@ -19,6 +19,9 @@ transformers>=4.56.1
 openai==1.106.1
 tiktoken==0.11.0
 
+# Gemini API
+google-genai>=1.69.0
+
 # LangChain Ecosystem
 langchain
 langchain-classic
@@ -26,6 +29,7 @@ langchain-core
 langchain-community
 langchain-openai
 langchain-huggingface
+langchain-google-genai>=4.2.1
 
 # Vector Search
 faiss-gpu-cu12==1.13.0

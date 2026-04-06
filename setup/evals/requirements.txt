@@ -18,12 +18,16 @@ flashinfer-python
 openai
 tiktoken
 
+# Gemini API
+google-genai>=1.69.0
+
 # LangChain Ecosystem
 langchain
 langchain-core
 langchain-community
 langchain-openai
 langchain-huggingface
+langchain-google-genai>=4.2.1
 
 # Vector Search
 faiss-gpu
