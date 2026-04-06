@@ -160,11 +160,13 @@ class RFGridSearch(AutoMLAlgorithm):
         """Generate runs for evals mode."""
         runs = []
         for config in self.configs:
-            # Handle pipeline config (vllm_config or openai_config)
+            # Handle pipeline config (vllm_config, openai_config, or gemini_config)
             if "vllm_config" in config:
                 pipeline = config["vllm_config"]
             elif "openai_config" in config:
                 pipeline = config["openai_config"]
+            elif "gemini_config" in config:
+                pipeline = config["gemini_config"]
             elif "pipeline" in config:
                 pipeline = config["pipeline"]
             else:
@@ -189,9 +191,7 @@ class RFGridSearch(AutoMLAlgorithm):
                 additional_kwargs = {
                     k: v
                     for k, v in config.items()
-                    if k != "pipeline"
-                    and k != "vllm_config"
-                    and k != "openai_config"
+                    if k not in {"pipeline", "vllm_config", "openai_config", "gemini_config"}
                     and v is not None
                 }
                 additional_kwargs_instances = (

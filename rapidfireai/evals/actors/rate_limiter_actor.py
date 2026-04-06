@@ -1,14 +1,19 @@
 """
-Ray Actor for centralized OpenAI API rate limiting.
+Ray Actor for centralized API rate limiting.
 
 Provides a single point of coordination for rate limiting across all
-distributed query processing actors.
+distributed query processing actors. Supports OpenAI and Google Gemini backends.
 """
 import ray
 
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
-from rapidfireai.evals.utils.ratelimiter import OpenAIRateLimiter, RequestStatus
+from rapidfireai.evals.utils.ratelimiter import OpenAIRateLimiter, GoogleGeminiRateLimiter, RequestStatus
 from rapidfireai.evals.utils.logger import RFLogger
+
+_BACKEND_MAP = {
+    "openai": OpenAIRateLimiter,
+    "gemini": GoogleGeminiRateLimiter,
+}
 
 
 @ray.remote
@@ -18,6 +23,7 @@ class RateLimiterActor:
 
     All query processing actors make remote calls to this single actor
     to coordinate rate limiting across the entire distributed system.
+    Supports OpenAI and Google Gemini backends via the ``backend`` parameter.
     """
 
     def __init__(
@@ -26,6 +32,7 @@ class RateLimiterActor:
         max_completion_tokens: int = 150,
         limit_safety_ratio: float = 0.98,
         minimum_wait_time: float = 3.0,
+        backend: str = "openai",
         experiment_name: str = "unknown",
         experiment_path: str = RF_EXPERIMENT_PATH,
     ):
@@ -34,18 +41,25 @@ class RateLimiterActor:
 
         Args:
             model_rate_limits: Dict mapping model name to rate limits, e.g.
-                {"gpt-4": {"rpm": 500, "tpm": 50000}, "gpt-3.5-turbo": {"rpm": 1000, "tpm": 100000}}
+                {"gpt-4": {"rpm": 500, "tpm": 50000}, "gemini-2.0-flash": {"rpm": 1000, "tpm": 100000}}
             max_completion_tokens: Maximum completion tokens per request
             limit_safety_ratio: Safety margin (default 0.98 = 98% of limit)
             minimum_wait_time: Minimum wait time when rate limited (seconds)
+            backend: Which API backend to use — ``"openai"`` (default) or ``"gemini"``
             experiment_name: Name of the experiment for logging
             experiment_path: Path to experiment logs/artifacts
         """
-        # Initialize logger
+        if backend not in _BACKEND_MAP:
+            raise ValueError(
+                f"Unknown rate limiter backend '{backend}'. "
+                f"Supported backends: {list(_BACKEND_MAP.keys())}"
+            )
+
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
         logger = logging_manager.get_logger("RateLimiterActor")
 
-        self.limiter = OpenAIRateLimiter(
+        limiter_cls = _BACKEND_MAP[backend]
+        self.limiter = limiter_cls(
             model_rate_limits=model_rate_limits,
             max_completion_tokens=max_completion_tokens,
             limit_safety_ratio=limit_safety_ratio,
@@ -83,7 +97,7 @@ class RateLimiterActor:
 
         Args:
             messages: List of message dicts
-            model_name: OpenAI model name
+            model_name: Model name (must match a key in model_rate_limits)
 
         Returns:
             Estimated total tokens (prompt + completion)

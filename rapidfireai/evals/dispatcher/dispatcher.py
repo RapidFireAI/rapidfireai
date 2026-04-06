@@ -420,8 +420,8 @@ class Dispatcher:
             if not pipeline_type:
                 return jsonify({"error": "config_json must include 'pipeline_type'"}), 400
 
-            if pipeline_type.lower() not in ["vllm", "openai"]:
-                return jsonify({"error": "pipeline_type must be 'vllm' or 'openai'"}), 400
+            if pipeline_type.lower() not in ["vllm", "openai", "gemini"]:
+                return jsonify({"error": "pipeline_type must be 'vllm', 'openai', or 'gemini'"}), 400
 
             # Type-specific validation
             if pipeline_type.lower() == "vllm":
@@ -431,6 +431,10 @@ class Dispatcher:
             elif pipeline_type.lower() == "openai":
                 if "client_config" not in config_json or "model_config" not in config_json:
                     return jsonify({"error": "OpenAI pipelines require 'client_config' and 'model_config'"}), 400
+
+            elif pipeline_type.lower() == "gemini":
+                if "client_config" not in config_json or "model_config" not in config_json:
+                    return jsonify({"error": "Gemini pipelines require 'client_config' and 'model_config'"}), 400
 
             # Prepare request data for IC operation
             request_data = {

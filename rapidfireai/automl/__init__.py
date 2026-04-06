@@ -30,12 +30,14 @@ try:
         ModelConfig,
         RFvLLMModelConfig,
         RFOpenAIAPIModelConfig,
+        RFGeminiAPIModelConfig,
     )
     _EVALS_CONFIGS_AVAILABLE = True
 except (ImportError, AttributeError, TypeError):
     ModelConfig = None
     RFvLLMModelConfig = None
     RFOpenAIAPIModelConfig = None
+    RFGeminiAPIModelConfig = None
     _EVALS_CONFIGS_AVAILABLE = False
 
 # Conditionally import evals-specific helper classes
@@ -74,6 +76,7 @@ if _EVALS_CONFIGS_AVAILABLE:
         "ModelConfig",
         "RFvLLMModelConfig",
         "RFOpenAIAPIModelConfig",
+        "RFGeminiAPIModelConfig",
     ])
 
 # Conditionally add evals helper classes to __all__

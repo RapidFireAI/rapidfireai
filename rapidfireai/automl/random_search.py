@@ -186,6 +186,8 @@ class RFRandomSearch(AutoMLAlgorithm):
                 pipeline = config["vllm_config"]
             elif "openai_config" in config:
                 pipeline = config["openai_config"]
+            elif "gemini_config" in config:
+                pipeline = config["gemini_config"]
             elif "pipeline" in config:
                 pipeline = config["pipeline"]
             else:
@@ -211,9 +213,7 @@ class RFRandomSearch(AutoMLAlgorithm):
                 additional_kwargs = {
                     k: v
                     for k, v in config.items()
-                    if k != "pipeline"
-                    and k != "vllm_config"
-                    and k != "openai_config"
+                    if k not in {"pipeline", "vllm_config", "openai_config", "gemini_config"}
                     and v is not None
                 }
                 additional_kwargs_instances = (

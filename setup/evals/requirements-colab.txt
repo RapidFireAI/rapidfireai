@@ -14,6 +14,9 @@ transformers>=4.56.1,<5.0.0
 openai>=1.106.1
 tiktoken>=0.12.0
 
+# Gemini API
+google-genai>=1.69.0
+
 # LangChain Ecosystem
 langchain>=1.0.5
 langchain-classic>=1.0.0
@@ -23,6 +26,7 @@ langchain-openai>=1.0.2
 langchain-huggingface>=1.0.0
 langchain-pinecone>=0.2.13
 langchain-postgres>=0.0.17
+langchain-google-genai>=4.2.1
 
 # Data Manipulation & Display
 unstructured>=0.18.15
