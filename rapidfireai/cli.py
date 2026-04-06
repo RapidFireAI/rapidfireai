@@ -456,6 +456,13 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     )
 
     parser.add_argument(
+        "--no-frontend",
+        action="store_true",
+        help="Do not start the dashboard (Flask on RF_FRONTEND_PORT); MLflow and the API still start when enabled. "
+        "With Converge, only the backend is started when --converge=all.",
+    )
+
+    parser.add_argument(
         "--test-notebooks",
         action="store_true",
         help="Copy test notebooks to the tutorial_notebooks directory",
@@ -494,6 +501,9 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         os.environ["RF_COLAB_MODE"] = "true"
     elif ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
         os.environ["RF_COLAB_MODE"] = "true"
+
+    if args.no_frontend:
+        os.environ["RF_START_FRONTEND"] = "false"
     
     # Handle force command separately
     if args.force:

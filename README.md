@@ -357,6 +357,7 @@ used to overwrite the defaults.
 - `RF_PYTHON_EXECUTABLE` - Python executable (default: python3 falls back to python if not found)
 - `RF_PIP_EXECUTABLE` - pip executable (default: pip3 falls back to pip if not found)
 - `RF_CONVERGE_MODE` - Whether to use Rapidfire AI Converge frontend and backend if available (default: all)
+- `RF_NO_FRONTEND` - Option to disable starting the frontend
 
 ## Community & Governance
 
