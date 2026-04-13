@@ -3,6 +3,7 @@ import {
   Button,
   DropdownMenu,
   ModelsIcon,
+  PlugIcon,
   PlusIcon,
   TextBoxIcon,
   useDesignSystemTheme,
@@ -25,6 +26,7 @@ const isExperimentsActive = (location: Location) =>
   matchPath('/experiments/*', location.pathname) || matchPath('/compare-experiments/*', location.pathname);
 const isModelsActive = (location: Location) => matchPath('/models/*', location.pathname);
 const isPromptsActive = (location: Location) => matchPath('/prompts/*', location.pathname);
+const isAIGatewayActive = (location: Location) => matchPath('/gateway/*', location.pathname);
 
 export function MlflowSidebar() {
   const location = useLocation();
@@ -97,6 +99,15 @@ export function MlflowSidebar() {
         ),
       },
     },
+    {
+      key: 'ai-gateway',
+      icon: <PlugIcon />,
+      linkProps: {
+        to: ExperimentTrackingRoutes.aiGatewayPageRoute,
+        isActive: isAIGatewayActive,
+        children: <FormattedMessage defaultMessage="AI Gateway" description="Sidebar link for AI Gateway tab" />,
+      },
+    },
   ];
 
   return (
@@ -121,10 +132,10 @@ export function MlflowSidebar() {
         </DropdownMenu.Trigger>
 
         <DropdownMenu.Content side="right" sideOffset={theme.spacing.sm} align="start">
-          {menuItems.map(({ key, icon, dropdownProps }) => (
-            <DropdownMenu.Item key={key} componentId={dropdownProps.componentId} onClick={dropdownProps.onClick}>
+          {menuItems.filter(({ dropdownProps }) => dropdownProps).map(({ key, icon, dropdownProps }) => (
+            <DropdownMenu.Item key={key} componentId={dropdownProps!.componentId} onClick={dropdownProps!.onClick}>
               <DropdownMenu.IconWrapper>{icon}</DropdownMenu.IconWrapper>
-              {dropdownProps.children}
+              {dropdownProps!.children}
             </DropdownMenu.Item>
           ))}
         </DropdownMenu.Content>
