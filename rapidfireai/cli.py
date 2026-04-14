@@ -159,6 +159,25 @@ def install_packages(
         cuda_major, cuda_minor = parsed_cuda
     else:
         cuda_major, cuda_minor = get_cuda_version()
+
+    # Failed detection returns (0, 0); without this, non-Colab --evals skips the CUDA>=12
+    # torch stack silently (no vllm/torch wheels), while still reporting success.
+    if (
+        not cuda_from_user
+        and cuda_major == 0
+        and cuda_minor == 0
+        and not ColabConfig.ON_COLAB
+        and evals
+    ):
+        print(
+            "❌ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
+            "   Pass your CUDA version explicitly, for example:\n"
+            "   rapidfireai init --evals --cudaversion 12.4\n"
+            "   If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).",
+            file=sys.stderr,
+        )
+        return 1
+
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
     setup_directory = None
