@@ -130,9 +130,4 @@ export const getRouteDefs = () => [
     pageId: PageId.metricPage,
   },
   ...getPromptPagesRouteDefs(),
-  {
-    path: RoutePaths.aiGatewayPage,
-    element: createLazyRouteElement(() => import('./pages/ai-gateway/AIGatewayPage')),
-    pageId: PageId.aiGatewayPage,
-  },
 ];

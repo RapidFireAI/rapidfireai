@@ -24,7 +24,6 @@ export enum PageId {
   compareRuns = 'mlflow.experiment.run.compare',
   metricPage = 'mlflow.metric.details',
   experimentPrompt = 'mlflow.experiment.prompt',
-  aiGatewayPage = 'mlflow.ai-gateway',
 }
 
 // Route path definitions (used in defining route elements)
@@ -103,9 +102,6 @@ export class RoutePaths {
   }
   static get promptDetailsPage() {
     return createMLflowRoutePath('/prompts/:promptName');
-  }
-  static get aiGatewayPage() {
-    return createMLflowRoutePath('/gateway');
   }
 }
 
@@ -271,10 +267,6 @@ class Routes {
    */
   static get promptsPageRoute() {
     return RoutePaths.promptsPage;
-  }
-
-  static get aiGatewayPageRoute() {
-    return RoutePaths.aiGatewayPage;
   }
 
   static getPromptDetailsPageRoute(promptName: string) {
