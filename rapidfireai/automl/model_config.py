@@ -41,9 +41,8 @@ try:
     from rapidfireai.evals.rag.prompt_manager import PromptManager
     from rapidfireai.evals.actors.inference_engines import (
         InferenceEngine,
-        OpenAIInferenceEngine,
+        APIInferenceEngine,
         VLLMInferenceEngine,
-        GoogleGeminiInferenceEngine,
     )
 
     _EVALS_MODULES_AVAILABLE = True
@@ -52,9 +51,8 @@ except ImportError:
     LangChainRagSpec = None
     PromptManager = None
     InferenceEngine = None
-    OpenAIInferenceEngine = None
+    APIInferenceEngine = None
     VLLMInferenceEngine = None
-    GoogleGeminiInferenceEngine = None
     _EVALS_MODULES_AVAILABLE = False
 
 
@@ -332,6 +330,11 @@ if (
                 "prompt_manager": prompt_manager,
             }
 
+        @property
+        def model_name(self) -> str:
+            """Return the model name from model_config."""
+            return self.model_config.get("model", "Unknown")
+
         def get_engine_class(self) -> type[InferenceEngine]:
             """Return VLLMInferenceEngine class."""
             return VLLMInferenceEngine
@@ -357,47 +360,89 @@ if (
             # This works across different vLLM versions
             return dict(vars(self.sampling_params))
 
-    class RFOpenAIAPIModelConfig(ModelConfig):
-        """OpenAI API model configuration for evals mode."""
+    class RFAPIModelConfig(ModelConfig):
+        """General API model configuration for evals mode.
+
+        Works with any provider (OpenAI, Gemini, Anthropic, etc.) via the MLflow
+        gateway, which exposes all providers through an OpenAI-compatible API.
+
+        During ``__init__``, the gateway secret, model definition(s), and
+        endpoint(s) described by *endpoint_config* are provisioned (or reused
+        if they already exist).  This means errors such as an unreachable
+        MLflow server or invalid API keys surface immediately.
+
+        ``endpoint`` inside *endpoint_config* can be:
+
+        * A single ``dict``  – one endpoint for this pipeline (leaf config).
+        * An ``automl.List`` – grid-search will expand it into individual
+          ``RFAPIModelConfig`` instances, one per endpoint dict.
+
+        A plain ``list`` is **not** supported because grid-search would not
+        expand it, leading to silent misconfiguration.
+        """
 
         def __init__(
             self,
             client_config: dict[str, Any],
-            model_config: dict[str, Any],
+            endpoint_config: dict[str, Any],
+            model_config: dict[str, Any] = None,
             rag: LangChainRagSpec = None,
             prompt_manager: PromptManager = None,
             rpm_limit: int = None,
             tpm_limit: int = None,
             max_completion_tokens: int = None,
+            verbose: bool = True,
         ):
             """
-            Initialize OpenAI API model configuration.
+            Initialize API model configuration.
+
+            Provisions the MLflow gateway resources (secret, model definitions,
+            endpoints) described by *endpoint_config*.  Raises on failure so
+            that misconfiguration is caught early.
 
             Args:
-                client_config: OpenAI client configuration (api_key, base_url, etc.)
-                model_config: Model configuration (model name, temperature, etc.)
-                rag: Optional RAG specification (index will be built automatically by Controller)
+                client_config: OpenAI-compatible client kwargs (max_retries, timeout, …).
+                    ``base_url`` and ``api_key`` are injected automatically by
+                    :meth:`get_engine_kwargs` to point at the gateway.
+                endpoint_config: MLflow gateway endpoint definition containing:
+
+                    - ``provider`` (str): e.g. ``"openai"``, ``"gemini"``
+                    - ``api_key_name`` (str): Name for the gateway secret
+                    - ``api_key`` (str): The actual API key value
+                    - ``api_base_url`` (str, optional): Provider base URL
+                    - ``endpoint``: ``dict`` or ``automl.List`` of dicts.
+                      Each dict must have ``"name"``; ``"model"`` is required
+                      only when the endpoint does not already exist.
+
+                model_config: Sampling/generation parameters for inference
+                    (temperature, max_completion_tokens, etc.)
+                rag: Optional RAG specification
                 prompt_manager: Optional prompt manager for few-shot examples
-                rpm_limit: Requests per minute limit for this model (required for rate limiting)
-                tpm_limit: Tokens per minute limit for this model (required for rate limiting)
-                max_completion_tokens: Maximum completion tokens per request. If None, will be extracted
-                                      from model_config if present, otherwise defaults to 150.
+                rpm_limit: Requests per minute limit
+                tpm_limit: Tokens per minute limit
+                max_completion_tokens: Max completion tokens per request.
+                    Extracted from *model_config* if not provided.
+                verbose: Print provisioning progress to stdout (default
+                    ``True``).  Set to ``False`` to suppress prints while
+                    still logging.  Used internally during grid/random
+                    search expansion to avoid duplicate output.
             """
             super().__init__()
             self.client_config = client_config
-            self.model_config = model_config
+            self.model_config = model_config or {}
             self.rag = rag
             self.prompt_manager = prompt_manager
             self.rpm_limit = rpm_limit
             self.tpm_limit = tpm_limit
 
-            # Extract max_completion_tokens from model_config if not provided
             if max_completion_tokens is None:
-                max_completion_tokens = model_config.get("max_completion_tokens", 150)
+                max_completion_tokens = self.model_config.get("max_completion_tokens", 150)
             self.max_completion_tokens = max_completion_tokens
 
+            # Preserve original user params (keeps automl List objects for grid search)
             self._user_params = {
                 "client_config": client_config,
+                "endpoint_config": endpoint_config,
                 "model_config": model_config,
                 "rag": rag,
                 "prompt_manager": prompt_manager,
@@ -406,115 +451,70 @@ if (
                 "max_completion_tokens": max_completion_tokens,
             }
 
+            # Validate endpoint: must be a single dict (leaf config) or an
+            # automl List (grid-search will expand into individual dicts).
+            # Plain lists are rejected — they would silently skip expansion.
+            endpoint_raw = endpoint_config.get("endpoint")
+            if endpoint_raw is None:
+                raise ValueError("endpoint_config must include 'endpoint'")
+
+            if not isinstance(endpoint_raw, (dict, List)):
+                raise TypeError(
+                    f"endpoint_config['endpoint'] must be a dict or automl List. "
+                    f"Got: {type(endpoint_raw).__name__}. "
+                    f"Use List([...]) from rapidfireai.automl to specify multiple endpoints."
+                )
+
+            # Provision gateway resources (idempotent get-or-create).
+            # For an automl List the gateway client normalises to a plain
+            # list internally; for a single dict it wraps it in a list.
+            from rapidfireai.evals.utils.gateway_utils import MLflowGatewayClient
+
+            gateway = MLflowGatewayClient()
+            self._gateway_endpoints = gateway.provision_endpoints(endpoint_config, verbose=verbose)
+
+            self.endpoint_config = endpoint_config
+
+        @property
+        def model_name(self) -> str:
+            """Return the endpoint name for display/logging."""
+            endpoint = self.endpoint_config.get("endpoint")
+            if isinstance(endpoint, dict):
+                return endpoint.get("name", "unknown")
+            if isinstance(endpoint, List):
+                return endpoint.values[0].get("name", "unknown") if endpoint.values else "unknown"
+            return "unknown"
+
         def get_engine_class(self) -> type[InferenceEngine]:
-            """Return OpenAIInferenceEngine class."""
-            return OpenAIInferenceEngine
+            """Return APIInferenceEngine class."""
+            return APIInferenceEngine
 
         def get_engine_kwargs(self) -> dict[str, Any]:
             """
-            Return configuration for OpenAIInferenceEngine.
+            Return configuration for APIInferenceEngine.
 
-            Note: rate_limiter_actor will be added by Controller when creating actors.
-            max_completion_tokens is available via self.max_completion_tokens if needed.
+            Injects the MLflow gateway ``base_url`` and a placeholder
+            ``api_key`` into *client_config* so the engine's OpenAI client
+            routes through the gateway (which handles real authentication).
             """
+            from rapidfireai.utils.constants import MLflowConfig
+
+            engine_client_config = {
+                **self.client_config,
+                "base_url": f"{MLflowConfig.URL}/gateway/mlflow/v1",
+                "api_key": "dummy",
+            }
             return {
-                "client_config": self.client_config,
+                "client_config": engine_client_config,
+                "endpoint_config": self.endpoint_config,
                 "model_config": self.model_config,
             }
 
         def sampling_params_to_dict(self) -> dict[str, Any]:
-            """
-            Extract sampling parameters from OpenAI model_config.
-
-            Returns model_config minus non-sampling identity keys (e.g. "model"),
-            which are stored separately in the serialized output.
-
-            Returns:
-                Dictionary of sampling parameters.
-            """
-            _non_sampling_keys = {"model"}
-            return {k: v for k, v in self.model_config.items() if k not in _non_sampling_keys}
-
-    class RFGeminiAPIModelConfig(ModelConfig):
-        """Google Gemini API model configuration for evals mode."""
-
-        def __init__(
-            self,
-            client_config: dict[str, Any],
-            model_config: dict[str, Any],
-            rag: LangChainRagSpec = None,
-            prompt_manager: PromptManager = None,
-            rpm_limit: int = None,
-            tpm_limit: int = None,
-            max_completion_tokens: int = None,
-        ):
-            """
-            Initialize Google Gemini API model configuration.
-
-            Args:
-                client_config: Gemini client configuration (api_key, vertexai, project, etc.)
-                model_config: Model configuration (model name, temperature, top_p, top_k, etc.)
-                rag: Optional RAG specification (index will be built automatically by Controller)
-                prompt_manager: Optional prompt manager for few-shot examples
-                rpm_limit: Requests per minute limit for this model (required for rate limiting)
-                tpm_limit: Tokens per minute limit for this model (required for rate limiting)
-                max_completion_tokens: Maximum output tokens per request. If None, will be extracted
-                                       from model_config if present, otherwise defaults to 150.
-            """
-            super().__init__()
-            self.client_config = client_config
-            self.model_config = model_config
-            self.rag = rag
-            self.prompt_manager = prompt_manager
-            self.rpm_limit = rpm_limit
-            self.tpm_limit = tpm_limit
-
-            # Extract max_completion_tokens from model_config if not provided
-            if max_completion_tokens is None:
-                max_completion_tokens = model_config.get("max_output_tokens", 150)
-            self.max_completion_tokens = max_completion_tokens
-
-            self._user_params = {
-                "client_config": client_config,
-                "model_config": model_config,
-                "rag": rag,
-                "prompt_manager": prompt_manager,
-                "rpm_limit": rpm_limit,
-                "tpm_limit": tpm_limit,
-                "max_completion_tokens": max_completion_tokens,
-            }
-
-        def get_engine_class(self) -> type[InferenceEngine]:
-            """Return GoogleGeminiInferenceEngine class."""
-            return GoogleGeminiInferenceEngine
-
-        def get_engine_kwargs(self) -> dict[str, Any]:
-            """
-            Return configuration for GoogleGeminiInferenceEngine.
-
-            Note: rate_limiter_actor will be added by Controller when creating actors.
-            max_completion_tokens is available via self.max_completion_tokens if needed.
-            """
-            return {
-                "client_config": self.client_config,
-                "model_config": self.model_config,
-            }
-
-        def sampling_params_to_dict(self) -> dict[str, Any]:
-            """
-            Extract sampling parameters from Gemini model_config.
-
-            Returns model_config minus non-sampling identity keys (e.g. "model"),
-            which are stored separately in the serialized output.
-
-            Returns:
-                Dictionary of sampling parameters.
-            """
-            _non_sampling_keys = {"model"}
-            return {k: v for k, v in self.model_config.items() if k not in _non_sampling_keys}
+            """Return the sampling configuration as a dictionary."""
+            return dict(self.model_config)
 
 else:
     # Define placeholder classes if dependencies are not available
     RFvLLMModelConfig = None
-    RFOpenAIAPIModelConfig = None
-    RFGeminiAPIModelConfig = None
+    RFAPIModelConfig = None

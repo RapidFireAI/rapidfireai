@@ -568,11 +568,9 @@ class Controller:
             flattened_config = get_flattened_config_leaf(json_config) if json_config else {}
 
             # Determine pipeline_type from the pipeline object
-            from rapidfireai.automl import RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFvLLMModelConfig
-            if isinstance(pipeline, RFOpenAIAPIModelConfig):
-                _pipeline_type = "openai"
-            elif isinstance(pipeline, RFGeminiAPIModelConfig):
-                _pipeline_type = "gemini"
+            from rapidfireai.automl import RFAPIModelConfig, RFvLLMModelConfig
+            if isinstance(pipeline, RFAPIModelConfig):
+                _pipeline_type = "api"
             else:
                 _pipeline_type = "vllm"
 
@@ -593,9 +591,8 @@ class Controller:
 
                     pipeline = pipeline_config.get("pipeline")
                     if pipeline:
-                        if hasattr(pipeline, "model_config") and pipeline.model_config:
-                            model_name = pipeline.model_config.get("model", "unknown")
-                            self.metric_manager.log_param(metric_run_id, "model", model_name)
+                        if hasattr(pipeline, "model_name"):
+                            self.metric_manager.log_param(metric_run_id, "model", pipeline.model_name)
 
                         if hasattr(pipeline, "rag") and pipeline.rag:
                             if hasattr(pipeline.rag, "search_type"):
@@ -926,15 +923,11 @@ class Controller:
             prompt_manager_k = None
             model_config = None
 
-            # Extract model name from config
             pipeline = pipeline_config["pipeline"]
-            if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-                if "model" in pipeline.model_config:
-                    model_name = pipeline.model_config["model"]
-                model_config_copy = pipeline.model_config.copy()
-                model_config_copy.pop("model", None)
-                if model_config_copy:
-                    model_config = model_config_copy
+            if hasattr(pipeline, "model_name"):
+                model_name = pipeline.model_name
+            if hasattr(pipeline, "model_config") and pipeline.model_config:
+                model_config = dict(pipeline.model_config)
 
             # Extract ALL RAG fields for display
             if hasattr(pipeline, "rag") and pipeline.rag is not None:
@@ -1004,125 +997,76 @@ class Controller:
         pipeline_to_rate_limiter = {}
         pipeline_to_max_completion_tokens = {}
 
-        # Per-backend tracking for rate limiter creation
-        openai_pipeline_ids = []
-        openai_model_rate_limits = {}
-        openai_max_completion_tokens_by_model = {}
-
-        gemini_pipeline_ids = []
-        gemini_model_rate_limits = {}
-        gemini_max_completion_tokens_by_model = {}
+        # Group API pipelines by provider so each provider gets its own rate limiter.
+        # provider_key -> {"pipeline_ids": [...], "model_rate_limits": {...}, "max_completion_tokens_by_model": {...}}
+        provider_groups: dict[str, dict] = {}
 
         for pipeline_id, pipeline_config in pipeline_id_to_config.items():
-            from rapidfireai.automl import RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig
+            from rapidfireai.automl import RFAPIModelConfig
             pipeline = pipeline_config["pipeline"]
 
-            if hasattr(pipeline, "model_config") and isinstance(pipeline, RFOpenAIAPIModelConfig):
-                model_config = pipeline.model_config
-                model_name = model_config.get("model", "gpt-5-mini")
+            if isinstance(pipeline, RFAPIModelConfig):
+                endpoint_name = pipeline.model_name
+                provider = pipeline.endpoint_config.get("provider", "openai")
 
                 if pipeline.rpm_limit is None or pipeline.tpm_limit is None:
                     raise ValueError(
-                        f"OpenAI pipeline {pipeline_id} (model: {model_name}) is missing rate limits. "
-                        f"Please provide rpm_limit and tpm_limit to RFOpenAIAPIModelConfig."
+                        f"API pipeline {pipeline_id} (endpoint: {endpoint_name}) is missing rate limits. "
+                        f"Please provide rpm_limit and tpm_limit to RFAPIModelConfig."
                     )
 
-                if model_name not in openai_model_rate_limits:
-                    openai_model_rate_limits[model_name] = {
+                if provider not in provider_groups:
+                    provider_groups[provider] = {
+                        "pipeline_ids": [],
+                        "model_rate_limits": {},
+                        "max_completion_tokens_by_model": {},
+                    }
+
+                group = provider_groups[provider]
+                group["pipeline_ids"].append(pipeline_id)
+
+                if endpoint_name not in group["model_rate_limits"]:
+                    group["model_rate_limits"][endpoint_name] = {
                         "rpm": pipeline.rpm_limit,
                         "tpm": pipeline.tpm_limit,
                     }
-                    openai_max_completion_tokens_by_model[model_name] = pipeline.max_completion_tokens
-                elif (openai_model_rate_limits[model_name]["rpm"] != pipeline.rpm_limit or
-                      openai_model_rate_limits[model_name]["tpm"] != pipeline.tpm_limit):
+                    group["max_completion_tokens_by_model"][endpoint_name] = pipeline.max_completion_tokens
+                elif (group["model_rate_limits"][endpoint_name]["rpm"] != pipeline.rpm_limit or
+                      group["model_rate_limits"][endpoint_name]["tpm"] != pipeline.tpm_limit):
                     self.logger.warning(
-                        f"Model {model_name} has inconsistent rate limits across pipelines. "
-                        f"Using first encountered values: {openai_model_rate_limits[model_name]}"
+                        f"Endpoint {endpoint_name} has inconsistent rate limits across pipelines. "
+                        f"Using first encountered values: {group['model_rate_limits'][endpoint_name]}"
                     )
 
                 pipeline_to_max_completion_tokens[pipeline_id] = pipeline.max_completion_tokens
-                openai_pipeline_ids.append(pipeline_id)
                 pipeline_to_rate_limiter[pipeline_id] = None
 
-            elif hasattr(pipeline, "model_config") and isinstance(pipeline, RFGeminiAPIModelConfig):
-                model_config = pipeline.model_config
-                model_name = model_config.get("model", "gemini-2.0-flash")
-
-                if pipeline.rpm_limit is None or pipeline.tpm_limit is None:
-                    raise ValueError(
-                        f"Gemini pipeline {pipeline_id} (model: {model_name}) is missing rate limits. "
-                        f"Please provide rpm_limit and tpm_limit to RFGeminiAPIModelConfig."
-                    )
-
-                if model_name not in gemini_model_rate_limits:
-                    gemini_model_rate_limits[model_name] = {
-                        "rpm": pipeline.rpm_limit,
-                        "tpm": pipeline.tpm_limit,
-                    }
-                    gemini_max_completion_tokens_by_model[model_name] = pipeline.max_completion_tokens
-                elif (gemini_model_rate_limits[model_name]["rpm"] != pipeline.rpm_limit or
-                      gemini_model_rate_limits[model_name]["tpm"] != pipeline.tpm_limit):
-                    self.logger.warning(
-                        f"Model {model_name} has inconsistent rate limits across pipelines. "
-                        f"Using first encountered values: {gemini_model_rate_limits[model_name]}"
-                    )
-
-                pipeline_to_max_completion_tokens[pipeline_id] = pipeline.max_completion_tokens
-                gemini_pipeline_ids.append(pipeline_id)
-                pipeline_to_rate_limiter[pipeline_id] = None
-
-        if openai_pipeline_ids:
+        # Create one rate limiter actor per provider
+        for provider, group in provider_groups.items():
             from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
 
-            _max_tokens = max(openai_max_completion_tokens_by_model.values()) if openai_max_completion_tokens_by_model else 150
+            _max_tokens = max(group["max_completion_tokens_by_model"].values()) if group["max_completion_tokens_by_model"] else 150
 
-            openai_rate_limiter_actor = RateLimiterActor.remote(
-                model_rate_limits=openai_model_rate_limits,
+            rate_limiter_actor = RateLimiterActor.remote(
+                model_rate_limits=group["model_rate_limits"],
                 max_completion_tokens=_max_tokens,
                 limit_safety_ratio=0.95,
                 minimum_wait_time=1.0,
-                backend="openai",
+                backend=provider,
                 experiment_name=self.experiment_name,
                 experiment_path=self.experiment_path,
             )
 
-            for pipeline_id in openai_pipeline_ids:
-                pipeline_to_rate_limiter[pipeline_id] = openai_rate_limiter_actor
+            for pipeline_id in group["pipeline_ids"]:
+                pipeline_to_rate_limiter[pipeline_id] = rate_limiter_actor
 
             limits_summary = ", ".join([
                 f"{model}: {limits['rpm']} RPM, {limits['tpm']} TPM"
-                for model, limits in openai_model_rate_limits.items()
+                for model, limits in group["model_rate_limits"].items()
             ])
             self.logger.info(
-                f"Created experiment-wide OpenAI rate limiter actor for {len(openai_pipeline_ids)} pipeline(s) "
-                f"with per-model limits ({limits_summary})"
-            )
-
-        if gemini_pipeline_ids:
-            from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
-
-            _max_tokens = max(gemini_max_completion_tokens_by_model.values()) if gemini_max_completion_tokens_by_model else 150
-
-            gemini_rate_limiter_actor = RateLimiterActor.remote(
-                model_rate_limits=gemini_model_rate_limits,
-                max_completion_tokens=_max_tokens,
-                limit_safety_ratio=0.95,
-                minimum_wait_time=1.0,
-                backend="gemini",
-                experiment_name=self.experiment_name,
-                experiment_path=self.experiment_path,
-            )
-
-            for pipeline_id in gemini_pipeline_ids:
-                pipeline_to_rate_limiter[pipeline_id] = gemini_rate_limiter_actor
-
-            limits_summary = ", ".join([
-                f"{model}: {limits['rpm']} RPM, {limits['tpm']} TPM"
-                for model, limits in gemini_model_rate_limits.items()
-            ])
-            self.logger.info(
-                f"Created experiment-wide Gemini rate limiter actor for {len(gemini_pipeline_ids)} pipeline(s) "
-                f"with per-model limits ({limits_summary})"
+                f"Created experiment-wide {provider} rate limiter actor for "
+                f"{len(group['pipeline_ids'])} pipeline(s) with per-model limits ({limits_summary})"
             )
 
         # PHASE 7: Main scheduling loop
@@ -1478,9 +1422,9 @@ class Controller:
                 rate_limiter = pipeline_to_rate_limiter[pipeline_id]
                 if rate_limiter is None:
                     raise ValueError(
-                        f"Rate limiter actor is None for OpenAI pipeline {pipeline_id}. "
+                        f"Rate limiter actor is None for API pipeline {pipeline_id}. "
                         f"This should not happen - the rate limiter should be initialized "
-                        f"for all OpenAI pipelines."
+                        f"for all API pipelines."
                     )
                 engine_kwargs["rate_limiter_actor"] = rate_limiter
                 engine_kwargs["max_completion_tokens"] = pipeline_to_max_completion_tokens[pipeline_id]
@@ -1496,9 +1440,7 @@ class Controller:
                 if rag_spec.reranker_cls is not None:
                     pipeline_reranker_cfg = {"class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs}
 
-            pipeline_model_name = "Unknown"
-            if hasattr(pipeline, "model_config") and pipeline.model_config:
-                pipeline_model_name = pipeline.model_config.get("model", "Unknown")
+            pipeline_model_name = pipeline.model_name if hasattr(pipeline, "model_name") else "Unknown"
 
             pipeline_data = db.get_pipeline(pipeline_id)
             metric_run_id = pipeline_data.get("metric_run_id") if pipeline_data else None

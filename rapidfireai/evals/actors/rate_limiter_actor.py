@@ -2,7 +2,10 @@
 Ray Actor for centralized API rate limiting.
 
 Provides a single point of coordination for rate limiting across all
-distributed query processing actors. Supports OpenAI and Google Gemini backends.
+distributed query processing actors. The ``backend`` parameter maps to the
+provider string from ``endpoint_config["provider"]``.  Supported backends
+have dedicated tokenizer implementations; unsupported providers fall back
+to the OpenAI rate limiter (tiktoken with gpt-5 tokenizer).
 """
 import ray
 
@@ -23,7 +26,11 @@ class RateLimiterActor:
 
     All query processing actors make remote calls to this single actor
     to coordinate rate limiting across the entire distributed system.
-    Supports OpenAI and Google Gemini backends via the ``backend`` parameter.
+
+    The ``backend`` parameter accepts any provider string (e.g. ``"openai"``,
+    ``"gemini"``, ``"anthropic"``, ``"cohere"``).  Providers with a dedicated
+    implementation in ``_BACKEND_MAP`` get their specialised tokenizer;
+    all others fall back to ``OpenAIRateLimiter`` which uses tiktoken.
     """
 
     def __init__(
@@ -40,25 +47,27 @@ class RateLimiterActor:
         Initialize the centralized rate limiter with per-model rate limits.
 
         Args:
-            model_rate_limits: Dict mapping model name to rate limits, e.g.
-                {"gpt-4": {"rpm": 500, "tpm": 50000}, "gemini-2.0-flash": {"rpm": 1000, "tpm": 100000}}
+            model_rate_limits: Dict mapping endpoint name to rate limits, e.g.
+                {"my-chat-endpoint": {"rpm": 500, "tpm": 50000}}
             max_completion_tokens: Maximum completion tokens per request
             limit_safety_ratio: Safety margin (default 0.98 = 98% of limit)
             minimum_wait_time: Minimum wait time when rate limited (seconds)
-            backend: Which API backend to use — ``"openai"`` (default) or ``"gemini"``
+            backend: Provider name (e.g. ``"openai"``, ``"gemini"``,
+                ``"anthropic"``).  Falls back to OpenAI if unsupported.
             experiment_name: Name of the experiment for logging
             experiment_path: Path to experiment logs/artifacts
         """
-        if backend not in _BACKEND_MAP:
-            raise ValueError(
-                f"Unknown rate limiter backend '{backend}'. "
-                f"Supported backends: {list(_BACKEND_MAP.keys())}"
-            )
-
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
         logger = logging_manager.get_logger("RateLimiterActor")
 
-        limiter_cls = _BACKEND_MAP[backend]
+        limiter_cls = _BACKEND_MAP.get(backend)
+        if limiter_cls is None:
+            logger.warning(
+                f"No dedicated rate limiter for provider '{backend}', "
+                f"falling back to OpenAI rate limiter (tiktoken)"
+            )
+            limiter_cls = OpenAIRateLimiter
+
         self.limiter = limiter_cls(
             model_rate_limits=model_rate_limits,
             max_completion_tokens=max_completion_tokens,

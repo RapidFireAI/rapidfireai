@@ -358,16 +358,28 @@ class OpenAIRateLimiter(BaseRateLimiter):
             logger=logger,
         )
 
+    _FALLBACK_MODEL = "gpt-5"
+
     def _init_encoders(self) -> None:
         import tiktoken
 
         self.encoders: dict = {}
+        fallback_encoder = None
         for model_name in self.model_names:
             try:
                 self.encoders[model_name] = tiktoken.encoding_for_model(model_name)
             except KeyError:
-                print(f"Warning: Model '{model_name}' not recognised by tiktoken, using cl100k_base")
-                self.encoders[model_name] = tiktoken.get_encoding("cl100k_base")
+                if fallback_encoder is None:
+                    try:
+                        fallback_encoder = tiktoken.encoding_for_model(self._FALLBACK_MODEL)
+                    except KeyError:
+                        fallback_encoder = tiktoken.get_encoding("o200k_base")
+                if self.logger:
+                    self.logger.warning(
+                        f"Model '{model_name}' not recognised by tiktoken, "
+                        f"falling back to {self._FALLBACK_MODEL} tokenizer"
+                    )
+                self.encoders[model_name] = fallback_encoder
 
     def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
         """Count tokens using tiktoken. Includes OpenAI message-formatting overhead."""
