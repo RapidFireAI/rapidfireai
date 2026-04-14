@@ -304,6 +304,15 @@ def install_packages(
                     return 1
             else:
                 compute_cap = get_compute_capability()
+                if compute_cap is None:
+                    print(
+                        "❌ Could not detect GPU compute capability (nvidia-smi unavailable or failed).\n"
+                        "   Pass it explicitly, for example:\n"
+                        "   rapidfireai init --evals --computecapabilityversion 8.0\n"
+                        "   (Use your GPU's SM version, e.g. 8.9 for Ada, 9.0 for Blackwell.)",
+                        file=sys.stderr,
+                    )
+                    return 1
             if compute_cap is not None and compute_cap >= 8.0:
                 packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
                 # Re-install torch, torchvision, and torchaudio to ensure compatibility as flash-attn requires an old version of torch but will upgrade torch to an incompatible version
