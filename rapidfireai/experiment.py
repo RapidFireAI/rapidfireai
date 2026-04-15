@@ -24,6 +24,31 @@ from rapidfireai.utils.constants import (
 )
 
 
+class _StopExecution(Exception):
+    """Raised to halt cell execution silently after an error is displayed in Jupyter."""
+
+def display_pretty_error(msg: str) -> None:
+    try:
+        from IPython import get_ipython
+        from IPython.display import HTML, display
+        ip = get_ipython()
+        display(HTML(
+            f'<div style="border: 1px solid #c0392b; border-radius: 6px; padding: 10px 14px; '
+            f'color: #c0392b;">'
+            f'ERROR: {msg}</div>'
+        ))
+        if ip is not None:
+            # Register _StopExecution as silently handled so IPython shows
+            # nothing beyond the red box above.
+            ip.set_custom_exc((_StopExecution,), lambda shell, etype, evalue, tb, tb_offset=None: None)
+        raise _StopExecution()
+    except _StopExecution:
+        raise
+    except Exception:
+        print(f"ERROR: {msg}")
+        raise SystemExit(1)
+
+
 class Experiment:
     """Unified Experiment class for both fit and evals modes."""
 
@@ -32,6 +57,8 @@ class Experiment:
         experiment_name: str,
         mode: str = "fit",
         experiment_path: str = RF_EXPERIMENT_PATH,
+        num_cpus: int = None,
+        num_gpus: int = None,
     ) -> None:
         """
         Initialize an experiment.
@@ -53,13 +80,23 @@ class Experiment:
         self.experiment_path = experiment_path
         self.experiment_id = None
 
+        if num_cpus is not None and num_cpus <= 0:
+            display_pretty_error(f"Invalid number of CPUs: {num_cpus}. Must be greater than 0")
+        
+        if num_gpus is not None and num_gpus < 0:
+            display_pretty_error(f"Invalid number of GPUs: {num_gpus}. Must be non-negative")
+        
         # Initialize based on mode
         if mode == "fit":
             self._init_fit_mode()
         else:
+            self._ray_resource_config = self._auto_detect_resources(num_cpus=num_cpus, num_gpus=num_gpus)
+            cfg = self._ray_resource_config
+            print(f"Allocating {cfg['cpus_for_ray']} CPUs and {cfg['gpus_for_ray']} GPUs to the experiment")
+            print(f"Using {cfg['num_actors']} actors, {cfg['gpus_per_actor']} GPUs per actor, {cfg['cpus_per_actor']} CPUs per actor")
             self._init_evals_mode()
 
-    def _auto_detect_resources(self) -> dict[str, float]:
+    def _auto_detect_resources(self, num_cpus: int = None, num_gpus: int = None) -> dict[str, float]:
         """
         Detect available hardware resources and compute Ray actor allocation.
 
@@ -87,13 +124,20 @@ class Experiment:
         except Exception:
             available_gpus: float = 0.0
 
-        gpus_for_ray: float = available_gpus
-
         available_cpus: float = float(os.cpu_count() or 1)
+        if available_cpus < 2:
+            display_pretty_error(f"Not enough CPUs available: {available_cpus} CPUs, Minimum required: 2 CPUs")
 
-        def _cpus_to_set_aside(num_actors: int) -> int:
-            # Reserve 1 CPU per 4 actors for the driver process and OS overhead.
-            return (num_actors + 3) // 4
+        if num_gpus is not None and num_gpus > available_gpus:
+            display_pretty_error(f"Requested more GPUs than available: {num_gpus} GPUs, Available: {available_gpus} GPUs")
+
+        if num_cpus is not None and num_cpus > available_cpus:
+            display_pretty_error(f"Requested more CPUs than available: {num_cpus} CPUs, Available: {available_cpus} CPUs")
+
+        # Use all available GPUs if not specified
+        num_gpus = available_gpus if num_gpus is None else num_gpus
+        # Use 90% of available CPUs if not specified
+        num_cpus = int(available_cpus * 0.9) if num_cpus is None else num_cpus # equivalent to floor(available_cpus * 0.9)
 
         def _num_actors_for_cpus(available_cpus: float) -> int:
             if available_cpus <= 2.0:
@@ -107,21 +151,20 @@ class Experiment:
             else:
                 return 32
 
-        if available_gpus > 0:
+        if num_gpus > 0:
             # GPU machine — 1 actor per GPU; revisit for multi-GPU actors later.
             gpus_per_actor: float = 1.0
-            num_actors: int = int(available_gpus)
+            num_actors: int = int(num_gpus)
         else:
             # CPU-only machine — tier the actor count by available CPUs.
             gpus_per_actor = 0.0
-            num_actors = _num_actors_for_cpus(available_cpus)
+            num_actors = _num_actors_for_cpus(num_cpus)
 
-        cpus_for_ray: float = available_cpus - _cpus_to_set_aside(num_actors)
-        cpus_per_actor: float = cpus_for_ray / num_actors
+        cpus_per_actor: float = num_cpus / num_actors
 
         return {
-            "cpus_for_ray": cpus_for_ray,
-            "gpus_for_ray": gpus_for_ray,
+            "cpus_for_ray": int(num_cpus),
+            "gpus_for_ray": int(num_gpus),
             "num_actors": num_actors,
             "gpus_per_actor": gpus_per_actor,
             "cpus_per_actor": cpus_per_actor
@@ -232,20 +275,14 @@ class Experiment:
         for msg in log_messages:
             self.logger.info(msg)
 
-        self._ray_resource_config = self._auto_detect_resources()
-        print(f"Allocating {self._ray_resource_config['cpus_for_ray']} CPUs and {self._ray_resource_config['gpus_for_ray']} GPUs to the experiment")
-        self.logger.info(f"Allocating {self._ray_resource_config['cpus_for_ray']} CPUs and {self._ray_resource_config['gpus_for_ray']} GPUs to the experiment")
-        self.logger.info(
-            f"Auto-detected resources: {self._ray_resource_config['num_actors']} actors, "
-            f"{self._ray_resource_config['gpus_per_actor']} GPUs per actor, "
-            f"{self._ray_resource_config['cpus_per_actor']} CPUs per actor"
-        )
-
         # Initialize Ray with runtime environment for CUDA initialization
         # This fixes AWS-specific CUDA/cuBLAS initialization issues
 
         self.logger.info(
             f"Initializing Ray: {self._ray_resource_config['cpus_for_ray']} CPUs and {self._ray_resource_config['gpus_for_ray']} GPUs"
+        )
+        self.logger.info(
+            f"Using {self._ray_resource_config['num_actors']} actors, {self._ray_resource_config['gpus_per_actor']} GPUs per actor, {self._ray_resource_config['cpus_per_actor']} CPUs per actor"
         )
 
         ray.init(
@@ -457,36 +494,15 @@ class Experiment:
         if cpus_per_actor is None:
             cpus_per_actor = self._ray_resource_config['cpus_per_actor']
 
-        # Clamp resource requests to what's actually available
-        original = (num_actors, gpus_per_actor, cpus_per_actor)
-
-        # If using GPUs
-        if available_gpus > 0:
-            # Requested more actors than available GPUs
-            if num_actors > available_gpus:
-                num_actors = available_gpus
-                gpus_per_actor = 1.0
-                cpus_per_actor = available_cpus / num_actors
-            # Requested more GPUs per actor than 1.0
-            elif gpus_per_actor > 1.0:
-                gpus_per_actor = 1.0
-
-        # Overallocation of CPUs
-        if num_actors * cpus_per_actor > available_cpus:
-            if available_gpus > 0:
-                # Reduce cpus_per_actor to the available CPUs. Actors are already less than or equal to available GPUs (<= 8)
-                cpus_per_actor = available_cpus / num_actors
-            else:
-                # Reduce actors to the available CPUs.
-                num_actors = int(available_cpus / cpus_per_actor)
-
-        if (num_actors, gpus_per_actor, cpus_per_actor) != original:
+        if num_actors * gpus_per_actor > available_gpus or num_actors * cpus_per_actor > available_cpus:
             msg = (
-                "Resource limits exceeded — scaling down to fit available hardware: "
-                f"num_actors={num_actors}, gpus_per_actor={gpus_per_actor}, cpus_per_actor={cpus_per_actor}"
+                f"Requested resources exceed available hardware. "
+                f"Requested: {num_actors} actors × {gpus_per_actor} GPU(s) = {num_actors * gpus_per_actor} GPU(s), "
+                f"{num_actors} actors × {cpus_per_actor} CPU(s) = {num_actors * cpus_per_actor} CPU(s). "
+                f"Available: {available_gpus} GPU(s), {available_cpus} CPU(s)."
             )
-            print(msg)
-            self.logger.warning(msg)
+            display_pretty_error(msg)
+
 
         if gpus_per_actor == 0:
             self.logger.warning("No GPUs available. Be sure to use external APIs for inference.")

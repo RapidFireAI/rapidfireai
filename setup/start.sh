@@ -29,9 +29,24 @@ RF_DB_PATH="${RF_DB_PATH:=$RF_HOME/db}"
 RF_LOG_PATH="${RF_LOG_PATH:=$RF_HOME/logs}"
 
 RF_TIMEOUT_TIME=${RF_TIMEOUT_TIME:=30}
+RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
+RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
+
+if ! command -v $RF_PYTHON_EXECUTABLE &> /dev/null; then
+    RF_PYTHON_EXECUTABLE=python
+fi
+
+if ! command -v $RF_PIP_EXECUTABLE &> /dev/null; then
+    RF_PIP_EXECUTABLE=pip
+fi
 
 # Converge mode: all (backend+frontend), none (original frontend only), backend, frontend
 RF_CONVERGE_MODE=${RF_CONVERGE_MODE:=all}
+CONVERGE_FOUND=$(${RF_PIP_EXECUTABLE} show rapidfireai-pro >/dev/null 2>&1; echo $?)
+if [[ $CONVERGE_FOUND -ne 0 ]]; then
+    RF_CONVERGE_MODE="none"
+fi
+
 case "$RF_CONVERGE_MODE" in
     all|none|backend|frontend) ;;
     *)
@@ -58,6 +73,10 @@ else
     RF_COLAB_MODE=${RF_COLAB_MODE:=true}
 fi
 
+# When false, do not start the RapidFire dashboard (Flask) or Converge frontend; MLflow + API still run when enabled.
+RF_START_FRONTEND=${RF_START_FRONTEND:=true}
+
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -74,25 +93,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAPIDFIRE_DIR="$SCRIPT_DIR/../rapidfireai"
 RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
-if [[ -d "$RAPIDFIRE_DIR/frontend_pro" ]]; then
-    FRONTEND_DIR="$RAPIDFIRE_DIR/frontend_pro"
-else
-    FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
-fi
+FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
+
 RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "fit")
 DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
-
-RF_PYTHON_EXECUTABLE=${RF_PYTHON_EXECUTABLE:-python3}
-RF_PIP_EXECUTABLE=${RF_PIP_EXECUTABLE:-pip3}
-
-if ! command -v $RF_PYTHON_EXECUTABLE &> /dev/null; then
-    RF_PYTHON_EXECUTABLE=python
-fi
-
-if ! command -v $RF_PIP_EXECUTABLE &> /dev/null; then
-    RF_PIP_EXECUTABLE=pip
-fi
-
 
 # Function to print colored output
 print_status() {
@@ -115,6 +119,17 @@ print_warning() {
 has_rapidfireai_pro() {
     ${RF_PIP_EXECUTABLE} show rapidfireai-pro >/dev/null 2>&1
 }
+
+if [[ "$RF_CONVERGE_MODE" != "none" ]]; then
+    if [[ "$RF_MLFLOW_ENABLED" != "true" ]]; then
+        print_status "MLflow is not enabled, Converge requires MLflow, enabling MLflow"
+        RF_MLFLOW_ENABLED="true"
+    fi
+    if [[ "$RF_TENSORBOARD_ENABLED" != "true" ]]; then
+        print_status "TensorBoard is not enabled, Converge requires TensorBoard, enabling TensorBoard"
+        RF_TENSORBOARD_ENABLED="true"
+    fi
+fi
 
 # Function to setup Python environment
 setup_python_env() {
@@ -298,9 +313,11 @@ check_startup_issues() {
         print_error "MLflow $RF_MLFLOW_HOST:$RF_MLFLOW_PORT in use"
         return 1
     fi
-    if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
-        print_error "Frontend $RF_FRONTEND_HOST:$RF_FRONTEND_PORT in use"
-        return 1
+    if [[ "$RF_START_FRONTEND" == "true" ]]; then
+        if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
+            print_error "Frontend $RF_FRONTEND_HOST:$RF_FRONTEND_PORT in use"
+            return 1
+        fi
     fi
     if ping_port $RF_API_HOST $RF_API_PORT; then
         print_error "API port $RF_API_HOST:$RF_API_PORT in use"
@@ -680,6 +697,10 @@ start_frontend_if_needed() {
         print_status "⊗ Skipping frontend (using TensorBoard in Colab mode)"
         return 0
     fi
+    if [[ "$RF_START_FRONTEND" != "true" ]]; then
+        print_status "⊗ Skipping frontend (RF_START_FRONTEND=false or --no-frontend)"
+        return 0
+    fi
 
     # Otherwise start frontend
     start_frontend
@@ -722,15 +743,15 @@ show_status() {
             print_status "   %tensorboard --logdir $RF_HOME/rapidfire_experiments/tensorboard_logs/{experiment_name}"
         fi
     else
-        # if [[ "$rf_mode" == "fit" ]]; then
-            if ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
-                print_success "🚀 RapidFire Frontend is ready!"
-                print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
-                print_status "   (Click the link above or copy/paste the URL into your browser)"
-            else
-                print_error "🚨 RapidFire Frontend is not ready!"
-            fi
-        # fi
+        if [[ "$RF_START_FRONTEND" != "true" ]]; then
+            print_status "⊗ Frontend not started (RF_START_FRONTEND=false or rapidfireai start --no-frontend)"
+        elif ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
+            print_success "🚀 RapidFire Frontend is ready!"
+            print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
+            print_status "   (Click the link above or copy/paste the URL into your browser)"
+        else
+            print_error "🚨 RapidFire Frontend is not ready!"
+        fi
     fi
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         if ping_port $RF_MLFLOW_HOST $RF_MLFLOW_PORT; then
@@ -775,12 +796,39 @@ show_status() {
     fi
 
     # Only check frontend.log if frontend is running
-    if [[ "$RF_COLAB_MODE" != "true" ]]; then
+    if [[ "$RF_COLAB_MODE" != "true" ]] && [[ "$RF_CONVERGE_MODE" == "none" ]] && [[ "$RF_START_FRONTEND" == "true" ]]; then
         if [[ -f "$RF_LOG_PATH/frontend.log" ]]; then
             local size=$(du -h "$RF_LOG_PATH/frontend.log" | cut -f1)
             print_status "- $RF_LOG_PATH/frontend.log: $size"
         else
             print_warning "- $RF_LOG_PATH/frontend.log: not found"
+        fi
+    fi
+
+    if [[ "$RF_CONVERGE_MODE" != "none" ]]; then
+        if [[ -f "$RF_LOG_PATH/converge.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/converge.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/converge.log: $size"
+        else
+            print_warning "- $RF_LOG_PATH/converge.log: not found"
+        fi
+    fi
+
+    if [[ "$RF_START_FRONTEND" == "true" ]] && { [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" == "frontend" ]]; }; then
+        if [[ -f "$RF_LOG_PATH/converge_frontend.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/converge_frontend.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/converge_frontend.log: $size"
+        else
+            print_warning "- $RF_LOG_PATH/converge_frontend.log: not found"
+        fi
+    fi
+
+    if [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" == "backend" ]]; then
+        if [[ -f "$RF_LOG_PATH/converge_backend.log" ]]; then
+            local size=$(du -h "$RF_LOG_PATH/converge_backend.log" | cut -f1)
+            print_status "- $RF_LOG_PATH/converge_backend.log: $size"
+        else
+            print_warning "- $RF_LOG_PATH/converge_backend.log: not found"
         fi
     fi
 }
@@ -792,10 +840,20 @@ start_services() {
 
     # Calculate total services based on mode
     # MLflow runs unless tensorboard-only in Colab
-    # Frontend runs if MLflow runs
+    # Third service: UI (classic frontend, full Converge, or Converge backend-only when --no-frontend)
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
         ((total_services++))
-        ((total_services++))
+        local ui_slot=0
+        if [[ "$RF_START_FRONTEND" == "true" ]]; then
+            ui_slot=1
+        elif [[ "$RF_CONVERGE_MODE" == "all" ]] || [[ "$RF_CONVERGE_MODE" == "backend" ]]; then
+            if has_rapidfireai_pro; then
+                ui_slot=1
+            fi
+        fi
+        if [[ "$ui_slot" -eq 1 ]]; then
+            ((total_services++))
+        fi
     fi
 
     if [[ ! -d "$RF_LOG_PATH" ]]; then
@@ -825,34 +883,65 @@ start_services() {
 
     # Start frontend server (conditionally)
     if [[ "$RF_MLFLOW_ENABLED" == "true" ]]; then
-        case "$RF_CONVERGE_MODE" in
-            none)
-                if start_frontend; then
-                    ((services_started++))
-                else
-                    print_error "Failed to start frontend server"
-                fi
-                ;;
-            backend|frontend|all)
-                if has_rapidfireai_pro; then
-                    if start_converge; then
-                        ((services_started++))
-                    else
-                        print_error "Failed to start Converge"
-                    fi
-                else
-                    if [[ "$RF_CONVERGE_MODE" == "all" ]]; then
-                        if start_frontend; then
+        if [[ "$RF_START_FRONTEND" != "true" ]]; then
+            print_status "⊗ Skipping frontend (RF_START_FRONTEND=false or --no-frontend)"
+            case "$RF_CONVERGE_MODE" in
+                none)
+                    ;;
+                all)
+                    if has_rapidfireai_pro; then
+                        if start_converge backend; then
                             ((services_started++))
                         else
-                            print_error "Failed to start frontend server"
+                            print_error "Failed to start Converge backend"
+                        fi
+                    fi
+                    ;;
+                backend)
+                    if has_rapidfireai_pro; then
+                        if start_converge backend; then
+                            ((services_started++))
+                        else
+                            print_error "Failed to start Converge backend"
                         fi
                     else
                         print_error "rapidfireai-pro is not installed (required for --converge=$RF_CONVERGE_MODE)"
                     fi
-                fi
-                ;;
-        esac
+                    ;;
+                frontend)
+                    print_status "⊗ Skipping Converge frontend (--no-frontend)"
+                    ;;
+            esac
+        else
+            case "$RF_CONVERGE_MODE" in
+                none)
+                    if start_frontend; then
+                        ((services_started++))
+                    else
+                        print_error "Failed to start frontend server"
+                    fi
+                    ;;
+                backend|frontend|all)
+                    if has_rapidfireai_pro; then
+                        if start_converge; then
+                            ((services_started++))
+                        else
+                            print_error "Failed to start Converge"
+                        fi
+                    else
+                        if [[ "$RF_CONVERGE_MODE" == "all" ]]; then
+                            if start_frontend; then
+                                ((services_started++))
+                            else
+                                print_error "Failed to start frontend server"
+                            fi
+                        else
+                            print_error "rapidfireai-pro is not installed (required for --converge=$RF_CONVERGE_MODE)"
+                        fi
+                    fi
+                    ;;
+            esac
+        fi
     else
         print_status "⊗ Skipping frontend (use TensorBoard if in Colab mode)"
     fi
@@ -915,7 +1004,7 @@ main() {
 
         # Show summary of all log files for debugging
         print_status "=== Startup Failure Summary ==="
-        for log_file in "mlflow.log" "api.log" "frontend.log" "converge.log"; do
+        for log_file in "mlflow.log" "api.log" "frontend.log" "converge.log" "converge_frontend.log" "converge_backend.log"; do
             if [[ -f "$RF_LOG_PATH/$log_file" ]]; then
                 echo ""
                 print_status "=== $log_file ==="

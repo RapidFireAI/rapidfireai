@@ -110,7 +110,35 @@ def get_cuda_version():
     return 0, 0
 
 
-def install_packages(evals: bool = False, init_packages: list[str] | None = None):
+def parse_cuda_version_string(version: str) -> tuple[int, int] | None:
+    """Parse user CUDA version like ``12.4`` or ``12`` into ``(major, minor)``."""
+    version = version.strip()
+    m = re.fullmatch(r"(\d+)\.(\d+)", version)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    m = re.fullmatch(r"(\d+)", version)
+    if m:
+        return int(m.group(1)), 0
+    return None
+
+
+def parse_compute_capability_string(cap: str) -> float | None:
+    """Parse compute capability like ``8.6`` into the same float scale as ``get_compute_capability()``."""
+    cap = cap.strip()
+    m = re.fullmatch(r"(\d+)(?:\.(\d+))?", cap)
+    if not m:
+        return None
+    major = int(m.group(1))
+    minor = int(m.group(2) or 0)
+    return major + minor / 10.0
+
+
+def install_packages(
+    evals: bool = False,
+    init_packages: list[str] | None = None,
+    cuda_version: str | None = None,
+    compute_capability_version: str | None = None,
+):
     """Install packages for the RapidFire AI project."""
     packages = []
     # Generate CUDA requirements file
@@ -119,7 +147,37 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
         mode_file.write_text("evals")
     else:
         mode_file.write_text("fit")
-    cuda_major, cuda_minor = get_cuda_version()
+    cuda_from_user = cuda_version is not None
+    if cuda_from_user:
+        parsed_cuda = parse_cuda_version_string(cuda_version)
+        if parsed_cuda is None:
+            print(
+                "❌ Invalid --cudaversion: use major.minor (e.g. 12.4) or major only (e.g. 12).",
+                file=sys.stderr,
+            )
+            return 1
+        cuda_major, cuda_minor = parsed_cuda
+    else:
+        cuda_major, cuda_minor = get_cuda_version()
+
+    # Failed detection returns (0, 0); without this, non-Colab --evals skips the CUDA>=12
+    # torch stack silently (no vllm/torch wheels), while still reporting success.
+    if (
+        not cuda_from_user
+        and cuda_major == 0
+        and cuda_minor == 0
+        and not ColabConfig.ON_COLAB
+        and evals
+    ):
+        print(
+            "❌ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
+            "   Pass your CUDA version explicitly, for example:\n"
+            "   rapidfireai init --evals --cudaversion 12.4\n"
+            "   If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).",
+            file=sys.stderr,
+        )
+        return 1
+
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
     setup_directory = None
@@ -236,7 +294,10 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
     
     ## TODO: re-enable for fit once trl has fix
     if not ColabConfig.ON_COLAB and cuda_major >= 12:
-        print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
+        if cuda_from_user:
+            print(f"\n🎯 Using CUDA {cuda_major}.{cuda_minor} (from --cudaversion), using {torch_cuda}")
+        else:
+            print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
         
         packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
@@ -252,7 +313,25 @@ def install_packages(evals: bool = False, init_packages: list[str] | None = None
             packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-            compute_cap = get_compute_capability()
+            if compute_capability_version is not None:
+                compute_cap = parse_compute_capability_string(compute_capability_version)
+                if compute_cap is None:
+                    print(
+                        "❌ Invalid --computecapabilityversion: use major.minor (e.g. 8.0 or 8.6).",
+                        file=sys.stderr,
+                    )
+                    return 1
+            else:
+                compute_cap = get_compute_capability()
+                if compute_cap is None:
+                    print(
+                        "❌ Could not detect GPU compute capability (nvidia-smi unavailable or failed).\n"
+                        "   Pass it explicitly, for example:\n"
+                        "   rapidfireai init --evals --computecapabilityversion 8.0\n"
+                        "   (Use your GPU's SM version, e.g. 8.9 for Ada, 9.0 for Blackwell.)",
+                        file=sys.stderr,
+                    )
+                    return 1
             if compute_cap is not None and compute_cap >= 8.0:
                 packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
                 # Re-install torch, torchvision, and torchaudio to ensure compatibility as flash-attn requires an old version of torch but will upgrade torch to an incompatible version
@@ -302,15 +381,25 @@ def copy_tutorial_notebooks():
     return 0
 
 
-def run_init(evals: bool = False):
+def run_init(
+    evals: bool = False,
+    cuda_version: str | None = None,
+    compute_capability_version: str | None = None,
+):
     """Run the init command to initialize the project."""
     print("🔧 Initializing RapidFire AI project...")
     print("-" * 30)
     print("Initializing project...")
-    install_packages(evals)
-    copy_tutorial_notebooks()
-
-    return 0
+    if (
+        install_packages(
+            evals,
+            cuda_version=cuda_version,
+            compute_capability_version=compute_capability_version,
+        )
+        != 0
+    ):
+        return 1
+    return copy_tutorial_notebooks()
 
 def copy_test_notebooks():
     """Copy the test notebooks to the project."""
@@ -413,6 +502,9 @@ Examples:
   #or
   # Basic Initialize with evaluation dependencies
   rapidfireai init --evals
+
+  # Init when nvcc/nvidia-smi are unavailable (pin CUDA / compute capability)
+  rapidfireai init --evals --cudaversion 12.4 --computecapabilityversion 8.0
   
   # Start services
   rapidfireai start
@@ -456,6 +548,13 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     )
 
     parser.add_argument(
+        "--no-frontend",
+        action="store_true",
+        help="Do not start the dashboard (Flask on RF_FRONTEND_PORT); MLflow and the API still start when enabled. "
+        "With Converge, only the backend is started when --converge=all.",
+    )
+
+    parser.add_argument(
         "--test-notebooks",
         action="store_true",
         help="Copy test notebooks to the tutorial_notebooks directory",
@@ -464,6 +563,21 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument("--force", "-f", action="store_true", help="Force action without confirmation")
 
     parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
+
+    parser.add_argument(
+        "--cudaversion",
+        dest="cuda_version",
+        metavar="X.Y",
+        default=None,
+        help="CUDA version to assume for init (e.g. 12.4) instead of detecting via nvcc/nvidia-smi",
+    )
+    parser.add_argument(
+        "--computecapabilityversion",
+        dest="compute_capability_version",
+        metavar="X.Y",
+        default=None,
+        help="GPU compute capability for init --evals (e.g. 8.0 or 8.9) instead of querying nvidia-smi",
+    )
 
     parser.add_argument("--log-lines", type=int, default=10, help="Number of lines to log to the console")
 
@@ -494,6 +608,9 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
         os.environ["RF_COLAB_MODE"] = "true"
     elif ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
         os.environ["RF_COLAB_MODE"] = "true"
+
+    if args.no_frontend:
+        os.environ["RF_START_FRONTEND"] = "false"
     
     # Handle force command separately
     if args.force:
@@ -508,7 +625,11 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     # Handle init command separately
     if args.command == "init":
-        return run_init(args.evals)
+        return run_init(
+            args.evals,
+            cuda_version=args.cuda_version,
+            compute_capability_version=args.compute_capability_version,
+        )
     
     if args.command == "jupyter":
         return run_jupyter()
