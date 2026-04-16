@@ -20,7 +20,7 @@ export const getGatewayRouteDefs = () => {
         getPageTitle: (params?: Record<string, string>) => `Endpoint ${params?.['endpointId']}`,
       } satisfies DocumentTitleHandle,
     },
-    // Catch-all: /gateway, /gateway/api-keys, /gateway/usage, /gateway/budgets
+    // Catch-all: /gateway, /gateway/api-keys, /gateway/usage
     // all render the GatewayPage shell, which switches content based on the URL.
     {
       path: createMLflowRoutePath('/gateway/*'),

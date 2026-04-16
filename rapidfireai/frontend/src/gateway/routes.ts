@@ -4,7 +4,6 @@ export enum GatewayPageId {
   gatewayPage = 'mlflow.gateway',
   apiKeysPage = 'mlflow.gateway.api-keys',
   usagePage = 'mlflow.gateway.usage',
-  budgetsPage = 'mlflow.gateway.budgets',
   createEndpointPage = 'mlflow.gateway.create',
   endpointDetailsPage = 'mlflow.gateway.endpoint-details',
 }
@@ -22,10 +21,6 @@ export class GatewayRoutePaths {
 
   static get usagePage() {
     return createMLflowRoutePath('/gateway/usage');
-  }
-
-  static get budgetsPage() {
-    return createMLflowRoutePath('/gateway/budgets');
   }
 
   static get createEndpointPage() {
@@ -50,10 +45,6 @@ class GatewayRoutes {
 
   static get usagePageRoute() {
     return GatewayRoutePaths.usagePage;
-  }
-
-  static get budgetsPageRoute() {
-    return GatewayRoutePaths.budgetsPage;
   }
 
   static get createEndpointPageRoute() {

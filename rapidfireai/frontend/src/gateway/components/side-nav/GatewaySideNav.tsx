@@ -1,7 +1,6 @@
 import {
   ChainIcon,
   ChartLineIcon,
-  CreditCardIcon,
   KeyIcon,
   Tooltip,
   Typography,
@@ -16,13 +15,12 @@ const SIDE_NAV_COLLAPSED_WIDTH = 32;
 const COLLAPSED_CLASS_NAME = 'gateway-side-nav-collapsed';
 const FULL_WIDTH_CLASS_NAME = 'gateway-side-nav-full-width';
 
-export type GatewayTab = 'endpoints' | 'usage' | 'api-keys' | 'budgets';
+export type GatewayTab = 'endpoints' | 'usage' | 'api-keys';
 
 type GatewaySideNavComponentId =
   | 'mlflow.gateway.side-nav.endpoints.tooltip'
   | 'mlflow.gateway.side-nav.api-keys.tooltip'
-  | 'mlflow.gateway.side-nav.usage.tooltip'
-  | 'mlflow.gateway.side-nav.budgets.tooltip';
+  | 'mlflow.gateway.side-nav.usage.tooltip';
 
 interface GatewaySideNavProps {
   activeTab: GatewayTab;
@@ -48,13 +46,6 @@ const navItems: Array<{
     icon: <ChartLineIcon />,
     to: GatewayRoutes.usagePageRoute,
     componentId: 'mlflow.gateway.side-nav.usage.tooltip',
-  },
-  {
-    tab: 'budgets',
-    label: <FormattedMessage defaultMessage="Budgets" description="Gateway side nav > Budgets tab" />,
-    icon: <CreditCardIcon />,
-    to: GatewayRoutes.budgetsPageRoute,
-    componentId: 'mlflow.gateway.side-nav.budgets.tooltip',
   },
   {
     tab: 'api-keys',
