@@ -46,8 +46,10 @@ export const getDefaultHeadersFromCookies = (cookieStr: any) => {
 
 export const getDefaultHeaders = (cookieStr: any) => {
   const cookieHeaders = getDefaultHeadersFromCookies(cookieStr);
+  const xsrf = cookie.parse(cookieStr)._xsrf;
   return {
     ...cookieHeaders,
+    ...(xsrf ? { 'X-XSRFToken': xsrf } : {}),
   };
 };
 
