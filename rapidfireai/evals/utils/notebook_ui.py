@@ -118,10 +118,12 @@ class NotebookUI:
 
                     // Use fetch API with explicit CORS mode and optional auth token
                     async function xhrRequest(url, method = 'GET', body = null) {{
+                        const xsrfMatch = document.cookie.match(/(?:^|;\s*)_xsrf=([^;]+)/);
                         const options = {{
                             method: method,
                             headers: {{
-                                'Content-Type': 'application/json'
+                                'Content-Type': 'application/json',
+                                ...(xsrfMatch ? {{ 'X-XSRFToken': decodeURIComponent(xsrfMatch[1]) }} : {{}})
                             }},
                             mode: 'cors',
                             credentials: '{xhr_credentials}'  // Include cookies for Colab proxy auth
