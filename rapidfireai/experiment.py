@@ -28,9 +28,6 @@ class _StopExecution(Exception):
     """Raised to halt cell execution silently after an error is displayed in Jupyter."""
 
 
-_UNSET = object()
-
-
 def display_pretty_error(msg: str) -> None:
     try:
         from IPython import get_ipython
@@ -60,7 +57,7 @@ class Experiment:
         self,
         experiment_name: str,
         mode: str = "fit",
-        experiment_path: str | object = _UNSET,
+        experiment_path: str | None = None,
         num_cpus: int = None,
         num_gpus: int = None,
         experiments_path: str | None = None,
@@ -78,13 +75,10 @@ class Experiment:
             TypeError: If experiment_path and experiments_path are both provided with different values
             ValueError: If mode is not "fit", "eval", or "evals"
         """
-        if experiment_path is _UNSET:
-            resolved_experiment_path = RF_EXPERIMENT_PATH
-        else:
-            resolved_experiment_path = experiment_path
+        resolved_experiment_path = RF_EXPERIMENT_PATH if experiment_path is None else experiment_path
 
         if experiments_path is not None:
-            if experiment_path is not _UNSET and resolved_experiment_path != experiments_path:
+            if experiment_path is not None and experiment_path != experiments_path:
                 raise TypeError(
                     "experiment_path and experiments_path refer to the same setting and must match when both are provided"
                 )
