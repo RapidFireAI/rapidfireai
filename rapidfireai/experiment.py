@@ -27,6 +27,10 @@ from rapidfireai.utils.constants import (
 class _StopExecution(Exception):
     """Raised to halt cell execution silently after an error is displayed in Jupyter."""
 
+
+_UNSET = object()
+
+
 def display_pretty_error(msg: str) -> None:
     try:
         from IPython import get_ipython
@@ -56,28 +60,45 @@ class Experiment:
         self,
         experiment_name: str,
         mode: str = "fit",
-        experiment_path: str = RF_EXPERIMENT_PATH,
+        experiment_path: str | object = _UNSET,
         num_cpus: int = None,
         num_gpus: int = None,
+        experiments_path: str | None = None,
     ) -> None:
         """
         Initialize an experiment.
 
         Args:
             experiment_name: Name of the experiment
-            mode: Either "fit" or "evals"
+            mode: Either "fit" or "evals". "eval" is accepted as an alias for "evals".
             experiment_path: Path to store experiment artifacts (default: $RF_HOME/rapidfire_experiments)
+            experiments_path: Alias for experiment_path accepted for compatibility with published docs
 
         Raises:
-            ValueError: If mode is not "fit" or "evals"
+            TypeError: If experiment_path and experiments_path are both provided with different values
+            ValueError: If mode is not "fit", "eval", or "evals"
         """
-        # Validate mode
-        if mode not in ["fit", "evals"]:
-            raise ValueError(f"Invalid mode: {mode}. Must be 'fit' or 'evals'")
+        if experiment_path is _UNSET:
+            resolved_experiment_path = RF_EXPERIMENT_PATH
+        else:
+            resolved_experiment_path = experiment_path
 
-        self.mode = mode
+        if experiments_path is not None:
+            if experiment_path is not _UNSET and resolved_experiment_path != experiments_path:
+                raise TypeError(
+                    "experiment_path and experiments_path refer to the same setting and must match when both are provided"
+                )
+            resolved_experiment_path = experiments_path
+
+        normalized_mode = "evals" if mode == "eval" else mode
+
+        # Validate mode
+        if normalized_mode not in ["fit", "evals"]:
+            raise ValueError(f"Invalid mode: {mode}. Must be 'fit', 'eval', or 'evals'")
+
+        self.mode = normalized_mode
         self.experiment_name = experiment_name
-        self.experiment_path = experiment_path
+        self.experiment_path = resolved_experiment_path
         self.experiment_id = None
 
         if num_cpus is not None and num_cpus <= 0:
@@ -85,9 +106,9 @@ class Experiment:
         
         if num_gpus is not None and num_gpus < 0:
             display_pretty_error(f"Invalid number of GPUs: {num_gpus}. Must be non-negative")
-        
+
         # Initialize based on mode
-        if mode == "fit":
+        if self.mode == "fit":
             self._init_fit_mode()
         else:
             self._ray_resource_config = self._auto_detect_resources(num_cpus=num_cpus, num_gpus=num_gpus)
