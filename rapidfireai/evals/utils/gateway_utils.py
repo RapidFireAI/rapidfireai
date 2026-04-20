@@ -136,6 +136,7 @@ class MLflowGatewayClient:
         provider: str,
         api_key: str | None,
         api_base_url: str = "",
+        api_version: str = "",
         verbose: bool = True,
     ) -> str:
         """Get existing secret by name or create a new one.
@@ -164,14 +165,22 @@ class MLflowGatewayClient:
             )
 
         secret_value = {"api_key": api_key}
-        if api_base_url:
-            secret_value["api_base_url"] = api_base_url
 
-        result = self._post("secrets/create", {
+        auth_config = {}
+        if api_base_url:
+            auth_config["api_base"] = api_base_url
+        if api_version:
+            auth_config["api_version"] = api_version
+
+        payload = {
             "secret_name": secret_name,
             "provider": provider,
             "secret_value": secret_value,
-        })
+        }
+        if auth_config:
+            payload["auth_config"] = auth_config
+
+        result = self._post("secrets/create", payload)
         secret = result.get("secret", {})
         secret_id = secret.get("secret_id")
         if not secret_id:
@@ -329,6 +338,7 @@ class MLflowGatewayClient:
         api_key_name = endpoint_config.get("api_key_name")
         api_key = endpoint_config.get("api_key")
         api_base_url = endpoint_config.get("api_base_url", "")
+        api_version = endpoint_config.get("api_version", "")
         endpoint_raw = endpoint_config.get("endpoint")
 
         if not provider:
@@ -358,7 +368,7 @@ class MLflowGatewayClient:
 
         # Step 1: shared secret (one per api_key_name)
         secret_id = self.get_or_create_secret(
-            api_key_name, provider, api_key, api_base_url, verbose=verbose,
+            api_key_name, provider, api_key, api_base_url, api_version, verbose=verbose,
         )
 
         # Cache list calls to avoid repeated round-trips

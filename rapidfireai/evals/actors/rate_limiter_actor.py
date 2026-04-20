@@ -10,12 +10,19 @@ to the OpenAI rate limiter (tiktoken with gpt-5 tokenizer).
 import ray
 
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
-from rapidfireai.evals.utils.ratelimiter import OpenAIRateLimiter, GoogleGeminiRateLimiter, RequestStatus
+from rapidfireai.evals.utils.ratelimiter import (
+    OpenAIRateLimiter,
+    GoogleGeminiRateLimiter,
+    AnthropicRateLimiter,
+    RequestStatus,
+)
 from rapidfireai.evals.utils.logger import RFLogger
 
 _BACKEND_MAP = {
     "openai": OpenAIRateLimiter,
+    "azure": OpenAIRateLimiter,
     "gemini": GoogleGeminiRateLimiter,
+    "anthropic": AnthropicRateLimiter,
 }
 
 

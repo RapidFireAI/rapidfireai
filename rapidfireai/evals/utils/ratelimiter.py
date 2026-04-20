@@ -381,8 +381,13 @@ class OpenAIRateLimiter(BaseRateLimiter):
                     )
                 self.encoders[model_name] = fallback_encoder
 
+    # OpenAI vision bills images at ~85 tokens (low detail) to ~765 tokens
+    # (high detail, single tile). We use a conservative estimate.
+    _TOKENS_PER_IMAGE = 765
+    _TOKENS_PER_AUDIO = 512
+
     def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
-        """Count tokens using tiktoken. Includes OpenAI message-formatting overhead."""
+        """Count tokens using tiktoken. Handles both text-only and multimodal content."""
         if model_name not in self.encoders:
             raise ValueError(
                 f"Model '{model_name}' not found. Available: {list(self.encoders.keys())}"
@@ -391,7 +396,20 @@ class OpenAIRateLimiter(BaseRateLimiter):
         total = 2  # conversation start/end tokens
         for message in messages:
             total += 4  # per-message role/content overhead
-            total += len(encoding.encode(message.get("content", "")))
+            content = message.get("content", "")
+            if isinstance(content, str):
+                total += len(encoding.encode(content))
+            elif isinstance(content, list):
+                for part in content:
+                    part_type = part.get("type", "") if isinstance(part, dict) else ""
+                    if part_type == "text":
+                        total += len(encoding.encode(part.get("text", "")))
+                    elif part_type == "image_url":
+                        total += self._TOKENS_PER_IMAGE
+                    elif part_type == "input_audio":
+                        total += self._TOKENS_PER_AUDIO
+                    else:
+                        total += 4
         return total
 
 
@@ -430,8 +448,6 @@ class GoogleGeminiRateLimiter(BaseRateLimiter):
         )
 
     def _init_encoders(self) -> None:
-        # No offline encoder available for Gemini; count_prompt_tokens uses
-        # character-based approximation instead.
         pass
 
     # Gemini charges ~258 tokens per image (standard tile budget).
@@ -440,49 +456,101 @@ class GoogleGeminiRateLimiter(BaseRateLimiter):
     _TOKENS_PER_IMAGE = 258
     _TOKENS_PER_AUDIO_OR_VIDEO = 512
 
-    def _count_part_tokens(self, part: dict | str) -> int:
-        """Return a token estimate for a single Gemini message part."""
-        if isinstance(part, str):
-            return max(1, len(part) // self._CHARS_PER_TOKEN)
-
-        if "text" in part:
-            return max(1, len(part["text"]) // self._CHARS_PER_TOKEN)
-
-        mime = None
-        if "inline_data" in part:
-            mime = part["inline_data"].get("mime_type", "")
-        elif "file_data" in part:
-            mime = part["file_data"].get("mime_type", "")
-
-        if mime is not None:
-            if mime.startswith("image/"):
-                return self._TOKENS_PER_IMAGE
-            if mime.startswith(("audio/", "video/")):
-                return self._TOKENS_PER_AUDIO_OR_VIDEO
-
-        # Unknown part type — use a small non-zero placeholder.
-        return 4
-
     def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
         """
-        Estimate token count for Gemini-format messages.
+        Estimate token count for OpenAI-format messages using ~4 chars/token.
 
-        Each message must follow the Gemini SDK structure::
+        Messages arrive via the MLflow gateway in OpenAI format::
 
-            {"role": "user", "parts": [{"text": "..."}, ...]}
+            {"role": "user", "content": "..."}                   # text-only
+            {"role": "user", "content": [{"type": "text", ...},  # multimodal
+                                         {"type": "image_url", ...}]}
 
-        Part types handled:
-        - plain ``str``                        — character-based estimate (~4 chars/token)
-        - ``{"text": "..."}``                  — character-based estimate (~4 chars/token)
-        - ``{"inline_data": {...}}``            — fixed estimate per modality
-        - ``{"file_data": {...}}``              — fixed estimate per modality
-        - anything else                        — small non-zero placeholder
-
-        Includes a small per-message overhead to account for role/turn framing.
+        Includes fixed per-image/audio/video estimates for multimodal parts.
         """
         total = 2  # conversation framing
         for message in messages:
             total += 4  # per-message role/turn overhead
-            for part in message.get("parts", []):
-                total += self._count_part_tokens(part)
+            content = message.get("content", "")
+            if isinstance(content, str):
+                total += max(1, len(content) // self._CHARS_PER_TOKEN)
+            elif isinstance(content, list):
+                for part in content:
+                    part_type = part.get("type", "") if isinstance(part, dict) else ""
+                    if part_type == "text":
+                        total += max(1, len(part.get("text", "")) // self._CHARS_PER_TOKEN)
+                    elif part_type == "image_url":
+                        total += self._TOKENS_PER_IMAGE
+                    elif part_type in ("input_audio", "video"):
+                        total += self._TOKENS_PER_AUDIO_OR_VIDEO
+                    else:
+                        total += 4
+        return total
+
+
+# ---------------------------------------------------------------------------
+# Anthropic — character-based token estimation
+# ---------------------------------------------------------------------------
+
+class AnthropicRateLimiter(BaseRateLimiter):
+    """
+    Rate limiter for Anthropic API endpoints.
+
+    Claude models use a proprietary BPE tokenizer that is not available
+    offline without additional dependencies.  We use the same ~4 characters
+    per token approximation used by the Gemini limiter, which is
+    intentionally conservative for English-like text.
+
+    Messages arrive in OpenAI-compatible format via the MLflow gateway::
+
+        {"role": "user", "content": "..."}                   # text-only
+        {"role": "user", "content": [{"type": "text", ...},  # multimodal
+                                     {"type": "image_url", ...}]}
+    """
+
+    _CHARS_PER_TOKEN = 4
+
+    # Claude bills images based on resolution; a single 1568×1568 tile costs
+    # ~1600 tokens. We use a conservative fixed estimate.
+    _TOKENS_PER_IMAGE = 1600
+    _TOKENS_PER_AUDIO = 512
+
+    def __init__(
+        self,
+        model_rate_limits: dict[str, dict[str, int]],
+        max_completion_tokens: int = 150,
+        limit_safety_ratio: float = 0.98,
+        minimum_wait_time: float = 3.0,
+        logger=None,
+    ):
+        super().__init__(
+            model_rate_limits=model_rate_limits,
+            max_completion_tokens=max_completion_tokens,
+            limit_safety_ratio=limit_safety_ratio,
+            minimum_wait_time=minimum_wait_time,
+            logger=logger,
+        )
+
+    def _init_encoders(self) -> None:
+        pass
+
+    def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
+        """Estimate token count using ~4 chars/token for OpenAI-format messages."""
+        total = 2  # conversation framing
+        for message in messages:
+            total += 4  # per-message role/content overhead
+            content = message.get("content", "")
+            if isinstance(content, str):
+                total += max(1, len(content) // self._CHARS_PER_TOKEN)
+            elif isinstance(content, list):
+                for part in content:
+                    part_type = part.get("type", "") if isinstance(part, dict) else ""
+                    if part_type == "text":
+                        total += max(1, len(part.get("text", "")) // self._CHARS_PER_TOKEN)
+                    elif part_type == "image_url":
+                        total += self._TOKENS_PER_IMAGE
+                    elif part_type == "input_audio":
+                        total += self._TOKENS_PER_AUDIO
+                    else:
+                        total += 4
         return total
