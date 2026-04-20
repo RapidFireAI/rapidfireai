@@ -445,6 +445,12 @@ def run_jupyter():
     stderr_capture = io.StringIO()
 
     try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except AttributeError:
+        pass
+
+    try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
             app.initialize(argv=['--ServerApp.custom_display_url='])
         
@@ -467,6 +473,9 @@ def run_jupyter():
         print(f"   jupyter notebook --no-browser --port={app.port} --ServerApp.allow_origin='*' --ServerApp.default_url='/tree' --ServerApp.token=''")
         print("\n\nAfter forwarding the ports above, access the Jupyter notebook at:")
         print(f"http://localhost:{app.port}/tree?token={app.token}")
+
+        sys.stdout.flush()
+        sys.stderr.flush()
         
         # Don't redirect anything during start - let prompts through
         app.start()
