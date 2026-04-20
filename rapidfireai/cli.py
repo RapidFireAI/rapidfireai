@@ -474,6 +474,7 @@ def run_jupyter():
         print("\n\nAfter forwarding the ports above, access the Jupyter notebook at:")
         print(f"http://localhost:{app.port}/tree?token={app.token}")
 
+        print("\n\nStarting Jupyter server...")
         sys.stdout.flush()
         sys.stderr.flush()
         
