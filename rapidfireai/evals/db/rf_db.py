@@ -760,7 +760,12 @@ class RFDatabase:
 
             for row in result:
                 # Decode the pipeline config from the database (use pipeline_config column)
-                decoded_config = decode_db_payload(row[3]) if row[3] else None
+                decoded_config = None
+                if row[3]:
+                    try:
+                        decoded_config = decode_db_payload(row[3])
+                    except Exception:
+                        decoded_config = None
                 # Parse JSON config for display/analytics
                 json_config = json.loads(row[4]) if row[4] else None
                 flattened_config = json.loads(row[5]) if row[5] else {}
