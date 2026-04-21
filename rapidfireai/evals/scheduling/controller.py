@@ -176,6 +176,10 @@ class Controller:
             manager.log_param(run_id, "rpm_limit", str(pipeline.rpm_limit))
         if hasattr(pipeline, "tpm_limit") and pipeline.tpm_limit:
             manager.log_param(run_id, "tpm_limit", str(pipeline.tpm_limit))
+        if hasattr(pipeline, "itpm_limit") and pipeline.itpm_limit:
+            manager.log_param(run_id, "itpm_limit", str(pipeline.itpm_limit))
+        if hasattr(pipeline, "otpm_limit") and pipeline.otpm_limit:
+            manager.log_param(run_id, "otpm_limit", str(pipeline.otpm_limit))
 
         # Log prompt_manager params
         if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager:
@@ -1009,10 +1013,12 @@ class Controller:
                 endpoint_name = pipeline.model_name
                 provider = pipeline.endpoint_config.get("provider", "openai")
 
-                if pipeline.rpm_limit is None or pipeline.tpm_limit is None:
+                has_tpm = pipeline.tpm_limit is not None
+                has_itpm_otpm = pipeline.itpm_limit is not None and pipeline.otpm_limit is not None
+                if pipeline.rpm_limit is None or (not has_tpm and not has_itpm_otpm):
                     raise ValueError(
                         f"API pipeline {pipeline_id} (endpoint: {endpoint_name}) is missing rate limits. "
-                        f"Please provide rpm_limit and tpm_limit to RFAPIModelConfig."
+                        f"Please provide rpm_limit and (tpm_limit or itpm_limit+otpm_limit) to RFAPIModelConfig."
                     )
 
                 if provider not in provider_groups:
@@ -1025,14 +1031,11 @@ class Controller:
                 group = provider_groups[provider]
                 group["pipeline_ids"].append(pipeline_id)
 
+                rate_limit_dict = pipeline.get_rate_limit_dict()
                 if endpoint_name not in group["model_rate_limits"]:
-                    group["model_rate_limits"][endpoint_name] = {
-                        "rpm": pipeline.rpm_limit,
-                        "tpm": pipeline.tpm_limit,
-                    }
+                    group["model_rate_limits"][endpoint_name] = rate_limit_dict
                     group["max_completion_tokens_by_model"][endpoint_name] = pipeline.max_completion_tokens
-                elif (group["model_rate_limits"][endpoint_name]["rpm"] != pipeline.rpm_limit or
-                      group["model_rate_limits"][endpoint_name]["tpm"] != pipeline.tpm_limit):
+                elif group["model_rate_limits"][endpoint_name] != rate_limit_dict:
                     self.logger.warning(
                         f"Endpoint {endpoint_name} has inconsistent rate limits across pipelines. "
                         f"Using first encountered values: {group['model_rate_limits'][endpoint_name]}"
@@ -1060,8 +1063,13 @@ class Controller:
             for pipeline_id in group["pipeline_ids"]:
                 pipeline_to_rate_limiter[pipeline_id] = rate_limiter_actor
 
+            def _format_limits(limits: dict) -> str:
+                if "tpm" in limits:
+                    return f"{limits['rpm']} RPM, {limits['tpm']} TPM"
+                return f"{limits['rpm']} RPM, {limits['itpm']} ITPM, {limits['otpm']} OTPM"
+
             limits_summary = ", ".join([
-                f"{model}: {limits['rpm']} RPM, {limits['tpm']} TPM"
+                f"{model}: {_format_limits(limits)}"
                 for model, limits in group["model_rate_limits"].items()
             ])
             self.logger.info(

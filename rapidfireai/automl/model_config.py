@@ -390,6 +390,8 @@ if (
             prompt_manager: PromptManager = None,
             rpm_limit: int = None,
             tpm_limit: int = None,
+            itpm_limit: int = None,
+            otpm_limit: int = None,
             max_completion_tokens: int = None,
             verbose: bool = True,
         ):
@@ -418,8 +420,13 @@ if (
                     (temperature, max_completion_tokens, etc.)
                 rag: Optional RAG specification
                 prompt_manager: Optional prompt manager for few-shot examples
-                rpm_limit: Requests per minute limit
-                tpm_limit: Tokens per minute limit
+                rpm_limit: Requests per minute limit (required)
+                tpm_limit: Combined tokens per minute limit. Required for all
+                    providers except ``"anthropic"``.
+                itpm_limit: Input tokens per minute limit. Only accepted for
+                    ``provider="anthropic"``; must be paired with *otpm_limit*.
+                otpm_limit: Output tokens per minute limit. Only accepted for
+                    ``provider="anthropic"``; must be paired with *itpm_limit*.
                 max_completion_tokens: Max completion tokens per request.
                     Extracted from *model_config* if not provided.
                 verbose: Print provisioning progress to stdout (default
@@ -432,8 +439,32 @@ if (
             self.model_config = model_config or {}
             self.rag = rag
             self.prompt_manager = prompt_manager
+
+            # --- Rate-limit validation ---
+            provider = endpoint_config.get("provider", "openai")
+            has_tpm = tpm_limit is not None
+            has_itpm_otpm = itpm_limit is not None or otpm_limit is not None
+
+            if has_itpm_otpm and provider != "anthropic":
+                raise ValueError(
+                    f"itpm_limit/otpm_limit are only supported for provider='anthropic'. "
+                    f"Got provider='{provider}'. Use tpm_limit instead."
+                )
+
+            if has_tpm and has_itpm_otpm:
+                raise ValueError(
+                    "Specify either tpm_limit OR (itpm_limit and otpm_limit), not both."
+                )
+
+            if has_itpm_otpm and (itpm_limit is None or otpm_limit is None):
+                raise ValueError(
+                    "Both itpm_limit and otpm_limit must be provided together."
+                )
+
             self.rpm_limit = rpm_limit
             self.tpm_limit = tpm_limit
+            self.itpm_limit = itpm_limit
+            self.otpm_limit = otpm_limit
 
             if max_completion_tokens is None:
                 max_completion_tokens = self.model_config.get("max_completion_tokens", 150)
@@ -448,6 +479,8 @@ if (
                 "prompt_manager": prompt_manager,
                 "rpm_limit": rpm_limit,
                 "tpm_limit": tpm_limit,
+                "itpm_limit": itpm_limit,
+                "otpm_limit": otpm_limit,
                 "max_completion_tokens": max_completion_tokens,
             }
 
@@ -484,6 +517,17 @@ if (
             if isinstance(endpoint, List):
                 return endpoint.values[0].get("name", "unknown") if endpoint.values else "unknown"
             return "unknown"
+
+        def get_rate_limit_dict(self) -> dict[str, int]:
+            """Build the rate-limit dict expected by the rate limiter actor.
+
+            Returns a dict with ``"rpm"`` and either ``"tpm"`` (combined) or
+            ``"itpm"``/``"otpm"`` (fine-grained), depending on what the user
+            provided.
+            """
+            if self.itpm_limit is not None:
+                return {"rpm": self.rpm_limit, "itpm": self.itpm_limit, "otpm": self.otpm_limit}
+            return {"rpm": self.rpm_limit, "tpm": self.tpm_limit}
 
         def get_engine_class(self) -> type[InferenceEngine]:
             """Return APIInferenceEngine class."""

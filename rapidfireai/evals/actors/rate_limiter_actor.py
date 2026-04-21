@@ -83,42 +83,52 @@ class RateLimiterActor:
             logger=logger,
         )
 
-    async def acquire_slot(self, estimated_tokens: int, model_name: str):
+    async def acquire_slot(self, estimated_input_tokens: int, model_name: str):
         """
         Try to acquire a slot for a new request for a specific model.
 
         Args:
-            estimated_tokens: Projected token usage for this request
+            estimated_input_tokens: Projected input/prompt token usage.
+                Output tokens are projected internally by the limiter.
             model_name: Name of the model making the request
 
         Returns:
             Tuple of (can_proceed: bool, wait_time: float, request_id: Optional[int])
         """
-        return await self.limiter.acquire_slot(estimated_tokens, model_name)
+        return await self.limiter.acquire_slot(estimated_input_tokens, model_name)
 
-    async def update_actual_usage(self, request_id: int, actual_tokens: int, status: RequestStatus):
+    async def update_actual_usage(
+        self,
+        request_id: int,
+        actual_input_tokens: int,
+        actual_output_tokens: int,
+        status: RequestStatus,
+    ):
         """
         Update actual token usage after request completion.
 
         Args:
             request_id: ID of the request
-            actual_tokens: Actual tokens used
+            actual_input_tokens: Actual input/prompt tokens used
+            actual_output_tokens: Actual output/completion tokens used
             status: Request status (COMPLETED, FAILED, EMPTY_RESPONSE)
         """
-        await self.limiter.update_actual_usage(request_id, actual_tokens, status)
+        await self.limiter.update_actual_usage(
+            request_id, actual_input_tokens, actual_output_tokens, status,
+        )
 
-    def estimate_total_tokens(self, messages: list[dict], model_name: str) -> int:
+    def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
         """
-        Estimate total tokens for a request.
+        Count input/prompt tokens for a request.
 
         Args:
             messages: List of message dicts
             model_name: Model name (must match a key in model_rate_limits)
 
         Returns:
-            Estimated total tokens (prompt + completion)
+            Estimated input token count
         """
-        return self.limiter.estimate_total_tokens(messages, model_name)
+        return self.limiter.count_prompt_tokens(messages, model_name)
 
     async def get_stats(self) -> dict:
         """

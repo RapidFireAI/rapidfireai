@@ -532,10 +532,7 @@ class InteractiveControlHandler:
 
                 new_rate_limiter = RateLimiterActor.remote(
                     model_rate_limits={
-                        endpoint_name: {
-                            "rpm": model_config.rpm_limit,
-                            "tpm": model_config.tpm_limit,
-                        },
+                        endpoint_name: model_config.get_rate_limit_dict(),
                     },
                     max_completion_tokens=model_config.max_completion_tokens or 150,
                     limit_safety_ratio=0.95,

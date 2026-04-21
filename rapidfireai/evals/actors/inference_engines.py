@@ -187,7 +187,8 @@ class APIInferenceEngine(InferenceEngine):
             if request_id is not None:
                 update_ref = self.rate_limiter_actor.update_actual_usage.remote(
                     request_id,
-                    response.usage.total_tokens,
+                    response.usage.prompt_tokens,
+                    response.usage.completion_tokens,
                     RequestStatus.EMPTY_RESPONSE,
                 )
                 await update_ref
@@ -197,7 +198,8 @@ class APIInferenceEngine(InferenceEngine):
         if request_id is not None:
             update_ref = self.rate_limiter_actor.update_actual_usage.remote(
                 request_id,
-                response.usage.total_tokens,
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
                 RequestStatus.COMPLETED,
             )
             await update_ref
@@ -262,13 +264,13 @@ class APIInferenceEngine(InferenceEngine):
         Returns:
             Generated text string or error message
         """
-        # Estimate tokens using remote call to rate limiter actor
-        estimated_tokens_ref = self.rate_limiter_actor.estimate_total_tokens.remote(messages, self.model_name)
-        estimated_tokens = await estimated_tokens_ref
+        # Estimate input tokens using remote call to rate limiter actor
+        estimated_input_ref = self.rate_limiter_actor.count_prompt_tokens.remote(messages, self.model_name)
+        estimated_input_tokens = await estimated_input_ref
 
         # Wait for rate limit slot using remote call
         while True:
-            acquire_ref = self.rate_limiter_actor.acquire_slot.remote(estimated_tokens, self.model_name)
+            acquire_ref = self.rate_limiter_actor.acquire_slot.remote(estimated_input_tokens, self.model_name)
             can_proceed, wait_time, request_id = await acquire_ref
 
             if can_proceed:
@@ -293,7 +295,8 @@ class APIInferenceEngine(InferenceEngine):
                 update_ref = self.rate_limiter_actor.update_actual_usage.remote(
                     request_id,
                     0,
-                    RequestStatus.FAILED
+                    0,
+                    RequestStatus.FAILED,
                 )
                 await update_ref
             # Return error message as string
