@@ -203,34 +203,23 @@ class BaseRateLimiter(ABC):
             enforced_rpm_limit = self.enforced_rpm_limits[model_name]
             enforced_tpm_limit = self.enforced_tpm_limits[model_name]
 
-            def _wait_time_for_model() -> float:
-                model_requests = [
-                    r for r in self._current_requests.values() if r.model_name == model_name
-                ]
-                if model_requests:
-                    oldest = min(r.timestamp for r in model_requests)
-                    return max(self.minimum_wait_time, 60 - (time.time() - oldest))
-                return self.minimum_wait_time
-
             if current_rpm >= enforced_rpm_limit:
-                wait_time = _wait_time_for_model()
                 self._rate_limit_message_counter += 1
                 if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
                     self.logger.info(
-                        f"RPM limit hit for {model_name} — waiting {wait_time:.1f}s "
+                        f"RPM limit hit for {model_name} — waiting {self.minimum_wait_time:.1f}s "
                         f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
                     )
-                return False, wait_time, None
+                return False, self.minimum_wait_time, None
 
             if current_tpm + estimated_total >= enforced_tpm_limit:
-                wait_time = _wait_time_for_model()
                 self._rate_limit_message_counter += 1
                 if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
                     self.logger.info(
-                        f"TPM limit hit for {model_name} — waiting {wait_time:.1f}s "
+                        f"TPM limit hit for {model_name} — waiting {self.minimum_wait_time:.1f}s "
                         f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
                     )
-                return False, wait_time, None
+                return False, self.minimum_wait_time, None
 
             request_id = self._request_counter
             self._request_counter += 1
@@ -564,44 +553,32 @@ class FineGrainedBaseRateLimiter(ABC):
             enforced_itpm = self.enforced_itpm_limits[model_name]
             enforced_otpm = self.enforced_otpm_limits[model_name]
 
-            def _wait_time_for_model() -> float:
-                model_requests = [
-                    r for r in self._current_requests.values() if r.model_name == model_name
-                ]
-                if model_requests:
-                    oldest = min(r.timestamp for r in model_requests)
-                    return max(self.minimum_wait_time, 60 - (time.time() - oldest))
-                return self.minimum_wait_time
-
             if current_rpm >= enforced_rpm:
-                wait_time = _wait_time_for_model()
                 self._rate_limit_message_counter += 1
                 if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
                     self.logger.info(
-                        f"RPM limit hit for {model_name} — waiting {wait_time:.1f}s "
+                        f"RPM limit hit for {model_name} — waiting {self.minimum_wait_time:.1f}s "
                         f"(RPM: {current_rpm}/{enforced_rpm})"
                     )
-                return False, wait_time, None
+                return False, self.minimum_wait_time, None
 
             if current_itpm + estimated_input_tokens >= enforced_itpm:
-                wait_time = _wait_time_for_model()
                 self._rate_limit_message_counter += 1
                 if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
                     self.logger.info(
-                        f"ITPM limit hit for {model_name} — waiting {wait_time:.1f}s "
+                        f"ITPM limit hit for {model_name} — waiting {self.minimum_wait_time:.1f}s "
                         f"(ITPM: {current_itpm}/{enforced_itpm})"
                     )
-                return False, wait_time, None
+                return False, self.minimum_wait_time, None
 
             if current_otpm + self.max_completion_tokens >= enforced_otpm:
-                wait_time = _wait_time_for_model()
                 self._rate_limit_message_counter += 1
                 if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
                     self.logger.info(
-                        f"OTPM limit hit for {model_name} — waiting {wait_time:.1f}s "
+                        f"OTPM limit hit for {model_name} — waiting {self.minimum_wait_time:.1f}s "
                         f"(OTPM: {current_otpm}/{enforced_otpm})"
                     )
-                return False, wait_time, None
+                return False, self.minimum_wait_time, None
 
             request_id = self._request_counter
             self._request_counter += 1
