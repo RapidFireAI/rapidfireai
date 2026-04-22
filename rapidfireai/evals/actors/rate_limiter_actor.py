@@ -22,7 +22,8 @@ _BACKEND_MAP = {
     "openai": OpenAIRateLimiter,
     "azure": OpenAIRateLimiter,
     "gemini": GoogleGeminiRateLimiter,
-    "anthropic": AnthropicRateLimiter,
+    # "anthropic": AnthropicRateLimiter,
+    "anthropic": OpenAIRateLimiter,
 }
 
 
