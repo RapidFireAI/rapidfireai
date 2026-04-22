@@ -6,6 +6,14 @@ from .grid_search import RFGridSearch
 from .random_search import RFRandomSearch
 from .automl_utils import get_flattened_config_leaf, get_runs
 
+# Optuna integration (conditionally available)
+try:
+    from .optuna_search import RFOptuna
+    _OPTUNA_AVAILABLE = True
+except ImportError:
+    RFOptuna = None
+    _OPTUNA_AVAILABLE = False
+
 # Import fit mode configs (conditionally available)
 try:
     from .model_config import (
@@ -59,6 +67,9 @@ __all__ = [
     "get_flattened_config_leaf",
     "get_runs",
 ]
+
+if _OPTUNA_AVAILABLE:
+    __all__.append("RFOptuna")
 
 # Conditionally add fit mode configs to __all__
 if _FIT_CONFIGS_AVAILABLE:

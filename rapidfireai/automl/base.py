@@ -87,6 +87,15 @@ class AutoMLAlgorithm(ABC):
                         f"If you want fit mode, provide a trainer_type."
                     )
 
+    def get_callback(self):
+        """Return an optional callback for inter-chunk/shard decisions.
+
+        Subclasses (e.g. ``RFOptuna``) override this to return a
+        ``ChunkCallback`` or ``ShardCallback`` that the controller invokes
+        after each chunk / shard completion.
+        """
+        return None
+
     @abstractmethod
     def get_runs(self, seed: int) -> list[dict[str, Any]]:
         """Generate hyperparameter combinations for different training configurations."""

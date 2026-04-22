@@ -824,6 +824,7 @@ class Controller:
         num_actors: int = None,
         num_gpus_per_actor: float = None,
         num_cpus_per_actor: float = None,
+        shard_callback=None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Run multi-pipeline inference with fair round-robin scheduling.
@@ -840,6 +841,7 @@ class Controller:
             num_actors: Number of query processing actors to spawn
             num_gpus_per_actor: GPUs per actor (float, e.g. 1.0 or 0.0)
             num_cpus_per_actor: CPUs per actor (float, e.g. 3.75)
+            shard_callback: Optional ShardCallback for Optuna integration
 
         Returns:
             Dict mapping pipeline_id to (aggregated_results, cumulative_metrics) tuple
@@ -882,8 +884,17 @@ class Controller:
 
         self.logger.info(f"Created {num_actors} query processing actors (generic pool)")
 
+        # Extract Optuna shard callback from config_group if available
+        if shard_callback is None and hasattr(config_group, "get_callback"):
+            shard_callback = config_group.get_callback()
+
         # PHASE 5: Register pipelines in database
         pipeline_ids, pipeline_id_to_config = self._register_pipelines(config_leaves, db)
+
+        # Bind Optuna trials to the newly created DB pipeline IDs
+        if shard_callback is not None and hasattr(config_group, "bind_initial_trials"):
+            config_group.bind_initial_trials(pipeline_ids)
+            self.logger.info(f"Optuna shard callback bound to {len(pipeline_ids)} initial pipelines")
 
         # PHASE 6: Initialize PipelineScheduler
         scheduler = PipelineScheduler(
@@ -1306,6 +1317,53 @@ class Controller:
                             f"({task_info['batch_count']} batches, {duration:.2f}s)"
                         )
 
+                        # Optuna shard callback: evaluate pipeline and potentially prune
+                        if (
+                            shard_callback is not None
+                            and shards_completed < num_shards
+                        ):
+                            try:
+                                cb_metrics = display_metrics if display_metrics else {}
+                                shard_decision = shard_callback.on_shard_complete(
+                                    pipeline_id, shard_id, cb_metrics
+                                )
+                                if shard_decision.action == "prune":
+                                    db.set_pipeline_status(pipeline_id, PipelineStatus.STOPPED)
+                                    progress_display.update_pipeline(pipeline_id, status="STOPPED")
+                                    scheduler.remove_pipeline(pipeline_id)
+                                    self.logger.info(
+                                        f"Optuna pruned pipeline {pipeline_id} after shard {shard_id}"
+                                    )
+                                    if shard_decision.replacement_config:
+                                        new_ids, new_map = self._register_pipelines(
+                                            [shard_decision.replacement_config], db
+                                        )
+                                        for new_pid in new_ids:
+                                            pipeline_id_to_config[new_pid] = new_map[new_pid]
+                                            pipeline_ids.append(new_pid)
+                                            agg = Aggregator()
+                                            pc = new_map[new_pid]
+                                            p = pc["pipeline"]
+                                            if hasattr(p, "online_strategy"):
+                                                agg.set_online_strategy(**p.online_strategy)
+                                            agg.set_total_population_size(total_dataset_size)
+                                            pipeline_aggregators[new_pid] = agg
+                                            pipeline_results[new_pid] = {
+                                                "results": {},
+                                                "metrics": {},
+                                                "start_time": None,
+                                            }
+                                            scheduler.add_pipeline(new_pid, shards_completed=0)
+                                            if hasattr(shard_callback, "_remap_pending_trial"):
+                                                shard_callback._remap_pending_trial(new_pid)
+                                        self.logger.info(
+                                            f"Optuna suggested replacement pipeline(s): {new_ids}"
+                                        )
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Optuna shard callback error for pipeline {pipeline_id}: {e}"
+                                )
+
                         # Mark for cleanup
                         completed_actor_ids.append(actor_id)
 
@@ -1563,6 +1621,18 @@ class Controller:
             db.set_actor_task_start_time(task_id, task_start_time)
             db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
             db.set_pipeline_current_shard(pipeline_id, shard_id)
+
+        # Finalize Optuna shard callback with final metrics from all pipelines
+        if shard_callback is not None:
+            try:
+                final_cb_metrics: dict[int, dict] = {}
+                for pid in pipeline_id_to_config:
+                    if pid in pipeline_results and pipeline_results[pid]["metrics"]:
+                        final_cb_metrics[pid] = pipeline_results[pid]["metrics"]
+                shard_callback.finalize(final_cb_metrics)
+                self.logger.info("Optuna shard callback finalized")
+            except Exception as e:
+                self.logger.warning(f"Optuna shard callback finalize error: {e}")
 
         # PHASE 8: Compute final metrics for each pipeline (including dynamically cloned ones).
         # pipeline_id_to_config contains all pipelines (originals + clones added via _handle_clone).

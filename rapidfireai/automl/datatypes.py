@@ -10,7 +10,14 @@ import random
 class Range:
     """Represents a range of values for a hyperparameter."""
 
-    def __init__(self, start, end, dtype: str | None = None):
+    def __init__(
+        self,
+        start,
+        end,
+        dtype: str | None = None,
+        log: bool = False,
+        step: int | float | None = None,
+    ):
         if dtype is None:
             self.dtype = (
                 "int" if isinstance(start, int) and isinstance(end, int) else "float"
@@ -23,6 +30,8 @@ class Range:
             raise ValueError("start and end must be either int or float.")
         self.start = start
         self.end = end
+        self.log = log
+        self.step = step
 
     def sample(self):
         """Sample a value from the range [self.start, self.end]."""
