@@ -18,6 +18,7 @@ import { MlflowHeader } from './common/components/MlflowHeader';
 import { getRouteDefs as getExperimentTrackingRouteDefs } from './experiment-tracking/route-defs';
 import { getRouteDefs as getModelRegistryRouteDefs } from './model-registry/route-defs';
 import { getRouteDefs as getCommonRouteDefs } from './common/route-defs';
+import { getGatewayRouteDefs } from './gateway/route-defs';
 import { useInitializeExperimentRunColors } from './experiment-tracking/components/experiment-page/hooks/useExperimentRunColor';
 import { shouldEnableExperimentPageChildRoutes } from './common/utils/FeatureUtils';
 import { MlflowSidebar } from './common/components/MlflowSidebar';
@@ -106,7 +107,7 @@ export const MlflowRouter = ({
 }) => {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const routes = useMemo(
-    () => [...getExperimentTrackingRouteDefs(), ...getModelRegistryRouteDefs(), landingRoute, ...getCommonRouteDefs()],
+    () => [...getExperimentTrackingRouteDefs(), ...getModelRegistryRouteDefs(), ...getGatewayRouteDefs(), landingRoute, ...getCommonRouteDefs()],
     [],
   );
   // eslint-disable-next-line react-hooks/rules-of-hooks

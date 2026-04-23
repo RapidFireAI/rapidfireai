@@ -10,3 +10,7 @@ declare module 'enzyme';
 declare module 'redux-promise-middleware';
 declare module 'redux-mock-store';
 declare module 'leaflet';
+
+declare module 'uuid' {
+  export function v4(): string;
+}

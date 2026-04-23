@@ -128,3 +128,6 @@ export const getEvalTabTotalTracesLimit = () => {
 export const isExperimentEvalResultsMonitoringUIEnabled = () => {
   return true;
 };
+
+/** Stub: workflow-based navigation is not enabled in the RapidFire fork. */
+export const shouldEnableWorkflowBasedNavigation = () => false;

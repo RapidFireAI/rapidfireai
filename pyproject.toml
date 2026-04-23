@@ -54,7 +54,7 @@ dependencies = [
     # Experiment tracking
     "trackio",
     "trackio[gpu]",
-    "mlflow",
+    "mlflow[genai]",
     "tensorboard~=2.19.0",
 
     # Other
