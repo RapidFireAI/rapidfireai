@@ -1,6 +1,9 @@
 """Tests for Optuna integration: search-space extraction, callbacks, RFOptuna.get_runs()."""
 
 import copy
+import types
+from dataclasses import dataclass
+
 import pytest
 import optuna
 
@@ -10,10 +13,12 @@ from rapidfireai.automl.optuna_search import (
     OptunaShardCallback,
     RFOptuna,
     _extract_search_space,
+    _resolve_scalar_for_objective,
     _sample_from_trial,
     _set_nested,
     _suggest_value,
     _template_to_leaf_evals,
+    _trial_state_from_storage,
 )
 from rapidfireai.automl.callbacks import RunDecision, PipelineDecision
 
@@ -62,6 +67,25 @@ class TestExtractSearchSpace:
     def test_empty_template(self):
         assert _extract_search_space({"a": 1, "b": "hello"}) == []
 
+    def test_dataclass_wraps_nested_user_params(self):
+        """RFModelConfig is a dataclass; Range/List under peft_config._user_params must be found."""
+
+        class FakePeft:
+            def __init__(self):
+                self._user_params = {"lora_alpha": List([16, 32]), "r": 8}
+
+        @dataclass
+        class FakeModelConfig:
+            model_name: str
+            peft_config: object
+
+        template = FakeModelConfig(model_name="gpt2", peft_config=FakePeft())
+        space = _extract_search_space(template)
+        assert len(space) == 1
+        path, param = space[0]
+        assert path == "peft_config.lora_alpha"
+        assert isinstance(param, List)
+
     def test_range_log_and_step(self):
         r = Range(1e-6, 1e-3, log=True)
         assert r.log is True
@@ -69,6 +93,10 @@ class TestExtractSearchSpace:
         r2 = Range(8, 64, step=8)
         assert r2.step == 8
         assert r2.log is False
+
+
+def test_resolve_scalar_prefers_primary_key():
+    assert _resolve_scalar_for_objective({"eval_loss": 1.0, "train_loss": 9.0}, "eval_loss") == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +173,28 @@ class TestSetNested:
 # ---------------------------------------------------------------------------
 
 
+def _fit_template_for_chunk_callback_tests() -> types.SimpleNamespace:
+    """Minimal RFModelConfig-like object for tests that call ``_template_to_leaf_fit``."""
+    return types.SimpleNamespace(
+        model_name="m",
+        tokenizer=None,
+        tokenizer_kwargs=None,
+        model_type="causal_lm",
+        peft_config=None,
+        training_args=None,
+        model_kwargs=None,
+        ref_model_kwargs=None,
+        reward_funcs=None,
+        ref_model_name=None,
+        ref_model_type=None,
+        num_gpus=None,
+        formatting_func=None,
+        compute_metrics=None,
+        generation_config=None,
+        lr=Range(0.0, 1.0),
+    )
+
+
 class TestOptunaChunkCallback:
     def _make_callback(self, direction="minimize", pruner=None):
         study = optuna.create_study(
@@ -152,7 +202,7 @@ class TestOptunaChunkCallback:
             pruner=pruner or optuna.pruners.NopPruner(),
         )
         space = [("lr", Range(0.0, 1.0))]
-        template = {"lr": Range(0.0, 1.0)}
+        template = _fit_template_for_chunk_callback_tests()
         cb = OptunaChunkCallback(
             study=study,
             search_space=space,
@@ -193,13 +243,19 @@ class TestOptunaChunkCallback:
         cb, _ = self._make_callback()
         assert cb._resolve_metric({"eval_loss": [(0, 0.8), (1, 0.5)]}) == 0.5
 
+    def test_resolve_metric_falls_back_when_eval_missing(self):
+        """Tiny SFT jobs may log train_loss but never eval_loss."""
+        cb, _ = self._make_callback()
+        assert cb._resolve_metric({"train_loss": 2.5}) == 2.5
+        assert cb._resolve_metric({"train_loss": [(0, 3.0), (4, 2.1)]}) == 2.1
+
     def test_finalize_tells_study(self):
         cb, study = self._make_callback()
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
         cb.finalize({1: {"eval_loss": 0.3}})
-        assert trial.state == optuna.trial.TrialState.COMPLETE
+        assert _trial_state_from_storage(study, trial) == optuna.trial.TrialState.COMPLETE
 
     def test_finalize_fails_missing_metric(self):
         cb, study = self._make_callback()
@@ -207,7 +263,7 @@ class TestOptunaChunkCallback:
         cb._set_initial_trials({1: trial}, spawned=1)
 
         cb.finalize({1: {}})
-        assert trial.state == optuna.trial.TrialState.FAIL
+        assert _trial_state_from_storage(study, trial) == optuna.trial.TrialState.FAIL
 
     def test_replacement_within_budget(self):
         cb, study = self._make_callback()
@@ -276,7 +332,7 @@ class TestOptunaShardCallback:
         trial = study.ask()
         cb._set_initial_trials({10: trial}, spawned=1)
         cb.finalize({10: {"accuracy": 0.92}})
-        assert trial.state == optuna.trial.TrialState.COMPLETE
+        assert _trial_state_from_storage(study, trial) == optuna.trial.TrialState.COMPLETE
 
 
 # ---------------------------------------------------------------------------

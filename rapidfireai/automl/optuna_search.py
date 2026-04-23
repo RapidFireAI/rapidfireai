@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import uuid
+from dataclasses import fields, is_dataclass
 from typing import Any
 
 import optuna
@@ -19,6 +20,66 @@ from rapidfireai.automl.datatypes import List, Range
 from rapidfireai.fit.utils.exceptions import AutoMLException
 
 # ---------------------------------------------------------------------------
+# Optuna Trial helpers (API compatibility across Optuna versions)
+# ---------------------------------------------------------------------------
+
+
+def _trial_state_from_storage(study: optuna.Study, trial: optuna.Trial) -> optuna.trial.TrialState:
+    """Return the stored state for *trial*.
+
+    ``Trial`` instances returned by :meth:`~optuna.study.Study.ask` do not always
+    expose a ``state`` attribute (e.g. recent Optuna releases); use frozen trials
+    from the study storage instead.
+    """
+    for frozen in study.get_trials(deepcopy=False):
+        if frozen.number == trial.number:
+            return frozen.state
+    raise AutoMLException(
+        f"Could not resolve Optuna trial state for trial number {trial.number}"
+    )
+
+
+# When the primary objective (e.g. eval_loss) is never logged — common on tiny
+# runs where eval may not fire — try common Trainer / MLflow key aliases.
+_OBJECTIVE_ALIAS_KEYS: dict[str, tuple[str, ...]] = {
+    "eval_loss": ("eval/loss", "eval-loss", "validation_loss", "train_loss", "loss"),
+}
+
+
+def _ordered_objective_keys(primary: str) -> tuple[str, ...]:
+    keys = [primary]
+    seen = {primary}
+    for alias in _OBJECTIVE_ALIAS_KEYS.get(primary, ()):
+        if alias not in seen:
+            seen.add(alias)
+            keys.append(alias)
+    return tuple(keys)
+
+
+def _float_from_logged_metric_value(raw: Any) -> float | None:
+    """Parse a scalar from MLflow-style history or a plain numeric."""
+    if raw is None:
+        return None
+    if isinstance(raw, list) and raw:
+        last = raw[-1]
+        if isinstance(last, (list, tuple)) and len(last) >= 2:
+            return float(last[1])
+        return float(last)
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    return None
+
+
+def _resolve_scalar_for_objective(metrics: dict[str, Any], objective_metric: str) -> float | None:
+    """First matching key among *objective_metric* and known aliases."""
+    for key in _ordered_objective_keys(objective_metric):
+        val = _float_from_logged_metric_value(metrics.get(key))
+        if val is not None:
+            return val
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Search-space extraction and sampling
 # ---------------------------------------------------------------------------
 
@@ -32,7 +93,8 @@ def _extract_search_space(
     Returns a flat list of ``(dotted_path, Range_or_List)`` tuples.  The
     traversal mirrors ``recursive_expand_gridsearch`` so the same config
     structures that work with ``RFGridSearch`` / ``RFRandomSearch`` also work
-    here.
+    here (including ``RFModelConfig`` dataclass templates with nested
+    ``peft_config`` / ``training_args`` objects).
     """
     params: list[tuple[str, Range | List]] = []
 
@@ -43,6 +105,13 @@ def _extract_search_space(
     elif isinstance(obj, dict):
         for key, value in obj.items():
             child_prefix = f"{prefix}.{key}" if prefix else key
+            params.extend(_extract_search_space(value, child_prefix))
+    elif is_dataclass(obj) and not isinstance(obj, type):
+        # RFModelConfig and other templates are dataclasses without _user_params;
+        # nested Range/List live under peft_config / training_args / dict fields.
+        for f in fields(obj):
+            value = getattr(obj, f.name)
+            child_prefix = f"{prefix}.{f.name}" if prefix else f.name
             params.extend(_extract_search_space(value, child_prefix))
     # Primitive or non-searchable -- skip
     return params
@@ -294,7 +363,9 @@ class OptunaChunkCallback:
 
     def finalize(self, final_metrics: dict[int, dict[str, Any]]) -> None:
         for run_id, trial in self._trials.items():
-            if trial.state == optuna.trial.TrialState.RUNNING:
+            if not isinstance(run_id, int):
+                continue
+            if _trial_state_from_storage(self._study, trial) == optuna.trial.TrialState.RUNNING:
                 run_metrics = final_metrics.get(run_id, {})
                 value = self._resolve_metric(run_metrics)
                 if value is not None:
@@ -309,16 +380,10 @@ class OptunaChunkCallback:
 
         Supports both flat dicts (``{"eval_loss": 0.5}``) and MLflow-style
         histories (``{"eval_loss": [(step, value), ...]}``) by taking the
-        last recorded value.
+        last recorded value. If the primary objective is missing, tries aliases
+        (e.g. ``eval_loss`` → ``train_loss``) so small SFT runs still finalize.
         """
-        raw = metrics.get(self._objective_metric)
-        if raw is None:
-            return None
-        if isinstance(raw, list) and raw:
-            return float(raw[-1][1]) if isinstance(raw[-1], (list, tuple)) else float(raw[-1])
-        if isinstance(raw, (int, float)):
-            return float(raw)
-        return None
+        return _resolve_scalar_for_objective(metrics, self._objective_metric)
 
     def _maybe_suggest_replacement(self) -> dict[str, Any] | None:
         if self._spawned >= self._budget:
@@ -394,7 +459,9 @@ class OptunaShardCallback:
 
     def finalize(self, final_metrics: dict[int, dict[str, Any]]) -> None:
         for pipeline_id, trial in self._trials.items():
-            if trial.state == optuna.trial.TrialState.RUNNING:
+            if not isinstance(pipeline_id, int):
+                continue
+            if _trial_state_from_storage(self._study, trial) == optuna.trial.TrialState.RUNNING:
                 pm = final_metrics.get(pipeline_id, {})
                 value = self._resolve_metric(pm)
                 if value is not None:
@@ -405,6 +472,9 @@ class OptunaShardCallback:
     # -- internals --
 
     def _resolve_metric(self, metrics: dict[str, Any]) -> float | None:
+        direct = _resolve_scalar_for_objective(metrics, self._objective_metric)
+        if direct is not None:
+            return direct
         raw = metrics.get(self._objective_metric)
         if raw is None:
             for key, val in metrics.items():

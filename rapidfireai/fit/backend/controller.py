@@ -613,10 +613,6 @@ class Controller:
         random.seed(seed)
         self.logger.info(f"Set seed to {seed}")
 
-        # Extract Optuna callback from param_config if available
-        if chunk_callback is None and hasattr(param_config, "get_callback"):
-            chunk_callback = param_config.get_callback()
-
         # create models
         try:
             len_train_dataset = len(train_dataset)
@@ -630,6 +626,11 @@ class Controller:
             self.logger.debug("Created models.")
         except Exception as e:
             raise ControllerException(f"Error creating models: {e}") from e
+
+        # RFOptuna: ``get_runs()`` (inside _create_models) creates the Optuna study.
+        # ``get_callback()`` must run after that or it returns None and trials never finalize.
+        if chunk_callback is None and hasattr(param_config, "get_callback"):
+            chunk_callback = param_config.get_callback()
 
         # Bind Optuna trials to the newly created DB run IDs
         if chunk_callback is not None and hasattr(param_config, "bind_initial_trials"):

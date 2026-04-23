@@ -10,8 +10,21 @@ from .automl_utils import get_flattened_config_leaf, get_runs
 try:
     from .optuna_search import RFOptuna
     _OPTUNA_AVAILABLE = True
-except ImportError:
-    RFOptuna = None
+except ImportError as _optuna_import_error:
+
+    class RFOptuna:  # type: ignore[misc]
+        """Stub so imports succeed; instantiation explains how to enable Optuna."""
+
+        def __new__(cls, *args, **kwargs):  # noqa: ARG004
+            raise ImportError(
+                "RFOptuna requires Optuna importable from this Python environment. "
+                "Install into the **same interpreter as your Jupyter kernel**, then restart the kernel:\n"
+                "  python -m pip install optuna\n"
+                "Check in a notebook cell: import sys; print(sys.executable)\n"
+                "Original error: "
+                + str(_optuna_import_error)
+            ) from _optuna_import_error
+
     _OPTUNA_AVAILABLE = False
 
 # Import fit mode configs (conditionally available)
@@ -68,8 +81,7 @@ __all__ = [
     "get_runs",
 ]
 
-if _OPTUNA_AVAILABLE:
-    __all__.append("RFOptuna")
+__all__.append("RFOptuna")
 
 # Conditionally add fit mode configs to __all__
 if _FIT_CONFIGS_AVAILABLE:
