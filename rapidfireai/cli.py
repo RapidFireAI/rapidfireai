@@ -152,7 +152,7 @@ def install_packages(
         parsed_cuda = parse_cuda_version_string(cuda_version)
         if parsed_cuda is None:
             print(
-                "❌ Invalid --cudaversion: use major.minor (e.g. 12.4) or major only (e.g. 12).",
+                "❌ Invalid --cudaversion: use major.minor (e.g. 12.4), major only (e.g. 12) or 0.0 to disable CUDA usage.",
                 file=sys.stderr,
             )
             return 1
@@ -170,13 +170,14 @@ def install_packages(
         and evals
     ):
         print(
-            "❌ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
-            "   Pass your CUDA version explicitly, for example:\n"
-            "   rapidfireai init --evals --cudaversion 12.4\n"
-            "   If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).",
+            " ⚠️ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
+            "    Disabling CUDA usage for evaluation dependencies.\n",
+            "    If you want to override this expelicitly pass the CUDA version, for example:\n"
+            "        rapidfireai init --evals --cudaversion 12.4\n"
+            "    If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).\n"
+            "          If there is no GPU available, you can ignore this warning.",
             file=sys.stderr,
         )
-        return 1
 
     python_info = get_python_info()
     site_packages = python_info["site_packages"]

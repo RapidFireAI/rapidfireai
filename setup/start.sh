@@ -160,10 +160,13 @@ setup_python_env() {
 
 # Function to cleanup processes on exit
 cleanup() {
+    local signal="${1:-}"
     # Clear the trap to prevent being called twice (SIGINT + EXIT)
     trap - SIGINT SIGTERM EXIT
 
-    if [ "$RF_FORCE" != "true" ]; then
+    # Skip the confirmation prompt when triggered by SIGTERM (e.g., system
+    # shutdown, `kill <pid>`, supervisor sending TERM) or when RF_FORCE=true.
+    if [ "$RF_FORCE" != "true" ] && [ "$signal" != "SIGTERM" ]; then
         # Confirm cleanup
         read -p "Do you want to shutdown services and delete the PID file? (y/n) " -n 1 -r REPLY
         echo
@@ -463,7 +466,6 @@ start_api_server() {
     # Wait for API server to be ready - use longer timeout for API server
     if wait_for_service $RF_API_HOST $RF_API_PORT "API server" $((RF_TIMEOUT_TIME * 2)); then
         print_success "API server started (PID: $api_pid)"
-        print_status "API server available at: http://$RF_API_HOST:$RF_API_PORT"
         return 0
     else
         print_error "API server failed to start. Checking for errors..."
@@ -572,7 +574,7 @@ start_frontend() {
 
     for host in "${check_hosts[@]}"; do
         if wait_for_service $host $RF_FRONTEND_PORT "Frontend server" $RF_TIMEOUT_TIME; then
-            print_success "Frontend Flask server started (PID: $frontend_pid) on $host:$RF_FRONTEND_PORT"
+            print_success "Frontend Flask server started (PID: $frontend_pid)"
             frontend_ready=true
             break
         fi
@@ -746,8 +748,13 @@ show_status() {
         if [[ "$RF_START_FRONTEND" != "true" ]]; then
             print_status "⊗ Frontend not started (RF_START_FRONTEND=false or rapidfireai start --no-frontend)"
         elif ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
+            if [[ "$RF_FRONTEND_HOST" == "0.0.0.0" ]]; then
+                DISPLAY_URL="http://localhost:$RF_FRONTEND_PORT"
+            else
+                DISPLAY_URL="http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
+            fi
             print_success "🚀 RapidFire Frontend is ready!"
-            print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
+            print_status "👉 Open your browser and navigate to: $DISPLAY_URL"
             print_status "   (Click the link above or copy/paste the URL into your browser)"
         else
             print_error "🚨 RapidFire Frontend is not ready!"
@@ -954,8 +961,13 @@ main() {
     rf_version=$(rapidfireai --version)
     print_status "Starting ${rf_version} services..."
 
-    # Set up signal handlers for cleanup
-    trap cleanup SIGINT SIGTERM EXIT
+    # Set up signal handlers for cleanup.
+    # SIGTERM is handled separately so cleanup can skip the interactive
+    # confirmation prompt when the script is terminated non-interactively
+    # (e.g., `kill <pid>`, systemd stop, container shutdown).
+    trap 'cleanup SIGTERM' SIGTERM
+    trap 'cleanup SIGINT' SIGINT
+    trap 'cleanup EXIT' EXIT
 
     # Check for required commands
     for cmd in mlflow gunicorn; do
