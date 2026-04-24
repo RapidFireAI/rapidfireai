@@ -79,6 +79,31 @@ def _resolve_scalar_for_objective(metrics: dict[str, Any], objective_metric: str
     return None
 
 
+def _resolve_metric_history(metrics: dict[str, Any], objective_metric: str) -> list[tuple[int, float]]:
+    """Return the full ``(step, value)`` history for the objective metric.
+
+    Tries the primary key first, then known aliases.  Returns an empty list
+    when no history is available.  Handles MLflow-style ``[(step, value), ...]``
+    lists, plain numeric scalars, and bare lists of numbers.
+    """
+    for key in _ordered_objective_keys(objective_metric):
+        raw = metrics.get(key)
+        if raw is None:
+            continue
+        if isinstance(raw, list) and raw:
+            history: list[tuple[int, float]] = []
+            for entry in raw:
+                if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                    history.append((int(entry[0]), float(entry[1])))
+                elif isinstance(entry, (int, float)):
+                    history.append((len(history), float(entry)))
+            if history:
+                return sorted(history, key=lambda x: x[0])
+        if isinstance(raw, (int, float)):
+            return [(0, float(raw))]
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Search-space extraction and sampling
 # ---------------------------------------------------------------------------
@@ -163,13 +188,43 @@ def _sample_from_trial(
     trial: optuna.Trial,
     search_space: list[tuple[str, Range | List]],
     config_template: Any,
+    param_prefix: str = "",
 ) -> Any:
-    """Deep-copy *config_template* and replace each Range/List with a sampled value."""
+    """Deep-copy *config_template* and replace each Range/List with a sampled value.
+
+    *param_prefix* is prepended to Optuna parameter names (used for multi-template
+    namespacing so identically-named params in different templates stay distinct).
+    """
     config = copy.deepcopy(config_template)
     for dotted_path, param in search_space:
-        value = _suggest_value(trial, dotted_path, param)
+        optuna_name = f"{param_prefix}{dotted_path}" if param_prefix else dotted_path
+        value = _suggest_value(trial, optuna_name, param)
         _set_nested(config, dotted_path, value)
     return config
+
+
+def _sample_from_trial_multi(
+    trial: optuna.Trial,
+    config_templates: list[Any],
+    search_spaces: list[list[tuple[str, Range | List]]],
+) -> Any:
+    """Pick a template via Optuna categorical (if >1), then sample its search space.
+
+    Single-template case is identical to ``_sample_from_trial`` (no extra
+    categorical, no parameter prefix) for full backward compatibility.
+    """
+    if len(config_templates) == 1:
+        return _sample_from_trial(trial, search_spaces[0], config_templates[0])
+
+    tidx = trial.suggest_categorical(
+        "_config_template_idx", list(range(len(config_templates))),
+    )
+    return _sample_from_trial(
+        trial,
+        search_spaces[tidx],
+        config_templates[tidx],
+        param_prefix=f"_t{tidx}.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -307,25 +362,48 @@ _PRUNERS = {
 
 
 class OptunaChunkCallback:
-    """ChunkCallback that uses an Optuna study for pruning and replacement in fit mode."""
+    """ChunkCallback that uses an Optuna study for pruning and replacement in fit mode.
+
+    Args:
+        granularity: When to evaluate pruning decisions — ``"chunk"`` (after
+            every chunk, the default) or ``"epoch"`` (only at epoch boundaries,
+            i.e. after every ``num_chunks`` chunks per run).
+        num_chunks: Number of chunks per epoch.  Required when
+            ``granularity="epoch"`` so the callback can detect epoch boundaries.
+    """
 
     def __init__(
         self,
         study: optuna.Study,
-        search_space: list[tuple[str, Range | List]],
-        config_template: Any,
+        search_spaces: list[list[tuple[str, Range | List]]],
+        config_templates: list[Any],
         trainer_type: str,
         budget: int,
         objective_metric: str,
+        granularity: str = "chunk",
+        num_chunks: int | None = None,
     ):
+        if granularity not in ("chunk", "epoch"):
+            raise AutoMLException(
+                f"granularity must be 'chunk' or 'epoch', got '{granularity}'"
+            )
+        if granularity == "epoch" and (num_chunks is None or num_chunks < 1):
+            raise AutoMLException(
+                "num_chunks must be a positive integer when granularity='epoch'"
+            )
+
         self._study = study
-        self._search_space = search_space
-        self._config_template = config_template
+        self._search_spaces = search_spaces
+        self._config_templates = config_templates
         self._trainer_type = trainer_type
         self._budget = budget
         self._objective_metric = objective_metric
+        self._granularity = granularity
+        self._num_chunks = num_chunks
         self._trials: dict[int, optuna.trial.Trial] = {}
         self._spawned = 0
+        self._last_reported_step: dict[int, int] = {}
+        self._chunks_since_last_eval: dict[int, int] = {}
 
     # -- bookkeeping kept by RFOptuna before handing off --
 
@@ -348,11 +426,23 @@ class OptunaChunkCallback:
         if trial is None:
             return RunDecision(action="continue")
 
-        metric_value = self._resolve_metric(metrics)
-        if metric_value is None:
+        history = _resolve_metric_history(metrics, self._objective_metric)
+        if not history:
             return RunDecision(action="continue")
 
-        trial.report(metric_value, step=chunk_id)
+        last_reported = self._last_reported_step.get(run_id, -1)
+        for step, value in history:
+            if step > last_reported:
+                trial.report(value, step=step)
+                self._last_reported_step[run_id] = step
+
+        if self._granularity == "epoch":
+            self._chunks_since_last_eval[run_id] = (
+                self._chunks_since_last_eval.get(run_id, 0) + 1
+            )
+            if self._chunks_since_last_eval[run_id] < self._num_chunks:
+                return RunDecision(action="continue")
+            self._chunks_since_last_eval[run_id] = 0
 
         if trial.should_prune():
             self._study.tell(trial, state=optuna.trial.TrialState.PRUNED)
@@ -390,7 +480,9 @@ class OptunaChunkCallback:
             return None
 
         new_trial = self._study.ask()
-        config_obj = _sample_from_trial(new_trial, self._search_space, self._config_template)
+        config_obj = _sample_from_trial_multi(
+            new_trial, self._config_templates, self._search_spaces,
+        )
         leaf = _template_to_leaf_fit(config_obj, self._trainer_type)
 
         placeholder_id = f"_optuna_pending_{uuid.uuid4().hex[:8]}"
@@ -412,14 +504,14 @@ class OptunaShardCallback:
     def __init__(
         self,
         study: optuna.Study,
-        search_space: list[tuple[str, Range | List]],
-        config_template: dict[str, Any],
+        search_spaces: list[list[tuple[str, Range | List]]],
+        config_templates: list[dict[str, Any]],
         budget: int,
         objective_metric: str,
     ):
         self._study = study
-        self._search_space = search_space
-        self._config_template = config_template
+        self._search_spaces = search_spaces
+        self._config_templates = config_templates
         self._budget = budget
         self._objective_metric = objective_metric
         self._trials: dict[int, optuna.trial.Trial] = {}
@@ -493,7 +585,9 @@ class OptunaShardCallback:
             return None
 
         new_trial = self._study.ask()
-        config_dict = _sample_from_trial(new_trial, self._search_space, self._config_template)
+        config_dict = _sample_from_trial_multi(
+            new_trial, self._config_templates, self._search_spaces,
+        )
         leaf = _template_to_leaf_evals(config_dict)
 
         placeholder_id = f"_optuna_pending_{uuid.uuid4().hex[:8]}"
@@ -521,9 +615,23 @@ class RFOptuna(AutoMLAlgorithm):
     attached callback prunes underperforming runs and optionally replaces them
     with new Optuna suggestions.
 
+    Supports **multiple config templates** (just like Grid/Random search)::
+
+        config_group = RFOptuna(
+            configs=[template_a, template_b],          # or List([...])
+            trainer_type="SFT",
+            ...
+        )
+
+    When multiple templates are provided, Optuna treats the template choice
+    itself as a categorical hyperparameter and learns which template family
+    performs best alongside the per-template search spaces.
+
     Args:
         configs: One or more config templates containing ``Range`` / ``List``
             search-space definitions (same format as grid/random search).
+            Accepts a plain list, a ``List([...])`` wrapper, or a single
+            template.
         trainer_type: ``"SFT"`` / ``"DPO"`` / ``"GRPO"`` for fit mode,
             ``None`` for evals mode.
         n_initial: Number of configs to generate up-front.
@@ -536,6 +644,10 @@ class RFOptuna(AutoMLAlgorithm):
         pruner: Optuna pruner name — ``"median"``, ``"hyperband"``, or
             ``None`` to disable pruning.
         seed: Random seed for reproducibility.
+        granularity: When Optuna evaluates pruning decisions in fit mode —
+            ``"chunk"`` (after every chunk, the default) or ``"epoch"``
+            (only after each full epoch, i.e. after all chunks in an epoch
+            have been visited).  Ignored in evals mode.
     """
 
     def __init__(
@@ -548,18 +660,25 @@ class RFOptuna(AutoMLAlgorithm):
         sampler: str = "tpe",
         pruner: str | None = "median",
         seed: int = 42,
+        granularity: str = "chunk",
     ):
+        if granularity not in ("chunk", "epoch"):
+            raise AutoMLException(
+                f"granularity must be 'chunk' or 'epoch', got '{granularity}'"
+            )
+
         self.n_initial = n_initial
         self.budget = max(budget, n_initial)
         self.objective = objective
         self.sampler_name = sampler.lower()
         self.pruner_name = pruner.lower() if pruner else None
         self._seed = seed
+        self._granularity = granularity
 
         self._study: optuna.Study | None = None
         self._callback: OptunaChunkCallback | OptunaShardCallback | None = None
-        self._search_space: list[tuple[str, Range | List]] = []
-        self._config_template: Any = None
+        self._config_templates: list[Any] = []
+        self._search_spaces: list[list[tuple[str, Range | List]]] = []
         self._initial_trials: list[optuna.trial.Trial] = []
 
         # Parse objective
@@ -595,12 +714,12 @@ class RFOptuna(AutoMLAlgorithm):
         if not self.configs:
             raise AutoMLException("At least one config template is required")
 
-        self._config_template = self.configs[0]
-        self._search_space = _extract_search_space(self._config_template)
+        self._config_templates = list(self.configs)
+        self._search_spaces = [_extract_search_space(t) for t in self._config_templates]
 
-        if not self._search_space:
+        if not any(self._search_spaces):
             raise AutoMLException(
-                "No Range or List parameters found in config template. "
+                "No Range or List parameters found in any config template. "
                 "Use Range(...) and List([...]) to define the search space."
             )
 
@@ -611,7 +730,9 @@ class RFOptuna(AutoMLAlgorithm):
             trial = self._study.ask()
             self._initial_trials.append(trial)
 
-            sampled = _sample_from_trial(trial, self._search_space, self._config_template)
+            sampled = _sample_from_trial_multi(
+                trial, self._config_templates, self._search_spaces,
+            )
 
             if self.mode == "fit":
                 leaf = _template_to_leaf_fit(sampled, self.trainer_type)
@@ -622,10 +743,15 @@ class RFOptuna(AutoMLAlgorithm):
 
         return runs
 
-    def get_callback(self) -> OptunaChunkCallback | OptunaShardCallback | None:
+    def get_callback(self, num_chunks: int | None = None) -> OptunaChunkCallback | OptunaShardCallback | None:
         """Return the callback for the controller to use between chunks/shards.
 
         Must be called **after** ``get_runs()``.
+
+        Args:
+            num_chunks: Number of chunks per epoch.  Passed through to
+                :class:`OptunaChunkCallback` so it can detect epoch
+                boundaries when ``granularity="epoch"``.
         """
         if self._study is None:
             return None
@@ -633,17 +759,19 @@ class RFOptuna(AutoMLAlgorithm):
         if self.mode == "fit":
             cb = OptunaChunkCallback(
                 study=self._study,
-                search_space=self._search_space,
-                config_template=self._config_template,
+                search_spaces=self._search_spaces,
+                config_templates=self._config_templates,
                 trainer_type=self.trainer_type,
                 budget=self.budget,
                 objective_metric=self._objective_metric,
+                granularity=self._granularity,
+                num_chunks=num_chunks,
             )
         else:
             cb = OptunaShardCallback(
                 study=self._study,
-                search_space=self._search_space,
-                config_template=self._config_template,
+                search_spaces=self._search_spaces,
+                config_templates=self._config_templates,
                 budget=self.budget,
                 objective_metric=self._objective_metric,
             )

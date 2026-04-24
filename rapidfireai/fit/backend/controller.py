@@ -630,7 +630,7 @@ class Controller:
         # RFOptuna: ``get_runs()`` (inside _create_models) creates the Optuna study.
         # ``get_callback()`` must run after that or it returns None and trials never finalize.
         if chunk_callback is None and hasattr(param_config, "get_callback"):
-            chunk_callback = param_config.get_callback()
+            chunk_callback = param_config.get_callback(num_chunks=num_chunks)
 
         # Bind Optuna trials to the newly created DB run IDs
         if chunk_callback is not None and hasattr(param_config, "bind_initial_trials"):

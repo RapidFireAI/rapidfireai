@@ -13,8 +13,10 @@ from rapidfireai.automl.optuna_search import (
     OptunaShardCallback,
     RFOptuna,
     _extract_search_space,
+    _resolve_metric_history,
     _resolve_scalar_for_objective,
     _sample_from_trial,
+    _sample_from_trial_multi,
     _set_nested,
     _suggest_value,
     _template_to_leaf_evals,
@@ -97,6 +99,31 @@ class TestExtractSearchSpace:
 
 def test_resolve_scalar_prefers_primary_key():
     assert _resolve_scalar_for_objective({"eval_loss": 1.0, "train_loss": 9.0}, "eval_loss") == 1.0
+
+
+class TestResolveMetricHistory:
+    def test_mlflow_style_history(self):
+        metrics = {"eval_loss": [(0, 0.9), (10, 0.7), (20, 0.5)]}
+        assert _resolve_metric_history(metrics, "eval_loss") == [(0, 0.9), (10, 0.7), (20, 0.5)]
+
+    def test_plain_scalar(self):
+        assert _resolve_metric_history({"eval_loss": 0.42}, "eval_loss") == [(0, 0.42)]
+
+    def test_alias_fallback(self):
+        metrics = {"train_loss": [(5, 1.0), (15, 0.8)]}
+        assert _resolve_metric_history(metrics, "eval_loss") == [(5, 1.0), (15, 0.8)]
+
+    def test_no_match(self):
+        assert _resolve_metric_history({"other": 1.0}, "eval_loss") == []
+
+    def test_unsorted_input_gets_sorted(self):
+        metrics = {"eval_loss": [(20, 0.5), (0, 0.9), (10, 0.7)]}
+        assert _resolve_metric_history(metrics, "eval_loss") == [(0, 0.9), (10, 0.7), (20, 0.5)]
+
+    def test_bare_number_list(self):
+        metrics = {"eval_loss": [0.9, 0.7, 0.5]}
+        result = _resolve_metric_history(metrics, "eval_loss")
+        assert result == [(0, 0.9), (1, 0.7), (2, 0.5)]
 
 
 # ---------------------------------------------------------------------------
@@ -205,8 +232,8 @@ class TestOptunaChunkCallback:
         template = _fit_template_for_chunk_callback_tests()
         cb = OptunaChunkCallback(
             study=study,
-            search_space=space,
-            config_template=template,
+            search_spaces=[space],
+            config_templates=[template],
             trainer_type="SFT",
             budget=5,
             objective_metric="eval_loss",
@@ -281,6 +308,53 @@ class TestOptunaChunkCallback:
         replacement = cb._maybe_suggest_replacement()
         assert replacement is None
 
+    @staticmethod
+    def _get_intermediate_values(study, trial):
+        """Retrieve intermediate_values from the frozen trial in storage."""
+        for ft in study.get_trials(deepcopy=False):
+            if ft.number == trial.number:
+                return ft.intermediate_values
+        return {}
+
+    def test_reports_all_training_steps(self):
+        """on_chunk_complete should report every training step, not just one per chunk."""
+        cb, study = self._make_callback()
+        trial = study.ask()
+        cb._set_initial_trials({1: trial}, spawned=1)
+
+        metrics = {"eval_loss": [(0, 0.9), (5, 0.8), (10, 0.7)]}
+        decision = cb.on_chunk_complete(1, 0, metrics)
+        assert decision.action == "continue"
+
+        reported = self._get_intermediate_values(study, trial)
+        assert reported == {0: 0.9, 5: 0.8, 10: 0.7}
+        assert cb._last_reported_step[1] == 10
+
+    def test_cumulative_across_chunks(self):
+        """Second chunk should only report new steps, not re-report old ones."""
+        cb, study = self._make_callback()
+        trial = study.ask()
+        cb._set_initial_trials({1: trial}, spawned=1)
+
+        cb.on_chunk_complete(1, 0, {"eval_loss": [(0, 0.9), (5, 0.8)]})
+        assert cb._last_reported_step[1] == 5
+
+        cb.on_chunk_complete(1, 1, {"eval_loss": [(0, 0.9), (5, 0.8), (10, 0.6), (15, 0.5)]})
+        assert cb._last_reported_step[1] == 15
+
+        reported = self._get_intermediate_values(study, trial)
+        assert reported == {0: 0.9, 5: 0.8, 10: 0.6, 15: 0.5}
+
+    def test_flat_scalar_reports_at_step_zero(self):
+        """A flat scalar metric gets reported at step 0."""
+        cb, study = self._make_callback()
+        trial = study.ask()
+        cb._set_initial_trials({1: trial}, spawned=1)
+
+        cb.on_chunk_complete(1, 0, {"eval_loss": 0.5})
+        reported = self._get_intermediate_values(study, trial)
+        assert reported == {0: 0.5}
+
     def test_remap_pending_trial(self):
         cb, study = self._make_callback()
         trial = study.ask()
@@ -288,6 +362,133 @@ class TestOptunaChunkCallback:
         cb._remap_pending_trial(42)
         assert 42 in cb._trials
         assert "_optuna_pending_abc12345" not in cb._trials
+
+
+# ---------------------------------------------------------------------------
+# OptunaChunkCallback — epoch granularity
+# ---------------------------------------------------------------------------
+
+
+class TestOptunaChunkCallbackEpochGranularity:
+    """Tests for granularity='epoch': decisions only fire at epoch boundaries."""
+
+    NUM_CHUNKS = 4
+
+    def _make_callback(self, direction="minimize", pruner=None):
+        study = optuna.create_study(
+            direction=direction,
+            pruner=pruner or optuna.pruners.NopPruner(),
+        )
+        space = [("lr", Range(0.0, 1.0))]
+        template = _fit_template_for_chunk_callback_tests()
+        cb = OptunaChunkCallback(
+            study=study,
+            search_spaces=[space],
+            config_templates=[template],
+            trainer_type="SFT",
+            budget=5,
+            objective_metric="eval_loss",
+            granularity="epoch",
+            num_chunks=self.NUM_CHUNKS,
+        )
+        return cb, study
+
+    def test_defers_decision_until_epoch_boundary(self):
+        """Chunks 0-2 should always continue; chunk 3 (4th) is the epoch boundary."""
+        cb, study = self._make_callback()
+        trial = study.ask()
+        cb._set_initial_trials({1: trial}, spawned=1)
+
+        for chunk_id in range(self.NUM_CHUNKS - 1):
+            decision = cb.on_chunk_complete(1, chunk_id, {"eval_loss": 0.9 - chunk_id * 0.1})
+            assert decision.action == "continue", f"expected continue at chunk {chunk_id}"
+
+        decision = cb.on_chunk_complete(1, self.NUM_CHUNKS - 1, {"eval_loss": 0.5})
+        assert decision.action == "continue"
+
+    def test_prune_fires_at_epoch_boundary(self):
+        pruner = optuna.pruners.ThresholdPruner(upper=0.1)
+        cb, study = self._make_callback(pruner=pruner)
+        trial = study.ask()
+        cb._set_initial_trials({1: trial}, spawned=1)
+
+        for chunk_id in range(self.NUM_CHUNKS - 1):
+            decision = cb.on_chunk_complete(1, chunk_id, {"eval_loss": 5.0})
+            assert decision.action == "continue"
+
+        decision = cb.on_chunk_complete(1, self.NUM_CHUNKS - 1, {"eval_loss": 5.0})
+        assert decision.action == "prune"
+
+    def test_counter_resets_after_epoch(self):
+        """After one epoch completes, the next epoch should count from 0 again."""
+        cb, study = self._make_callback()
+        trial = study.ask()
+        cb._set_initial_trials({1: trial}, spawned=1)
+
+        for chunk_id in range(self.NUM_CHUNKS):
+            cb.on_chunk_complete(1, chunk_id, {"eval_loss": 0.5})
+        assert cb._chunks_since_last_eval[1] == 0
+
+        for chunk_id in range(self.NUM_CHUNKS - 1):
+            decision = cb.on_chunk_complete(1, chunk_id, {"eval_loss": 0.4})
+            assert decision.action == "continue"
+
+    def test_metrics_still_reported_every_chunk(self):
+        """Even with epoch granularity, intermediate metric values are reported to Optuna
+        on every chunk so the pruner has full visibility."""
+        cb, study = self._make_callback()
+        trial = study.ask()
+        cb._set_initial_trials({1: trial}, spawned=1)
+
+        cb.on_chunk_complete(1, 0, {"eval_loss": [(0, 0.9), (5, 0.8)]})
+        cb.on_chunk_complete(1, 1, {"eval_loss": [(0, 0.9), (5, 0.8), (10, 0.7)]})
+
+        reported = {}
+        for ft in study.get_trials(deepcopy=False):
+            if ft.number == trial.number:
+                reported = ft.intermediate_values
+        assert reported == {0: 0.9, 5: 0.8, 10: 0.7}
+
+    def test_independent_tracking_per_run(self):
+        cb, study = self._make_callback()
+        t1 = study.ask()
+        t2 = study.ask()
+        cb._set_initial_trials({1: t1, 2: t2}, spawned=2)
+
+        cb.on_chunk_complete(1, 0, {"eval_loss": 0.5})
+        cb.on_chunk_complete(1, 1, {"eval_loss": 0.4})
+        cb.on_chunk_complete(2, 0, {"eval_loss": 0.6})
+
+        assert cb._chunks_since_last_eval[1] == 2
+        assert cb._chunks_since_last_eval[2] == 1
+
+    def test_invalid_granularity_rejected(self):
+        study = optuna.create_study()
+        with pytest.raises(Exception, match="granularity"):
+            OptunaChunkCallback(
+                study=study,
+                search_spaces=[[("x", Range(0.0, 1.0))]],
+                config_templates=[{"x": Range(0.0, 1.0)}],
+                trainer_type="SFT",
+                budget=5,
+                objective_metric="loss",
+                granularity="step",
+                num_chunks=4,
+            )
+
+    def test_epoch_granularity_requires_num_chunks(self):
+        study = optuna.create_study()
+        with pytest.raises(Exception, match="num_chunks"):
+            OptunaChunkCallback(
+                study=study,
+                search_spaces=[[("x", Range(0.0, 1.0))]],
+                config_templates=[{"x": Range(0.0, 1.0)}],
+                trainer_type="SFT",
+                budget=5,
+                objective_metric="loss",
+                granularity="epoch",
+                num_chunks=None,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -305,8 +506,8 @@ class TestOptunaShardCallback:
         template = {"pipeline": "fake", "temperature": Range(0.0, 2.0)}
         cb = OptunaShardCallback(
             study=study,
-            search_space=space,
-            config_template=template,
+            search_spaces=[space],
+            config_templates=[template],
             budget=5,
             objective_metric="accuracy",
         )
@@ -466,3 +667,140 @@ class TestRFOptuna:
             trainer_type=None,
         )
         assert gs.get_callback() is None
+
+    def test_invalid_granularity(self):
+        with pytest.raises(Exception, match="granularity"):
+            RFOptuna(
+                configs=[{"lr": Range(0.0, 1.0)}],
+                objective="minimize:loss",
+                granularity="step",
+            )
+
+    def test_granularity_epoch_stored_on_rfoptuna(self):
+        rfopt = RFOptuna(
+            configs=[{"pipeline": "fake", "temp": Range(0.0, 2.0)}],
+            trainer_type=None,
+            n_initial=2,
+            budget=4,
+            objective="minimize:eval_loss",
+            sampler="random",
+            pruner=None,
+            seed=42,
+            granularity="epoch",
+        )
+        assert rfopt._granularity == "epoch"
+
+    def test_granularity_defaults_to_chunk_on_rfoptuna(self):
+        rfopt = RFOptuna(
+            configs=[{"pipeline": "fake", "temp": Range(0.0, 2.0)}],
+            trainer_type=None,
+            n_initial=2,
+            budget=4,
+            objective="minimize:eval_loss",
+            sampler="random",
+            pruner=None,
+            seed=42,
+        )
+        assert rfopt._granularity == "chunk"
+
+
+# ---------------------------------------------------------------------------
+# Multi-template support
+# ---------------------------------------------------------------------------
+
+
+class TestMultiTemplate:
+    """Verify RFOptuna correctly handles multiple config templates."""
+
+    def test_sample_from_trial_multi_single_template(self):
+        """Single template: behaves identically to _sample_from_trial."""
+        template = {"lr": Range(0.0, 1.0), "fixed": "hello"}
+        space = _extract_search_space(template)
+        study = optuna.create_study()
+        trial = study.ask()
+        result = _sample_from_trial_multi(trial, [template], [space])
+        assert isinstance(result["lr"], float)
+        assert result["fixed"] == "hello"
+        # No _config_template_idx categorical when single template
+        assert "_config_template_idx" not in trial.params
+
+    def test_sample_from_trial_multi_two_templates(self):
+        """Two templates: Optuna picks one via categorical, samples its space."""
+        t0 = {"lr": Range(0.0, 0.1), "model": "small"}
+        t1 = {"dropout": Range(0.0, 0.5), "model": "large"}
+        spaces = [_extract_search_space(t0), _extract_search_space(t1)]
+
+        study = optuna.create_study()
+        trial = study.ask()
+        result = _sample_from_trial_multi(trial, [t0, t1], spaces)
+
+        assert "_config_template_idx" in trial.params
+        tidx = trial.params["_config_template_idx"]
+        assert tidx in (0, 1)
+
+        if tidx == 0:
+            assert isinstance(result["lr"], float)
+            assert result["model"] == "small"
+        else:
+            assert isinstance(result["dropout"], float)
+            assert result["model"] == "large"
+
+    def test_get_runs_evals_multi_template(self):
+        t0 = {"pipeline": "pipe_a", "temperature": Range(0.0, 1.0)}
+        t1 = {"pipeline": "pipe_b", "top_k": Range(1, 50)}
+
+        rfopt = RFOptuna(
+            configs=[t0, t1],
+            trainer_type=None,
+            n_initial=6,
+            budget=10,
+            objective="maximize:accuracy",
+            sampler="random",
+            pruner=None,
+            seed=42,
+        )
+        runs = rfopt.get_runs(seed=42)
+        assert len(runs) == 6
+        for run in runs:
+            assert "pipeline" in run
+
+    def test_get_runs_evals_list_wrapper(self):
+        """List([t1, t2]) syntax works the same as [t1, t2]."""
+        t0 = {"pipeline": "a", "x": Range(0.0, 1.0)}
+        t1 = {"pipeline": "b", "y": Range(0.0, 1.0)}
+
+        rfopt = RFOptuna(
+            configs=List([t0, t1]),
+            trainer_type=None,
+            n_initial=4,
+            budget=8,
+            objective="maximize:score",
+            sampler="random",
+            pruner=None,
+            seed=7,
+        )
+        runs = rfopt.get_runs(seed=7)
+        assert len(runs) == 4
+
+    def test_callback_replacement_multi_template(self):
+        """Replacement configs can come from any template."""
+        t0 = {"pipeline": "a", "temperature": Range(0.0, 2.0)}
+        t1 = {"pipeline": "b", "top_k": Range(1, 50)}
+        spaces = [_extract_search_space(t0), _extract_search_space(t1)]
+
+        study = optuna.create_study(
+            direction="maximize",
+            pruner=optuna.pruners.NopPruner(),
+        )
+        cb = OptunaShardCallback(
+            study=study,
+            search_spaces=spaces,
+            config_templates=[t0, t1],
+            budget=5,
+            objective_metric="accuracy",
+        )
+        cb._spawned = 2
+        replacement = cb._maybe_suggest_replacement()
+        assert replacement is not None
+        assert isinstance(replacement, dict)
+        assert cb._spawned == 3
