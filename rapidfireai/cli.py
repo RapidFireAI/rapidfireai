@@ -63,27 +63,52 @@ def run_script(args):
     if not os.access(script_path, os.X_OK):
         os.chmod(script_path, 0o755)
 
-    # Ignore SIGINT in the parent process so Python doesn't raise KeyboardInterrupt.
-    # The child process resets SIGINT to default via preexec_fn so the shell script
-    # can handle Ctrl+C with its own trap (cleanup function with user prompt).
-    old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             [str(script_path)] + args,
-            check=True,
             preexec_fn=_reset_sigint,
         )
-        return result.returncode
-    except subprocess.CalledProcessError as e:
-        # Non-zero exit from shell script (could be from cleanup or failure)
-        return e.returncode
     except FileNotFoundError:
         print(f"Error: start.sh script not found at {script_path}", file=sys.stderr)
         return 1
+
+    # Ignore SIGINT in the parent process so Python doesn't raise KeyboardInterrupt.
+    # The child process resets SIGINT to default via preexec_fn so the shell script
+    # can handle Ctrl+C with its own trap (cleanup function with user prompt).
+    old_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    def _forward_signal(signum, _frame):
+        # Forward terminating signals (SIGTERM, SIGHUP) to the shell script so
+        # its trap handlers run a proper cleanup (killing MLflow, API server,
+        # frontend, Converge, etc.) instead of leaving them orphaned when the
+        # Python wrapper is killed.
+        if proc.poll() is None:
+            try:
+                proc.send_signal(signum)
+            except (ProcessLookupError, OSError):
+                pass
+
+    old_sigterm = signal.signal(signal.SIGTERM, _forward_signal)
+    # SIGHUP isn't available on Windows; guard the install/restore.
+    sighup = getattr(signal, "SIGHUP", None)
+    old_sighup = signal.signal(sighup, _forward_signal) if sighup is not None else None
+
+    try:
+        # Wait for the shell script to exit. If we receive SIGTERM/SIGHUP, the
+        # handler above forwards it to the child; the child runs its cleanup
+        # trap and exits, and proc.wait() returns its status.
+        while True:
+            try:
+                return proc.wait()
+            except KeyboardInterrupt:
+                # Shouldn't happen since SIGINT is ignored above, but if it
+                # does, forward to the child and keep waiting.
+                _forward_signal(signal.SIGINT, None)
     finally:
-        # Restore the original signal handler
-        signal.signal(signal.SIGINT, old_handler)
+        signal.signal(signal.SIGINT, old_sigint)
+        signal.signal(signal.SIGTERM, old_sigterm)
+        if sighup is not None and old_sighup is not None:
+            signal.signal(sighup, old_sighup)
 
 
 def run_doctor(log_lines: int = 10):
