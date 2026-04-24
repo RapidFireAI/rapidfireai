@@ -196,7 +196,7 @@ def install_packages(
     ):
         print(
             " ⚠️ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
-            "    Disabling CUDA usage for evaluation dependencies.\n",
+            "    Disabling CUDA usage for evaluation dependencies.\n"
             "    If you want to override this expelicitly pass the CUDA version, for example:\n"
             "        rapidfireai init --evals --cudaversion 12.4\n"
             "    If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).\n"
