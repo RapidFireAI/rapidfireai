@@ -63,26 +63,21 @@ def run_script(args):
     if not os.access(script_path, os.X_OK):
         os.chmod(script_path, 0o755)
 
-    try:
-        proc = subprocess.Popen(
-            [str(script_path)] + args,
-            preexec_fn=_reset_sigint,
-        )
-    except FileNotFoundError:
-        print(f"Error: start.sh script not found at {script_path}", file=sys.stderr)
-        return 1
-
-    # Ignore SIGINT in the parent process so Python doesn't raise KeyboardInterrupt.
-    # The child process resets SIGINT to default via preexec_fn so the shell script
-    # can handle Ctrl+C with its own trap (cleanup function with user prompt).
+    # Ignore SIGINT in the parent process *before* spawning the child so Python
+    # doesn't raise KeyboardInterrupt in the window between Popen and proc.wait().
+    # Otherwise a Ctrl+C landing in that gap would orphan the shell script and
+    # all of its sub-processes. The child resets SIGINT to default via
+    # preexec_fn so the shell script handles Ctrl+C with its own trap.
     old_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    proc: subprocess.Popen | None = None
 
     def _forward_signal(signum, _frame):
         # Forward terminating signals (SIGTERM, SIGHUP) to the shell script so
         # its trap handlers run a proper cleanup (killing MLflow, API server,
         # frontend, Converge, etc.) instead of leaving them orphaned when the
         # Python wrapper is killed.
-        if proc.poll() is None:
+        if proc is not None and proc.poll() is None:
             try:
                 proc.send_signal(signum)
             except (ProcessLookupError, OSError):
@@ -94,6 +89,15 @@ def run_script(args):
     old_sighup = signal.signal(sighup, _forward_signal) if sighup is not None else None
 
     try:
+        try:
+            proc = subprocess.Popen(
+                [str(script_path)] + args,
+                preexec_fn=_reset_sigint,
+            )
+        except FileNotFoundError:
+            print(f"Error: start.sh script not found at {script_path}", file=sys.stderr)
+            return 1
+
         # Wait for the shell script to exit. If we receive SIGTERM/SIGHUP, the
         # handler above forwards it to the child; the child runs its cleanup
         # trap and exits, and proc.wait() returns its status.
