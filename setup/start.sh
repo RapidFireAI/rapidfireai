@@ -76,6 +76,16 @@ fi
 # When false, do not start the RapidFire dashboard (Flask) or Converge frontend; MLflow + API still run when enabled.
 RF_START_FRONTEND=${RF_START_FRONTEND:=true}
 
+export RF_FRONTEND_HOST
+export RF_FRONTEND_PORT
+export RF_API_HOST
+export RF_API_PORT
+export RF_MLFLOW_HOST
+export RF_MLFLOW_PORT
+export RF_RAY_HOST
+export RF_RAY_PORT
+export RF_JUPYTER_HOST
+export RF_JUPYTER_PORT
 
 # Colors for output
 RED='\033[0;31m'
