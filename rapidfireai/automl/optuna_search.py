@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import math
+import statistics
 import uuid
 from dataclasses import fields, is_dataclass
 from typing import Any
@@ -351,8 +353,8 @@ _SAMPLERS = {
 }
 
 _PRUNERS = {
-    "median": lambda: optuna.pruners.MedianPruner(),
-    "hyperband": lambda: optuna.pruners.HyperbandPruner(),
+    "median": lambda n_startup: optuna.pruners.MedianPruner(n_startup_trials=n_startup),
+    "hyperband": lambda n_startup: optuna.pruners.HyperbandPruner(),
 }
 
 
@@ -444,7 +446,7 @@ class OptunaChunkCallback:
                 return RunDecision(action="continue")
             self._chunks_since_last_eval[run_id] = 0
 
-        if trial.should_prune():
+        if trial.should_prune() or self._should_prune_concurrent(trial):
             self._study.tell(trial, state=optuna.trial.TrialState.PRUNED)
             replacement = self._maybe_suggest_replacement()
             return RunDecision(action="prune", replacement_config=replacement)
@@ -464,6 +466,51 @@ class OptunaChunkCallback:
                     self._study.tell(trial, state=optuna.trial.TrialState.FAIL)
 
     # -- internals --
+
+    def _should_prune_concurrent(self, trial: optuna.Trial) -> bool:
+        """Concurrent-aware pruning that compares intermediate values across
+        ALL trials (RUNNING + COMPLETE).
+
+        Optuna's built-in pruners (MedianPruner, etc.) only compare against
+        COMPLETE trials, but in RapidFire's concurrent chunk loop every trial
+        stays RUNNING until ``finalize()``, so the built-in pruner never has
+        reference data.  This method supplements ``trial.should_prune()`` by
+        checking intermediate values from all peers regardless of state.
+        """
+        all_frozen = self._study.get_trials(deepcopy=False)
+
+        current = None
+        for ft in all_frozen:
+            if ft.number == trial.number:
+                current = ft
+                break
+        if current is None or not current.intermediate_values:
+            return False
+
+        last_step = max(current.intermediate_values.keys())
+        values = [v for v in current.intermediate_values.values() if not math.isnan(v)]
+        if not values:
+            return False
+
+        minimize = self._study.direction == optuna.study.StudyDirection.MINIMIZE
+        best_current = min(values) if minimize else max(values)
+
+        peer_values = []
+        for ft in all_frozen:
+            if ft.number == trial.number:
+                continue
+            if last_step in ft.intermediate_values:
+                v = ft.intermediate_values[last_step]
+                if not math.isnan(v):
+                    peer_values.append(v)
+
+        if not peer_values:
+            return False
+
+        median_val = statistics.median(peer_values)
+        if minimize:
+            return best_current > median_val
+        return best_current < median_val
 
     def _resolve_metric(self, metrics: dict[str, Any]) -> float | None:
         """Extract the objective metric value from a metrics dict.
@@ -542,7 +589,7 @@ class OptunaShardCallback:
 
         trial.report(metric_value, step=shard_id)
 
-        if trial.should_prune():
+        if trial.should_prune() or self._should_prune_concurrent(trial):
             self._study.tell(trial, state=optuna.trial.TrialState.PRUNED)
             replacement = self._maybe_suggest_replacement()
             return PipelineDecision(action="prune", replacement_config=replacement)
@@ -562,6 +609,41 @@ class OptunaShardCallback:
                     self._study.tell(trial, state=optuna.trial.TrialState.FAIL)
 
     # -- internals --
+
+    def _should_prune_concurrent(self, trial: optuna.Trial) -> bool:
+        """Same concurrent-aware pruning as OptunaChunkCallback."""
+        all_frozen = self._study.get_trials(deepcopy=False)
+
+        current = None
+        for ft in all_frozen:
+            if ft.number == trial.number:
+                current = ft
+                break
+        if current is None or not current.intermediate_values:
+            return False
+
+        last_step = max(current.intermediate_values.keys())
+        current_value = current.intermediate_values[last_step]
+        if math.isnan(current_value):
+            return True
+
+        peer_values = []
+        for ft in all_frozen:
+            if ft.number == trial.number:
+                continue
+            if last_step in ft.intermediate_values:
+                v = ft.intermediate_values[last_step]
+                if not math.isnan(v):
+                    peer_values.append(v)
+
+        if not peer_values:
+            return False
+
+        median_val = statistics.median(peer_values)
+        minimize = self._study.direction == optuna.study.StudyDirection.MINIMIZE
+        if minimize:
+            return current_value > median_val
+        return current_value < median_val
 
     def _resolve_metric(self, metrics: dict[str, Any]) -> float | None:
         direct = _resolve_scalar_for_objective(metrics, self._objective_metric)
@@ -812,4 +894,5 @@ class RFOptuna(AutoMLAlgorithm):
                 f"Unknown pruner '{self.pruner_name}'. "
                 f"Choose from: {', '.join(_PRUNERS)}, or None"
             )
-        return factory()
+        n_startup = max(1, self.n_initial // 2)
+        return factory(n_startup)
