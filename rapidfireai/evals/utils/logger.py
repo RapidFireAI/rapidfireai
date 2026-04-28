@@ -109,6 +109,7 @@ class RFLogger:
                 "langchain_core",
                 "langchain_community",
                 "openai",
+                "anthropic",
                 "httpx",
                 "urllib3",
             ]

@@ -11,13 +11,23 @@ Handles dynamic pipeline management operations during experiment execution:
 import json
 import time
 
-from rapidfireai.evals.utils.constants import RERANKER_CLASS_REGISTRY, SEARCH_DEFAULTS, SEARCH_TYPE_KEYS
-
+from rapidfireai.automl import (
+    RFAnthropicAPIModelConfig,
+    RFGeminiAPIModelConfig,
+    RFOpenAIAPIModelConfig,
+    RFvLLMModelConfig,
+)
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
-from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig, RFGeminiAPIModelConfig
-from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
+from rapidfireai.evals.utils.constants import (
+    RERANKER_CLASS_REGISTRY,
+    SEARCH_DEFAULTS,
+    SEARCH_TYPE_KEYS,
+    ICOperation,
+    ICStatus,
+    PipelineStatus,
+)
 from rapidfireai.evals.utils.logger import RFLogger
 
 
@@ -364,7 +374,7 @@ class InteractiveControlHandler:
                     rag.reranker_kwargs = {}
                 rag.reranker_kwargs.update({k: v for k, v in reranker_cfg.items() if k != "class"})
 
-            self.logger.info(f"RAG config updated successfully")
+            self.logger.info("RAG config updated successfully")
 
         # Extract pipeline type from edited JSON (or inherit from parent)
         pipeline_type = edited_json.get("pipeline_type")
@@ -376,6 +386,8 @@ class InteractiveControlHandler:
                 pipeline_type = "openai"
             elif isinstance(parent_model_config, RFGeminiAPIModelConfig):
                 pipeline_type = "gemini"
+            elif isinstance(parent_model_config, RFAnthropicAPIModelConfig):
+                pipeline_type = "anthropic"
             else:
                 raise ValueError("Cannot determine pipeline type from parent")
 
@@ -442,8 +454,33 @@ class InteractiveControlHandler:
                 max_completion_tokens=edited_json.get("max_completion_tokens", parent_max_completion_tokens),
             )
 
+        elif pipeline_type.lower() == "anthropic":
+            # Get parent's baseline config from _user_params (original dicts)
+            parent_client_config = parent_model_config._user_params.get("client_config", {})
+            parent_model_config_dict = parent_model_config._user_params.get("model_config", {})
+            parent_rpm = parent_model_config._user_params.get("rpm_limit", 500)
+            parent_tpm = parent_model_config._user_params.get("tpm_limit", 500_000)
+            parent_max_completion_tokens = parent_model_config._user_params.get("max_completion_tokens", None)
+
+            # Apply edits from JSON using key-by-key merging (user values override parent values)
+            client_config = {**parent_client_config, **edited_json.get("client_config", {})}
+            model_config_dict = {**parent_model_config_dict, **edited_json.get("model_config", {})}
+
+            model_config = RFAnthropicAPIModelConfig(
+                client_config=client_config,
+                model_config=model_config_dict,
+                rag=rag,
+                prompt_manager=prompt_manager,
+                rpm_limit=edited_json.get("rpm_limit", parent_rpm),
+                tpm_limit=edited_json.get("tpm_limit", parent_tpm),
+                max_completion_tokens=edited_json.get("max_completion_tokens", parent_max_completion_tokens),
+            )
+
         else:
-            raise ValueError(f"Unknown pipeline_type: {pipeline_type}. Supported types: 'vllm', 'openai', 'gemini'")
+            raise ValueError(
+                f"Unknown pipeline_type: {pipeline_type}. "
+                f"Supported types: 'vllm', 'openai', 'gemini', 'anthropic'"
+            )
 
         # Build complete pipeline_config structure (inherit from parent if not in JSON)
         parent_batch_size = parent_full_config.get("batch_size", 32)
@@ -525,9 +562,19 @@ class InteractiveControlHandler:
 
         # Reuse experiment-wide rate limiter actor for API pipelines (OpenAI or Gemini).
         # Each backend has its own shared rate limiter; find the one that matches the cloned pipeline's type.
-        if isinstance(model_config, (RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig)) and pipeline_to_rate_limiter is not None:
-            backend_type = RFOpenAIAPIModelConfig if isinstance(model_config, RFOpenAIAPIModelConfig) else RFGeminiAPIModelConfig
-            backend_name = "OpenAI" if isinstance(model_config, RFOpenAIAPIModelConfig) else "Gemini"
+        if isinstance(
+            model_config,
+            (RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFAnthropicAPIModelConfig),
+        ) and pipeline_to_rate_limiter is not None:
+            if isinstance(model_config, RFOpenAIAPIModelConfig):
+                backend_type = RFOpenAIAPIModelConfig
+                backend_name = "OpenAI"
+            elif isinstance(model_config, RFGeminiAPIModelConfig):
+                backend_type = RFGeminiAPIModelConfig
+                backend_name = "Gemini"
+            else:
+                backend_type = RFAnthropicAPIModelConfig
+                backend_name = "Anthropic"
 
             existing_rate_limiter = None
             for pid, rate_limiter_actor in pipeline_to_rate_limiter.items():
@@ -576,7 +623,10 @@ class InteractiveControlHandler:
         pipeline = pipeline_config["pipeline"]
 
         # Extract model name
-        if isinstance(model_config, (RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFvLLMModelConfig)):
+        if isinstance(
+            model_config,
+            (RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFAnthropicAPIModelConfig, RFvLLMModelConfig),
+        ):
             model_name = model_config.model_config.get("model", "Unknown")
         elif hasattr(pipeline, "model_config") and pipeline.model_config is not None:
             model_name = pipeline.model_config.get("model", "Unknown")

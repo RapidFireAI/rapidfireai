@@ -1,10 +1,10 @@
 """AutoML module for hyperparameter optimization (unified for fit and evals)."""
 
+from .automl_utils import get_flattened_config_leaf, get_runs
 from .base import AutoMLAlgorithm
 from .datatypes import List, Range
 from .grid_search import RFGridSearch
 from .random_search import RFRandomSearch
-from .automl_utils import get_flattened_config_leaf, get_runs
 
 # Import fit mode configs (conditionally available)
 try:
@@ -28,9 +28,10 @@ except (ImportError, AttributeError, TypeError):
 try:
     from .model_config import (
         ModelConfig,
-        RFvLLMModelConfig,
-        RFOpenAIAPIModelConfig,
+        RFAnthropicAPIModelConfig,
         RFGeminiAPIModelConfig,
+        RFOpenAIAPIModelConfig,
+        RFvLLMModelConfig,
     )
     _EVALS_CONFIGS_AVAILABLE = True
 except (ImportError, AttributeError, TypeError):
@@ -38,6 +39,7 @@ except (ImportError, AttributeError, TypeError):
     RFvLLMModelConfig = None
     RFOpenAIAPIModelConfig = None
     RFGeminiAPIModelConfig = None
+    RFAnthropicAPIModelConfig = None
     _EVALS_CONFIGS_AVAILABLE = False
 
 # Conditionally import evals-specific helper classes
@@ -77,6 +79,7 @@ if _EVALS_CONFIGS_AVAILABLE:
         "RFvLLMModelConfig",
         "RFOpenAIAPIModelConfig",
         "RFGeminiAPIModelConfig",
+        "RFAnthropicAPIModelConfig",
     ])
 
 # Conditionally add evals helper classes to __all__

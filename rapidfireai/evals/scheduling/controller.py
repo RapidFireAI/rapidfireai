@@ -1,13 +1,12 @@
 import hashlib
 import json
 import time
-from collections.abc import Callable
 from typing import Any
+
 import ray
 
-from rapidfireai.utils.constants import ColabConfig, RF_EXPERIMENT_PATH
+from rapidfireai.automl import RFGridSearch, RFRandomSearch, get_flattened_config_leaf, get_runs
 from rapidfireai.evals.actors.doc_actor import DocProcessingActor
-from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.actors.query_actor import QueryProcessingActor
 from rapidfireai.evals.data.dataset import DataLoader
 from rapidfireai.evals.db import RFDatabase
@@ -23,9 +22,9 @@ from rapidfireai.evals.utils.constants import (
 )
 from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
-from rapidfireai.automl import RFGridSearch, RFRandomSearch
-from rapidfireai.automl import get_runs, get_flattened_config_leaf
 from rapidfireai.evals.utils.serialize import extract_pipeline_config_json
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
+
 
 class Controller:
     """
@@ -568,11 +567,17 @@ class Controller:
             flattened_config = get_flattened_config_leaf(json_config) if json_config else {}
 
             # Determine pipeline_type from the pipeline object
-            from rapidfireai.automl import RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFvLLMModelConfig
+            from rapidfireai.automl import (
+                RFAnthropicAPIModelConfig,
+                RFGeminiAPIModelConfig,
+                RFOpenAIAPIModelConfig,
+            )
             if isinstance(pipeline, RFOpenAIAPIModelConfig):
                 _pipeline_type = "openai"
             elif isinstance(pipeline, RFGeminiAPIModelConfig):
                 _pipeline_type = "gemini"
+            elif isinstance(pipeline, RFAnthropicAPIModelConfig):
+                _pipeline_type = "anthropic"
             else:
                 _pipeline_type = "vllm"
 
@@ -1013,8 +1018,12 @@ class Controller:
         gemini_model_rate_limits = {}
         gemini_max_completion_tokens_by_model = {}
 
+        anthropic_pipeline_ids = []
+        anthropic_model_rate_limits = {}
+        anthropic_max_completion_tokens_by_model = {}
+
         for pipeline_id, pipeline_config in pipeline_id_to_config.items():
-            from rapidfireai.automl import RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig
+            from rapidfireai.automl import RFAnthropicAPIModelConfig, RFGeminiAPIModelConfig, RFOpenAIAPIModelConfig
             pipeline = pipeline_config["pipeline"]
 
             if hasattr(pipeline, "model_config") and isinstance(pipeline, RFOpenAIAPIModelConfig):
@@ -1071,6 +1080,33 @@ class Controller:
                 gemini_pipeline_ids.append(pipeline_id)
                 pipeline_to_rate_limiter[pipeline_id] = None
 
+            elif hasattr(pipeline, "model_config") and isinstance(pipeline, RFAnthropicAPIModelConfig):
+                model_config = pipeline.model_config
+                model_name = model_config.get("model", "claude-3-5-sonnet")
+
+                if pipeline.rpm_limit is None or pipeline.tpm_limit is None:
+                    raise ValueError(
+                        f"Anthropic pipeline {pipeline_id} (model: {model_name}) is missing rate limits. "
+                        f"Please provide rpm_limit and tpm_limit to RFAnthropicAPIModelConfig."
+                    )
+
+                if model_name not in anthropic_model_rate_limits:
+                    anthropic_model_rate_limits[model_name] = {
+                        "rpm": pipeline.rpm_limit,
+                        "tpm": pipeline.tpm_limit,
+                    }
+                    anthropic_max_completion_tokens_by_model[model_name] = pipeline.max_completion_tokens
+                elif (anthropic_model_rate_limits[model_name]["rpm"] != pipeline.rpm_limit or
+                      anthropic_model_rate_limits[model_name]["tpm"] != pipeline.tpm_limit):
+                    self.logger.warning(
+                        f"Model {model_name} has inconsistent rate limits across pipelines. "
+                        f"Using first encountered values: {anthropic_model_rate_limits[model_name]}"
+                    )
+
+                pipeline_to_max_completion_tokens[pipeline_id] = pipeline.max_completion_tokens
+                anthropic_pipeline_ids.append(pipeline_id)
+                pipeline_to_rate_limiter[pipeline_id] = None
+
         if openai_pipeline_ids:
             from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
 
@@ -1122,6 +1158,37 @@ class Controller:
             ])
             self.logger.info(
                 f"Created experiment-wide Gemini rate limiter actor for {len(gemini_pipeline_ids)} pipeline(s) "
+                f"with per-model limits ({limits_summary})"
+            )
+
+        if anthropic_pipeline_ids:
+            from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
+
+            _max_tokens = (
+                max(anthropic_max_completion_tokens_by_model.values())
+                if anthropic_max_completion_tokens_by_model
+                else 150
+            )
+
+            anthropic_rate_limiter_actor = RateLimiterActor.remote(
+                model_rate_limits=anthropic_model_rate_limits,
+                max_completion_tokens=_max_tokens,
+                limit_safety_ratio=0.95,
+                minimum_wait_time=1.0,
+                backend="anthropic",
+                experiment_name=self.experiment_name,
+                experiment_path=self.experiment_path,
+            )
+
+            for pipeline_id in anthropic_pipeline_ids:
+                pipeline_to_rate_limiter[pipeline_id] = anthropic_rate_limiter_actor
+
+            limits_summary = ", ".join([
+                f"{model}: {limits['rpm']} RPM, {limits['tpm']} TPM"
+                for model, limits in anthropic_model_rate_limits.items()
+            ])
+            self.logger.info(
+                f"Created experiment-wide Anthropic rate limiter actor for {len(anthropic_pipeline_ids)} pipeline(s) "
                 f"with per-model limits ({limits_summary})"
             )
 

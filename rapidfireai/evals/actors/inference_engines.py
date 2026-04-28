@@ -11,9 +11,9 @@ import os
 from abc import ABC, abstractmethod
 from typing import Any, override
 
-import mlflow
 from mlflow.entities import SpanType
-from rapidfireai.evals.utils.mlflow_utils import mlflow_trace, mlflow_start_span, mlflow_get_current_active_span
+
+from rapidfireai.evals.utils.mlflow_utils import mlflow_get_current_active_span, mlflow_start_span, mlflow_trace
 from rapidfireai.evals.utils.ratelimiter import RequestStatus
 
 
@@ -168,7 +168,7 @@ class APIInferenceEngine(InferenceEngine):
             Generated text string or error message
         """
         pass
-    
+
     @override
     def generate(self, prompts: list, **kwargs) -> list[str]:
         """
@@ -268,7 +268,7 @@ class APIInferenceEngine(InferenceEngine):
     def cleanup(self):
         """Clean up API client resources (no-op for stateless HTTP clients)."""
         pass
-    
+
 
 class OpenAIInferenceEngine(APIInferenceEngine):
     """OpenAI API-based inference engine with distributed rate limiting."""
@@ -343,6 +343,85 @@ class OpenAIInferenceEngine(APIInferenceEngine):
 
         return content
 
+class AnthropicInferenceEngine(APIInferenceEngine):
+    """Anthropic API-based inference engine with distributed rate limiting."""
+
+    def __init__(
+        self,
+        client_config: dict[str, Any],
+        model_config: dict[str, Any],
+        rate_limiter_actor: Any,
+        max_completion_tokens: int = 150,
+    ):
+        """
+        Initialize Anthropic inference engine.
+
+        Args:
+            client_config: Configuration for AsyncAnthropic client (api_key, base_url, etc.)
+            model_config: Model configuration (model name, temperature, etc.)
+            rate_limiter_actor: Ray ActorHandle to RateLimiterActor for distributed rate limiting
+            max_completion_tokens: Maximum completion tokens per request (passed to Anthropic as max_tokens)
+        """
+        from anthropic import AsyncAnthropic
+
+        super().__init__(
+            client_config=client_config,
+            model_config=model_config,
+            rate_limiter_actor=rate_limiter_actor,
+            max_completion_tokens=max_completion_tokens,
+        )
+        self.client = AsyncAnthropic(**client_config)
+        # "max_tokens" is passed explicitly in the request, not via model_config
+        self.model_config.pop("max_tokens", None)
+
+    @override
+    async def create_completion(self, messages: list[dict], request_id: int) -> str:
+        """
+        Create a completion using the Anthropic API.
+
+        Args:
+            messages: List of message dicts for this request
+
+        Returns:
+            Generated text string or error message
+        """
+        response = await self.client.messages.create(
+            messages=messages,
+            max_tokens=self.max_completion_tokens,
+            **self.model_config,
+        )
+
+        # Extract response text from the first content block
+        content = response.content[0].text if response.content else None
+
+        # Calculate total tokens from Anthropic's split usage fields
+        total_tokens = 0
+        if response.usage:
+            total_tokens = response.usage.input_tokens + response.usage.output_tokens
+
+        # Check if response is empty
+        if content is None or content.strip() == "":
+            if request_id is not None:
+                update_ref = self.rate_limiter_actor.update_actual_usage.remote(
+                    request_id,
+                    total_tokens,
+                    RequestStatus.EMPTY_RESPONSE,
+                )
+                await update_ref
+            return ""
+
+        # Successfully completed with content
+        if request_id is not None:
+            update_ref = self.rate_limiter_actor.update_actual_usage.remote(
+                request_id,
+                total_tokens,
+                RequestStatus.COMPLETED,
+            )
+            await update_ref
+
+        return content
+
+
 class GoogleGeminiInferenceEngine(APIInferenceEngine):
     """Google Gemini API-based inference engine with distributed rate limiting."""
 
@@ -408,7 +487,7 @@ class GoogleGeminiInferenceEngine(APIInferenceEngine):
         ) if system_parts else None
 
         return contents, system_instruction
-        
+
     @override
     async def create_completion(self, messages: list[dict], request_id: int) -> str:
         """
@@ -455,4 +534,11 @@ class GoogleGeminiInferenceEngine(APIInferenceEngine):
 
 
 # Export classes for external use
-__all__ = ["InferenceEngine", "VLLMInferenceEngine", "APIInferenceEngine", "OpenAIInferenceEngine", "GoogleGeminiInferenceEngine"]
+__all__ = [
+    "InferenceEngine",
+    "VLLMInferenceEngine",
+    "APIInferenceEngine",
+    "OpenAIInferenceEngine",
+    "AnthropicInferenceEngine",
+    "GoogleGeminiInferenceEngine",
+]

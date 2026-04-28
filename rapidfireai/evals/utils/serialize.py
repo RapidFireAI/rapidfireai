@@ -4,7 +4,12 @@ from typing import Any
 
 import dill
 
-from rapidfireai.automl import RFvLLMModelConfig, RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig
+from rapidfireai.automl import (
+    RFAnthropicAPIModelConfig,
+    RFGeminiAPIModelConfig,
+    RFOpenAIAPIModelConfig,
+    RFvLLMModelConfig,
+)
 from rapidfireai.evals.utils.constants import SEARCH_TYPE_KEYS
 
 
@@ -31,7 +36,8 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
 
     Args:
         pipeline_config: Pipeline config dict with keys:
-            - "pipeline": RFvLLMModelConfig or RFOpenAIAPIModelConfig or RFGeminiAPIModelConfig instance
+            - "pipeline": RFvLLMModelConfig or RFOpenAIAPIModelConfig or
+              RFGeminiAPIModelConfig or RFAnthropicAPIModelConfig instance
             - "batch_size": int
             - "preprocess_fn": function (skipped)
             - "postprocess_fn": function (skipped)
@@ -172,6 +178,48 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
 
             # Extract sampling_params using sampling_params_to_dict (extracts from model_config)
             json_config["sampling_params"] = pipeline.sampling_params_to_dict()
+
+            # Extract rate limiting params
+            if hasattr(pipeline, "rpm_limit") and pipeline.rpm_limit is not None:
+                json_config["rpm_limit"] = pipeline.rpm_limit
+            if hasattr(pipeline, "tpm_limit") and pipeline.tpm_limit is not None:
+                json_config["tpm_limit"] = pipeline.tpm_limit
+            if (
+                hasattr(pipeline, "max_completion_tokens")
+                and pipeline.max_completion_tokens is not None
+            ):
+                json_config["max_completion_tokens"] = pipeline.max_completion_tokens
+
+            # Extract RAG params if present
+            if hasattr(pipeline, "rag") and pipeline.rag is not None:
+                rag_config = extract_rag_params(pipeline.rag)
+                if rag_config:
+                    json_config["rag_config"] = rag_config
+
+        elif isinstance(pipeline, RFAnthropicAPIModelConfig):
+            json_config["pipeline_type"] = "anthropic"
+
+            # Extract client_config (dict) - filter out sensitive keys
+            if (
+                hasattr(pipeline, "client_config")
+                and pipeline.client_config is not None
+            ):
+                sensitive_keys = {"api_key", "secret", "token", "password", "key"}
+                json_config["client_config"] = {
+                    k: v for k, v in pipeline.client_config.items()
+                    if k.lower() not in sensitive_keys
+                }
+
+            # Extract model_config (dict)
+            if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
+                json_config["model_config"] = pipeline.model_config
+
+            # Extract sampling_params using sampling_params_to_dict (extracts from model_config)
+            if (
+                hasattr(pipeline, "sampling_params")
+                and pipeline.sampling_params is not None
+            ):
+                json_config["sampling_params"] = pipeline.sampling_params_to_dict()
 
             # Extract rate limiting params
             if hasattr(pipeline, "rpm_limit") and pipeline.rpm_limit is not None:

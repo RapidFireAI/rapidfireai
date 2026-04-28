@@ -336,6 +336,52 @@ class BaseRateLimiter(ABC):
 
 
 # ---------------------------------------------------------------------------
+# Anthropic — tiktoken-based token counting (cl100k_base approximation)
+# ---------------------------------------------------------------------------
+
+class AnthropicRateLimiter(BaseRateLimiter):
+    """Rate limiter for Anthropic API endpoints. Uses tiktoken cl100k_base for token counting."""
+
+    def __init__(
+        self,
+        model_rate_limits: dict[str, dict[str, int]],
+        max_completion_tokens: int = 150,
+        limit_safety_ratio: float = 0.98,
+        minimum_wait_time: float = 3.0,
+        logger=None,
+    ):
+        super().__init__(
+            model_rate_limits=model_rate_limits,
+            max_completion_tokens=max_completion_tokens,
+            limit_safety_ratio=limit_safety_ratio,
+            minimum_wait_time=minimum_wait_time,
+            logger=logger,
+        )
+
+    def _init_encoders(self) -> None:
+        import tiktoken
+
+        self.encoders: dict = {}
+        for model_name in self.model_names:
+            # Anthropic models do not have dedicated tiktoken encoders;
+            # cl100k_base is the widely accepted offline approximation.
+            self.encoders[model_name] = tiktoken.get_encoding("cl100k_base")
+
+    def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
+        """Count tokens using tiktoken cl100k_base. Includes message-formatting overhead."""
+        if model_name not in self.encoders:
+            raise ValueError(
+                f"Model '{model_name}' not found. Available: {list(self.encoders.keys())}"
+            )
+        encoding = self.encoders[model_name]
+        total = 2  # conversation start/end tokens
+        for message in messages:
+            total += 4  # per-message role/content overhead
+            total += len(encoding.encode(message.get("content", "")))
+        return total
+
+
+# ---------------------------------------------------------------------------
 # OpenAI — tiktoken-based token counting
 # ---------------------------------------------------------------------------
 

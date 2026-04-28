@@ -6,11 +6,17 @@ distributed query processing actors. Supports OpenAI and Google Gemini backends.
 """
 import ray
 
-from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
-from rapidfireai.evals.utils.ratelimiter import OpenAIRateLimiter, GoogleGeminiRateLimiter, RequestStatus
 from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.evals.utils.ratelimiter import (
+    AnthropicRateLimiter,
+    GoogleGeminiRateLimiter,
+    OpenAIRateLimiter,
+    RequestStatus,
+)
+from rapidfireai.utils.constants import RF_EXPERIMENT_PATH
 
 _BACKEND_MAP = {
+    "anthropic": AnthropicRateLimiter,
     "openai": OpenAIRateLimiter,
     "gemini": GoogleGeminiRateLimiter,
 }
@@ -45,7 +51,7 @@ class RateLimiterActor:
             max_completion_tokens: Maximum completion tokens per request
             limit_safety_ratio: Safety margin (default 0.98 = 98% of limit)
             minimum_wait_time: Minimum wait time when rate limited (seconds)
-            backend: Which API backend to use — ``"openai"`` (default) or ``"gemini"``
+            backend: Which API backend to use — ``"openai"`` (default), ``"gemini"``, or ``"anthropic"``
             experiment_name: Name of the experiment for logging
             experiment_path: Path to experiment logs/artifacts
         """
