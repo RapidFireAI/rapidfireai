@@ -66,7 +66,13 @@ def _float_from_logged_metric_value(raw: Any) -> float | None:
         last = raw[-1]
         if isinstance(last, (list, tuple)) and len(last) >= 2:
             return float(last[1])
-        return float(last)
+        if isinstance(last, dict) and "value" in last:
+            return float(last["value"])
+        if isinstance(last, (int, float)):
+            return float(last)
+        return None
+    if isinstance(raw, dict) and "value" in raw:
+        return float(raw["value"])
     if isinstance(raw, (int, float)):
         return float(raw)
     return None
@@ -144,6 +150,47 @@ def _extract_search_space(
     return params
 
 
+_PRIMITIVE_TYPES = (type(None), bool, int, float, str)
+
+
+def _object_labels(objects: list[Any]) -> list[str]:
+    """Build concise labels showing only the attributes that differ across *objects*.
+
+    For example, two ``RecursiveCharacterTextSplitter`` instances that only
+    differ in ``chunk_size`` produce::
+
+        ["RecursiveCharacterTextSplitter(chunk_size=256)",
+         "RecursiveCharacterTextSplitter(chunk_size=128)"]
+
+    Shared defaults (``keep_separator``, ``strip_whitespace``, etc.) are omitted
+    so the labels stay short and meaningful in Optuna trial output.
+    """
+    per_obj: list[tuple[str, dict[str, Any]]] = []
+    for obj in objects:
+        attrs = {}
+        for key, val in sorted(vars(obj).items()):
+            if isinstance(val, _PRIMITIVE_TYPES):
+                attrs[key.lstrip("_")] = val
+        per_obj.append((type(obj).__name__, attrs))
+
+    all_keys: set[str] = set()
+    for _, attrs in per_obj:
+        all_keys.update(attrs)
+
+    varying = {
+        k for k in all_keys
+        if len({attrs.get(k) for _, attrs in per_obj}) > 1
+    }
+    if not varying:
+        varying = all_keys
+
+    labels: list[str] = []
+    for cls_name, attrs in per_obj:
+        parts = [f"{k}={attrs[k]!r}" for k in sorted(varying) if k in attrs]
+        labels.append(f"{cls_name}({', '.join(parts)})" if parts else repr(objects[len(labels)]))
+    return labels
+
+
 def _suggest_value(trial: optuna.Trial, name: str, param: Range | List) -> Any:
     """Use an Optuna trial to sample a single value for *param*."""
     if isinstance(param, Range):
@@ -162,7 +209,13 @@ def _suggest_value(trial: optuna.Trial, name: str, param: Range | List) -> Any:
                 kwargs["log"] = True
             return trial.suggest_float(name, float(param.start), float(param.end), **kwargs)
     elif isinstance(param, List):
-        return trial.suggest_categorical(name, param.values)
+        if all(isinstance(v, _PRIMITIVE_TYPES) for v in param.values):
+            return trial.suggest_categorical(name, param.values)
+        labels = _object_labels(param.values)
+        if len(set(labels)) < len(labels):
+            labels = [f"{lbl}#{i}" for i, lbl in enumerate(labels)]
+        chosen = trial.suggest_categorical(name, labels)
+        return param.values[labels.index(chosen)]
     raise AutoMLException(f"Unsupported search-space type: {type(param)}")
 
 
