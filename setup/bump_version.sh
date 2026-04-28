@@ -203,6 +203,16 @@ update_constants_tsx_file() {
     fi
 }
 
+copy_staging_tutorial_notebooks() {
+    print_info "Copying staging tutorial notebooks..."
+    cp -rf "$PROJECT_ROOT/tests/staging/tutorial_notebooks/." "$PROJECT_ROOT/tutorial_notebooks"
+    if [ $? -ne 0 ]; then
+        print_error "Failed to copy staging tutorial notebooks"
+        exit 1
+    fi
+    print_success "✅ Successfully copied staging tutorial notebooks to $PROJECT_ROOT/tutorial_notebooks"
+}
+
 # Get the project root directory (parent of setup/fit/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -346,6 +356,8 @@ update_readme_md_file "$NEW_VERSION"
 update_requirements_txt_file "$NEW_VERSION"
 
 print_success "Version updated to $NEW_VERSION"
+
+copy_staging_tutorial_notebooks
 
 if ! is_github_actions; then
     # Commit the changes
