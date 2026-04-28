@@ -293,7 +293,8 @@ else:
     RFPromptManager = None
 
 
-# Conditionally define evals model config classes only if dependencies are available
+# RFvLLMModelConfig requires vLLM (a self-hosted local inference engine).
+# vLLM is unavailable on macOS Apple Silicon and other CPU-only platforms.
 if (
     _VLLM_AVAILABLE
     and _EVALS_MODULES_AVAILABLE
@@ -356,6 +357,17 @@ if (
             # Use vars() to get only the attributes actually set on the object
             # This works across different vLLM versions
             return dict(vars(self.sampling_params))
+
+else:
+    RFvLLMModelConfig = None
+
+
+# RFOpenAIAPIModelConfig and RFGeminiAPIModelConfig only require the evals modules
+# (LangChainRagSpec, PromptManager, OpenAIInferenceEngine / GoogleGeminiInferenceEngine).
+# They do NOT require vLLM because OpenAI and Gemini are remote APIs and never run a
+# local inference engine. Gating them behind _VLLM_AVAILABLE makes them unusable on
+# CPU-only platforms (macOS Apple Silicon, Datahub CPU pods) for no reason.
+if _EVALS_MODULES_AVAILABLE and InferenceEngine is not None:
 
     class RFOpenAIAPIModelConfig(ModelConfig):
         """OpenAI API model configuration for evals mode."""
@@ -514,7 +526,6 @@ if (
             return {k: v for k, v in self.model_config.items() if k not in _non_sampling_keys}
 
 else:
-    # Define placeholder classes if dependencies are not available
-    RFvLLMModelConfig = None
+    # Evals modules unavailable: API configs cannot be defined.
     RFOpenAIAPIModelConfig = None
     RFGeminiAPIModelConfig = None
