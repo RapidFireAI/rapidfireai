@@ -448,12 +448,13 @@ def copy_test_notebooks():
         print("   You may need to copy test tutorial notebooks manually")
         return 1
     try:
+        dest_path = os.getenv("RF_TEST_PATH", os.path.join(".", "tutorial_notebooks"))
         source_path = os.path.join(site_packages_path, "tests", "staging", "tutorial_notebooks")
-        print(f"Copying staging tutorial notebooks from {source_path} to {test_path}...")
-        shutil.copytree(source_path, test_path, dirs_exist_ok=True)
-        print(f"✅ Successfully copied staging tutorial notebooks to {test_path}")
+        print(f"Copying staging tutorial notebooks from {source_path} to {dest_path}...")
+        shutil.copytree(source_path, dest_path, dirs_exist_ok=True)
+        print(f"✅ Successfully copied staging tutorial notebooks to {dest_path}")
     except Exception as e:
-        print(f"❌ Failed to copy staging tutorial notebooks to {test_path} from {source_path}")
+        print(f"❌ Failed to copy staging tutorial notebooks to {dest_path} from {source_path}")
         print(f"   Error: {e}")
         print("   You may need to copy staging tutorial notebooks manually")
         return 1
