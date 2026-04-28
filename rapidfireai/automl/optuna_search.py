@@ -113,6 +113,46 @@ def _resolve_metric_history(metrics: dict[str, Any], objective_metric: str) -> l
 
 
 # ---------------------------------------------------------------------------
+# Multi-objective helpers
+# ---------------------------------------------------------------------------
+
+
+def _pareto_dominates(a: list[float], b: list[float], directions: list[str]) -> bool:
+    """Return True if solution *a* Pareto-dominates solution *b*.
+
+    *a* dominates *b* when it is at least as good in every objective and
+    strictly better in at least one.
+    """
+    strictly_better = False
+    for va, vb, d in zip(a, b, directions):
+        if d == "minimize":
+            if va > vb:
+                return False
+            if va < vb:
+                strictly_better = True
+        else:
+            if va < vb:
+                return False
+            if va > vb:
+                strictly_better = True
+    return strictly_better
+
+
+def _resolve_multi_objectives(
+    metrics: dict[str, Any],
+    objective_metrics: list[str],
+) -> list[float] | None:
+    """Resolve a value for each objective metric.  Returns *None* if any metric is missing."""
+    values: list[float] = []
+    for metric in objective_metrics:
+        v = _resolve_scalar_for_objective(metrics, metric)
+        if v is None:
+            return None
+        values.append(v)
+    return values
+
+
+# ---------------------------------------------------------------------------
 # Search-space extraction and sampling
 # ---------------------------------------------------------------------------
 
@@ -211,7 +251,10 @@ def _suggest_value(trial: optuna.Trial, name: str, param: Range | List) -> Any:
     elif isinstance(param, List):
         if all(isinstance(v, _PRIMITIVE_TYPES) for v in param.values):
             return trial.suggest_categorical(name, param.values)
-        labels = _object_labels(param.values)
+        if all(isinstance(v, (list, tuple, dict)) for v in param.values):
+            labels = [repr(v) for v in param.values]
+        else:
+            labels = _object_labels(param.values)
         if len(set(labels)) < len(labels):
             labels = [f"{lbl}#{i}" for i, lbl in enumerate(labels)]
         chosen = trial.suggest_categorical(name, labels)
@@ -437,6 +480,9 @@ class OptunaChunkCallback:
         objective_metric: str,
         granularity: str = "chunk",
         num_chunks: int | None = None,
+        *,
+        objective_metrics: list[str] | None = None,
+        directions: list[str] | None = None,
     ):
         if granularity not in ("chunk", "epoch"):
             raise AutoMLException(
@@ -453,12 +499,16 @@ class OptunaChunkCallback:
         self._trainer_type = trainer_type
         self._budget = budget
         self._objective_metric = objective_metric
+        self._objective_metrics = objective_metrics or [objective_metric]
+        self._directions = directions or ["minimize"]
+        self._is_multi_objective = len(self._objective_metrics) > 1
         self._granularity = granularity
         self._num_chunks = num_chunks
         self._trials: dict[int, optuna.trial.Trial] = {}
         self._spawned = 0
         self._last_reported_step: dict[int, int] = {}
         self._chunks_since_last_eval: dict[int, int] = {}
+        self._multi_intermediates: dict[int, dict[int, list[float]]] = {}
 
     # -- bookkeeping kept by RFOptuna before handing off --
 
@@ -480,6 +530,9 @@ class OptunaChunkCallback:
         trial = self._trials.get(run_id)
         if trial is None:
             return RunDecision(action="continue")
+
+        if self._is_multi_objective:
+            return self._on_chunk_complete_multi(run_id, chunk_id, metrics, trial)
 
         history = _resolve_metric_history(metrics, self._objective_metric)
         if not history:
@@ -506,19 +559,87 @@ class OptunaChunkCallback:
 
         return RunDecision(action="continue")
 
+    def _on_chunk_complete_multi(
+        self,
+        run_id: int,
+        chunk_id: int,
+        metrics: dict[str, Any],
+        trial: optuna.Trial,
+    ) -> RunDecision:
+        """Multi-objective variant of on_chunk_complete.
+
+        Optuna's built-in pruners and ``trial.report()`` don't support
+        multi-objective studies, so we track intermediate values ourselves
+        and use Pareto-dominance-based pruning.
+        """
+        values = _resolve_multi_objectives(metrics, self._objective_metrics)
+        if values is None:
+            return RunDecision(action="continue")
+
+        intermediates = self._multi_intermediates.setdefault(run_id, {})
+        intermediates[chunk_id] = values
+
+        if self._granularity == "epoch":
+            self._chunks_since_last_eval[run_id] = (
+                self._chunks_since_last_eval.get(run_id, 0) + 1
+            )
+            if self._chunks_since_last_eval[run_id] < self._num_chunks:
+                return RunDecision(action="continue")
+            self._chunks_since_last_eval[run_id] = 0
+
+        if self._should_prune_pareto(run_id, chunk_id):
+            self._study.tell(trial, state=optuna.trial.TrialState.PRUNED)
+            replacement = self._maybe_suggest_replacement()
+            return RunDecision(action="prune", replacement_config=replacement)
+
+        return RunDecision(action="continue")
+
     def finalize(self, final_metrics: dict[int, dict[str, Any]]) -> None:
         for run_id, trial in self._trials.items():
             if not isinstance(run_id, int):
                 continue
             if _trial_state_from_storage(self._study, trial) == optuna.trial.TrialState.RUNNING:
                 run_metrics = final_metrics.get(run_id, {})
-                value = self._resolve_metric(run_metrics)
-                if value is not None:
-                    self._study.tell(trial, values=value)
+                if self._is_multi_objective:
+                    values = _resolve_multi_objectives(run_metrics, self._objective_metrics)
+                    if values is not None:
+                        self._study.tell(trial, values=values)
+                    else:
+                        self._study.tell(trial, state=optuna.trial.TrialState.FAIL)
                 else:
-                    self._study.tell(trial, state=optuna.trial.TrialState.FAIL)
+                    value = self._resolve_metric(run_metrics)
+                    if value is not None:
+                        self._study.tell(trial, values=value)
+                    else:
+                        self._study.tell(trial, state=optuna.trial.TrialState.FAIL)
 
     # -- internals --
+
+    def _should_prune_pareto(self, run_id: int, step: int) -> bool:
+        """Pareto-dominance pruning for multi-objective studies.
+
+        A run is pruned if it is Pareto-dominated by more than half the
+        peers at the current step — analogous to single-objective median
+        pruning.
+        """
+        current_vals = self._multi_intermediates.get(run_id, {}).get(step)
+        if current_vals is None:
+            return False
+
+        dominating_peers = 0
+        total_peers = 0
+        for other_id, other_steps in self._multi_intermediates.items():
+            if other_id == run_id:
+                continue
+            if step not in other_steps:
+                continue
+            total_peers += 1
+            if _pareto_dominates(other_steps[step], current_vals, self._directions):
+                dominating_peers += 1
+
+        if total_peers == 0:
+            return False
+        return dominating_peers > total_peers / 2
 
     def _should_prune_concurrent(self, trial: optuna.Trial) -> bool:
         """Concurrent-aware pruning that compares intermediate values across
@@ -608,14 +729,21 @@ class OptunaShardCallback:
         config_templates: list[dict[str, Any]],
         budget: int,
         objective_metric: str,
+        *,
+        objective_metrics: list[str] | None = None,
+        directions: list[str] | None = None,
     ):
         self._study = study
         self._search_spaces = search_spaces
         self._config_templates = config_templates
         self._budget = budget
         self._objective_metric = objective_metric
+        self._objective_metrics = objective_metrics or [objective_metric]
+        self._directions = directions or ["minimize"]
+        self._is_multi_objective = len(self._objective_metrics) > 1
         self._trials: dict[int, optuna.trial.Trial] = {}
         self._spawned = 0
+        self._multi_intermediates: dict[int, dict[int, list[float]]] = {}
 
     def _set_initial_trials(self, trial_map: dict[int, optuna.trial.Trial], spawned: int) -> None:
         self._trials.update(trial_map)
@@ -634,6 +762,18 @@ class OptunaShardCallback:
     ) -> PipelineDecision:
         trial = self._trials.get(pipeline_id)
         if trial is None:
+            return PipelineDecision(action="continue")
+
+        if self._is_multi_objective:
+            values = _resolve_multi_objectives(metrics, self._objective_metrics)
+            if values is None:
+                return PipelineDecision(action="continue")
+            intermediates = self._multi_intermediates.setdefault(pipeline_id, {})
+            intermediates[shard_id] = values
+            if self._should_prune_pareto(pipeline_id, shard_id):
+                self._study.tell(trial, state=optuna.trial.TrialState.PRUNED)
+                replacement = self._maybe_suggest_replacement()
+                return PipelineDecision(action="prune", replacement_config=replacement)
             return PipelineDecision(action="continue")
 
         metric_value = self._resolve_metric(metrics)
@@ -655,13 +795,41 @@ class OptunaShardCallback:
                 continue
             if _trial_state_from_storage(self._study, trial) == optuna.trial.TrialState.RUNNING:
                 pm = final_metrics.get(pipeline_id, {})
-                value = self._resolve_metric(pm)
-                if value is not None:
-                    self._study.tell(trial, values=value)
+                if self._is_multi_objective:
+                    values = _resolve_multi_objectives(pm, self._objective_metrics)
+                    if values is not None:
+                        self._study.tell(trial, values=values)
+                    else:
+                        self._study.tell(trial, state=optuna.trial.TrialState.FAIL)
                 else:
-                    self._study.tell(trial, state=optuna.trial.TrialState.FAIL)
+                    value = self._resolve_metric(pm)
+                    if value is not None:
+                        self._study.tell(trial, values=value)
+                    else:
+                        self._study.tell(trial, state=optuna.trial.TrialState.FAIL)
 
     # -- internals --
+
+    def _should_prune_pareto(self, pipeline_id: int, step: int) -> bool:
+        """Pareto-dominance pruning for multi-objective studies."""
+        current_vals = self._multi_intermediates.get(pipeline_id, {}).get(step)
+        if current_vals is None:
+            return False
+
+        dominating_peers = 0
+        total_peers = 0
+        for other_id, other_steps in self._multi_intermediates.items():
+            if other_id == pipeline_id:
+                continue
+            if step not in other_steps:
+                continue
+            total_peers += 1
+            if _pareto_dominates(other_steps[step], current_vals, self._directions):
+                dominating_peers += 1
+
+        if total_peers == 0:
+            return False
+        return dominating_peers > total_peers / 2
 
     def _should_prune_concurrent(self, trial: optuna.Trial) -> bool:
         """Same concurrent-aware pruning as OptunaChunkCallback."""
@@ -772,12 +940,17 @@ class RFOptuna(AutoMLAlgorithm):
         n_initial: Number of configs to generate up-front.
         budget: Maximum total configs across all replacements (including
             initial).  Set equal to ``n_initial`` to disable replacements.
-        objective: Optimisation direction and metric name, e.g.
-            ``"minimize:eval_loss"`` or ``"maximize:accuracy"``.
+        objective: Optimisation direction and metric name.  Single-objective
+            example: ``"minimize:eval_loss"`` or ``"maximize:accuracy"``.
+            Multi-objective example: ``"maximize:rougeL,maximize:bleu"``
+            (comma-separated, each with its own direction).  Multi-objective
+            uses Pareto-dominance pruning; built-in Optuna pruners are
+            automatically disabled.
         sampler: Optuna sampler name — ``"tpe"``, ``"cmaes"``, or
             ``"random"``.
         pruner: Optuna pruner name — ``"median"``, ``"hyperband"``, or
-            ``None`` to disable pruning.
+            ``None`` to disable pruning.  Ignored for multi-objective
+            (Optuna pruners don't support multi-objective studies).
         seed: Random seed for reproducibility.
         granularity: When Optuna evaluates pruning decisions in fit mode —
             ``"chunk"`` (after every chunk, the default) or ``"epoch"``
@@ -816,14 +989,22 @@ class RFOptuna(AutoMLAlgorithm):
         self._search_spaces: list[list[tuple[str, Range | List]]] = []
         self._initial_trials: list[optuna.trial.Trial] = []
 
-        # Parse objective
-        parts = objective.split(":", 1)
-        if len(parts) != 2 or parts[0] not in ("minimize", "maximize"):
-            raise AutoMLException(
-                f"objective must be 'minimize:<metric>' or 'maximize:<metric>', got '{objective}'"
-            )
-        self._direction = parts[0]
-        self._objective_metric = parts[1]
+        # Parse objective(s) — supports single or comma-separated multi-objective
+        objectives = [o.strip() for o in objective.split(",")]
+        self._directions: list[str] = []
+        self._objective_metrics: list[str] = []
+        for obj_str in objectives:
+            parts = obj_str.split(":", 1)
+            if len(parts) != 2 or parts[0] not in ("minimize", "maximize"):
+                raise AutoMLException(
+                    f"Each objective must be 'minimize:<metric>' or "
+                    f"'maximize:<metric>', got '{obj_str}'"
+                )
+            self._directions.append(parts[0])
+            self._objective_metrics.append(parts[1])
+        self._is_multi_objective = len(self._objective_metrics) > 1
+        self._direction = self._directions[0]
+        self._objective_metric = self._objective_metrics[0]
 
         super().__init__(
             configs=configs,
@@ -839,11 +1020,17 @@ class RFOptuna(AutoMLAlgorithm):
 
         effective_seed = self._seed if self._seed is not None else seed
 
-        self._study = optuna.create_study(
-            direction=self._direction,
-            sampler=self._create_sampler(effective_seed),
-            pruner=self._create_pruner(),
-        )
+        if self._is_multi_objective:
+            self._study = optuna.create_study(
+                directions=self._directions,
+                sampler=self._create_sampler(effective_seed),
+            )
+        else:
+            self._study = optuna.create_study(
+                direction=self._direction,
+                sampler=self._create_sampler(effective_seed),
+                pruner=self._create_pruner(),
+            )
         optuna.logging.set_verbosity(optuna.logging.WARNING)
 
         if not self.configs:
@@ -901,6 +1088,8 @@ class RFOptuna(AutoMLAlgorithm):
                 objective_metric=self._objective_metric,
                 granularity=self._granularity,
                 num_chunks=num_chunks,
+                objective_metrics=self._objective_metrics,
+                directions=self._directions,
             )
         else:
             cb = OptunaShardCallback(
@@ -909,6 +1098,8 @@ class RFOptuna(AutoMLAlgorithm):
                 config_templates=self._config_templates,
                 budget=self.budget,
                 objective_metric=self._objective_metric,
+                objective_metrics=self._objective_metrics,
+                directions=self._directions,
             )
 
         self._callback = cb

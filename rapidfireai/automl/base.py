@@ -87,7 +87,7 @@ class AutoMLAlgorithm(ABC):
                         f"If you want fit mode, provide a trainer_type."
                     )
 
-    def get_callback(self):
+    def get_callback(self, **kwargs):
         """Return an optional callback for inter-chunk/shard decisions.
 
         Subclasses (e.g. ``RFOptuna``) override this to return a
