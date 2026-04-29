@@ -1,4 +1,20 @@
-"""Optuna-based hyperparameter optimization integrated with RapidFire's chunk/shard loop."""
+"""Optuna-based hyperparameter optimization integrated with RapidFire's chunk/shard loop.
+
+Classes
+-------
+RFOptuna
+    User-facing ``AutoMLAlgorithm`` subclass.  Drop-in replacement for
+    ``RFGridSearch`` / ``RFRandomSearch``.
+OptunaChunkCallback
+    ``ChunkCallback`` implementation for fit mode — prunes/replaces runs
+    between training chunks.
+OptunaShardCallback
+    ``ShardCallback`` implementation for evals mode — prunes/replaces
+    pipelines between evaluation shards.
+
+Helper functions handle search-space extraction, Optuna trial sampling,
+config-leaf expansion, and metric resolution.
+"""
 
 from __future__ import annotations
 
@@ -59,7 +75,7 @@ def _ordered_objective_keys(primary: str) -> tuple[str, ...]:
 
 
 def _float_from_logged_metric_value(raw: Any) -> float | None:
-    """Parse a scalar from MLflow-style history or a plain numeric."""
+    """Parse a scalar from MLflow-style history or a plain numeric.  Returns ``None`` on failure."""
     if raw is None:
         return None
     if isinstance(raw, list) and raw:
@@ -79,7 +95,7 @@ def _float_from_logged_metric_value(raw: Any) -> float | None:
 
 
 def _resolve_scalar_for_objective(metrics: dict[str, Any], objective_metric: str) -> float | None:
-    """First matching key among *objective_metric* and known aliases."""
+    """Return a scalar for *objective_metric*, trying known aliases as fallbacks."""
     for key in _ordered_objective_keys(objective_metric):
         val = _float_from_logged_metric_value(metrics.get(key))
         if val is not None:
@@ -142,7 +158,7 @@ def _resolve_multi_objectives(
     metrics: dict[str, Any],
     objective_metrics: list[str],
 ) -> list[float] | None:
-    """Resolve a value for each objective metric.  Returns *None* if any metric is missing."""
+    """Resolve a value for each objective metric.  Returns ``None`` if any is missing."""
     values: list[float] = []
     for metric in objective_metrics:
         v = _resolve_scalar_for_objective(metrics, metric)
@@ -232,7 +248,11 @@ def _object_labels(objects: list[Any]) -> list[str]:
 
 
 def _suggest_value(trial: optuna.Trial, name: str, param: Range | List) -> Any:
-    """Use an Optuna trial to sample a single value for *param*."""
+    """Use an Optuna trial to sample a single value for *param*.
+
+    Maps ``Range`` → ``suggest_int`` / ``suggest_float`` and
+    ``List`` → ``suggest_categorical``.
+    """
     if isinstance(param, Range):
         if param.dtype == "int":
             kwargs: dict[str, Any] = {}
@@ -332,11 +352,7 @@ def _sample_from_trial_multi(
 
 
 def _template_to_leaf_fit(config_obj: Any, trainer_type: str) -> dict[str, Any]:
-    """Convert a sampled RFModelConfig into a flat config-leaf dict.
-
-    This mirrors the leaf-building logic in ``RFGridSearch._get_runs_fit`` and
-    ``RFRandomSearch._get_runs_fit`` but for a single already-concrete config.
-    """
+    """Convert a sampled ``RFModelConfig`` into a flat config-leaf dict for the controller."""
     from rapidfireai.automl.random_search import recursive_expand_randomsearch
 
     peft_params = (
@@ -413,7 +429,7 @@ def _template_to_leaf_fit(config_obj: Any, trainer_type: str) -> dict[str, Any]:
 
 
 def _template_to_leaf_evals(config_dict: dict[str, Any]) -> dict[str, Any]:
-    """Convert a sampled evals config dict into a config-leaf dict."""
+    """Convert a sampled evals config dict into a config-leaf dict for the controller."""
     from rapidfireai.automl.random_search import recursive_expand_randomsearch
 
     pipeline_key = None
@@ -442,13 +458,13 @@ def _template_to_leaf_evals(config_dict: dict[str, Any]) -> dict[str, Any]:
 # Sampler / pruner factories
 # ---------------------------------------------------------------------------
 
-_SAMPLERS = {
+_SAMPLERS: dict[str, Any] = {
     "tpe": lambda seed: optuna.samplers.TPESampler(seed=seed),
     "cmaes": lambda seed: optuna.samplers.CmaEsSampler(seed=seed),
     "random": lambda seed: optuna.samplers.RandomSampler(seed=seed),
 }
 
-_PRUNERS = {
+_PRUNERS: dict[str, Any] = {
     "median": lambda n_startup: optuna.pruners.MedianPruner(n_startup_trials=n_startup),
     "hyperband": lambda n_startup: optuna.pruners.HyperbandPruner(),
 }
@@ -460,14 +476,42 @@ _PRUNERS = {
 
 
 class OptunaChunkCallback:
-    """ChunkCallback that uses an Optuna study for pruning and replacement in fit mode.
+    """``ChunkCallback`` implementation for Optuna-based pruning in fit mode.
 
-    Args:
-        granularity: When to evaluate pruning decisions — ``"chunk"`` (after
-            every chunk, the default) or ``"epoch"`` (only at epoch boundaries,
-            i.e. after every ``num_chunks`` chunks per run).
-        num_chunks: Number of chunks per epoch.  Required when
-            ``granularity="epoch"`` so the callback can detect epoch boundaries.
+    Created by :meth:`RFOptuna.get_callback`.  After each training chunk the
+    controller calls ``on_chunk_complete`` which reports metrics to Optuna
+    and returns a ``RunDecision`` (continue / prune with optional replacement).
+
+    Parameters
+    ----------
+    study : optuna.Study
+    search_spaces : list[list[tuple[str, Range | List]]]
+        Per-template search spaces.
+    config_templates : list[Any]
+        Original ``RFModelConfig`` template objects.
+    trainer_type : str
+        ``"SFT"`` / ``"DPO"`` / ``"GRPO"``.
+    budget : int
+        Max total trials (initial + replacements).
+    objective_metric : str
+        Primary metric key (e.g. ``"eval_loss"``).
+    granularity : str
+        ``"chunk"`` or ``"epoch"``.
+    num_chunks : int or None
+        Total chunks per epoch; required when ``granularity="epoch"``.
+    objective_metrics : list[str] or None
+        All metric keys (multi-objective).
+    directions : list[str] or None
+        ``"minimize"`` / ``"maximize"`` per metric.
+
+    Methods
+    -------
+    on_chunk_complete(run_id, chunk_id, metrics) -> RunDecision
+        Evaluate a run after a chunk.
+    finalize(final_metrics)
+        Tell remaining RUNNING trials their final objective values.
+    _remap_pending_trial(db_run_id)
+        Swap a placeholder key with the real DB run ID after replacement.
     """
 
     def __init__(
@@ -509,17 +553,20 @@ class OptunaChunkCallback:
         self._last_reported_step: dict[int, int] = {}
         self._chunks_since_last_eval: dict[int, int] = {}
         self._multi_intermediates: dict[int, dict[int, list[float]]] = {}
+        self._pruned_run_ids: set[int] = set()
 
     # -- bookkeeping kept by RFOptuna before handing off --
 
     def _set_initial_trials(self, trial_map: dict[int, optuna.trial.Trial], spawned: int) -> None:
+        """Populate the ``run_id → trial`` mapping and set the spawned count."""
         self._trials.update(trial_map)
         self._spawned = spawned
 
     # -- ChunkCallback protocol --
 
     def register_runs(self, run_id_to_config: dict[int, dict[str, Any]]) -> None:
-        pass  # initial mapping handled via _set_initial_trials
+        """No-op — initial mapping is handled via ``_set_initial_trials``."""
+        pass
 
     def on_chunk_complete(
         self,
@@ -527,6 +574,22 @@ class OptunaChunkCallback:
         chunk_id: int,
         metrics: dict[str, Any],
     ) -> RunDecision:
+        """Evaluate a run after a training chunk.
+
+        Parameters
+        ----------
+        run_id : int
+            DB run identifier.
+        chunk_id : int
+            Zero-based chunk index.
+        metrics : dict[str, Any]
+            Metric values (flat scalars, MLflow step histories, or
+            dict-wrapped values).
+
+        Returns
+        -------
+        RunDecision
+        """
         trial = self._trials.get(run_id)
         if trial is None:
             return RunDecision(action="continue")
@@ -588,6 +651,7 @@ class OptunaChunkCallback:
             self._chunks_since_last_eval[run_id] = 0
 
         if self._should_prune_pareto(run_id, chunk_id):
+            self._pruned_run_ids.add(run_id)
             self._study.tell(trial, state=optuna.trial.TrialState.PRUNED)
             replacement = self._maybe_suggest_replacement()
             return RunDecision(action="prune", replacement_config=replacement)
@@ -595,6 +659,13 @@ class OptunaChunkCallback:
         return RunDecision(action="continue")
 
     def finalize(self, final_metrics: dict[int, dict[str, Any]]) -> None:
+        """Tell all remaining RUNNING trials their final objective values.
+
+        Parameters
+        ----------
+        final_metrics : dict[int, dict[str, Any]]
+            ``run_id → final metrics dict``.
+        """
         for run_id, trial in self._trials.items():
             if not isinstance(run_id, int):
                 continue
@@ -619,8 +690,9 @@ class OptunaChunkCallback:
         """Pareto-dominance pruning for multi-objective studies.
 
         A run is pruned if it is Pareto-dominated by more than half the
-        peers at the current step — analogous to single-objective median
-        pruning.
+        *active* (non-pruned) peers at the current step — analogous to
+        single-objective median pruning.  Already-pruned runs are excluded
+        so their ghost values don't block every subsequent trial.
         """
         current_vals = self._multi_intermediates.get(run_id, {}).get(step)
         if current_vals is None:
@@ -630,6 +702,8 @@ class OptunaChunkCallback:
         total_peers = 0
         for other_id, other_steps in self._multi_intermediates.items():
             if other_id == run_id:
+                continue
+            if other_id in self._pruned_run_ids:
                 continue
             if step not in other_steps:
                 continue
@@ -697,6 +771,7 @@ class OptunaChunkCallback:
         return _resolve_scalar_for_objective(metrics, self._objective_metric)
 
     def _maybe_suggest_replacement(self) -> dict[str, Any] | None:
+        """Ask Optuna for a new trial and return a config leaf, or ``None`` if budget exhausted."""
         if self._spawned >= self._budget:
             return None
 
@@ -712,7 +787,7 @@ class OptunaChunkCallback:
         return leaf
 
     def _remap_pending_trial(self, db_run_id: int) -> None:
-        """Replace a placeholder key with the real DB run_id after _create_models."""
+        """Replace a placeholder trial key with the real DB run ID after replacement."""
         pending = [k for k in self._trials if isinstance(k, str) and k.startswith("_optuna_pending_")]
         if pending:
             trial = self._trials.pop(pending[0])
@@ -720,7 +795,35 @@ class OptunaChunkCallback:
 
 
 class OptunaShardCallback:
-    """ShardCallback that uses an Optuna study for pruning and replacement in evals mode."""
+    """``ShardCallback`` implementation for Optuna-based pruning in evals mode.
+
+    Evals-mode counterpart of :class:`OptunaChunkCallback`.
+
+    Parameters
+    ----------
+    study : optuna.Study
+    search_spaces : list[list[tuple[str, Range | List]]]
+        Per-template search spaces.
+    config_templates : list[dict[str, Any]]
+        Original evals config template dicts.
+    budget : int
+        Max total trials (initial + replacements).
+    objective_metric : str
+        Primary metric key.
+    objective_metrics : list[str] or None
+        All metric keys (multi-objective).
+    directions : list[str] or None
+        ``"minimize"`` / ``"maximize"`` per metric.
+
+    Methods
+    -------
+    on_shard_complete(pipeline_id, shard_id, metrics) -> PipelineDecision
+        Evaluate a pipeline after a shard.
+    finalize(final_metrics)
+        Tell remaining RUNNING trials their final objective values.
+    _remap_pending_trial(db_pipeline_id)
+        Swap a placeholder key with the real DB pipeline ID.
+    """
 
     def __init__(
         self,
@@ -744,14 +847,17 @@ class OptunaShardCallback:
         self._trials: dict[int, optuna.trial.Trial] = {}
         self._spawned = 0
         self._multi_intermediates: dict[int, dict[int, list[float]]] = {}
+        self._pruned_run_ids: set[int] = set()
 
     def _set_initial_trials(self, trial_map: dict[int, optuna.trial.Trial], spawned: int) -> None:
+        """Populate the pipeline_id → trial mapping from the initial batch."""
         self._trials.update(trial_map)
         self._spawned = spawned
 
     # -- ShardCallback protocol --
 
     def register_pipelines(self, pipeline_id_to_config: dict[int, dict[str, Any]]) -> None:
+        """No-op — initial mapping is handled via ``_set_initial_trials``."""
         pass
 
     def on_shard_complete(
@@ -760,6 +866,21 @@ class OptunaShardCallback:
         shard_id: int,
         metrics: dict[str, Any],
     ) -> PipelineDecision:
+        """Evaluate a pipeline after an evaluation shard.
+
+        Parameters
+        ----------
+        pipeline_id : int
+            DB pipeline identifier.
+        shard_id : int
+            Zero-based shard index.
+        metrics : dict[str, Any]
+            Cumulative aggregated metrics up to this shard.
+
+        Returns
+        -------
+        PipelineDecision
+        """
         trial = self._trials.get(pipeline_id)
         if trial is None:
             return PipelineDecision(action="continue")
@@ -771,6 +892,7 @@ class OptunaShardCallback:
             intermediates = self._multi_intermediates.setdefault(pipeline_id, {})
             intermediates[shard_id] = values
             if self._should_prune_pareto(pipeline_id, shard_id):
+                self._pruned_run_ids.add(pipeline_id)
                 self._study.tell(trial, state=optuna.trial.TrialState.PRUNED)
                 replacement = self._maybe_suggest_replacement()
                 return PipelineDecision(action="prune", replacement_config=replacement)
@@ -790,6 +912,13 @@ class OptunaShardCallback:
         return PipelineDecision(action="continue")
 
     def finalize(self, final_metrics: dict[int, dict[str, Any]]) -> None:
+        """Tell all remaining RUNNING trials their final objective values.
+
+        Parameters
+        ----------
+        final_metrics : dict[int, dict[str, Any]]
+            ``pipeline_id → final metrics dict``.
+        """
         for pipeline_id, trial in self._trials.items():
             if not isinstance(pipeline_id, int):
                 continue
@@ -811,7 +940,11 @@ class OptunaShardCallback:
     # -- internals --
 
     def _should_prune_pareto(self, pipeline_id: int, step: int) -> bool:
-        """Pareto-dominance pruning for multi-objective studies."""
+        """Pareto-dominance pruning for multi-objective studies.
+
+        Only compares against active (non-pruned) peers so ghost values
+        from already-pruned pipelines don't block subsequent trials.
+        """
         current_vals = self._multi_intermediates.get(pipeline_id, {}).get(step)
         if current_vals is None:
             return False
@@ -820,6 +953,8 @@ class OptunaShardCallback:
         total_peers = 0
         for other_id, other_steps in self._multi_intermediates.items():
             if other_id == pipeline_id:
+                continue
+            if other_id in self._pruned_run_ids:
                 continue
             if step not in other_steps:
                 continue
@@ -867,6 +1002,7 @@ class OptunaShardCallback:
         return current_value < median_val
 
     def _resolve_metric(self, metrics: dict[str, Any]) -> float | None:
+        """Extract the objective metric value from a metrics dict."""
         direct = _resolve_scalar_for_objective(metrics, self._objective_metric)
         if direct is not None:
             return direct
@@ -884,6 +1020,7 @@ class OptunaShardCallback:
         return None
 
     def _maybe_suggest_replacement(self) -> dict[str, Any] | None:
+        """Ask Optuna for a new trial and return an evals config leaf, or ``None`` if budget exhausted."""
         if self._spawned >= self._budget:
             return None
 
@@ -899,6 +1036,7 @@ class OptunaShardCallback:
         return leaf
 
     def _remap_pending_trial(self, db_pipeline_id: int) -> None:
+        """Replace a placeholder trial key with the real DB pipeline ID after replacement."""
         pending = [k for k in self._trials if isinstance(k, str) and k.startswith("_optuna_pending_")]
         if pending:
             trial = self._trials.pop(pending[0])
@@ -913,49 +1051,55 @@ class OptunaShardCallback:
 class RFOptuna(AutoMLAlgorithm):
     """Optuna-powered hyperparameter search for RapidFire AI.
 
-    Works as a drop-in replacement for ``RFGridSearch`` / ``RFRandomSearch``.
-    Initial configs are sampled via Optuna's sampler; during training the
-    attached callback prunes underperforming runs and optionally replaces them
-    with new Optuna suggestions.
+    Drop-in replacement for ``RFGridSearch`` / ``RFRandomSearch`` that uses
+    Optuna's ask-and-tell API.  Supports single and multi-objective
+    optimisation, adaptive pruning, and budget-controlled trial replacement.
 
-    Supports **multiple config templates** (just like Grid/Random search)::
+    When a run is pruned (stopped early due to poor intermediate metrics),
+    Optuna automatically generates a replacement config via ``study.ask()``
+    so the GPU slot is reused with a better-informed suggestion.  This
+    continues until ``budget`` total trials have been created.
 
-        config_group = RFOptuna(
-            configs=[template_a, template_b],          # or List([...])
-            trainer_type="SFT",
-            ...
-        )
+    Parameters
+    ----------
+    configs :
+        One or more config templates containing ``Range`` / ``List``
+        search-space definitions.  Accepts a plain list, a ``List([...])``
+        wrapper, or a single template.  When multiple templates are
+        provided, Optuna treats the template choice as a categorical
+        hyperparameter.
+    trainer_type : str or None
+        ``"SFT"`` / ``"DPO"`` / ``"GRPO"`` for fit mode, ``None`` for evals
+        mode.
+    n_initial : int
+        Number of configs to generate up-front via ``study.ask()``.
+    budget : int
+        Maximum total trials (initial + replacements).  Clamped to
+        ``max(budget, n_initial)``.  Set ``budget == n_initial`` to disable
+        replacement.
+    objective : str
+        ``"minimize:eval_loss"`` or ``"maximize:accuracy"`` for
+        single-objective.  ``"maximize:rougeL,maximize:bleu"``
+        (comma-separated) for multi-objective.
+    sampler : str
+        ``"tpe"`` (default), ``"cmaes"``, or ``"random"``.
+    pruner : str or None
+        ``"median"`` (default), ``"hyperband"``, or ``None``.  Ignored for
+        multi-objective studies.
+    seed : int
+        Random seed for the Optuna sampler.
+    granularity : str
+        ``"chunk"`` (default) or ``"epoch"``.  Controls when pruning is
+        evaluated in fit mode.  Ignored in evals mode.
 
-    When multiple templates are provided, Optuna treats the template choice
-    itself as a categorical hyperparameter and learns which template family
-    performs best alongside the per-template search spaces.
-
-    Args:
-        configs: One or more config templates containing ``Range`` / ``List``
-            search-space definitions (same format as grid/random search).
-            Accepts a plain list, a ``List([...])`` wrapper, or a single
-            template.
-        trainer_type: ``"SFT"`` / ``"DPO"`` / ``"GRPO"`` for fit mode,
-            ``None`` for evals mode.
-        n_initial: Number of configs to generate up-front.
-        budget: Maximum total configs across all replacements (including
-            initial).  Set equal to ``n_initial`` to disable replacements.
-        objective: Optimisation direction and metric name.  Single-objective
-            example: ``"minimize:eval_loss"`` or ``"maximize:accuracy"``.
-            Multi-objective example: ``"maximize:rougeL,maximize:bleu"``
-            (comma-separated, each with its own direction).  Multi-objective
-            uses Pareto-dominance pruning; built-in Optuna pruners are
-            automatically disabled.
-        sampler: Optuna sampler name — ``"tpe"``, ``"cmaes"``, or
-            ``"random"``.
-        pruner: Optuna pruner name — ``"median"``, ``"hyperband"``, or
-            ``None`` to disable pruning.  Ignored for multi-objective
-            (Optuna pruners don't support multi-objective studies).
-        seed: Random seed for reproducibility.
-        granularity: When Optuna evaluates pruning decisions in fit mode —
-            ``"chunk"`` (after every chunk, the default) or ``"epoch"``
-            (only after each full epoch, i.e. after all chunks in an epoch
-            have been visited).  Ignored in evals mode.
+    Methods
+    -------
+    get_runs(seed=42) -> list[dict]
+        Create the Optuna study and sample ``n_initial`` config leaves.
+    get_callback(num_chunks=None) -> OptunaChunkCallback | OptunaShardCallback | None
+        Return the callback wired to the study.  Call after ``get_runs()``.
+    bind_initial_trials(ordered_ids)
+        Map DB run/pipeline IDs to the Optuna trials from ``get_runs()``.
     """
 
     def __init__(
@@ -1015,6 +1159,24 @@ class RFOptuna(AutoMLAlgorithm):
     # -- AutoMLAlgorithm interface --
 
     def get_runs(self, seed: int = 42) -> list[dict[str, Any]]:
+        """Create the Optuna study and sample ``n_initial`` config leaves.
+
+        Parameters
+        ----------
+        seed : int
+            Fallback seed (instance-level ``seed`` takes precedence).
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            One config-leaf dict per initial trial.
+
+        Raises
+        ------
+        AutoMLException
+            If no config templates or no ``Range`` / ``List`` parameters
+            are found.
+        """
         if not isinstance(seed, int) or seed < 0:
             raise AutoMLException("seed must be a non-negative integer")
 
@@ -1066,14 +1228,17 @@ class RFOptuna(AutoMLAlgorithm):
         return runs
 
     def get_callback(self, num_chunks: int | None = None) -> OptunaChunkCallback | OptunaShardCallback | None:
-        """Return the callback for the controller to use between chunks/shards.
+        """Return the callback for inter-chunk/shard pruning.  Call after ``get_runs()``.
 
-        Must be called **after** ``get_runs()``.
+        Parameters
+        ----------
+        num_chunks : int or None
+            Total chunks per epoch.  Only used when ``granularity="epoch"``
+            in fit mode so the callback can detect epoch boundaries.
 
-        Args:
-            num_chunks: Number of chunks per epoch.  Passed through to
-                :class:`OptunaChunkCallback` so it can detect epoch
-                boundaries when ``granularity="epoch"``.
+        Returns
+        -------
+        OptunaChunkCallback or OptunaShardCallback or None
         """
         if self._study is None:
             return None
@@ -1106,10 +1271,12 @@ class RFOptuna(AutoMLAlgorithm):
         return cb
 
     def bind_initial_trials(self, ordered_ids: list[int]) -> None:
-        """Map the DB-assigned run/pipeline IDs to the Optuna trials created in get_runs().
+        """Map DB run/pipeline IDs to the Optuna trials from ``get_runs()``.
 
-        Called by the controller after ``_create_models`` / ``_register_pipelines``
-        so the callback knows which trial corresponds to which run.
+        Parameters
+        ----------
+        ordered_ids : list[int]
+            DB IDs in the same order as the config leaves from ``get_runs()``.
         """
         if self._callback is None:
             return
