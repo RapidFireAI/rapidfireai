@@ -101,14 +101,15 @@ export const ToolUsageChart: React.FC = () => {
                 cursor={{ fill: theme.colors.actionTertiaryBackgroundHover }}
                 wrapperStyle={{ pointerEvents: 'auto' }}
               />
-              {displayedItems.map((toolName) => {
+              {displayedItems.map((toolName, index) => {
                 const originalIndex = toolNames.indexOf(toolName);
+                const colorIndex = originalIndex === -1 ? index : originalIndex;
                 return (
                   <Bar
                     key={toolName}
                     dataKey={toolName}
                     stackId="tools"
-                    fill={getChartColor(originalIndex)}
+                    fill={getChartColor(colorIndex)}
                     fillOpacity={getOpacity(toolName)}
                   />
                 );

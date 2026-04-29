@@ -104,17 +104,18 @@ export const ToolLatencyChart: React.FC = () => {
                 cursor={{ stroke: theme.colors.actionTertiaryBackgroundHover }}
                 wrapperStyle={{ pointerEvents: 'auto' }}
               />
-              {displayedItems.map((toolName) => {
+              {displayedItems.map((toolName, index) => {
                 const originalIndex = toolNames.indexOf(toolName);
+                const colorIndex = originalIndex === -1 ? index : originalIndex;
                 return (
                   <Line
                     key={toolName}
                     type="monotone"
                     dataKey={toolName}
-                    stroke={getChartColor(originalIndex)}
+                    stroke={getChartColor(colorIndex)}
                     strokeWidth={2}
                     strokeOpacity={getOpacity(toolName)}
-                    dot={getLineDotStyle(getChartColor(originalIndex))}
+                    dot={getLineDotStyle(getChartColor(colorIndex))}
                   />
                 );
               })}

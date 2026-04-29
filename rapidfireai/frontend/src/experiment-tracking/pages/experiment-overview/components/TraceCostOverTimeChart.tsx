@@ -137,17 +137,18 @@ export const TraceCostOverTimeChart: React.FC = () => {
                 cursor={{ stroke: theme.colors.actionTertiaryBackgroundHover }}
                 wrapperStyle={{ pointerEvents: 'auto' }}
               />
-              {displayedItems.map((itemName) => {
+              {displayedItems.map((itemName, index) => {
                 const originalIndex = dimensionValues.indexOf(itemName);
+                const colorIndex = originalIndex === -1 ? index : originalIndex;
                 return (
                   <Line
                     key={itemName}
                     type="monotone"
                     dataKey={itemName}
-                    stroke={getChartColor(originalIndex)}
+                    stroke={getChartColor(colorIndex)}
                     strokeOpacity={getOpacity(itemName)}
                     strokeWidth={2}
-                    dot={getLineDotStyle(getChartColor(originalIndex))}
+                    dot={getLineDotStyle(getChartColor(colorIndex))}
                     name={itemName}
                   />
                 );

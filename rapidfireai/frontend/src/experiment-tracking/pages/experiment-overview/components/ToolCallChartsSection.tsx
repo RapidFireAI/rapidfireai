@@ -72,13 +72,14 @@ export const ToolCallChartsSection: React.FC = () => {
         />
       </div>
       <ChartGrid>
-        {displayedItems.map((name) => {
+        {displayedItems.map((name, index) => {
           const originalIndex = toolNames.indexOf(name);
+          const colorIndex = originalIndex === -1 ? index : originalIndex;
           return (
             <div key={name} id={`tool-chart-${name}`}>
               <LazyToolErrorRateChart
                 toolName={name}
-                lineColor={getChartColor(originalIndex)}
+                lineColor={getChartColor(colorIndex)}
                 overallErrorRate={errorRateByTool.get(name) ?? 0}
               />
             </div>
