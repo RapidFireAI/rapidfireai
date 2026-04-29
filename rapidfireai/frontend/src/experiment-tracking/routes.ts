@@ -144,6 +144,15 @@ class Routes {
   }
 
   static getExperimentPageTabRoute(experimentId: string, tabName: ExperimentPageTabName) {
+    // The Overview page is registered under a sub-tabbed path
+    // (`/experiments/:id/overview/:overviewTab`), so build that URL with the
+    // default sub-tab instead of the flat `:tabName` template.
+    if (tabName === ExperimentPageTabName.Overview) {
+      return generatePath(RoutePaths.experimentPageTabOverview, {
+        experimentId,
+        overviewTab: 'usage',
+      });
+    }
     return generatePath(RoutePaths.experimentPageTabbed, { experimentId, tabName });
   }
 
