@@ -541,6 +541,11 @@ class Controller:
             rag_spec = getattr(pipeline, "rag", None) if has_rag_attr else None
             prompt_manager = getattr(pipeline, "prompt_manager", None)
 
+            if rag_spec and not rag_spec.experiment_name:
+                rag_spec.experiment_name = self.experiment_name
+            if prompt_manager and not getattr(prompt_manager, "experiment_name", None):
+                prompt_manager.experiment_name = self.experiment_name
+
             # Check if pipeline has RAG or prompt_manager to look up context
             if rag_spec or prompt_manager:
                 # Get RAG hash if present
@@ -814,6 +819,84 @@ class Controller:
             progress_display.stop()
         return final_results
 
+    @staticmethod
+    def _extract_pipeline_info(pipeline_id, pipeline_config):
+        """Extract display metadata from a pipeline config dict.
+
+        Used both for initial pipelines and dynamically added replacements
+        (e.g. Optuna pruning replacements) so that final results always
+        carry full config metadata.
+        """
+        model_name = "Unknown"
+        text_splitter_cfg = None
+        embedding_cfg = None
+        vector_store_cfg = None
+        search_cfg = None
+        reranker_cfg = None
+        sampling_params = None
+        prompt_manager_k = None
+        model_config = None
+
+        pipeline = pipeline_config["pipeline"]
+        if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
+            if "model" in pipeline.model_config:
+                model_name = pipeline.model_config["model"]
+            model_config_copy = pipeline.model_config.copy()
+            model_config_copy.pop("model", None)
+            if model_config_copy:
+                model_config = model_config_copy
+
+        if hasattr(pipeline, "rag") and pipeline.rag is not None:
+            rag = pipeline.rag
+
+            if hasattr(rag, "text_splitter") and rag.text_splitter is not None:
+                text_splitter_cfg = rag.get_text_splitter_cfg()
+            if getattr(rag, "embedding_cls", None) is not None:
+                cls_name = rag.embedding_cls.__name__ if isinstance(rag.embedding_cls, type) else str(rag.embedding_cls)
+                embedding_cfg = {"class": cls_name}
+                if getattr(rag, "embedding_kwargs", None):
+                    embedding_cfg.update(rag.embedding_kwargs)
+            if getattr(rag, "vector_store_cfg", None) is not None:
+                vector_store_cfg = dict(rag.vector_store_cfg)
+
+            if getattr(rag, "search_type", None) is not None:
+                search_cfg = {"type": rag.search_type}
+                if hasattr(rag, "search_kwargs") and rag.search_kwargs:
+                    allowed_keys = SEARCH_TYPE_KEYS.get(rag.search_type, set(rag.search_kwargs.keys()))
+                    search_cfg.update({k: v for k, v in rag.search_kwargs.items() if k in allowed_keys and v is not None})
+            if getattr(rag, "reranker_cls", None) is not None:
+                reranker_cfg = {"class": rag.reranker_cls.__qualname__ if isinstance(rag.reranker_cls, type) else str(rag.reranker_cls)}
+                if hasattr(rag, "reranker_kwargs") and rag.reranker_kwargs:
+                    reranker_cfg.update({k: v for k, v in rag.reranker_kwargs.items() if v is not None})
+
+        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
+            sampling_params = pipeline._user_params.get("sampling_params", None)
+
+        if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
+            prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
+
+        info_dict = {
+            "pipeline_id": pipeline_id,
+            "pipeline_config": pipeline_config,
+            "model_name": model_name,
+        }
+
+        optional_fields = {
+            "text_splitter_cfg": text_splitter_cfg,
+            "embedding_cfg": embedding_cfg,
+            "vector_store_cfg": vector_store_cfg,
+            "search_cfg": search_cfg,
+            "reranker_cfg": reranker_cfg,
+            "sampling_params": sampling_params,
+            "prompt_manager_k": prompt_manager_k,
+            "model_config": model_config,
+        }
+        for key, value in optional_fields.items():
+            if value is not None:
+                info_dict[key] = value
+
+        return info_dict
+
     def run_multi_pipeline_inference(
         self,
         experiment_id: int,
@@ -824,6 +907,7 @@ class Controller:
         num_actors: int = None,
         num_gpus_per_actor: float = None,
         num_cpus_per_actor: float = None,
+        shard_callback=None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Run multi-pipeline inference with fair round-robin scheduling.
@@ -840,6 +924,7 @@ class Controller:
             num_actors: Number of query processing actors to spawn
             num_gpus_per_actor: GPUs per actor (float, e.g. 1.0 or 0.0)
             num_cpus_per_actor: CPUs per actor (float, e.g. 3.75)
+            shard_callback: Optional ShardCallback for Optuna integration
 
         Returns:
             Dict mapping pipeline_id to (aggregated_results, cumulative_metrics) tuple
@@ -882,8 +967,17 @@ class Controller:
 
         self.logger.info(f"Created {num_actors} query processing actors (generic pool)")
 
+        # Extract Optuna shard callback from config_group if available
+        if shard_callback is None and hasattr(config_group, "get_callback"):
+            shard_callback = config_group.get_callback()
+
         # PHASE 5: Register pipelines in database
         pipeline_ids, pipeline_id_to_config = self._register_pipelines(config_leaves, db)
+
+        # Bind Optuna trials to the newly created DB pipeline IDs
+        if shard_callback is not None and hasattr(config_group, "bind_initial_trials"):
+            config_group.bind_initial_trials(pipeline_ids)
+            self.logger.info(f"Optuna shard callback bound to {len(pipeline_ids)} initial pipelines")
 
         # PHASE 6: Initialize PipelineScheduler
         scheduler = PipelineScheduler(
@@ -911,93 +1005,10 @@ class Controller:
 
         # Initialize progress display table
         pipeline_info = []
-        pipeline_configs = [pipeline_id_to_config[pipeline_id] for pipeline_id in pipeline_ids]
-        for pipeline_id, pipeline_config in zip(pipeline_ids, pipeline_configs, strict=False):
-            model_name = "Unknown"
-            # Indexing-stage fields (read-only in progress display)
-            text_splitter_cfg = None
-            embedding_cfg = None
-            vector_store_cfg = None
-            # Retrieval-stage fields
-            search_cfg = None
-            reranker_cfg = None
-            # Generation-stage fields
-            sampling_params = None
-            prompt_manager_k = None
-            model_config = None
-
-            # Extract model name from config
-            pipeline = pipeline_config["pipeline"]
-            if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-                if "model" in pipeline.model_config:
-                    model_name = pipeline.model_config["model"]
-                model_config_copy = pipeline.model_config.copy()
-                model_config_copy.pop("model", None)
-                if model_config_copy:
-                    model_config = model_config_copy
-
-            # Extract ALL RAG fields for display
-            if hasattr(pipeline, "rag") and pipeline.rag is not None:
-                rag = pipeline.rag
-
-                # Indexing stage
-                if hasattr(rag, "text_splitter") and rag.text_splitter is not None:
-                    text_splitter_cfg = rag.get_text_splitter_cfg()
-                if getattr(rag, "embedding_cls", None) is not None:
-                    cls_name = rag.embedding_cls.__name__ if isinstance(rag.embedding_cls, type) else str(rag.embedding_cls)
-                    embedding_cfg = {"class": cls_name}
-                    if getattr(rag, "embedding_kwargs", None):
-                        embedding_cfg.update(rag.embedding_kwargs)
-                if getattr(rag, "vector_store_cfg", None) is not None:
-                    vector_store_cfg = dict(rag.vector_store_cfg)
-
-                # Retrieval stage
-                if getattr(rag, "search_type", None) is not None:
-                    search_cfg = {"type": rag.search_type}
-                    if hasattr(rag, "search_kwargs") and rag.search_kwargs:
-                        allowed_keys = SEARCH_TYPE_KEYS.get(rag.search_type, set(rag.search_kwargs.keys()))
-                        search_cfg.update({k: v for k, v in rag.search_kwargs.items() if k in allowed_keys and v is not None})
-                if getattr(rag, "reranker_cls", None) is not None:
-                    reranker_cfg = {"class": rag.reranker_cls.__qualname__ if isinstance(rag.reranker_cls, type) else str(rag.reranker_cls)}
-                    if hasattr(rag, "reranker_kwargs") and rag.reranker_kwargs:
-                        reranker_cfg.update({k: v for k, v in rag.reranker_kwargs.items() if v is not None})
-
-            # Extract sampling params
-            if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
-                sampling_params = pipeline._user_params.get("sampling_params", None)
-
-            # Extract prompt_manager fields
-            if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
-                prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
-
-            pipeline_info_dict = {
-                "pipeline_id": pipeline_id,
-                "pipeline_config": pipeline_config,
-                "model_name": model_name,
-            }
-
-            # Add optional fields only if they're not None
-            # Indexing stage (read-only display)
-            if text_splitter_cfg is not None:
-                pipeline_info_dict["text_splitter_cfg"] = text_splitter_cfg
-            if embedding_cfg is not None:
-                pipeline_info_dict["embedding_cfg"] = embedding_cfg
-            if vector_store_cfg is not None:
-                pipeline_info_dict["vector_store_cfg"] = vector_store_cfg
-            # Retrieval stage
-            if search_cfg is not None:
-                pipeline_info_dict["search_cfg"] = search_cfg
-            if reranker_cfg is not None:
-                pipeline_info_dict["reranker_cfg"] = reranker_cfg
-            # Generation stage
-            if sampling_params is not None:
-                pipeline_info_dict["sampling_params"] = sampling_params
-            if prompt_manager_k is not None:
-                pipeline_info_dict["prompt_manager_k"] = prompt_manager_k
-            if model_config is not None:
-                pipeline_info_dict["model_config"] = model_config
-
-            pipeline_info.append(pipeline_info_dict)
+        for pipeline_id in pipeline_ids:
+            pipeline_info.append(
+                self._extract_pipeline_info(pipeline_id, pipeline_id_to_config[pipeline_id])
+            )
 
         progress_display = PipelineProgressDisplay(pipeline_info, num_shards)
 
@@ -1306,6 +1317,79 @@ class Controller:
                             f"({task_info['batch_count']} batches, {duration:.2f}s)"
                         )
 
+                        # Optuna shard callback: evaluate pipeline and potentially prune
+                        if (
+                            shard_callback is not None
+                            and shards_completed < num_shards
+                        ):
+                            try:
+                                cb_metrics = display_metrics if display_metrics else {}
+                                shard_decision = shard_callback.on_shard_complete(
+                                    pipeline_id, shard_id, cb_metrics
+                                )
+                                if shard_decision.action == "prune":
+                                    db.set_pipeline_status(pipeline_id, PipelineStatus.STOPPED)
+                                    progress_display.update_pipeline(pipeline_id, status="STOPPED")
+                                    scheduler.remove_pipeline(pipeline_id)
+                                    self.logger.info(
+                                        f"Optuna pruned pipeline {pipeline_id} after shard {shard_id}"
+                                    )
+                                    if shard_decision.replacement_config:
+                                        # Inject experiment_name so the replacement's
+                                        # RAG hash matches the cached context built
+                                        # during _setup_context_generators.
+                                        repl_pipeline = shard_decision.replacement_config.get("pipeline")
+                                        if repl_pipeline is not None:
+                                            repl_rag = getattr(repl_pipeline, "rag", None)
+                                            repl_pm = getattr(repl_pipeline, "prompt_manager", None)
+                                            if repl_rag:
+                                                repl_rag.experiment_name = self.experiment_name
+                                            if repl_pm:
+                                                repl_pm.experiment_name = self.experiment_name
+
+                                        new_ids, new_map = self._register_pipelines(
+                                            [shard_decision.replacement_config], db
+                                        )
+                                        for new_pid in new_ids:
+                                            pipeline_id_to_config[new_pid] = new_map[new_pid]
+                                            pipeline_ids.append(new_pid)
+                                            agg = Aggregator()
+                                            pc = new_map[new_pid]
+                                            p = pc["pipeline"]
+                                            if hasattr(p, "online_strategy"):
+                                                agg.set_online_strategy(**p.online_strategy)
+                                            agg.set_total_population_size(total_dataset_size)
+                                            pipeline_aggregators[new_pid] = agg
+                                            pipeline_results[new_pid] = {
+                                                "results": {},
+                                                "metrics": {},
+                                                "start_time": None,
+                                            }
+                                            scheduler.add_pipeline(new_pid, shards_completed=0)
+                                            if hasattr(shard_callback, "_remap_pending_trial"):
+                                                shard_callback._remap_pending_trial(new_pid)
+
+                                            # Add replacement to live progress display
+                                            if progress_display:
+                                                info = self._extract_pipeline_info(new_pid, pc)
+                                                metadata = {
+                                                    k: v for k, v in info.items()
+                                                    if k not in ["pipeline_id", "pipeline_config", "model_name"]
+                                                }
+                                                progress_display.add_pipeline(
+                                                    pipeline_id=new_pid,
+                                                    pipeline_config=pc,
+                                                    model_name=info.get("model_name", "Unknown"),
+                                                    **metadata,
+                                                )
+                                        self.logger.info(
+                                            f"Optuna suggested replacement pipeline(s): {new_ids}"
+                                        )
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Optuna shard callback error for pipeline {pipeline_id}: {e}"
+                                )
+
                         # Mark for cleanup
                         completed_actor_ids.append(actor_id)
 
@@ -1564,6 +1648,26 @@ class Controller:
             db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
             db.set_pipeline_current_shard(pipeline_id, shard_id)
 
+        # Finalize Optuna shard callback with final metrics from all pipelines.
+        # We must accumulate the raw per-shard metric lists into flat dicts
+        # (e.g. {"NDCG@5": {"value": 0.15}}) before passing to finalize(),
+        # because the callback's _resolve_metric expects scalar-valued dicts,
+        # not the raw aggregated lists stored in pipeline_results.
+        if shard_callback is not None:
+            try:
+                final_cb_metrics: dict[int, dict] = {}
+                for pid in pipeline_id_to_config:
+                    if pid in pipeline_results and pipeline_results[pid]["metrics"]:
+                        accumulate_fn = pipeline_id_to_config[pid].get("accumulate_metrics_fn")
+                        if accumulate_fn:
+                            final_cb_metrics[pid] = accumulate_fn(pipeline_results[pid]["metrics"])
+                        else:
+                            final_cb_metrics[pid] = pipeline_results[pid]["metrics"]
+                shard_callback.finalize(final_cb_metrics)
+                self.logger.info("Optuna shard callback finalized")
+            except Exception as e:
+                self.logger.warning(f"Optuna shard callback finalize error: {e}")
+
         # PHASE 8: Compute final metrics for each pipeline (including dynamically cloned ones).
         # pipeline_id_to_config contains all pipelines (originals + clones added via _handle_clone).
         # pipeline_ids only has the originals registered at startup, so we use the config dict keys.
@@ -1576,15 +1680,23 @@ class Controller:
             info_copy = {k: v for k, v in info_dict.items() if k not in ["pipeline_config", "pipeline_id"]}
             pipeline_id_to_info[pid] = info_copy
 
-        # For cloned pipelines (not in pipeline_info), pull their display metadata directly
-        # from the progress_display which already has it from add_pipeline().
+        # For dynamically added pipelines (Optuna replacements, interactive clones)
+        # not in pipeline_info, extract metadata from the pipeline config itself.
+        # Fall back to the progress_display for interactive clones that populated it.
         for pid in all_pipeline_ids:
-            if pid not in pipeline_id_to_info and progress_display:
-                clone_metadata = progress_display.pipeline_metadata.get(pid, {})
-                clone_data = progress_display.pipeline_data.get(pid, {})
-                clone_info = {"model_name": clone_data.get("model", "Unknown")}
-                clone_info.update(clone_metadata)
-                pipeline_id_to_info[pid] = clone_info
+            if pid not in pipeline_id_to_info:
+                if pid in pipeline_id_to_config:
+                    info_dict = self._extract_pipeline_info(pid, pipeline_id_to_config[pid])
+                    pipeline_id_to_info[pid] = {
+                        k: v for k, v in info_dict.items()
+                        if k not in ["pipeline_config", "pipeline_id"]
+                    }
+                elif progress_display:
+                    clone_metadata = progress_display.pipeline_metadata.get(pid, {})
+                    clone_data = progress_display.pipeline_data.get(pid, {})
+                    clone_info = {"model_name": clone_data.get("model", "Unknown")}
+                    clone_info.update(clone_metadata)
+                    pipeline_id_to_info[pid] = clone_info
 
         final_results = self._compute_final_metrics_for_pipelines(
             all_pipeline_ids,

@@ -389,6 +389,11 @@ class Experiment:
             print("⚠️  Training is already running in background. Please wait for it to complete.")
             return
 
+        # Extract chunk callback from param_config if it supports Optuna-style callbacks
+        chunk_callback = None
+        if hasattr(param_config, "get_callback"):
+            chunk_callback = param_config.get_callback()
+
         if ColabConfig.ON_COLAB:
             # Run Controller in background thread to keep kernel responsive
             import sys
@@ -405,7 +410,7 @@ class Experiment:
 
                 try:
                     controller = Controller(self.experiment_id, self.experiment_name)
-                    controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations)
+                    controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations, chunk_callback=chunk_callback)
                 except Exception as e:
                     # Restore stdout for error logging
                     sys.stdout = old_stdout
@@ -444,7 +449,7 @@ class Experiment:
             # Original blocking behavior for non-Colab environments
             try:
                 controller = Controller(self.experiment_id, self.experiment_name)
-                controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations)
+                controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations, chunk_callback=chunk_callback)
             except Exception as e:
                 if hasattr(self, "logger"):
                     self.logger.opt(exception=True).error(f"Error running fit: {e}")
@@ -534,6 +539,11 @@ class Experiment:
         # Update experiment with num_shards
         self.db.set_experiment_num_shards(self.experiment_id, num_shards)
 
+        # Extract shard callback from config_group if it supports Optuna-style callbacks
+        shard_callback = None
+        if hasattr(config_group, "get_callback"):
+            shard_callback = config_group.get_callback()
+
         # Delegate all complexity to Controller
         try:
             results = self.controller.run_multi_pipeline_inference(
@@ -545,6 +555,7 @@ class Experiment:
                 num_actors=int(num_actors),
                 num_gpus_per_actor=float(gpus_per_actor),
                 num_cpus_per_actor=float(cpus_per_actor),
+                shard_callback=shard_callback,
             )
         except Exception as e:
             self.logger.exception("Error running multi-config experiment")
