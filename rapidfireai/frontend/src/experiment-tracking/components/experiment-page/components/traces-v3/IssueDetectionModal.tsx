@@ -6,6 +6,7 @@
  * OSS, so this stub is never rendered. It exists so the import resolves.
  */
 export interface IssueDetectionModalProps {
+  componentId?: string;
   visible?: boolean;
   onClose?: () => void;
   experimentId?: string;

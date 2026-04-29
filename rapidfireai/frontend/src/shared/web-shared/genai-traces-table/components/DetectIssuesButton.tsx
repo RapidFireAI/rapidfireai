@@ -6,6 +6,7 @@
  * stub is never rendered. It exists so the import resolves.
  */
 export interface DetectIssuesButtonProps {
+  componentId?: string;
   onClick?: () => void;
   disabled?: boolean;
 }
