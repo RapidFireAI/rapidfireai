@@ -27,7 +27,7 @@ export {
   useMlflowTracesTableMetadata,
   invalidateMlflowSearchTracesCache,
 } from './hooks/useMlflowTraces';
-export { getEvalTabTotalTracesLimit } from './utils/FeatureUtils';
+export { getEvalTabTotalTracesLimit, shouldUseTracesV4API } from './utils/FeatureUtils';
 export { GenAITracesTableToolbar } from './GenAITracesTableToolbar';
 export { GenAITracesTableBodyContainer } from './GenAITracesTableBodyContainer';
 export { useTableColumns } from './hooks/useTableColumns';
@@ -74,6 +74,8 @@ export {
   TAGS_COLUMN_ID,
   RESPONSE_COLUMN_ID,
   TOKENS_COLUMN_ID,
+  SPAN_NAME_COLUMN_ID,
+  SPAN_STATUS_COLUMN_ID,
 } from './hooks/useTableColumns';
 
 // Test utilities
