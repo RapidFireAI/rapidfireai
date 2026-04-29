@@ -203,6 +203,16 @@ update_constants_tsx_file() {
     fi
 }
 
+copy_staging_tutorial_notebooks() {
+    print_info "Copying staging tutorial notebooks..."
+    cp -rf "$PROJECT_ROOT/tests/staging/tutorial_notebooks/." "$PROJECT_ROOT/tutorial_notebooks"
+    if [ $? -ne 0 ]; then
+        print_error "Failed to copy staging tutorial notebooks"
+        exit 1
+    fi
+    print_success "✅ Successfully copied staging tutorial notebooks to $PROJECT_ROOT/tutorial_notebooks"
+}
+
 # Get the project root directory (parent of setup/fit/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -347,10 +357,12 @@ update_requirements_txt_file "$NEW_VERSION"
 
 print_success "Version updated to $NEW_VERSION"
 
+copy_staging_tutorial_notebooks
+
 if ! is_github_actions; then
     # Commit the changes
     print_info "Committing version bump..."
-    git add pyproject.toml requirements.txt rapidfireai/version.py rapidfireai/frontend/src/common/constants.tsx docs/BUILD.md README.md
+    git add pyproject.toml requirements.txt rapidfireai/version.py rapidfireai/frontend/src/common/constants.tsx docs/BUILD.md README.md tutorial_notebooks
     git commit -m "Bump version to $NEW_VERSION"
 
     # Create and push tag
