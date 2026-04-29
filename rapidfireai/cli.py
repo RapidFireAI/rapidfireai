@@ -249,36 +249,36 @@ def install_packages(
         return 1
     print(f"✅ Successfully installed packages from {requirements_file.absolute()}")
 
-    vllm_version = "0.10.2"
-    torch_version = "2.5.1"
-    torchvision_version = "0.20.1"
-    torchaudio_version = "2.5.1"
+    vllm_version = "0.20.0"
+    torch_version = "2.11.0"
+    torchvision_version = "0.26.0"
+    torchaudio_version = "2.11.0"
     torch_cuda = "cu121"
     flash_cuda = "cu121"
     if cuda_major==12:
         if cuda_minor>=9:
             # Supports Torch 2.8.0
-            torch_version = "2.8.0"
-            torchvision_version = "0.23.0"
-            torchaudio_version = "2.8.0"
+            torch_version = "2.11.0"
+            torchvision_version = "0.26.0"
+            torchaudio_version = "2.11.0"
             torch_cuda = "cu129"
             flash_cuda = "cu129"
             vllm_cuda = "cu129"
-            vllm_version = "0.11.0"
+            vllm_version = "0.20.0"
         elif cuda_minor>=8:
             # Supports Torch 2.9.0/1
-            torch_version = "2.8.0"
-            torchvision_version = "0.23.0"
-            torchaudio_version = "2.8.0"
+            torch_version = "2.11.0"
+            torchvision_version = "0.26.0"
+            torchaudio_version = "2.11.0"
             torch_cuda = "cu128"
             flash_cuda = "cu128"
             vllm_cuda = "cu128"
-            vllm_version = "0.11.0"
+            vllm_version = "0.20.0"
         elif cuda_minor>=6:
             # Supports Torch 2.9.0/1
-            torch_version = "2.8.0"
-            torchvision_version = "0.23.0"
-            torchaudio_version = "2.8.0"
+            torch_version = "2.11.0"
+            torchvision_version = "0.26.0"
+            torchaudio_version = "2.11.0"
             torch_cuda = "cu126"
             flash_cuda = "cu126"
             vllm_cuda = "cu126"
@@ -302,9 +302,9 @@ def install_packages(
 
     elif cuda_major==13:
         # Supports Torch 2.9.0/1
-        torch_version = "2.8.0"
-        torchvision_version = "0.23.0"
-        torchaudio_version = "2.8.0"
+        torch_version = "2.11.0"
+        torchvision_version = "0.26.0"
+        torchaudio_version = "2.11.0"
         torch_cuda = "cu129"
         flash_cuda = "cu129"
         vllm_cuda = "cu129"
@@ -339,7 +339,7 @@ def install_packages(
             if cuda_major + (cuda_minor / 10.0) >= 12.8:
                 packages.append({"package": "flashinfer-jit-cache", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
             # Re-install torch, torchvision, and torchaudio to ensure compatibility as many packages try and upgrade it
-            packages.append({"package": "transformers>=4.56.1,<5.0.0", "extra_args": ["--upgrade"]})           
+            packages.append({"package": "transformers==5.7.0", "extra_args": ["--upgrade"]})           
             packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
@@ -372,7 +372,7 @@ def install_packages(
             #     packages.append({"package": "flash-attn-triton", "extra_args": ["--upgrade"]})
             # packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
 
-        packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
+        # packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
 
     for package_info in packages:
         try:

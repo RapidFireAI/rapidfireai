@@ -1,49 +1,49 @@
 # Non Colab Packages
 # evals dependencies
 # Core ML/AI Framework
-torch<=2.8.0
-sentence-transformers>=5.1.0
+torch==2.11.0
+sentence-transformers==5.4.1
 
 # Distributed Computing
-ray>=2.49.2
-ray[default]>=2.49.2
+ray==2.55.1
+ray[default]>=2.55.1
 
 # LLM Inference
-transformers>=4.56.1,<5.0.0
+transformers==5.7.0
 
 # OpenAI API
-openai>=1.106.1
-tiktoken>=0.12.0
+openai==2.33.0
+tiktoken==0.12.0
 
 # Gemini API
-google-genai>=1.69.0
+google-genai==1.73.1
 
 # LangChain Ecosystem
-langchain>=1.0.5
-langchain-classic>=1.0.0
-langchain-core>=1.0.4
-langchain-community>=0.4.1
-langchain-openai>=1.0.2
-langchain-huggingface>=1.0.0
-langchain-pinecone>=0.2.13
-langchain-postgres>=0.0.17
-langchain-google-genai>=4.2.1
+langchain==1.2.15
+langchain-classic==1.0.4
+langchain-core==1.3.2
+langchain-community==0.4.1
+langchain-openai==1.2.1
+langchain-huggingface==1.2.2
+langchain-pinecone==0.2.13
+langchain-postgres==0.0.17
+langchain-google-genai==4.2.2
 
 # Data Manipulation & Display
-unstructured>=0.18.15
+unstructured==0.22.23
 
 # Other
-requests==2.32.5
-datasets
-jupyter
-grpcio
-faiss-gpu-cu12
+requests==2.33.1
+datasets==4.8.5
+jupyter==1.1.1
+grpcio==1.80.0
+faiss-gpu-cu12==1.14.1.post1
 
 # MLflow Dashboard dependencies
-mlflow>=3.2.0
-gunicorn>=23.0.0
-flask-cors>=5.0.1
-loguru
+mlflow==3.11.1
+gunicorn==25.3.0
+flask-cors==6.0.2
+loguru==0.7.3
 
-numpy==2.0.1
-protobuf<6.0.0
+numpy==2.4.4
+protobuf==7.34.1
