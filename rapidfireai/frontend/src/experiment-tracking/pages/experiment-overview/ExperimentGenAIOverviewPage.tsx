@@ -6,9 +6,7 @@ import { FormattedMessage } from 'react-intl';
 import { shouldEnableIssueDetection } from '../../../common/utils/FeatureUtils';
 import { IssueDetectionModal } from '../../components/experiment-page/components/traces-v3/IssueDetectionModal';
 import { DetectIssuesButton } from '../../../shared/web-shared/genai-traces-table/components/DetectIssuesButton';
-import { useLocalStorage } from '@databricks/web-shared/hooks';
 import { useIsFileStore } from '../../hooks/useServerInfo';
-import { useSqlWarehouseContextSafe } from '../experiment-page-tabs/SqlWarehouseContext';
 import { TracesV3DateSelector } from '../../components/experiment-page/components/traces-v3/TracesV3DateSelector';
 import {
   useMonitoringFilters,
@@ -48,16 +46,9 @@ const ExperimentGenAIOverviewPageImpl = () => {
   const [selectedTimeUnit, setSelectedTimeUnit] = useState<TimeUnit | null>(null);
   const [isIssueDetectionModalOpen, setIsIssueDetectionModalOpen] = useState(false);
   const isFileStore = useIsFileStore();
-  const sqlWarehouseContext = useSqlWarehouseContextSafe();
 
   // all features should be enabled in OSS
   const enableAllCharts = true;
-
-  const [isMysqlBannerDismissed, setIsMysqlBannerDismissed] = useLocalStorage({
-    key: 'mlflow.overview.mysqlBannerDismissed',
-    version: 0,
-    initialValue: false,
-  });
 
   invariant(experimentId, 'Experiment ID must be defined');
 
