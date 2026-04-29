@@ -52,6 +52,8 @@ const ExperimentGenAIOverviewPageImpl = () => {
 
   invariant(experimentId, 'Experiment ID must be defined');
 
+  const experimentIds = useMemo(() => [experimentId], [experimentId]);
+
   // Fetch experiment data to check for demo time tags
   const { data: experiment } = useGetExperimentQuery({ experimentId });
 
@@ -214,7 +216,7 @@ const ExperimentGenAIOverviewPageImpl = () => {
         </div>
 
         <OverviewChartProvider
-          experimentIds={[experimentId]}
+          experimentIds={experimentIds}
           startTimeMs={startTimeMs}
           endTimeMs={endTimeMs}
           timeIntervalSeconds={timeIntervalSeconds}

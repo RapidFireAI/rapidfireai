@@ -420,8 +420,6 @@ describe('ExperimentGenAIOverviewPage', () => {
       });
 
       // User has already selected a custom time range in URL
-      const customStartTime = '2025-01-01T00:00:00.000Z';
-      const customEndTime = '2025-01-07T23:59:59.999Z';
       const urlWithParams = `/experiments/${testExperimentId}/overview/usage?startTimeLabel=LAST_24_HOURS`;
 
       renderComponent(urlWithParams);
