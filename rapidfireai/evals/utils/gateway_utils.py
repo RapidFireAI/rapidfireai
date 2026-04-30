@@ -398,14 +398,18 @@ class MLflowGatewayClient:
                     existing_ep, model_def_by_id, api_key_name,
                 )
 
-                # Update experiment_id if it changed (traces go to new experiment)
-                updated_tracing = False
+                # Ensure usage_tracking and experiment_id are up to date
+                update_kwargs: dict[str, Any] = {}
+                if not existing_ep.get("usage_tracking"):
+                    update_kwargs["usage_tracking"] = True
                 if experiment_id and existing_ep.get("experiment_id") != experiment_id:
-                    self._update_endpoint(
-                        existing_ep["endpoint_id"], experiment_id=experiment_id,
-                    )
-                    existing_ep["experiment_id"] = experiment_id
-                    updated_tracing = True
+                    update_kwargs["experiment_id"] = experiment_id
+
+                updated_tracing = False
+                if update_kwargs:
+                    self._update_endpoint(existing_ep["endpoint_id"], **update_kwargs)
+                    existing_ep.update(update_kwargs)
+                    updated_tracing = "experiment_id" in update_kwargs
 
                 if verbose:
                     if updated_tracing:

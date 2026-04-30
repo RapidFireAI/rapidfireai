@@ -291,7 +291,7 @@ else:
     RFPromptManager = None
 
 
-# Conditionally define evals model config classes only if dependencies are available
+# Conditionally define vLLM evals model config (requires vllm)
 if (
     _VLLM_AVAILABLE
     and _EVALS_MODULES_AVAILABLE
@@ -359,6 +359,17 @@ if (
             # Use vars() to get only the attributes actually set on the object
             # This works across different vLLM versions
             return dict(vars(self.sampling_params))
+
+else:
+    RFvLLMModelConfig = None
+
+
+# Conditionally define API evals model config (does NOT require vllm)
+if (
+    _EVALS_MODULES_AVAILABLE
+    and InferenceEngine is not None
+    and APIInferenceEngine is not None
+):
 
     class RFAPIModelConfig(ModelConfig):
         """General API model configuration for evals mode.
@@ -559,6 +570,4 @@ if (
             return dict(self.model_config)
 
 else:
-    # Define placeholder classes if dependencies are not available
-    RFvLLMModelConfig = None
     RFAPIModelConfig = None

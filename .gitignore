@@ -245,3 +245,6 @@ rapidfireai/frontend/build/
 # misc files
 rapidfire_pids.txt
 rf_mode.txt
+
+# REMOVE BEFORE creating PR
+multi-modal-testing/
