@@ -47,9 +47,6 @@ const ExperimentGenAIOverviewPageImpl = () => {
   const [isIssueDetectionModalOpen, setIsIssueDetectionModalOpen] = useState(false);
   const isFileStore = useIsFileStore();
 
-  // all features should be enabled in OSS
-  const enableAllCharts = true;
-
   invariant(experimentId, 'Experiment ID must be defined');
 
   const experimentIds = useMemo(() => [experimentId], [experimentId]);
@@ -227,64 +224,49 @@ const ExperimentGenAIOverviewPageImpl = () => {
               {/* Requests chart - full width */}
               <LazyTraceRequestsChart />
 
-              {/* Latency and Errors charts - side by side (latency requires UC) */}
+              {/* Latency and Errors charts - side by side */}
               <ChartGrid>
-                {enableAllCharts && <LazyTraceLatencyChart />}
-                <LazyTraceErrorsChart enableTraceNavigation={enableAllCharts} />
+                <LazyTraceLatencyChart />
+                <LazyTraceErrorsChart enableTraceNavigation />
               </ChartGrid>
 
-              {/* Token Usage and Token Stats charts - side by side (requires UC) */}
-              {enableAllCharts && (
-                <ChartGrid>
-                  <LazyTraceTokenUsageChart />
-                  <LazyTraceTokenStatsChart />
-                </ChartGrid>
-              )}
+              {/* Token Usage and Token Stats charts - side by side */}
+              <ChartGrid>
+                <LazyTraceTokenUsageChart />
+                <LazyTraceTokenStatsChart />
+              </ChartGrid>
 
-              {/* Cost Breakdown and Cost Over Time charts - side by side (requires UC) */}
-              {enableAllCharts && (
-                <ChartGrid>
-                  <LazyTraceCostBreakdownChart />
-                  <LazyTraceCostOverTimeChart />
-                </ChartGrid>
-              )}
+              {/* Cost Breakdown and Cost Over Time charts - side by side */}
+              <ChartGrid>
+                <LazyTraceCostBreakdownChart />
+                <LazyTraceCostOverTimeChart />
+              </ChartGrid>
             </TabContentContainer>
           </Tabs.Content>
 
           <Tabs.Content value={OverviewTab.Quality} css={{ flex: 1, overflowY: 'auto' }}>
             <TabContentContainer>
               {/* Assessment charts - dynamically rendered based on available assessments */}
-              <AssessmentChartsSection enableTraceNavigation={enableAllCharts} />
+              <AssessmentChartsSection enableTraceNavigation />
             </TabContentContainer>
           </Tabs.Content>
 
           <Tabs.Content value={OverviewTab.ToolCalls} css={{ flex: 1, overflowY: 'auto' }}>
             <TabContentContainer>
-              {enableAllCharts ? (
-                <>
-                  {/* Tool call statistics */}
-                  <ToolCallStatistics />
+              {/* Tool call statistics */}
+              <ToolCallStatistics />
 
-                  {/* Tool performance summary */}
-                  <LazyToolPerformanceSummary />
+              {/* Tool performance summary */}
+              <LazyToolPerformanceSummary />
 
-                  {/* Tool usage and latency charts - side by side */}
-                  <ChartGrid>
-                    <LazyToolUsageChart />
-                    <LazyToolLatencyChart />
-                  </ChartGrid>
+              {/* Tool usage and latency charts - side by side */}
+              <ChartGrid>
+                <LazyToolUsageChart />
+                <LazyToolLatencyChart />
+              </ChartGrid>
 
-                  {/* Tool error rate charts - dynamically rendered based on available tools */}
-                  <ToolCallChartsSection />
-                </>
-              ) : (
-                <Typography.Text color="secondary">
-                  <FormattedMessage
-                    defaultMessage="Tool call metrics require Unity Catalog trace storage."
-                    description="Message shown on Tool Calls tab when experiment uses MySQL trace storage"
-                  />
-                </Typography.Text>
-              )}
+              {/* Tool error rate charts - dynamically rendered based on available tools */}
+              <ToolCallChartsSection />
             </TabContentContainer>
           </Tabs.Content>
         </OverviewChartProvider>
