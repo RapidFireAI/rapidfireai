@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Typography, useDesignSystemTheme } from '@databricks/design-system';
 import { FormattedMessage } from 'react-intl';
 import { GatewayChartsPanel } from '../GatewayChartsPanel';
@@ -10,6 +11,7 @@ interface GatewayUsageSectionProps {
 
 export const GatewayUsageSection = ({ experimentId, tooltipLinkUrlBuilder }: GatewayUsageSectionProps) => {
   const { theme } = useDesignSystemTheme();
+  const experimentIds = useMemo(() => [experimentId], [experimentId]);
 
   return (
     <div>
@@ -33,7 +35,7 @@ export const GatewayUsageSection = ({ experimentId, tooltipLinkUrlBuilder }: Gat
       </div>
 
       <GatewayChartsPanel
-        experimentIds={[experimentId]}
+        experimentIds={experimentIds}
         showTokenStats
         tooltipLinkUrlBuilder={tooltipLinkUrlBuilder}
         tooltipLinkText={
