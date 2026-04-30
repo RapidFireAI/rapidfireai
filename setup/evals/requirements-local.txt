@@ -43,7 +43,7 @@ grpcio
 faiss-gpu-cu12
 
 # MLflow Dashboard dependencies
-mlflow>=3.2.0
+mlflow>=3.11.1
 gunicorn>=23.0.0
 flask-cors>=5.0.1
 loguru
