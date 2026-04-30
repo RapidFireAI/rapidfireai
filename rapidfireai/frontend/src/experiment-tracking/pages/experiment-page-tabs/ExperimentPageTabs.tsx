@@ -27,6 +27,7 @@ import { useNavigateToExperimentPageTab } from '../../components/experiment-page
 
 const ExperimentRunsPage = React.lazy(() => import('../experiment-runs/ExperimentRunsPage'));
 const ExperimentTracesPage = React.lazy(() => import('../experiment-traces/ExperimentTracesPage'));
+const ExperimentGenAIOverviewPage = React.lazy(() => import('../experiment-overview/ExperimentGenAIOverviewPage'));
 
 const ExperimentLoggedModelListPage = React.lazy(
   () => import('../experiment-logged-models/ExperimentLoggedModelListPage'),
@@ -184,6 +185,7 @@ const ExperimentPageTabsImpl = () => {
           <Outlet />
         ) : (
           <>
+            {activeTab === ExperimentPageTabName.Overview && <ExperimentGenAIOverviewPage />}
             {activeTab === ExperimentPageTabName.Traces && <ExperimentTracesPage />}
             {activeTab === ExperimentPageTabName.Runs && <ExperimentRunsPage />}
             {activeTab === ExperimentPageTabName.Models && <ExperimentLoggedModelListPage />}
