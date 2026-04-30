@@ -63,27 +63,56 @@ def run_script(args):
     if not os.access(script_path, os.X_OK):
         os.chmod(script_path, 0o755)
 
-    # Ignore SIGINT in the parent process so Python doesn't raise KeyboardInterrupt.
-    # The child process resets SIGINT to default via preexec_fn so the shell script
-    # can handle Ctrl+C with its own trap (cleanup function with user prompt).
-    old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    # Ignore SIGINT in the parent process *before* spawning the child so Python
+    # doesn't raise KeyboardInterrupt in the window between Popen and proc.wait().
+    # Otherwise a Ctrl+C landing in that gap would orphan the shell script and
+    # all of its sub-processes. The child resets SIGINT to default via
+    # preexec_fn so the shell script handles Ctrl+C with its own trap.
+    old_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    proc: subprocess.Popen | None = None
+
+    def _forward_signal(signum, _frame):
+        # Forward terminating signals (SIGTERM, SIGHUP) to the shell script so
+        # its trap handlers run a proper cleanup (killing MLflow, API server,
+        # frontend, Converge, etc.) instead of leaving them orphaned when the
+        # Python wrapper is killed.
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.send_signal(signum)
+            except (ProcessLookupError, OSError):
+                pass
+
+    old_sigterm = signal.signal(signal.SIGTERM, _forward_signal)
+    # SIGHUP isn't available on Windows; guard the install/restore.
+    sighup = getattr(signal, "SIGHUP", None)
+    old_sighup = signal.signal(sighup, _forward_signal) if sighup is not None else None
 
     try:
-        result = subprocess.run(
-            [str(script_path)] + args,
-            check=True,
-            preexec_fn=_reset_sigint,
-        )
-        return result.returncode
-    except subprocess.CalledProcessError as e:
-        # Non-zero exit from shell script (could be from cleanup or failure)
-        return e.returncode
-    except FileNotFoundError:
-        print(f"Error: start.sh script not found at {script_path}", file=sys.stderr)
-        return 1
+        try:
+            proc = subprocess.Popen(
+                [str(script_path)] + args,
+                preexec_fn=_reset_sigint,
+            )
+        except FileNotFoundError:
+            print(f"Error: start.sh script not found at {script_path}", file=sys.stderr)
+            return 1
+
+        # Wait for the shell script to exit. If we receive SIGTERM/SIGHUP, the
+        # handler above forwards it to the child; the child runs its cleanup
+        # trap and exits, and proc.wait() returns its status.
+        while True:
+            try:
+                return proc.wait()
+            except KeyboardInterrupt:
+                # Shouldn't happen since SIGINT is ignored above, but if it
+                # does, forward to the child and keep waiting.
+                _forward_signal(signal.SIGINT, None)
     finally:
-        # Restore the original signal handler
-        signal.signal(signal.SIGINT, old_handler)
+        signal.signal(signal.SIGINT, old_sigint)
+        signal.signal(signal.SIGTERM, old_sigterm)
+        if sighup is not None and old_sighup is not None:
+            signal.signal(sighup, old_sighup)
 
 
 def run_doctor(log_lines: int = 10):
@@ -152,7 +181,7 @@ def install_packages(
         parsed_cuda = parse_cuda_version_string(cuda_version)
         if parsed_cuda is None:
             print(
-                "❌ Invalid --cudaversion: use major.minor (e.g. 12.4) or major only (e.g. 12).",
+                "❌ Invalid --cudaversion: use major.minor (e.g. 12.4), major only (e.g. 12) or 0.0 to disable CUDA usage.",
                 file=sys.stderr,
             )
             return 1
@@ -170,13 +199,14 @@ def install_packages(
         and evals
     ):
         print(
-            "❌ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
-            "   Pass your CUDA version explicitly, for example:\n"
-            "   rapidfireai init --evals --cudaversion 12.4\n"
-            "   If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).",
+            " ⚠️ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
+            "    Disabling CUDA usage for evaluation dependencies.\n"
+            "    If you want to override this expelicitly pass the CUDA version, for example:\n"
+            "        rapidfireai init --evals --cudaversion 12.4\n"
+            "    If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).\n"
+            "          If there is no GPU available, you can ignore this warning.",
             file=sys.stderr,
         )
-        return 1
 
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
