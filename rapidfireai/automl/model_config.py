@@ -56,6 +56,29 @@ except ImportError:
     _EVALS_MODULES_AVAILABLE = False
 
 
+def _make_unavailable_class(class_name: str, missing: str) -> type:
+    """Build a sentinel placeholder class for an optional RF* config.
+
+    Used when the optional dependency a config relies on is not installed
+    (e.g. ``vllm`` for ``RFvLLMModelConfig``). Returning a real class — rather
+    than ``None`` — keeps ``isinstance(x, RFXXX)`` safely ``False`` (no
+    instance is ever produced) instead of raising
+    ``TypeError: isinstance() arg 2 must be a type``.
+
+    Trying to actually instantiate the sentinel raises an ``ImportError``
+    that names the missing dependency.
+    """
+    msg = (
+        f"{class_name} is unavailable because optional dependency "
+        f"'{missing}' is not installed in this environment."
+    )
+
+    def __init__(self, *args, **kwargs):  # noqa: D401 - sentinel
+        raise ImportError(msg)
+
+    return type(class_name, (), {"__init__": __init__, "__doc__": msg})
+
+
 def _create_rf_class(base_class: type, class_name: str):
     """Creating a RF class that dynamically inherits all constructor parameters and supports singleton, list, and Range values."""
     if not inspect.isclass(base_class):
@@ -133,10 +156,10 @@ if _FIT_DEPS_AVAILABLE:
     RFDPOConfig = _create_rf_class(DPOConfig, "RFDPOConfig")
     RFGRPOConfig = _create_rf_class(GRPOConfig, "RFGRPOConfig")
 else:
-    RFLoraConfig = None
-    RFSFTConfig = None
-    RFDPOConfig = None
-    RFGRPOConfig = None
+    RFLoraConfig = _make_unavailable_class("RFLoraConfig", "peft")
+    RFSFTConfig = _make_unavailable_class("RFSFTConfig", "trl")
+    RFDPOConfig = _make_unavailable_class("RFDPOConfig", "trl")
+    RFGRPOConfig = _make_unavailable_class("RFGRPOConfig", "trl")
 
 
 @dataclass
@@ -287,8 +310,12 @@ if (
     RFLangChainRagSpec = _create_rf_class_evals(LangChainRagSpec, "RFLangChainRagSpec")
     RFPromptManager = _create_rf_class_evals(PromptManager, "RFPromptManager")
 else:
-    RFLangChainRagSpec = None
-    RFPromptManager = None
+    RFLangChainRagSpec = _make_unavailable_class(
+        "RFLangChainRagSpec", "rapidfireai[evals]"
+    )
+    RFPromptManager = _make_unavailable_class(
+        "RFPromptManager", "rapidfireai[evals]"
+    )
 
 
 # Conditionally define vLLM evals model config (requires vllm)
@@ -361,7 +388,7 @@ if (
             return dict(vars(self.sampling_params))
 
 else:
-    RFvLLMModelConfig = None
+    RFvLLMModelConfig = _make_unavailable_class("RFvLLMModelConfig", "vllm")
 
 
 # Conditionally define API evals model config (does NOT require vllm)
@@ -570,4 +597,6 @@ if (
             return dict(self.model_config)
 
 else:
-    RFAPIModelConfig = None
+    RFAPIModelConfig = _make_unavailable_class(
+        "RFAPIModelConfig", "rapidfireai[evals]"
+    )
