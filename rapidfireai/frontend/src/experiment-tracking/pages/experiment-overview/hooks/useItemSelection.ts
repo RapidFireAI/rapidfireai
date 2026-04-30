@@ -42,7 +42,7 @@ export function useItemSelection(
   }, [resetKey]);
 
   const isAllSelected = selectedItems === null;
-  const displayedItems = isAllSelected ? allItems : selectedItems.filter((item) => allItems.includes(item));
+  const displayedItems = isAllSelected ? allItems : allItems.filter((item) => selectedItems.includes(item));
 
   const handleSelectAllToggle = useCallback(() => {
     setSelectedItems(isAllSelected ? [] : null);
