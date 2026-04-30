@@ -5,6 +5,7 @@ import { renderWithIntl } from '../../../../common/utils/TestUtils.react18';
 import { TraceCostOverTimeChart } from './TraceCostOverTimeChart';
 import { DesignSystemProvider } from '@databricks/design-system';
 import { QueryClient, QueryClientProvider } from '@mlflow/mlflow/src/common/utils/reactQueryHooks';
+import { getAjaxUrl } from '@mlflow/mlflow/src/common/utils/FetchUtils';
 import {
   MetricViewType,
   AggregationType,
@@ -75,7 +76,7 @@ describe('TraceCostOverTimeChart', () => {
 
   const setupTraceMetricsHandler = (dataPoints: any[]) => {
     server.use(
-      rest.post('ajax-api/3.0/mlflow/traces/metrics', async (_req, res, ctx) => {
+      rest.post(getAjaxUrl('ajax-api/3.0/mlflow/traces/metrics'), async (_req, res, ctx) => {
         return res(ctx.json({ data_points: dataPoints }));
       }),
     );
@@ -89,7 +90,7 @@ describe('TraceCostOverTimeChart', () => {
   describe('loading state', () => {
     it('should render loading skeleton while data is being fetched', async () => {
       server.use(
-        rest.post('ajax-api/3.0/mlflow/traces/metrics', (_req, res, ctx) => {
+        rest.post(getAjaxUrl('ajax-api/3.0/mlflow/traces/metrics'), (_req, res, ctx) => {
           return res(ctx.delay('infinite'));
         }),
       );
@@ -104,7 +105,7 @@ describe('TraceCostOverTimeChart', () => {
   describe('error state', () => {
     it('should render error message when API call fails', async () => {
       server.use(
-        rest.post('ajax-api/3.0/mlflow/traces/metrics', (_req, res, ctx) => {
+        rest.post(getAjaxUrl('ajax-api/3.0/mlflow/traces/metrics'), (_req, res, ctx) => {
           return res(ctx.status(500), ctx.json({ error_code: 'INTERNAL_ERROR', message: 'API Error' }));
         }),
       );
@@ -326,7 +327,7 @@ describe('TraceCostOverTimeChart', () => {
       let capturedRequest: any = null;
 
       server.use(
-        rest.post('ajax-api/3.0/mlflow/traces/metrics', async (req, res, ctx) => {
+        rest.post(getAjaxUrl('ajax-api/3.0/mlflow/traces/metrics'), async (req, res, ctx) => {
           capturedRequest = await req.json();
           return res(ctx.json({ data_points: [] }));
         }),
@@ -350,7 +351,7 @@ describe('TraceCostOverTimeChart', () => {
       let capturedRequest: any = null;
 
       server.use(
-        rest.post('ajax-api/3.0/mlflow/traces/metrics', async (req, res, ctx) => {
+        rest.post(getAjaxUrl('ajax-api/3.0/mlflow/traces/metrics'), async (req, res, ctx) => {
           capturedRequest = await req.json();
           return res(ctx.json({ data_points: [] }));
         }),

@@ -179,7 +179,7 @@ describe('ToolErrorRateChart', () => {
       let capturedBody: any = null;
 
       server.use(
-        rest.post('ajax-api/3.0/mlflow/traces/metrics', async (req, res, ctx) => {
+        rest.post(getAjaxUrl('ajax-api/3.0/mlflow/traces/metrics'), async (req, res, ctx) => {
           capturedBody = await req.json();
           return res(ctx.json({ data_points: [] }));
         }),
@@ -203,7 +203,7 @@ describe('ToolErrorRateChart', () => {
       let capturedBody: any = null;
 
       server.use(
-        rest.post('ajax-api/3.0/mlflow/traces/metrics', async (req, res, ctx) => {
+        rest.post(getAjaxUrl('ajax-api/3.0/mlflow/traces/metrics'), async (req, res, ctx) => {
           capturedBody = await req.json();
           return res(ctx.json({ data_points: [] }));
         }),
@@ -225,7 +225,7 @@ describe('ToolErrorRateChart', () => {
       let capturedBody: any = null;
 
       server.use(
-        rest.post('ajax-api/3.0/mlflow/traces/metrics', async (req, res, ctx) => {
+        rest.post(getAjaxUrl('ajax-api/3.0/mlflow/traces/metrics'), async (req, res, ctx) => {
           capturedBody = await req.json();
           return res(ctx.json({ data_points: [] }));
         }),
