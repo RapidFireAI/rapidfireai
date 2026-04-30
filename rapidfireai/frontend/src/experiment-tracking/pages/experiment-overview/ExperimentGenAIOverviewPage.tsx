@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import invariant from 'invariant';
 import { useParams } from '../../../common/utils/RoutingUtils';
 import { Alert, Tabs, Typography, useDesignSystemTheme } from '@databricks/design-system';
@@ -58,9 +58,19 @@ const ExperimentGenAIOverviewPageImpl = () => {
   const [monitoringFilters, setMonitoringFilters] = useMonitoringFilters();
   const monitoringConfig = useMonitoringConfig();
 
-  // Initialize with demo time range if this is a demo experiment
+  // Initialize with demo time range if this is a demo experiment.
+  // Guarded by a ref so this runs at most once per mount — otherwise resetting
+  // the date selector back to the default label would re-apply the demo range
+  // and overwrite the user's deliberate choice.
+  const demoRangeAppliedRef = useRef(false);
   useEffect(() => {
-    if (!experiment || monitoringFilters.startTimeLabel !== DEFAULT_START_TIME_LABEL) {
+    if (demoRangeAppliedRef.current || !experiment) {
+      return;
+    }
+    demoRangeAppliedRef.current = true;
+
+    if (monitoringFilters.startTimeLabel !== DEFAULT_START_TIME_LABEL) {
+      // User already has a non-default range (e.g., set via URL param) — respect it.
       return;
     }
 
