@@ -17,13 +17,13 @@ export function useSortState<T extends string>(defaultColumn: T, defaultDirectio
   const handleSort = useCallback(
     (column: T) => {
       if (sortColumn === column) {
-        setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
       } else {
         setSortColumn(column);
         setSortDirection('desc');
       }
     },
-    [sortColumn, sortDirection],
+    [sortColumn],
   );
 
   return { sortColumn, sortDirection, handleSort };
