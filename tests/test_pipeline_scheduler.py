@@ -78,3 +78,14 @@ class TestPipelineSchedulerBookkeeping:
         scheduler.set_completed_task(0)
         assert scheduler.actor_current_pipeline[0] == -1
         assert scheduler.pipeline_shards_completed[1] == 0
+
+    def test_actor_leaks_busy_when_neither_completion_nor_removal_called(self):
+        """Regression: if dispatch fails and the controller forgets remove_pipeline,
+        schedule() returns the busy sentinel indefinitely. This is the wedge the
+        controller fix in run_multi_pipeline_inference prevents."""
+        scheduler = PipelineScheduler(pipeline_ids=[1, 2], num_actors=1, num_shards=1)
+        scheduler.schedule()
+
+        for _ in range(20):
+            result = scheduler.schedule()
+            assert result == {"pipeline_id": -1, "actor_id": -1, "shard_id": -1}
