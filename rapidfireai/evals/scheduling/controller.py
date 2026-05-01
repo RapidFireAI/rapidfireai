@@ -931,7 +931,12 @@ class Controller:
             if hasattr(pipeline, "model_name"):
                 model_name = pipeline.model_name
             if hasattr(pipeline, "model_config") and pipeline.model_config:
-                model_config = dict(pipeline.model_config)
+                # ``model_name`` is already shown separately; drop ``"model"`` from
+                # the copied config so vLLM pipelines don't display it redundantly.
+                model_config_copy = dict(pipeline.model_config)
+                model_config_copy.pop("model", None)
+                if model_config_copy:
+                    model_config = model_config_copy
 
             # Extract ALL RAG fields for display
             if hasattr(pipeline, "rag") and pipeline.rag is not None:

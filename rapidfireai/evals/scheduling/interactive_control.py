@@ -616,7 +616,12 @@ class InteractiveControlHandler:
         model_config_dict = None
 
         if hasattr(pipeline, "model_config") and pipeline.model_config:
-            model_config_dict = dict(pipeline.model_config)
+            # ``model_name`` is already shown separately; drop ``"model"`` from
+            # the copied config so vLLM pipelines don't display it redundantly.
+            model_config_copy = dict(pipeline.model_config)
+            model_config_copy.pop("model", None)
+            if model_config_copy:
+                model_config_dict = model_config_copy
 
         if hasattr(pipeline, "rag") and pipeline.rag is not None:
             rag = pipeline.rag
