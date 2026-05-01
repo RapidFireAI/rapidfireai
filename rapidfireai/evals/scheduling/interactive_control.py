@@ -370,11 +370,14 @@ class InteractiveControlHandler:
         pipeline_type = edited_json.get("pipeline_type")
         if not pipeline_type:
             # If not specified in JSON, infer from parent
-            if isinstance(parent_model_config, RFvLLMModelConfig):
+            # Each isinstance() guarded because the class is None on platforms
+            # where the corresponding inference engine isn't available
+            # (e.g. RFvLLMModelConfig is None on macOS Apple Silicon).
+            if RFvLLMModelConfig is not None and isinstance(parent_model_config, RFvLLMModelConfig):
                 pipeline_type = "vllm"
-            elif isinstance(parent_model_config, RFOpenAIAPIModelConfig):
+            elif RFOpenAIAPIModelConfig is not None and isinstance(parent_model_config, RFOpenAIAPIModelConfig):
                 pipeline_type = "openai"
-            elif isinstance(parent_model_config, RFGeminiAPIModelConfig):
+            elif RFGeminiAPIModelConfig is not None and isinstance(parent_model_config, RFGeminiAPIModelConfig):
                 pipeline_type = "gemini"
             else:
                 raise ValueError("Cannot determine pipeline type from parent")
@@ -576,7 +579,11 @@ class InteractiveControlHandler:
         pipeline = pipeline_config["pipeline"]
 
         # Extract model name
-        if isinstance(model_config, (RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFvLLMModelConfig)):
+        # Filter out classes that are None on this platform (vLLM unavailable on macOS, etc.)
+        _model_cfg_classes = tuple(
+            c for c in (RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFvLLMModelConfig) if c is not None
+        )
+        if _model_cfg_classes and isinstance(model_config, _model_cfg_classes):
             model_name = model_config.model_config.get("model", "Unknown")
         elif hasattr(pipeline, "model_config") and pipeline.model_config is not None:
             model_name = pipeline.model_config.get("model", "Unknown")
