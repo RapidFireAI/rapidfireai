@@ -134,11 +134,20 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
             if hasattr(pipeline, "model_config") and pipeline.model_config:
                 json_config["model_config"] = pipeline.sampling_params_to_dict()
 
-            # Extract rate limiting params
+            # Extract rate limiting params.
+            # Providers use one of two schemes:
+            #   * combined-tpm scheme:  tpm_limit only          (e.g. OpenAI, Gemini)
+            #   * split scheme:         itpm_limit + otpm_limit (Anthropic)
+            # Serialize whichever scheme the pipeline was configured with so the
+            # JSON snapshot in the database faithfully reflects the live config.
             if hasattr(pipeline, "rpm_limit") and pipeline.rpm_limit is not None:
                 json_config["rpm_limit"] = pipeline.rpm_limit
             if hasattr(pipeline, "tpm_limit") and pipeline.tpm_limit is not None:
                 json_config["tpm_limit"] = pipeline.tpm_limit
+            if hasattr(pipeline, "itpm_limit") and pipeline.itpm_limit is not None:
+                json_config["itpm_limit"] = pipeline.itpm_limit
+            if hasattr(pipeline, "otpm_limit") and pipeline.otpm_limit is not None:
+                json_config["otpm_limit"] = pipeline.otpm_limit
             if (
                 hasattr(pipeline, "max_completion_tokens")
                 and pipeline.max_completion_tokens is not None

@@ -158,6 +158,7 @@ class APIInferenceEngine(InferenceEngine):
         self.max_completion_tokens = max_completion_tokens
         self.model_config.pop("messages", None)
         self.model_config.pop("max_completion_tokens", None)
+        self.model_config.pop("model", None)
 
         from openai import AsyncOpenAI
         self.client = AsyncOpenAI(**client_config)

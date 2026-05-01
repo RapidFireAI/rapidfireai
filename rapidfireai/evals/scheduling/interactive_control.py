@@ -402,8 +402,10 @@ class InteractiveControlHandler:
             parent_client_config = _parent_params.get("client_config", {})
             parent_endpoint_config = _parent_params.get("endpoint_config", {})
             parent_model_config_dict = _parent_params.get("model_config", {}) or {}
-            parent_rpm = _parent_params.get("rpm_limit", 500)
-            parent_tpm = _parent_params.get("tpm_limit", 500_000)
+            parent_rpm = _parent_params.get("rpm_limit")
+            parent_tpm = _parent_params.get("tpm_limit")
+            parent_itpm = _parent_params.get("itpm_limit")
+            parent_otpm = _parent_params.get("otpm_limit")
             parent_max_completion_tokens = _parent_params.get("max_completion_tokens", None)
 
             # Apply edits from JSON using key-by-key merging (user values override parent values)
@@ -412,6 +414,29 @@ class InteractiveControlHandler:
             endpoint_config = {**parent_endpoint_config, **edited_json.get("endpoint_config", {})}
             model_config_dict = {**parent_model_config_dict, **edited_json.get("model_config", {})}
 
+            # Resolve token-rate limits while preserving the parent's scheme:
+            #   * combined-tpm scheme:  tpm_limit only          (e.g. OpenAI, Gemini)
+            #   * split scheme:         itpm_limit + otpm_limit (Anthropic)
+            # If the user explicitly switches schemes via edited_json, drop the
+            # inherited values for the other scheme so RFAPIModelConfig's
+            # validation does not reject "both schemes specified".
+            user_provided_tpm = "tpm_limit" in edited_json
+            user_provided_split = "itpm_limit" in edited_json or "otpm_limit" in edited_json
+
+            if user_provided_tpm and not user_provided_split:
+                tpm_limit = edited_json["tpm_limit"]
+                itpm_limit = None
+                otpm_limit = None
+            elif user_provided_split and not user_provided_tpm:
+                tpm_limit = None
+                itpm_limit = edited_json.get("itpm_limit", parent_itpm)
+                otpm_limit = edited_json.get("otpm_limit", parent_otpm)
+            else:
+                # No edit (or both edited) — inherit parent's scheme verbatim.
+                tpm_limit = edited_json.get("tpm_limit", parent_tpm)
+                itpm_limit = edited_json.get("itpm_limit", parent_itpm)
+                otpm_limit = edited_json.get("otpm_limit", parent_otpm)
+
             model_config = RFAPIModelConfig(
                 client_config=client_config,
                 endpoint_config=endpoint_config,
@@ -419,8 +444,11 @@ class InteractiveControlHandler:
                 rag=rag,
                 prompt_manager=prompt_manager,
                 rpm_limit=edited_json.get("rpm_limit", parent_rpm),
-                tpm_limit=edited_json.get("tpm_limit", parent_tpm),
+                tpm_limit=tpm_limit,
+                itpm_limit=itpm_limit,
+                otpm_limit=otpm_limit,
                 max_completion_tokens=edited_json.get("max_completion_tokens", parent_max_completion_tokens),
+                verbose=False,
             )
 
         else:
