@@ -1400,13 +1400,17 @@ class Controller:
                         f"Busy actors: {status['busy_actors']}, "
                         f"Gen: {status['current_generation']}"
                     )
-                # Block on any in-flight future so a dead actor's failed futures
-                # surface here and get reaped on the next iteration.
-                all_pending = []
+                # Block until something new happens so a dead actor's failed
+                # futures surface here. ray.wait must be filtered to not-yet-ready
+                # futures: any already-resolved batch ref would satisfy
+                # num_returns=1 and turn this into a tight spin.
+                all_futures = []
                 for task_info in active_tasks.values():
-                    all_pending.extend(task_info["futures"])
-                if all_pending:
-                    ray.wait(all_pending, num_returns=1, timeout=0.5)
+                    all_futures.extend(task_info["futures"])
+                if all_futures:
+                    _ready, not_ready = ray.wait(all_futures, num_returns=len(all_futures), timeout=0)
+                    if not_ready:
+                        ray.wait(not_ready, num_returns=1, timeout=0.5)
                 else:
                     time.sleep(0.5)
                 continue
