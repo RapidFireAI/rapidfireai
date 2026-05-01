@@ -1400,11 +1400,8 @@ class Controller:
                         f"Busy actors: {status['busy_actors']}, "
                         f"Gen: {status['current_generation']}"
                     )
-                # Block on any in-flight future instead of a blind sleep. ray.wait
-                # surfaces both successful and failed futures (incl. RayActorError
-                # from a dead actor), so the next iteration's reap path will free
-                # the actor via remove_pipeline. Avoids wedging when an actor dies
-                # silently after dispatch and its futures never become ready.
+                # Block on any in-flight future so a dead actor's failed futures
+                # surface here and get reaped on the next iteration.
                 all_pending = []
                 for task_info in active_tasks.values():
                     all_pending.extend(task_info["futures"])
@@ -1545,13 +1542,9 @@ class Controller:
 
             self.logger.debug(f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})")
 
-            # Submit all batches and register the task. If anything raises
-            # synchronously here (e.g. a serialization error inside
-            # process_batch.remote, or a transient DB failure), the actor was
-            # marked busy by scheduler.schedule() at pipeline_scheduler.py and
-            # would leak busy state forever. Mirror the init-failure handler
-            # above: mark the pipeline FAILED and free the actor via
-            # remove_pipeline so the rest of the experiment can proceed.
+            # Mirror the init-failure handler: if dispatch or bookkeeping
+            # raises, free the actor via remove_pipeline so it doesn't leak
+            # busy state.
             try:
                 futures = []
                 preprocess_fn = pipeline_config.get("preprocess_fn")
@@ -1592,7 +1585,6 @@ class Controller:
                 db.set_actor_task_error(task_id, error_msg)
                 db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
                 db.set_pipeline_error(pipeline_id, error_msg)
-                # Drop any partial entry so the reap loop doesn't ray.wait on it
                 active_tasks.pop(actor_id, None)
                 scheduler.remove_pipeline(pipeline_id)
                 if progress_display:
