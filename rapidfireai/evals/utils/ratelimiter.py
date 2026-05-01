@@ -143,38 +143,64 @@ class BaseRateLimiter(ABC):
         this call, ``acquire_slot`` and ``count_prompt_tokens`` would raise
         ``ValueError: Model '...' not found in rate limits``.
 
+        Accepts either the combined ``{"rpm", "tpm"}`` form or the
+        fine-grained ``{"rpm", "itpm", "otpm"}`` form (in which case the
+        combined ``tpm`` is taken as ``itpm + otpm``).  This mirrors
+        :meth:`FineGrainedBaseRateLimiter.register_model`, which accepts
+        the inverse pair, and keeps the two registration paths
+        interchangeable should validation rules upstream evolve.
+
         Idempotent: if *model_name* is already registered with the same
-        limits the call is a no-op; if registered with different limits a
-        warning is emitted and the original values are preserved (matches
-        controller startup behaviour).
+        (normalised) limits the call is a no-op; if registered with
+        different limits a warning is emitted and the original values are
+        preserved (matches controller startup behaviour).
         """
+        if "rpm" not in rate_limits:
+            raise ValueError(
+                f"Model '{model_name}' rate limits must include 'rpm'. "
+                f"Got: {rate_limits}"
+            )
+
+        tpm = rate_limits.get("tpm")
+        if tpm is None:
+            itpm = rate_limits.get("itpm")
+            otpm = rate_limits.get("otpm")
+            if itpm is None or otpm is None:
+                raise ValueError(
+                    f"Model '{model_name}' rate limits must include either "
+                    f"'tpm' or both 'itpm' and 'otpm'. Got: {rate_limits}"
+                )
+            tpm = itpm + otpm
+
+        normalised = {"rpm": rate_limits["rpm"], "tpm": tpm}
+
         async with self._lock:
             if model_name in self.model_rate_limits:
-                if self.model_rate_limits[model_name] != rate_limits:
+                if self.model_rate_limits[model_name] != normalised:
                     if self.logger:
                         self.logger.warning(
                             f"Endpoint {model_name} already registered with "
                             f"{self.model_rate_limits[model_name]}; ignoring new "
-                            f"limits {rate_limits}"
+                            f"limits {normalised}"
                         )
                 return
 
-            self.model_rate_limits[model_name] = rate_limits
+            self.model_rate_limits[model_name] = normalised
             self.model_names.append(model_name)
-            self.actual_rpm_limits[model_name] = rate_limits["rpm"]
-            self.actual_tpm_limits[model_name] = rate_limits["tpm"]
+            self.actual_rpm_limits[model_name] = normalised["rpm"]
+            self.actual_tpm_limits[model_name] = normalised["tpm"]
             self.enforced_rpm_limits[model_name] = int(
-                self.limit_safety_ratio * rate_limits["rpm"]
+                self.limit_safety_ratio * normalised["rpm"]
             )
             self.enforced_tpm_limits[model_name] = int(
-                self.limit_safety_ratio * rate_limits["tpm"]
+                self.limit_safety_ratio * normalised["tpm"]
             )
             self._register_model_encoder(model_name)
 
             if self.logger:
                 self.logger.info(
                     f"Registered new endpoint '{model_name}' on rate limiter "
-                    f"(RPM={rate_limits['rpm']}, TPM={rate_limits['tpm']})"
+                    f"(RPM={normalised['rpm']}, TPM={normalised['tpm']})"
                 )
 
     # ------------------------------------------------------------------

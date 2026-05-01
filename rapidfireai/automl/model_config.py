@@ -593,8 +593,22 @@ if (
             }
 
         def sampling_params_to_dict(self) -> dict[str, Any]:
-            """Return the sampling configuration as a dictionary."""
-            return dict(self.model_config)
+            """Return the sampling configuration as a dictionary.
+
+            Excludes keys that are surfaced separately in the serialized
+            output or are passed explicitly per-request by
+            :class:`APIInferenceEngine` (rather than via ``**model_config``):
+
+            * ``"max_completion_tokens"`` — lifted to ``self.max_completion_tokens``
+              and serialized at the top level; including it here would
+              duplicate it in the IC Ops JSON view.
+            * ``"model"`` — the endpoint name comes from ``endpoint_config``;
+              and the engine passes ``model=self.model_name`` explicitly.
+            * ``"messages"`` — never a sampling param; belongs in the
+              request body.
+            """
+            _non_sampling_keys = {"max_completion_tokens", "model", "messages"}
+            return {k: v for k, v in self.model_config.items() if k not in _non_sampling_keys}
 
 else:
     RFAPIModelConfig = _make_unavailable_class(
