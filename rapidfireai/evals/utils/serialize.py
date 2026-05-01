@@ -4,7 +4,7 @@ from typing import Any
 
 import dill
 
-from rapidfireai.automl import RFvLLMModelConfig, RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig
+from rapidfireai.automl import RFvLLMModelConfig, RFAPIModelConfig
 from rapidfireai.evals.utils.constants import SEARCH_TYPE_KEYS
 
 
@@ -31,7 +31,7 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
 
     Args:
         pipeline_config: Pipeline config dict with keys:
-            - "pipeline": RFvLLMModelConfig or RFOpenAIAPIModelConfig or RFGeminiAPIModelConfig instance
+            - "pipeline": RFvLLMModelConfig or RFAPIModelConfig instance
             - "batch_size": int
             - "preprocess_fn": function (skipped)
             - "postprocess_fn": function (skipped)
@@ -110,8 +110,8 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
                 if rag_config:
                     json_config["rag_config"] = rag_config
 
-        elif isinstance(pipeline, RFOpenAIAPIModelConfig):
-            json_config["pipeline_type"] = "openai"
+        elif isinstance(pipeline, RFAPIModelConfig):
+            json_config["pipeline_type"] = "api"
 
             # Extract client_config (dict) - filter out sensitive keys
             if (
@@ -124,60 +124,30 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
                     if k.lower() not in sensitive_keys
                 }
 
-            # Extract model_config (dict)
-            if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-                json_config["model_config"] = pipeline.model_config
+            # Extract endpoint_config - filter out api_key
+            if hasattr(pipeline, "endpoint_config") and pipeline.endpoint_config is not None:
+                endpoint_cfg = dict(pipeline.endpoint_config)
+                endpoint_cfg.pop("api_key", None)
+                json_config["endpoint_config"] = endpoint_cfg
 
-            # Extract sampling_params using sampling_params_to_dict (extracts from model_config)
-            if (
-                hasattr(pipeline, "sampling_params")
-                and pipeline.sampling_params is not None
-            ):
-                json_config["sampling_params"] = pipeline.sampling_params_to_dict()
+            # Extract model_config (sampling parameters)
+            if hasattr(pipeline, "model_config") and pipeline.model_config:
+                json_config["model_config"] = pipeline.sampling_params_to_dict()
 
-            # Extract rate limiting params
+            # Extract rate limiting params.
+            # Providers use one of two schemes:
+            #   * combined-tpm scheme:  tpm_limit only          (e.g. OpenAI, Gemini)
+            #   * split scheme:         itpm_limit + otpm_limit (Anthropic)
+            # Serialize whichever scheme the pipeline was configured with so the
+            # JSON snapshot in the database faithfully reflects the live config.
             if hasattr(pipeline, "rpm_limit") and pipeline.rpm_limit is not None:
                 json_config["rpm_limit"] = pipeline.rpm_limit
             if hasattr(pipeline, "tpm_limit") and pipeline.tpm_limit is not None:
                 json_config["tpm_limit"] = pipeline.tpm_limit
-            if (
-                hasattr(pipeline, "max_completion_tokens")
-                and pipeline.max_completion_tokens is not None
-            ):
-                json_config["max_completion_tokens"] = pipeline.max_completion_tokens
-
-            # Extract RAG params if present
-            if hasattr(pipeline, "rag") and pipeline.rag is not None:
-                rag_config = extract_rag_params(pipeline.rag)
-                if rag_config:
-                    json_config["rag_config"] = rag_config
-
-        elif isinstance(pipeline, RFGeminiAPIModelConfig):
-            json_config["pipeline_type"] = "gemini"
-
-            # Extract client_config (dict) - filter out sensitive keys
-            if (
-                hasattr(pipeline, "client_config")
-                and pipeline.client_config is not None
-            ):
-                sensitive_keys = {"api_key", "secret", "token", "password", "key"}
-                json_config["client_config"] = {
-                    k: v for k, v in pipeline.client_config.items()
-                    if k.lower() not in sensitive_keys
-                }
-
-            # Extract model_config (dict)
-            if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-                json_config["model_config"] = pipeline.model_config
-
-            # Extract sampling_params using sampling_params_to_dict (extracts from model_config)
-            json_config["sampling_params"] = pipeline.sampling_params_to_dict()
-
-            # Extract rate limiting params
-            if hasattr(pipeline, "rpm_limit") and pipeline.rpm_limit is not None:
-                json_config["rpm_limit"] = pipeline.rpm_limit
-            if hasattr(pipeline, "tpm_limit") and pipeline.tpm_limit is not None:
-                json_config["tpm_limit"] = pipeline.tpm_limit
+            if hasattr(pipeline, "itpm_limit") and pipeline.itpm_limit is not None:
+                json_config["itpm_limit"] = pipeline.itpm_limit
+            if hasattr(pipeline, "otpm_limit") and pipeline.otpm_limit is not None:
+                json_config["otpm_limit"] = pipeline.otpm_limit
             if (
                 hasattr(pipeline, "max_completion_tokens")
                 and pipeline.max_completion_tokens is not None

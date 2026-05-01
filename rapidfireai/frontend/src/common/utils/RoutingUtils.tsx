@@ -48,7 +48,13 @@ const useNavigate = useNavigateDirect;
 
 const Outlet = OutletDirect;
 
-const Link = LinkDirect;
+// Wrap react-router-dom's Link to accept (and ignore) `componentId`, which is used
+// by upstream MLflow's design-system Link. This keeps gateway/ components compatible
+// without requiring changes in every caller file.
+const Link = ({
+  componentId: _componentId,
+  ...rest
+}: ComponentProps<typeof LinkDirect> & { componentId?: string }) => React.createElement(LinkDirect, rest);
 
 export const createMLflowRoutePath = (routePath: string) => {
   return routePath;
@@ -86,3 +92,6 @@ export const createLazyRouteElement = (
 export const createRouteElement = (component: React.ComponentType<any>) => React.createElement(component);
 
 export type { Location, NavigateFunction, Params, To, NavigateOptions };
+
+/** Handle type used in route definitions to provide a document title. */
+export type DocumentTitleHandle = { getPageTitle: (params?: Record<string, string>) => string };

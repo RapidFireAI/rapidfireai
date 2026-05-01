@@ -16,7 +16,7 @@ from rapidfireai.evals.utils.constants import RERANKER_CLASS_REGISTRY, SEARCH_DE
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
-from rapidfireai.automl import RFOpenAIAPIModelConfig, RFvLLMModelConfig, RFGeminiAPIModelConfig
+from rapidfireai.automl import RFAPIModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
 from rapidfireai.evals.utils.logger import RFLogger
 
@@ -39,6 +39,9 @@ class InteractiveControlHandler:
             context_cache: Controller's context cache (maps context_hash -> (context_id, ObjectRef))
             metric_manager: Optional MetricLogger instance for creating metric runs on clone
         """
+        self.experiment_name = experiment_name
+        self.experiment_path = experiment_path
+
         # Initialize logger
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
         self.logger = logging_manager.get_logger("InteractiveControl")
@@ -267,7 +270,7 @@ class InteractiveControlHandler:
             pipeline_aggregators: Dict mapping pipeline_id to Aggregator
             pipeline_results: Dict mapping pipeline_id to results/metrics
             pipeline_id_to_config: Dict mapping pipeline_id to (name, config)
-            pipeline_to_rate_limiter: Optional dict for OpenAI rate limiters
+            pipeline_to_rate_limiter: Optional dict for API rate limiters
             progress_display: Optional progress display to update
 
         Returns:
@@ -369,13 +372,10 @@ class InteractiveControlHandler:
         # Extract pipeline type from edited JSON (or inherit from parent)
         pipeline_type = edited_json.get("pipeline_type")
         if not pipeline_type:
-            # If not specified in JSON, infer from parent
             if isinstance(parent_model_config, RFvLLMModelConfig):
                 pipeline_type = "vllm"
-            elif isinstance(parent_model_config, RFOpenAIAPIModelConfig):
-                pipeline_type = "openai"
-            elif isinstance(parent_model_config, RFGeminiAPIModelConfig):
-                pipeline_type = "gemini"
+            elif isinstance(parent_model_config, RFAPIModelConfig):
+                pipeline_type = "api"
             else:
                 raise ValueError("Cannot determine pipeline type from parent")
 
@@ -397,53 +397,62 @@ class InteractiveControlHandler:
                 prompt_manager=prompt_manager,  # Inherited from parent
             )
 
-        elif pipeline_type.lower() == "openai":
-            # Get parent's baseline config from _user_params (original dicts)
-            parent_client_config = parent_model_config._user_params.get("client_config", {})
-            parent_model_config_dict = parent_model_config._user_params.get("model_config", {})
-            parent_rpm = parent_model_config._user_params.get("rpm_limit", 500)
-            parent_tpm = parent_model_config._user_params.get("tpm_limit", 500_000)
-            parent_max_completion_tokens = parent_model_config._user_params.get("max_completion_tokens", None)
+        elif pipeline_type.lower() == "api":
+            _parent_params = parent_model_config._user_params
+            parent_client_config = _parent_params.get("client_config", {})
+            parent_endpoint_config = _parent_params.get("endpoint_config", {})
+            parent_model_config_dict = _parent_params.get("model_config", {}) or {}
+            parent_rpm = _parent_params.get("rpm_limit")
+            parent_tpm = _parent_params.get("tpm_limit")
+            parent_itpm = _parent_params.get("itpm_limit")
+            parent_otpm = _parent_params.get("otpm_limit")
+            parent_max_completion_tokens = _parent_params.get("max_completion_tokens", None)
 
             # Apply edits from JSON using key-by-key merging (user values override parent values)
             # This preserves all parent keys and only overrides the keys specified by the user
             client_config = {**parent_client_config, **edited_json.get("client_config", {})}
+            endpoint_config = {**parent_endpoint_config, **edited_json.get("endpoint_config", {})}
             model_config_dict = {**parent_model_config_dict, **edited_json.get("model_config", {})}
 
-            model_config = RFOpenAIAPIModelConfig(
+            # Resolve token-rate limits while preserving the parent's scheme:
+            #   * combined-tpm scheme:  tpm_limit only          (e.g. OpenAI, Gemini)
+            #   * split scheme:         itpm_limit + otpm_limit (Anthropic)
+            # If the user explicitly switches schemes via edited_json, drop the
+            # inherited values for the other scheme so RFAPIModelConfig's
+            # validation does not reject "both schemes specified".
+            user_provided_tpm = "tpm_limit" in edited_json
+            user_provided_split = "itpm_limit" in edited_json or "otpm_limit" in edited_json
+
+            if user_provided_tpm and not user_provided_split:
+                tpm_limit = edited_json["tpm_limit"]
+                itpm_limit = None
+                otpm_limit = None
+            elif user_provided_split and not user_provided_tpm:
+                tpm_limit = None
+                itpm_limit = edited_json.get("itpm_limit", parent_itpm)
+                otpm_limit = edited_json.get("otpm_limit", parent_otpm)
+            else:
+                # No edit (or both edited) — inherit parent's scheme verbatim.
+                tpm_limit = edited_json.get("tpm_limit", parent_tpm)
+                itpm_limit = edited_json.get("itpm_limit", parent_itpm)
+                otpm_limit = edited_json.get("otpm_limit", parent_otpm)
+
+            model_config = RFAPIModelConfig(
                 client_config=client_config,
-                model_config=model_config_dict,
-                rag=rag,  # Inherited from parent (with rag_config modifications applied if specified)
-                prompt_manager=prompt_manager,  # Inherited from parent
-                rpm_limit=edited_json.get("rpm_limit", parent_rpm),
-                tpm_limit=edited_json.get("tpm_limit", parent_tpm),
-                max_completion_tokens=edited_json.get("max_completion_tokens", parent_max_completion_tokens),
-            )
-
-        elif pipeline_type.lower() == "gemini":
-            # Get parent's baseline config from _user_params (original dicts)
-            parent_client_config = parent_model_config._user_params.get("client_config", {})
-            parent_model_config_dict = parent_model_config._user_params.get("model_config", {})
-            parent_rpm = parent_model_config._user_params.get("rpm_limit", 500)
-            parent_tpm = parent_model_config._user_params.get("tpm_limit", 1_000_000)
-            parent_max_completion_tokens = parent_model_config._user_params.get("max_completion_tokens", None)
-
-            # Apply edits from JSON using key-by-key merging (user values override parent values)
-            client_config = {**parent_client_config, **edited_json.get("client_config", {})}
-            model_config_dict = {**parent_model_config_dict, **edited_json.get("model_config", {})}
-
-            model_config = RFGeminiAPIModelConfig(
-                client_config=client_config,
+                endpoint_config=endpoint_config,
                 model_config=model_config_dict,
                 rag=rag,
                 prompt_manager=prompt_manager,
                 rpm_limit=edited_json.get("rpm_limit", parent_rpm),
-                tpm_limit=edited_json.get("tpm_limit", parent_tpm),
+                tpm_limit=tpm_limit,
+                itpm_limit=itpm_limit,
+                otpm_limit=otpm_limit,
                 max_completion_tokens=edited_json.get("max_completion_tokens", parent_max_completion_tokens),
+                verbose=False,
             )
 
         else:
-            raise ValueError(f"Unknown pipeline_type: {pipeline_type}. Supported types: 'vllm', 'openai', 'gemini'")
+            raise ValueError(f"Unknown pipeline_type: {pipeline_type}. Supported types: 'vllm', 'api'")
 
         # Build complete pipeline_config structure (inherit from parent if not in JSON)
         parent_batch_size = parent_full_config.get("batch_size", 32)
@@ -502,9 +511,8 @@ class InteractiveControlHandler:
                 self.metric_manager.log_param(metric_run_id, "parent-run", str(parent_pipeline_id))
 
                 # Log model param
-                if hasattr(model_config, "model_config") and model_config.model_config:
-                    model_name = model_config.model_config.get("model", "unknown")
-                    self.metric_manager.log_param(metric_run_id, "model", model_name)
+                if hasattr(model_config, "model_name"):
+                    self.metric_manager.log_param(metric_run_id, "model", model_config.model_name)
 
                 # Log RAG params
                 if rag and hasattr(rag, "search_type"):
@@ -523,37 +531,70 @@ class InteractiveControlHandler:
             except Exception as e:
                 self.logger.warning(f"Failed to create MLflow run for cloned pipeline {new_pipeline_id}: {e}")
 
-        # Reuse experiment-wide rate limiter actor for API pipelines (OpenAI or Gemini).
-        # Each backend has its own shared rate limiter; find the one that matches the cloned pipeline's type.
-        if isinstance(model_config, (RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig)) and pipeline_to_rate_limiter is not None:
-            backend_type = RFOpenAIAPIModelConfig if isinstance(model_config, RFOpenAIAPIModelConfig) else RFGeminiAPIModelConfig
-            backend_name = "OpenAI" if isinstance(model_config, RFOpenAIAPIModelConfig) else "Gemini"
+        # Assign rate limiter for API pipelines.
+        # Try to reuse an existing rate limiter for the same provider; if none
+        # exists (e.g. clone introduces a new provider), create a new one.
+        if isinstance(model_config, RFAPIModelConfig) and pipeline_to_rate_limiter is not None:
+            clone_provider = model_config.endpoint_config.get("provider", "openai")
+            endpoint_name = model_config.model_name
 
             existing_rate_limiter = None
             for pid, rate_limiter_actor in pipeline_to_rate_limiter.items():
                 if rate_limiter_actor is None:
                     continue
                 sibling_pipeline = pipeline_id_to_config.get(pid, {}).get("pipeline")
-                if isinstance(sibling_pipeline, backend_type):
-                    existing_rate_limiter = rate_limiter_actor
-                    break
+                if isinstance(sibling_pipeline, RFAPIModelConfig):
+                    sibling_provider = sibling_pipeline.endpoint_config.get("provider", "openai")
+                    if sibling_provider == clone_provider:
+                        existing_rate_limiter = rate_limiter_actor
+                        break
 
             if existing_rate_limiter:
+                # The reused rate-limiter actor is keyed on provider, so it
+                # only knows about endpoint names that existed at startup
+                # (or were registered by previous clones).  If this clone
+                # introduces a new endpoint name, register it now —
+                # otherwise the engine's first ``acquire_slot`` /
+                # ``count_prompt_tokens`` call would raise
+                # ``ValueError: Model '<name>' not found in rate limits``.
+                # ``register_model`` is idempotent: a no-op when the
+                # endpoint is already known.
+                import ray
+
+                ray.get(
+                    existing_rate_limiter.register_model.remote(
+                        endpoint_name, model_config.get_rate_limit_dict()
+                    )
+                )
                 pipeline_to_rate_limiter[new_pipeline_id] = existing_rate_limiter
-                self.logger.info(f"Cloned {backend_name} pipeline {new_pipeline_id} will use experiment-wide rate limiter")
+                self.logger.info(
+                    f"Cloned {clone_provider} pipeline {new_pipeline_id} "
+                    f"(endpoint: {endpoint_name}) will use existing "
+                    f"experiment-wide rate limiter"
+                )
             else:
-                raise RuntimeError(
-                    f"Cannot clone {backend_name} pipeline {new_pipeline_id}: no experiment-wide rate limiter found. "
-                    f"This suggests the experiment was not properly configured with {backend_name} rate limits."
+                from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
+
+                new_rate_limiter = RateLimiterActor.remote(
+                    model_rate_limits={
+                        endpoint_name: model_config.get_rate_limit_dict(),
+                    },
+                    max_completion_tokens=model_config.max_completion_tokens or 150,
+                    limit_safety_ratio=0.95,
+                    minimum_wait_time=1.0,
+                    backend=clone_provider,
+                    experiment_name=self.experiment_name,
+                    experiment_path=self.experiment_path,
+                )
+                pipeline_to_rate_limiter[new_pipeline_id] = new_rate_limiter
+                self.logger.info(
+                    f"Created new {clone_provider} rate limiter actor for "
+                    f"cloned pipeline {new_pipeline_id} (endpoint: {endpoint_name})"
                 )
 
             # Register max_completion_tokens for the cloned pipeline
             if pipeline_to_max_completion_tokens is not None:
-                if isinstance(model_config, RFGeminiAPIModelConfig):
-                    max_completion_tokens = model_config.model_config.get("max_output_tokens", 150)
-                else:
-                    max_completion_tokens = model_config.model_config.get("max_completion_tokens", 150)
-                pipeline_to_max_completion_tokens[new_pipeline_id] = max_completion_tokens
+                pipeline_to_max_completion_tokens[new_pipeline_id] = model_config.max_completion_tokens
 
         # Initialize aggregator for the new pipeline
         aggregator = Aggregator()
@@ -576,12 +617,7 @@ class InteractiveControlHandler:
         pipeline = pipeline_config["pipeline"]
 
         # Extract model name
-        if isinstance(model_config, (RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFvLLMModelConfig)):
-            model_name = model_config.model_config.get("model", "Unknown")
-        elif hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-            model_name = pipeline.model_config.get("model", "Unknown")
-        else:
-            model_name = "Unknown"
+        model_name = model_config.model_name if hasattr(model_config, "model_name") else "Unknown"
 
         # Extract ALL metadata fields for progress display (mirrors controller.py)
         # Indexing-stage fields are inherited from the parent and read-only —
@@ -596,8 +632,10 @@ class InteractiveControlHandler:
         prompt_manager_k = None
         model_config_dict = None
 
-        if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-            model_config_copy = pipeline.model_config.copy()
+        if hasattr(pipeline, "model_config") and pipeline.model_config:
+            # ``model_name`` is already shown separately; drop ``"model"`` from
+            # the copied config so vLLM pipelines don't display it redundantly.
+            model_config_copy = dict(pipeline.model_config)
             model_config_copy.pop("model", None)
             if model_config_copy:
                 model_config_dict = model_config_copy

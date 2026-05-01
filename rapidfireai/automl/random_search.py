@@ -8,6 +8,7 @@ from typing import Any
 from rapidfireai.automl.base import AutoMLAlgorithm
 from rapidfireai.automl.datatypes import List, Range
 from rapidfireai.automl.automl_utils import _is_valid_reranker_top_n_vs_k
+from rapidfireai.automl.grid_search import _accepts_verbose
 from rapidfireai.fit.utils.exceptions import AutoMLException
 
 
@@ -21,6 +22,8 @@ def recursive_expand_randomsearch(item: Any):
     """Recursively sample from nested structures with List and Range datatypes."""
     if hasattr(item, "_user_params"):
         sampled_params = recursive_expand_randomsearch(item._user_params)
+        if _accepts_verbose(item.__class__):
+            sampled_params = {**sampled_params, "verbose": False}
         return item.__class__(**sampled_params)
     elif isinstance(item, dict):
         return {k: recursive_expand_randomsearch(v) for k, v in item.items()}
@@ -184,10 +187,8 @@ class RFRandomSearch(AutoMLAlgorithm):
             # Handle pipeline similar to grid search
             if "vllm_config" in config:
                 pipeline = config["vllm_config"]
-            elif "openai_config" in config:
-                pipeline = config["openai_config"]
-            elif "gemini_config" in config:
-                pipeline = config["gemini_config"]
+            elif "api_config" in config:
+                pipeline = config["api_config"]
             elif "pipeline" in config:
                 pipeline = config["pipeline"]
             else:
@@ -213,7 +214,7 @@ class RFRandomSearch(AutoMLAlgorithm):
                 additional_kwargs = {
                     k: v
                     for k, v in config.items()
-                    if k not in {"pipeline", "vllm_config", "openai_config", "gemini_config"}
+                    if k not in {"pipeline", "vllm_config", "api_config"}
                     and v is not None
                 }
                 additional_kwargs_instances = (
@@ -226,7 +227,9 @@ class RFRandomSearch(AutoMLAlgorithm):
                 for pipeline_params in pipeline_instances:
                     for additional_kwargs in additional_kwargs_instances:
                         if isinstance(pipeline_params, dict):
-                            pipeline_instance = pipeline.__class__(**pipeline_params)
+                            # Suppress verbose gateway provisioning output for random search reinstantiation
+                            kwargs = {**pipeline_params, "verbose": False} if _accepts_verbose(pipeline.__class__) else pipeline_params
+                            pipeline_instance = pipeline.__class__(**kwargs)
                         else:
                             pipeline_instance = pipeline_params
 

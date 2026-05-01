@@ -28,6 +28,7 @@ class RequestRecord:
 
 # ---------------------------------------------------------------------------
 # Base class — all sliding-window logic lives here
+# Supports requests per minute (RPM) and tokens per minute (TPM) limits.
 # ---------------------------------------------------------------------------
 
 class BaseRateLimiter(ABC):
@@ -103,6 +104,7 @@ class BaseRateLimiter(ABC):
     @abstractmethod
     def _init_encoders(self) -> None:
         """Set up token-counting resources (encoders, clients, etc.)."""
+        raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
     def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
@@ -116,6 +118,90 @@ class BaseRateLimiter(ABC):
         Returns:
             Estimated token count of the prompt.
         """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    def _register_model_encoder(self, model_name: str) -> None:
+        """Hook for subclasses that maintain per-model encoders.
+
+        Default implementation is a no-op (used by Gemini, which has no
+        per-model encoder state).  ``OpenAIRateLimiter`` overrides this to
+        register a tiktoken encoder for *model_name*.
+        """
+        return None
+
+    # ------------------------------------------------------------------
+    # Dynamic registration
+    # ------------------------------------------------------------------
+
+    async def register_model(
+        self, model_name: str, rate_limits: dict[str, int]
+    ) -> None:
+        """Register a new model with the limiter at runtime.
+
+        Used when a pipeline is cloned with a new endpoint name but the
+        existing rate limiter actor (keyed on provider) is reused. Without
+        this call, ``acquire_slot`` and ``count_prompt_tokens`` would raise
+        ``ValueError: Model '...' not found in rate limits``.
+
+        Accepts either the combined ``{"rpm", "tpm"}`` form or the
+        fine-grained ``{"rpm", "itpm", "otpm"}`` form (in which case the
+        combined ``tpm`` is taken as ``itpm + otpm``).  This mirrors
+        :meth:`FineGrainedBaseRateLimiter.register_model`, which accepts
+        the inverse pair, and keeps the two registration paths
+        interchangeable should validation rules upstream evolve.
+
+        Idempotent: if *model_name* is already registered with the same
+        (normalised) limits the call is a no-op; if registered with
+        different limits a warning is emitted and the original values are
+        preserved (matches controller startup behaviour).
+        """
+        if "rpm" not in rate_limits:
+            raise ValueError(
+                f"Model '{model_name}' rate limits must include 'rpm'. "
+                f"Got: {rate_limits}"
+            )
+
+        tpm = rate_limits.get("tpm")
+        if tpm is None:
+            itpm = rate_limits.get("itpm")
+            otpm = rate_limits.get("otpm")
+            if itpm is None or otpm is None:
+                raise ValueError(
+                    f"Model '{model_name}' rate limits must include either "
+                    f"'tpm' or both 'itpm' and 'otpm'. Got: {rate_limits}"
+                )
+            tpm = itpm + otpm
+
+        normalised = {"rpm": rate_limits["rpm"], "tpm": tpm}
+
+        async with self._lock:
+            if model_name in self.model_rate_limits:
+                if self.model_rate_limits[model_name] != normalised:
+                    if self.logger:
+                        self.logger.warning(
+                            f"Endpoint {model_name} already registered with "
+                            f"{self.model_rate_limits[model_name]}; ignoring new "
+                            f"limits {normalised}"
+                        )
+                return
+
+            self.model_rate_limits[model_name] = normalised
+            self.model_names.append(model_name)
+            self.actual_rpm_limits[model_name] = normalised["rpm"]
+            self.actual_tpm_limits[model_name] = normalised["tpm"]
+            self.enforced_rpm_limits[model_name] = int(
+                self.limit_safety_ratio * normalised["rpm"]
+            )
+            self.enforced_tpm_limits[model_name] = int(
+                self.limit_safety_ratio * normalised["tpm"]
+            )
+            self._register_model_encoder(model_name)
+
+            if self.logger:
+                self.logger.info(
+                    f"Registered new endpoint '{model_name}' on rate limiter "
+                    f"(RPM={normalised['rpm']}, TPM={normalised['tpm']})"
+                )
 
     # ------------------------------------------------------------------
     # Common token estimation
@@ -172,13 +258,14 @@ class BaseRateLimiter(ABC):
         return current_rpm, current_tpm
 
     async def acquire_slot(
-        self, estimated_tokens: int, model_name: str
+        self, estimated_input_tokens: int, model_name: str
     ) -> tuple[bool, float, int | None]:
         """
         Try to acquire a slot for a new request.
 
         Args:
-            estimated_tokens: Projected token usage for this request
+            estimated_input_tokens: Projected input/prompt token usage.
+                Output tokens are projected internally as ``max_completion_tokens``.
             model_name: Model name for the request
 
         Returns:
@@ -190,6 +277,8 @@ class BaseRateLimiter(ABC):
                 f"Available models: {list(self.enforced_rpm_limits.keys())}"
             )
 
+        estimated_total = estimated_input_tokens + self.max_completion_tokens
+
         async with self._lock:
             self._cleanup_old_requests()
 
@@ -197,53 +286,43 @@ class BaseRateLimiter(ABC):
             enforced_rpm_limit = self.enforced_rpm_limits[model_name]
             enforced_tpm_limit = self.enforced_tpm_limits[model_name]
 
-            def _wait_time_for_model() -> float:
-                model_requests = [
-                    r for r in self._current_requests.values() if r.model_name == model_name
-                ]
-                if model_requests:
-                    oldest = min(r.timestamp for r in model_requests)
-                    return max(self.minimum_wait_time, 60 - (time.time() - oldest))
-                return self.minimum_wait_time
-
             if current_rpm >= enforced_rpm_limit:
-                wait_time = _wait_time_for_model()
                 self._rate_limit_message_counter += 1
                 if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
                     self.logger.info(
-                        f"RPM limit hit for {model_name} — waiting {wait_time:.1f}s "
+                        f"RPM limit hit for {model_name} — waiting {self.minimum_wait_time:.1f}s "
                         f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
                     )
-                return False, wait_time, None
+                return False, self.minimum_wait_time, None
 
-            if current_tpm + estimated_tokens >= enforced_tpm_limit:
-                wait_time = _wait_time_for_model()
+            if current_tpm + estimated_total >= enforced_tpm_limit:
                 self._rate_limit_message_counter += 1
                 if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
                     self.logger.info(
-                        f"TPM limit hit for {model_name} — waiting {wait_time:.1f}s "
+                        f"TPM limit hit for {model_name} — waiting {self.minimum_wait_time:.1f}s "
                         f"(RPM: {current_rpm}/{enforced_rpm_limit}, TPM: {current_tpm}/{enforced_tpm_limit})"
                     )
-                return False, wait_time, None
+                return False, self.minimum_wait_time, None
 
             request_id = self._request_counter
             self._request_counter += 1
             record = RequestRecord(
                 request_id=request_id,
                 timestamp=time.time(),
-                projected_tokens=estimated_tokens,
+                projected_tokens=estimated_total,
                 status=RequestStatus.PENDING,
                 model_name=model_name,
                 actual_tokens=None,
             )
             self._current_requests[request_id] = record
-            self._all_requests[request_id] = record # Potentially could become a long list resulting in heavy memory usage
+            self._all_requests[request_id] = record
             return True, 0, request_id
 
     async def update_actual_usage(
         self,
         request_id: int | None,
-        actual_tokens: int = 0,
+        actual_input_tokens: int = 0,
+        actual_output_tokens: int = 0,
         status: RequestStatus = RequestStatus.COMPLETED,
     ) -> None:
         """
@@ -251,7 +330,8 @@ class BaseRateLimiter(ABC):
 
         Args:
             request_id: ID of the request to update (no-op if ``None``)
-            actual_tokens: Actual token usage from the API response
+            actual_input_tokens: Actual input/prompt token usage from the API response
+            actual_output_tokens: Actual output/completion token usage from the API response
             status: Final status of the request
         """
         if request_id is None:
@@ -260,7 +340,7 @@ class BaseRateLimiter(ABC):
             for store in (self._current_requests, self._all_requests):
                 if request_id in store:
                     store[request_id].status = status
-                    store[request_id].actual_tokens = actual_tokens
+                    store[request_id].actual_tokens = actual_input_tokens + actual_output_tokens
 
     async def get_current_usage(self) -> dict:
         """
@@ -334,6 +414,451 @@ class BaseRateLimiter(ABC):
                 "supported_models": self.model_names,
             }
 
+# ---------------------------------------------------------------------------
+# Fine-grained sliding-window rate limiter supports requests per minute (RPM), 
+# input tokens per minute (ITPM) and output tokens per minute (OTPM) limits.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FineGrainedRequestRecord:
+    """Record for tracking an individual request with separate input/output token tracking."""
+
+    request_id: int
+    timestamp: float
+    projected_input_tokens: int
+    projected_output_tokens: int
+    status: RequestStatus
+    model_name: str
+    actual_input_tokens: int | None = None
+    actual_output_tokens: int | None = None
+
+
+class FineGrainedBaseRateLimiter(ABC):
+    """
+    Fine-grained sliding-window rate limiter that tracks RPM, ITPM (input
+    tokens per minute) and OTPM (output tokens per minute) independently.
+
+    This is useful for providers like Anthropic that enforce separate
+    input and output token rate limits rather than a combined TPM.
+
+    Subclasses must implement:
+    - ``_init_encoders()``: set up whatever is needed for token counting
+    - ``count_prompt_tokens(messages, model_name) -> int``: count input tokens
+    """
+
+    def __init__(
+        self,
+        model_rate_limits: dict[str, dict[str, int]],
+        max_completion_tokens: int = 150,
+        limit_safety_ratio: float = 0.98,
+        minimum_wait_time: float = 3.0,
+        logger=None,
+    ):
+        """
+        Args:
+            model_rate_limits: Dict mapping model name to rate limits.
+                Accepts either fine-grained keys::
+
+                    {"gpt-4": {"rpm": 500, "itpm": 50000, "otpm": 50000}}
+
+                or a combined ``tpm`` key (used as both ``itpm`` and ``otpm``)::
+
+                    {"gpt-4": {"rpm": 500, "tpm": 100000}}
+
+            max_completion_tokens: Maximum output/completion tokens per request
+            limit_safety_ratio: Safety margin as fraction of limits (default 0.98)
+            minimum_wait_time: Minimum wait time when rate limited (seconds)
+            logger: Optional logger instance
+        """
+        self.limit_safety_ratio = limit_safety_ratio
+        self.minimum_wait_time = minimum_wait_time
+        self.max_completion_tokens = max_completion_tokens
+        self.logger = logger
+
+        # Throttling for rate limit messages (log 1 in 500)
+        self._rate_limit_message_counter = 0
+        self._log_throttle_ratio = 500
+
+        # Normalise rate-limit keys: accept "tpm" as fallback for "itpm"/"otpm"
+        normalised = {}
+        for model, limits in model_rate_limits.items():
+            itpm = limits.get("itpm", limits.get("tpm"))
+            otpm = limits.get("otpm", limits.get("tpm"))
+            if itpm is None or otpm is None:
+                raise ValueError(
+                    f"Model '{model}' rate limits must include either 'itpm'+'otpm' or 'tpm'. Got: {limits}"
+                )
+            normalised[model] = {"rpm": limits["rpm"], "itpm": itpm, "otpm": otpm}
+
+        self.model_rate_limits = normalised
+        self.model_names = list(normalised.keys())
+
+        # Actual API limits per model (as specified by the API provider)
+        self.actual_rpm_limits: dict[str, int] = {
+            model: lim["rpm"] for model, lim in normalised.items()
+        }
+        self.actual_itpm_limits: dict[str, int] = {
+            model: lim["itpm"] for model, lim in normalised.items()
+        }
+        self.actual_otpm_limits: dict[str, int] = {
+            model: lim["otpm"] for model, lim in normalised.items()
+        }
+
+        # Enforced limits per model (with safety margin applied)
+        self.enforced_rpm_limits: dict[str, int] = {
+            model: int(limit_safety_ratio * lim["rpm"])
+            for model, lim in normalised.items()
+        }
+        self.enforced_itpm_limits: dict[str, int] = {
+            model: int(limit_safety_ratio * lim["itpm"])
+            for model, lim in normalised.items()
+        }
+        self.enforced_otpm_limits: dict[str, int] = {
+            model: int(limit_safety_ratio * lim["otpm"])
+            for model, lim in normalised.items()
+        }
+
+        self._request_counter = 0
+        self._current_requests: dict[int, FineGrainedRequestRecord] = {}
+        self._all_requests: dict[int, FineGrainedRequestRecord] = {}
+        self._lock = asyncio.Lock()
+        self._last_cleanup = time.time()
+        self._start_time = time.time()
+
+        self._init_encoders()
+
+    # ------------------------------------------------------------------
+    # Subclass hooks
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def _init_encoders(self) -> None:
+        """Set up token-counting resources (encoders, clients, etc.)."""
+
+    @abstractmethod
+    def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
+        """
+        Count the number of input tokens in *messages* for *model_name*.
+
+        Args:
+            messages: List of message dicts with at least a ``"content"`` key.
+            model_name: Model to count tokens for.
+
+        Returns:
+            Estimated input token count of the prompt.
+        """
+
+    def _register_model_encoder(self, model_name: str) -> None:
+        """Hook for subclasses that maintain per-model encoders.
+
+        Default is a no-op (Anthropic's tokenizer is stateless).
+        """
+        return None
+
+    # ------------------------------------------------------------------
+    # Dynamic registration
+    # ------------------------------------------------------------------
+
+    async def register_model(
+        self, model_name: str, rate_limits: dict[str, int]
+    ) -> None:
+        """Register a new model with the limiter at runtime.
+
+        See :meth:`BaseRateLimiter.register_model` for rationale; this
+        variant accepts either ``{"rpm", "itpm", "otpm"}`` or
+        ``{"rpm", "tpm"}`` (where ``tpm`` is used for both ``itpm`` and
+        ``otpm``).
+        """
+        # Normalise the same way ``__init__`` does.
+        itpm = rate_limits.get("itpm", rate_limits.get("tpm"))
+        otpm = rate_limits.get("otpm", rate_limits.get("tpm"))
+        if itpm is None or otpm is None:
+            raise ValueError(
+                f"Model '{model_name}' rate limits must include either "
+                f"'itpm'+'otpm' or 'tpm'. Got: {rate_limits}"
+            )
+        normalised = {"rpm": rate_limits["rpm"], "itpm": itpm, "otpm": otpm}
+
+        async with self._lock:
+            if model_name in self.model_rate_limits:
+                if self.model_rate_limits[model_name] != normalised:
+                    if self.logger:
+                        self.logger.warning(
+                            f"Endpoint {model_name} already registered with "
+                            f"{self.model_rate_limits[model_name]}; ignoring new "
+                            f"limits {normalised}"
+                        )
+                return
+
+            self.model_rate_limits[model_name] = normalised
+            self.model_names.append(model_name)
+            self.actual_rpm_limits[model_name] = normalised["rpm"]
+            self.actual_itpm_limits[model_name] = normalised["itpm"]
+            self.actual_otpm_limits[model_name] = normalised["otpm"]
+            self.enforced_rpm_limits[model_name] = int(
+                self.limit_safety_ratio * normalised["rpm"]
+            )
+            self.enforced_itpm_limits[model_name] = int(
+                self.limit_safety_ratio * normalised["itpm"]
+            )
+            self.enforced_otpm_limits[model_name] = int(
+                self.limit_safety_ratio * normalised["otpm"]
+            )
+            self._register_model_encoder(model_name)
+
+            if self.logger:
+                self.logger.info(
+                    f"Registered new endpoint '{model_name}' on rate limiter "
+                    f"(RPM={normalised['rpm']}, ITPM={normalised['itpm']}, "
+                    f"OTPM={normalised['otpm']})"
+                )
+
+    # ------------------------------------------------------------------
+    # Common token estimation
+    # ------------------------------------------------------------------
+
+    def estimate_total_tokens(self, messages: list[dict], model_name: str) -> int:
+        """
+        Estimate total tokens: prompt (input) tokens + max output tokens.
+
+        Args:
+            messages: List of message dicts
+            model_name: Model name for token counting
+
+        Returns:
+            Estimated total tokens (input + max output)
+        """
+        return self.count_prompt_tokens(messages, model_name) + self.max_completion_tokens
+
+    # ------------------------------------------------------------------
+    # Sliding-window bookkeeping
+    # ------------------------------------------------------------------
+
+    def _cleanup_old_requests(self) -> None:
+        """Remove requests older than 60 s from the sliding window."""
+        current_time = time.time()
+        if current_time - self._last_cleanup < self.minimum_wait_time:
+            return
+        self._last_cleanup = current_time
+        minute_ago = current_time - 60
+        expired = [
+            req_id
+            for req_id, record in self._current_requests.items()
+            if record.timestamp < minute_ago
+        ]
+        for req_id in expired:
+            del self._current_requests[req_id]
+
+    def _calculate_current_usage(self, model_name: str) -> tuple[int, int, int]:
+        """
+        Calculate RPM, ITPM, and OTPM usage in the current sliding window.
+
+        Pending requests use projected values; completed ones use actuals.
+
+        Returns:
+            ``(current_rpm, current_itpm, current_otpm)``
+        """
+        current_rpm = 0
+        current_itpm = 0
+        current_otpm = 0
+        for record in self._current_requests.values():
+            if record.model_name != model_name:
+                continue
+            current_rpm += 1
+            if record.status == RequestStatus.COMPLETED:
+                current_itpm += record.actual_input_tokens if record.actual_input_tokens is not None else record.projected_input_tokens
+                current_otpm += record.actual_output_tokens if record.actual_output_tokens is not None else record.projected_output_tokens
+            else:
+                current_itpm += record.projected_input_tokens
+                current_otpm += record.projected_output_tokens
+        return current_rpm, current_itpm, current_otpm
+
+    async def acquire_slot(
+        self, estimated_input_tokens: int, model_name: str
+    ) -> tuple[bool, float, int | None]:
+        """
+        Try to acquire a slot for a new request.
+
+        Args:
+            estimated_input_tokens: Projected input token usage for this request.
+                Output tokens are projected as ``max_completion_tokens``.
+            model_name: Model name for the request
+
+        Returns:
+            ``(can_proceed, wait_time, request_id)``
+        """
+        if model_name not in self.enforced_rpm_limits:
+            raise ValueError(
+                f"Model '{model_name}' not found in rate limits. "
+                f"Available models: {list(self.enforced_rpm_limits.keys())}"
+            )
+
+        async with self._lock:
+            self._cleanup_old_requests()
+
+            current_rpm, current_itpm, current_otpm = self._calculate_current_usage(model_name)
+            enforced_rpm = self.enforced_rpm_limits[model_name]
+            enforced_itpm = self.enforced_itpm_limits[model_name]
+            enforced_otpm = self.enforced_otpm_limits[model_name]
+
+            if current_rpm >= enforced_rpm:
+                self._rate_limit_message_counter += 1
+                if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
+                    self.logger.info(
+                        f"RPM limit hit for {model_name} — waiting {self.minimum_wait_time:.1f}s "
+                        f"(RPM: {current_rpm}/{enforced_rpm})"
+                    )
+                return False, self.minimum_wait_time, None
+
+            if current_itpm + estimated_input_tokens >= enforced_itpm:
+                self._rate_limit_message_counter += 1
+                if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
+                    self.logger.info(
+                        f"ITPM limit hit for {model_name} — waiting {self.minimum_wait_time:.1f}s "
+                        f"(ITPM: {current_itpm}/{enforced_itpm})"
+                    )
+                return False, self.minimum_wait_time, None
+
+            if current_otpm + self.max_completion_tokens >= enforced_otpm:
+                self._rate_limit_message_counter += 1
+                if self.logger and self._rate_limit_message_counter % self._log_throttle_ratio == 0:
+                    self.logger.info(
+                        f"OTPM limit hit for {model_name} — waiting {self.minimum_wait_time:.1f}s "
+                        f"(OTPM: {current_otpm}/{enforced_otpm})"
+                    )
+                return False, self.minimum_wait_time, None
+
+            request_id = self._request_counter
+            self._request_counter += 1
+            record = FineGrainedRequestRecord(
+                request_id=request_id,
+                timestamp=time.time(),
+                projected_input_tokens=estimated_input_tokens,
+                projected_output_tokens=self.max_completion_tokens,
+                status=RequestStatus.PENDING,
+                model_name=model_name,
+            )
+            self._current_requests[request_id] = record
+            self._all_requests[request_id] = record
+            return True, 0, request_id
+
+    async def update_actual_usage(
+        self,
+        request_id: int | None,
+        actual_input_tokens: int = 0,
+        actual_output_tokens: int = 0,
+        status: RequestStatus = RequestStatus.COMPLETED,
+    ) -> None:
+        """
+        Update request with actual token usage and status after completion.
+
+        Args:
+            request_id: ID of the request to update (no-op if ``None``)
+            actual_input_tokens: Actual input token usage from the API response
+            actual_output_tokens: Actual output token usage from the API response
+            status: Final status of the request
+        """
+        if request_id is None:
+            return
+        async with self._lock:
+            for store in (self._current_requests, self._all_requests):
+                if request_id in store:
+                    store[request_id].status = status
+                    store[request_id].actual_input_tokens = actual_input_tokens
+                    store[request_id].actual_output_tokens = actual_output_tokens
+
+    async def get_current_usage(self) -> dict:
+        """
+        Return current and historical usage statistics per model.
+
+        Returns:
+            Dict with per-model stats (RPM, ITPM, OTPM) and session-level aggregates.
+        """
+        async with self._lock:
+            self._cleanup_old_requests()
+
+            per_model_stats = {}
+            for model_name in self.model_names:
+                current_rpm, current_itpm, current_otpm = self._calculate_current_usage(model_name)
+
+                model_current = [r for r in self._current_requests.values() if r.model_name == model_name]
+                model_all = [r for r in self._all_requests.values() if r.model_name == model_name]
+
+                def _count_by_status(records, s):
+                    return sum(1 for r in records if r.status == s)
+
+                total_input_tokens = sum(
+                    r.actual_input_tokens if r.actual_input_tokens is not None else r.projected_input_tokens
+                    for r in model_all
+                )
+                total_output_tokens = sum(
+                    r.actual_output_tokens if r.actual_output_tokens is not None else r.projected_output_tokens
+                    for r in model_all
+                )
+
+                enf_rpm = self.enforced_rpm_limits[model_name]
+                enf_itpm = self.enforced_itpm_limits[model_name]
+                enf_otpm = self.enforced_otpm_limits[model_name]
+                act_rpm = self.actual_rpm_limits[model_name]
+                act_itpm = self.actual_itpm_limits[model_name]
+                act_otpm = self.actual_otpm_limits[model_name]
+
+                per_model_stats[model_name] = {
+                    "current_requests": current_rpm,
+                    "current_input_tokens": current_itpm,
+                    "current_output_tokens": current_otpm,
+                    "current_pending_requests": _count_by_status(model_current, RequestStatus.PENDING),
+                    "current_completed_requests": _count_by_status(model_current, RequestStatus.COMPLETED),
+                    "current_failed_requests": _count_by_status(model_current, RequestStatus.FAILED),
+                    "current_empty_response_requests": _count_by_status(model_current, RequestStatus.EMPTY_RESPONSE),
+                    "total_requests": len(model_all),
+                    "total_input_tokens": total_input_tokens,
+                    "total_output_tokens": total_output_tokens,
+                    "total_pending_requests": _count_by_status(model_all, RequestStatus.PENDING),
+                    "total_completed_requests": _count_by_status(model_all, RequestStatus.COMPLETED),
+                    "total_failed_requests": _count_by_status(model_all, RequestStatus.FAILED),
+                    "total_empty_response_requests": _count_by_status(model_all, RequestStatus.EMPTY_RESPONSE),
+                    "actual_rpm_limit": act_rpm,
+                    "actual_itpm_limit": act_itpm,
+                    "actual_otpm_limit": act_otpm,
+                    "enforced_rpm_limit": enf_rpm,
+                    "enforced_itpm_limit": enf_itpm,
+                    "enforced_otpm_limit": enf_otpm,
+                    "rpm_utilization": current_rpm / enf_rpm if enf_rpm > 0 else 0,
+                    "itpm_utilization": current_itpm / enf_itpm if enf_itpm > 0 else 0,
+                    "otpm_utilization": current_otpm / enf_otpm if enf_otpm > 0 else 0,
+                    "actual_rpm_utilization": current_rpm / act_rpm if act_rpm > 0 else 0,
+                    "actual_itpm_utilization": current_itpm / act_itpm if act_itpm > 0 else 0,
+                    "actual_otpm_utilization": current_otpm / act_otpm if act_otpm > 0 else 0,
+                }
+
+            session_duration = time.time() - self._start_time
+            total_all_requests = len(self._all_requests)
+            total_all_input = sum(
+                r.actual_input_tokens if r.actual_input_tokens is not None else r.projected_input_tokens
+                for r in self._all_requests.values()
+            )
+            total_all_output = sum(
+                r.actual_output_tokens if r.actual_output_tokens is not None else r.projected_output_tokens
+                for r in self._all_requests.values()
+            )
+            return {
+                "per_model": per_model_stats,
+                "session_duration_seconds": session_duration,
+                "average_requests_per_minute": (
+                    total_all_requests / session_duration * 60 if session_duration > 0 else 0
+                ),
+                "average_input_tokens_per_minute": (
+                    total_all_input / session_duration * 60 if session_duration > 0 else 0
+                ),
+                "average_output_tokens_per_minute": (
+                    total_all_output / session_duration * 60 if session_duration > 0 else 0
+                ),
+                "limit_safety_ratio": self.limit_safety_ratio,
+                "minimum_wait_time": self.minimum_wait_time,
+                "supported_models": self.model_names,
+            }
+
 
 # ---------------------------------------------------------------------------
 # OpenAI — tiktoken-based token counting
@@ -358,19 +883,49 @@ class OpenAIRateLimiter(BaseRateLimiter):
             logger=logger,
         )
 
+    _FALLBACK_MODEL = "gpt-5"
+
     def _init_encoders(self) -> None:
+        self.encoders: dict = {}
+        self._fallback_encoder = None
+        for model_name in self.model_names:
+            self._register_model_encoder(model_name)
+
+    def _register_model_encoder(self, model_name: str) -> None:
+        """Register a tiktoken encoder for *model_name*.
+
+        Used both during ``_init_encoders`` and dynamically by
+        :meth:`BaseRateLimiter.register_model` when a clone introduces a
+        new endpoint name on this same rate-limiter actor.
+        """
         import tiktoken
 
-        self.encoders: dict = {}
-        for model_name in self.model_names:
-            try:
-                self.encoders[model_name] = tiktoken.encoding_for_model(model_name)
-            except KeyError:
-                print(f"Warning: Model '{model_name}' not recognised by tiktoken, using cl100k_base")
-                self.encoders[model_name] = tiktoken.get_encoding("cl100k_base")
+        if model_name in self.encoders:
+            return
+        try:
+            self.encoders[model_name] = tiktoken.encoding_for_model(model_name)
+        except KeyError:
+            if self._fallback_encoder is None:
+                try:
+                    self._fallback_encoder = tiktoken.encoding_for_model(self._FALLBACK_MODEL)
+                except KeyError:
+                    self._fallback_encoder = tiktoken.get_encoding("o200k_base")
+            if self.logger:
+                self.logger.warning(
+                    f"Model '{model_name}' not recognised by tiktoken, "
+                    f"falling back to {self._FALLBACK_MODEL} tokenizer"
+                )
+            self.encoders[model_name] = self._fallback_encoder
+
+    # OpenAI vision bills images at ~85 tokens (low detail) to ~765 tokens
+    # (high detail, single tile). We use a conservative estimate.
+    _TOKENS_PER_IMAGE = 765
+    _TOKENS_PER_AUDIO = 512
+    _TOKENS_PER_VIDEO = 512
+    _TOKENS_PER_FILE = 2048
 
     def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
-        """Count tokens using tiktoken. Includes OpenAI message-formatting overhead."""
+        """Count tokens using tiktoken. Handles both text-only and multimodal content."""
         if model_name not in self.encoders:
             raise ValueError(
                 f"Model '{model_name}' not found. Available: {list(self.encoders.keys())}"
@@ -379,7 +934,24 @@ class OpenAIRateLimiter(BaseRateLimiter):
         total = 2  # conversation start/end tokens
         for message in messages:
             total += 4  # per-message role/content overhead
-            total += len(encoding.encode(message.get("content", "")))
+            content = message.get("content", "")
+            if isinstance(content, str):
+                total += len(encoding.encode(content))
+            elif isinstance(content, list):
+                for part in content:
+                    part_type = part.get("type", "") if isinstance(part, dict) else ""
+                    if part_type == "text":
+                        total += len(encoding.encode(part.get("text", "")))
+                    elif part_type == "image_url":
+                        total += self._TOKENS_PER_IMAGE
+                    elif part_type == "input_audio":
+                        total += self._TOKENS_PER_AUDIO
+                    elif part_type == "video":
+                        total += self._TOKENS_PER_VIDEO
+                    elif part_type == "file":
+                        total += self._TOKENS_PER_FILE
+                    else:
+                        total += 4
         return total
 
 
@@ -418,59 +990,121 @@ class GoogleGeminiRateLimiter(BaseRateLimiter):
         )
 
     def _init_encoders(self) -> None:
-        # No offline encoder available for Gemini; count_prompt_tokens uses
-        # character-based approximation instead.
         pass
 
     # Gemini charges ~258 tokens per image (standard tile budget).
     # Audio is billed at 32 tokens/second; without duration metadata we use a
     # conservative fixed estimate. Video frames are similarly opaque offline.
     _TOKENS_PER_IMAGE = 258
-    _TOKENS_PER_AUDIO_OR_VIDEO = 512
-
-    def _count_part_tokens(self, part: dict | str) -> int:
-        """Return a token estimate for a single Gemini message part."""
-        if isinstance(part, str):
-            return max(1, len(part) // self._CHARS_PER_TOKEN)
-
-        if "text" in part:
-            return max(1, len(part["text"]) // self._CHARS_PER_TOKEN)
-
-        mime = None
-        if "inline_data" in part:
-            mime = part["inline_data"].get("mime_type", "")
-        elif "file_data" in part:
-            mime = part["file_data"].get("mime_type", "")
-
-        if mime is not None:
-            if mime.startswith("image/"):
-                return self._TOKENS_PER_IMAGE
-            if mime.startswith(("audio/", "video/")):
-                return self._TOKENS_PER_AUDIO_OR_VIDEO
-
-        # Unknown part type — use a small non-zero placeholder.
-        return 4
+    _TOKENS_PER_AUDIO = 512
+    _TOKENS_PER_VIDEO = 512
+    _TOKENS_PER_FILE = 2048
 
     def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
         """
-        Estimate token count for Gemini-format messages.
+        Estimate token count for OpenAI-format messages using ~4 chars/token.
 
-        Each message must follow the Gemini SDK structure::
+        Messages arrive via the MLflow gateway in OpenAI format::
 
-            {"role": "user", "parts": [{"text": "..."}, ...]}
+            {"role": "user", "content": "..."}                   # text-only
+            {"role": "user", "content": [{"type": "text", ...},  # multimodal
+                                         {"type": "image_url", ...}]}
 
-        Part types handled:
-        - plain ``str``                        — character-based estimate (~4 chars/token)
-        - ``{"text": "..."}``                  — character-based estimate (~4 chars/token)
-        - ``{"inline_data": {...}}``            — fixed estimate per modality
-        - ``{"file_data": {...}}``              — fixed estimate per modality
-        - anything else                        — small non-zero placeholder
-
-        Includes a small per-message overhead to account for role/turn framing.
+        Includes fixed per-image/audio/video/file estimates for multimodal parts.
         """
         total = 2  # conversation framing
         for message in messages:
             total += 4  # per-message role/turn overhead
-            for part in message.get("parts", []):
-                total += self._count_part_tokens(part)
+            content = message.get("content", "")
+            if isinstance(content, str):
+                total += max(1, len(content) // self._CHARS_PER_TOKEN)
+            elif isinstance(content, list):
+                for part in content:
+                    part_type = part.get("type", "") if isinstance(part, dict) else ""
+                    if part_type == "text":
+                        total += max(1, len(part.get("text", "")) // self._CHARS_PER_TOKEN)
+                    elif part_type == "image_url":
+                        total += self._TOKENS_PER_IMAGE
+                    elif part_type == "input_audio":
+                        total += self._TOKENS_PER_AUDIO
+                    elif part_type == "video":
+                        total += self._TOKENS_PER_VIDEO
+                    elif part_type == "file":
+                        total += self._TOKENS_PER_FILE
+                    else:
+                        total += 4
+        return total
+
+
+# ---------------------------------------------------------------------------
+# Anthropic — character-based token estimation
+# ---------------------------------------------------------------------------
+
+class AnthropicRateLimiter(FineGrainedBaseRateLimiter):
+    """
+    Rate limiter for Anthropic API endpoints.
+
+    Claude models use a proprietary BPE tokenizer that is not available
+    offline without additional dependencies.  We use the same ~4 characters
+    per token approximation used by the Gemini limiter, which is
+    intentionally conservative for English-like text.
+
+    Messages arrive in OpenAI-compatible format via the MLflow gateway::
+
+        {"role": "user", "content": "..."}                   # text-only
+        {"role": "user", "content": [{"type": "text", ...},  # multimodal
+                                     {"type": "image_url", ...}]}
+    """
+
+    _CHARS_PER_TOKEN = 4
+
+    # Claude bills images based on resolution; a single 1568×1568 tile costs
+    # ~1600 tokens. We use a conservative fixed estimate.
+    _TOKENS_PER_IMAGE = 1600
+    _TOKENS_PER_AUDIO = 512
+    _TOKENS_PER_VIDEO = 512
+    _TOKENS_PER_FILE = 2048
+
+    def __init__(
+        self,
+        model_rate_limits: dict[str, dict[str, int]],
+        max_completion_tokens: int = 150,
+        limit_safety_ratio: float = 0.98,
+        minimum_wait_time: float = 3.0,
+        logger=None,
+    ):
+        super().__init__(
+            model_rate_limits=model_rate_limits,
+            max_completion_tokens=max_completion_tokens,
+            limit_safety_ratio=limit_safety_ratio,
+            minimum_wait_time=minimum_wait_time,
+            logger=logger,
+        )
+
+    def _init_encoders(self) -> None:
+        pass
+
+    def count_prompt_tokens(self, messages: list[dict], model_name: str) -> int:
+        """Estimate token count using ~4 chars/token for OpenAI-format messages."""
+        total = 2  # conversation framing
+        for message in messages:
+            total += 4  # per-message role/content overhead
+            content = message.get("content", "")
+            if isinstance(content, str):
+                total += max(1, len(content) // self._CHARS_PER_TOKEN)
+            elif isinstance(content, list):
+                for part in content:
+                    part_type = part.get("type", "") if isinstance(part, dict) else ""
+                    if part_type == "text":
+                        total += max(1, len(part.get("text", "")) // self._CHARS_PER_TOKEN)
+                    elif part_type == "image_url":
+                        total += self._TOKENS_PER_IMAGE
+                    elif part_type == "input_audio":
+                        total += self._TOKENS_PER_AUDIO
+                    elif part_type == "video":
+                        total += self._TOKENS_PER_VIDEO
+                    elif part_type == "file":
+                        total += self._TOKENS_PER_FILE
+                    else:
+                        total += 4
         return total

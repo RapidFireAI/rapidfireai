@@ -60,6 +60,19 @@ export const shouldEnableExperimentPageHeaderV2 = () => false;
 export const shouldEnableExperimentKindInference = () => false;
 
 /**
+ * Determines if multiple metric names should be batched into a single
+ * /traces/metrics query (vs one query per metric). Disabled in OSS until
+ * the backend supports it.
+ */
+export const shouldEnableBatchedTokenMetricQueries = () => false;
+
+/**
+ * Issue detection — Databricks-only feature for surfacing problematic traces.
+ * Disabled in the RapidFire OSS fork.
+ */
+export const shouldEnableIssueDetection = () => false;
+
+/**
  * Determines if the new prompts tab on DB platform is enabled.
  */
 export const shouldEnablePromptsTabOnDBPlatform = () => false;
@@ -128,3 +141,6 @@ export const getEvalTabTotalTracesLimit = () => {
 export const isExperimentEvalResultsMonitoringUIEnabled = () => {
   return true;
 };
+
+/** Stub: workflow-based navigation is not enabled in the RapidFire fork. */
+export const shouldEnableWorkflowBasedNavigation = () => false;

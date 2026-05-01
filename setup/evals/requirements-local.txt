@@ -18,6 +18,9 @@ tiktoken>=0.12.0
 # Gemini API
 google-genai>=1.69.0
 
+# Anthropic API
+anthropic>=0.96.0
+
 # LangChain Ecosystem
 langchain>=1.0.5
 langchain-classic>=1.0.0
@@ -40,7 +43,7 @@ grpcio
 faiss-gpu-cu12
 
 # MLflow Dashboard dependencies
-mlflow>=3.2.0
+mlflow>=3.11.1
 gunicorn>=23.0.0
 flask-cors>=5.0.1
 loguru

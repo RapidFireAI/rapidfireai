@@ -182,6 +182,12 @@ export enum FilterOperator {
   LESS_THAN_OR_EQUALS = '<=',
 }
 
+// operators that are not displayed in the filter popover, but are
+// still supported in the backend.
+export enum HiddenFilterOperator {
+  IS_NOT_NULL = 'IS NOT NULL',
+}
+
 export interface AssessmentDropdownSuggestionItem {
   label: string;
   key: string;
