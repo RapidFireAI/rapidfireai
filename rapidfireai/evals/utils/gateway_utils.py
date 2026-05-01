@@ -262,6 +262,7 @@ class MLflowGatewayClient:
         """
         existing = self._find_by_name(self.list_endpoints(), name)
         if existing:
+            updated_tracing = False
             if experiment_id and existing.get("experiment_id") != experiment_id:
                 self._update_endpoint(
                     existing["endpoint_id"], experiment_id=experiment_id,
@@ -270,8 +271,14 @@ class MLflowGatewayClient:
                     "Updated endpoint '%s' experiment_id to %s", name, experiment_id,
                 )
                 existing["experiment_id"] = experiment_id
+                updated_tracing = True
             else:
                 logger.debug("Reusing existing endpoint '%s' (%s)", name, existing["endpoint_id"])
+            if verbose:
+                if updated_tracing:
+                    print(f'  Using existing endpoint: "{name}" (updated tracing to current experiment)')
+                else:
+                    print(f'  Using existing endpoint: "{name}"')
             return existing
 
         payload: dict[str, Any] = {
@@ -288,6 +295,8 @@ class MLflowGatewayClient:
 
         result = self._post("endpoints/create", payload)
         endpoint = result["endpoint"]
+        if verbose:
+            print(f'  Created new endpoint: "{name}"')
         logger.info("Created gateway endpoint '%s' (%s)", name, endpoint["endpoint_id"])
         return endpoint
 
@@ -457,8 +466,6 @@ class MLflowGatewayClient:
                 experiment_id=experiment_id,
                 verbose=verbose,
             )
-            if verbose:
-                print(f'  Created new endpoint: "{name}"')
 
             resolved.append({
                 "name": name,
