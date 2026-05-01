@@ -1400,7 +1400,18 @@ class Controller:
                         f"Busy actors: {status['busy_actors']}, "
                         f"Gen: {status['current_generation']}"
                     )
-                time.sleep(0.5)
+                # Block on any in-flight future instead of a blind sleep. ray.wait
+                # surfaces both successful and failed futures (incl. RayActorError
+                # from a dead actor), so the next iteration's reap path will free
+                # the actor via remove_pipeline. Avoids wedging when an actor dies
+                # silently after dispatch and its futures never become ready.
+                all_pending = []
+                for task_info in active_tasks.values():
+                    all_pending.extend(task_info["futures"])
+                if all_pending:
+                    ray.wait(all_pending, num_returns=1, timeout=0.5)
+                else:
+                    time.sleep(0.5)
                 continue
 
             # Execute schedule
@@ -1534,35 +1545,59 @@ class Controller:
 
             self.logger.debug(f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})")
 
-            futures = []
-            preprocess_fn = pipeline_config.get("preprocess_fn")
-            postprocess_fn = pipeline_config.get("postprocess_fn")
-            compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
-            accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
-            for batch in batches:
-                future = actor.process_batch.remote(
-                    batch,
-                    preprocess_fn=preprocess_fn,
-                    postprocess_fn=postprocess_fn,
-                    compute_metrics_fn=compute_metrics_fn if accumulate_metrics_fn else None,
+            # Submit all batches and register the task. If anything raises
+            # synchronously here (e.g. a serialization error inside
+            # process_batch.remote, or a transient DB failure), the actor was
+            # marked busy by scheduler.schedule() at pipeline_scheduler.py and
+            # would leak busy state forever. Mirror the init-failure handler
+            # above: mark the pipeline FAILED and free the actor via
+            # remove_pipeline so the rest of the experiment can proceed.
+            try:
+                futures = []
+                preprocess_fn = pipeline_config.get("preprocess_fn")
+                postprocess_fn = pipeline_config.get("postprocess_fn")
+                compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
+                accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
+                for batch in batches:
+                    future = actor.process_batch.remote(
+                        batch,
+                        preprocess_fn=preprocess_fn,
+                        postprocess_fn=postprocess_fn,
+                        compute_metrics_fn=compute_metrics_fn if accumulate_metrics_fn else None,
+                    )
+                    futures.append(future)
+
+                # Track task
+                task_start_time = time.time()
+                active_tasks[actor_id] = {
+                    "futures": futures,
+                    "pipeline_id": pipeline_id,
+                    "shard_id": shard_id,
+                    "task_id": task_id,
+                    "batch_count": len(batches),
+                    "start_time": task_start_time,
+                }
+
+                # Update task status to in-progress
+                db.set_actor_task_start_time(task_id, task_start_time)
+                db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
+                db.set_pipeline_current_shard(pipeline_id, shard_id)
+            except Exception as dispatch_err:
+                error_msg = str(dispatch_err)
+                self.logger.exception(
+                    f"Pipeline {pipeline_id} ({pipeline_name}) failed during batch "
+                    f"dispatch on actor {actor_id}: {error_msg}"
                 )
-                futures.append(future)
-
-            # Track task
-            task_start_time = time.time()
-            active_tasks[actor_id] = {
-                "futures": futures,
-                "pipeline_id": pipeline_id,
-                "shard_id": shard_id,
-                "task_id": task_id,
-                "batch_count": len(batches),
-                "start_time": task_start_time,
-            }
-
-            # Update task status to in-progress
-            db.set_actor_task_start_time(task_id, task_start_time)
-            db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
-            db.set_pipeline_current_shard(pipeline_id, shard_id)
+                db.set_actor_task_status(task_id, TaskStatus.FAILED)
+                db.set_actor_task_error(task_id, error_msg)
+                db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
+                db.set_pipeline_error(pipeline_id, error_msg)
+                # Drop any partial entry so the reap loop doesn't ray.wait on it
+                active_tasks.pop(actor_id, None)
+                scheduler.remove_pipeline(pipeline_id)
+                if progress_display:
+                    progress_display.update_pipeline(pipeline_id, status="FAILED")
+                continue
 
         # PHASE 8: Compute final metrics for each pipeline (including dynamically cloned ones).
         # pipeline_id_to_config contains all pipelines (originals + clones added via _handle_clone).
