@@ -54,3 +54,5 @@ loguru
 
 numpy==2.0.1
 protobuf<6.0.0
+
+torchcodec<=0.7.0
