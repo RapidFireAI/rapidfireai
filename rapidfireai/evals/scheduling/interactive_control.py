@@ -550,10 +550,27 @@ class InteractiveControlHandler:
                         break
 
             if existing_rate_limiter:
+                # The reused rate-limiter actor is keyed on provider, so it
+                # only knows about endpoint names that existed at startup
+                # (or were registered by previous clones).  If this clone
+                # introduces a new endpoint name, register it now —
+                # otherwise the engine's first ``acquire_slot`` /
+                # ``count_prompt_tokens`` call would raise
+                # ``ValueError: Model '<name>' not found in rate limits``.
+                # ``register_model`` is idempotent: a no-op when the
+                # endpoint is already known.
+                import ray
+
+                ray.get(
+                    existing_rate_limiter.register_model.remote(
+                        endpoint_name, model_config.get_rate_limit_dict()
+                    )
+                )
                 pipeline_to_rate_limiter[new_pipeline_id] = existing_rate_limiter
                 self.logger.info(
                     f"Cloned {clone_provider} pipeline {new_pipeline_id} "
-                    f"will use existing experiment-wide rate limiter"
+                    f"(endpoint: {endpoint_name}) will use existing "
+                    f"experiment-wide rate limiter"
                 )
             else:
                 from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor

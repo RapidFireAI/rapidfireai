@@ -120,6 +120,63 @@ class BaseRateLimiter(ABC):
         """
         raise NotImplementedError("Subclasses must implement this method")
 
+    def _register_model_encoder(self, model_name: str) -> None:
+        """Hook for subclasses that maintain per-model encoders.
+
+        Default implementation is a no-op (used by Gemini, which has no
+        per-model encoder state).  ``OpenAIRateLimiter`` overrides this to
+        register a tiktoken encoder for *model_name*.
+        """
+        return None
+
+    # ------------------------------------------------------------------
+    # Dynamic registration
+    # ------------------------------------------------------------------
+
+    async def register_model(
+        self, model_name: str, rate_limits: dict[str, int]
+    ) -> None:
+        """Register a new model with the limiter at runtime.
+
+        Used when a pipeline is cloned with a new endpoint name but the
+        existing rate limiter actor (keyed on provider) is reused. Without
+        this call, ``acquire_slot`` and ``count_prompt_tokens`` would raise
+        ``ValueError: Model '...' not found in rate limits``.
+
+        Idempotent: if *model_name* is already registered with the same
+        limits the call is a no-op; if registered with different limits a
+        warning is emitted and the original values are preserved (matches
+        controller startup behaviour).
+        """
+        async with self._lock:
+            if model_name in self.model_rate_limits:
+                if self.model_rate_limits[model_name] != rate_limits:
+                    if self.logger:
+                        self.logger.warning(
+                            f"Endpoint {model_name} already registered with "
+                            f"{self.model_rate_limits[model_name]}; ignoring new "
+                            f"limits {rate_limits}"
+                        )
+                return
+
+            self.model_rate_limits[model_name] = rate_limits
+            self.model_names.append(model_name)
+            self.actual_rpm_limits[model_name] = rate_limits["rpm"]
+            self.actual_tpm_limits[model_name] = rate_limits["tpm"]
+            self.enforced_rpm_limits[model_name] = int(
+                self.limit_safety_ratio * rate_limits["rpm"]
+            )
+            self.enforced_tpm_limits[model_name] = int(
+                self.limit_safety_ratio * rate_limits["tpm"]
+            )
+            self._register_model_encoder(model_name)
+
+            if self.logger:
+                self.logger.info(
+                    f"Registered new endpoint '{model_name}' on rate limiter "
+                    f"(RPM={rate_limits['rpm']}, TPM={rate_limits['tpm']})"
+                )
+
     # ------------------------------------------------------------------
     # Common token estimation
     # ------------------------------------------------------------------
@@ -465,6 +522,71 @@ class FineGrainedBaseRateLimiter(ABC):
             Estimated input token count of the prompt.
         """
 
+    def _register_model_encoder(self, model_name: str) -> None:
+        """Hook for subclasses that maintain per-model encoders.
+
+        Default is a no-op (Anthropic's tokenizer is stateless).
+        """
+        return None
+
+    # ------------------------------------------------------------------
+    # Dynamic registration
+    # ------------------------------------------------------------------
+
+    async def register_model(
+        self, model_name: str, rate_limits: dict[str, int]
+    ) -> None:
+        """Register a new model with the limiter at runtime.
+
+        See :meth:`BaseRateLimiter.register_model` for rationale; this
+        variant accepts either ``{"rpm", "itpm", "otpm"}`` or
+        ``{"rpm", "tpm"}`` (where ``tpm`` is used for both ``itpm`` and
+        ``otpm``).
+        """
+        # Normalise the same way ``__init__`` does.
+        itpm = rate_limits.get("itpm", rate_limits.get("tpm"))
+        otpm = rate_limits.get("otpm", rate_limits.get("tpm"))
+        if itpm is None or otpm is None:
+            raise ValueError(
+                f"Model '{model_name}' rate limits must include either "
+                f"'itpm'+'otpm' or 'tpm'. Got: {rate_limits}"
+            )
+        normalised = {"rpm": rate_limits["rpm"], "itpm": itpm, "otpm": otpm}
+
+        async with self._lock:
+            if model_name in self.model_rate_limits:
+                if self.model_rate_limits[model_name] != normalised:
+                    if self.logger:
+                        self.logger.warning(
+                            f"Endpoint {model_name} already registered with "
+                            f"{self.model_rate_limits[model_name]}; ignoring new "
+                            f"limits {normalised}"
+                        )
+                return
+
+            self.model_rate_limits[model_name] = normalised
+            self.model_names.append(model_name)
+            self.actual_rpm_limits[model_name] = normalised["rpm"]
+            self.actual_itpm_limits[model_name] = normalised["itpm"]
+            self.actual_otpm_limits[model_name] = normalised["otpm"]
+            self.enforced_rpm_limits[model_name] = int(
+                self.limit_safety_ratio * normalised["rpm"]
+            )
+            self.enforced_itpm_limits[model_name] = int(
+                self.limit_safety_ratio * normalised["itpm"]
+            )
+            self.enforced_otpm_limits[model_name] = int(
+                self.limit_safety_ratio * normalised["otpm"]
+            )
+            self._register_model_encoder(model_name)
+
+            if self.logger:
+                self.logger.info(
+                    f"Registered new endpoint '{model_name}' on rate limiter "
+                    f"(RPM={normalised['rpm']}, ITPM={normalised['itpm']}, "
+                    f"OTPM={normalised['otpm']})"
+                )
+
     # ------------------------------------------------------------------
     # Common token estimation
     # ------------------------------------------------------------------
@@ -738,25 +860,36 @@ class OpenAIRateLimiter(BaseRateLimiter):
     _FALLBACK_MODEL = "gpt-5"
 
     def _init_encoders(self) -> None:
+        self.encoders: dict = {}
+        self._fallback_encoder = None
+        for model_name in self.model_names:
+            self._register_model_encoder(model_name)
+
+    def _register_model_encoder(self, model_name: str) -> None:
+        """Register a tiktoken encoder for *model_name*.
+
+        Used both during ``_init_encoders`` and dynamically by
+        :meth:`BaseRateLimiter.register_model` when a clone introduces a
+        new endpoint name on this same rate-limiter actor.
+        """
         import tiktoken
 
-        self.encoders: dict = {}
-        fallback_encoder = None
-        for model_name in self.model_names:
-            try:
-                self.encoders[model_name] = tiktoken.encoding_for_model(model_name)
-            except KeyError:
-                if fallback_encoder is None:
-                    try:
-                        fallback_encoder = tiktoken.encoding_for_model(self._FALLBACK_MODEL)
-                    except KeyError:
-                        fallback_encoder = tiktoken.get_encoding("o200k_base")
-                if self.logger:
-                    self.logger.warning(
-                        f"Model '{model_name}' not recognised by tiktoken, "
-                        f"falling back to {self._FALLBACK_MODEL} tokenizer"
-                    )
-                self.encoders[model_name] = fallback_encoder
+        if model_name in self.encoders:
+            return
+        try:
+            self.encoders[model_name] = tiktoken.encoding_for_model(model_name)
+        except KeyError:
+            if self._fallback_encoder is None:
+                try:
+                    self._fallback_encoder = tiktoken.encoding_for_model(self._FALLBACK_MODEL)
+                except KeyError:
+                    self._fallback_encoder = tiktoken.get_encoding("o200k_base")
+            if self.logger:
+                self.logger.warning(
+                    f"Model '{model_name}' not recognised by tiktoken, "
+                    f"falling back to {self._FALLBACK_MODEL} tokenizer"
+                )
+            self.encoders[model_name] = self._fallback_encoder
 
     # OpenAI vision bills images at ~85 tokens (low detail) to ~765 tokens
     # (high detail, single tile). We use a conservative estimate.

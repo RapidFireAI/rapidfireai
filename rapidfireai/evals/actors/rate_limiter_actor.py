@@ -130,6 +130,26 @@ class RateLimiterActor:
         """
         return self.limiter.count_prompt_tokens(messages, model_name)
 
+    async def register_model(
+        self, model_name: str, rate_limits: dict[str, int]
+    ) -> None:
+        """Register a new endpoint with this rate limiter at runtime.
+
+        Called by the interactive-control clone handler when a pipeline
+        is cloned with a new endpoint name but reuses the existing
+        provider-wide rate limiter.
+
+        Args:
+            model_name: Endpoint name (the value used as ``model_name``
+                in subsequent ``acquire_slot``/``count_prompt_tokens``
+                calls).
+            rate_limits: Dict of rate limits.  Accepts either
+                ``{"rpm", "tpm"}`` (combined) or
+                ``{"rpm", "itpm", "otpm"}`` (fine-grained).  The
+                underlying limiter normalises as needed.
+        """
+        await self.limiter.register_model(model_name, rate_limits)
+
     async def get_stats(self) -> dict:
         """
         Get current rate limiter statistics.
