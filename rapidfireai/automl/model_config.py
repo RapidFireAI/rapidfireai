@@ -459,8 +459,11 @@ if (
                 rag: Optional RAG specification
                 prompt_manager: Optional prompt manager for few-shot examples
                 rpm_limit: Requests per minute limit (required)
-                tpm_limit: Combined tokens per minute limit. Required for all
-                    providers except ``"anthropic"``.
+                tpm_limit: Combined tokens per minute limit. Required for
+                    every provider **except** ``"anthropic"``, where it is
+                    rejected — Anthropic enforces separate input/output
+                    quotas, so re-using a single ``tpm`` value as both
+                    ``itpm`` and ``otpm`` would silently double the budget.
                 itpm_limit: Input tokens per minute limit. Only accepted for
                     ``provider="anthropic"``; must be paired with *otpm_limit*.
                 otpm_limit: Output tokens per minute limit. Only accepted for
@@ -479,9 +482,20 @@ if (
             self.prompt_manager = prompt_manager
 
             # --- Rate-limit validation ---
+            # Providers fall into two schemes:
+            #   * combined-tpm scheme:  tpm_limit only          (e.g. OpenAI, Gemini)
+            #   * split scheme:         itpm_limit + otpm_limit (Anthropic)
+            #
+            # Mixing the two is dangerous: ``FineGrainedBaseRateLimiter`` falls
+            # back to ``limits.get("itpm", limits.get("tpm"))`` and the same
+            # for ``otpm``, so a single ``tpm`` value would silently be applied
+            # as *both* itpm and otpm, effectively doubling the intended
+            # token budget and triggering upstream 429s.
             provider = endpoint_config.get("provider", "openai")
             has_tpm = tpm_limit is not None
-            has_itpm_otpm = itpm_limit is not None or otpm_limit is not None
+            has_itpm = itpm_limit is not None
+            has_otpm = otpm_limit is not None
+            has_itpm_otpm = has_itpm or has_otpm
 
             if has_itpm_otpm and provider != "anthropic":
                 raise ValueError(
@@ -489,14 +503,34 @@ if (
                     f"Got provider='{provider}'. Use tpm_limit instead."
                 )
 
+            if has_tpm and provider == "anthropic":
+                raise ValueError(
+                    "tpm_limit is not supported for provider='anthropic'. "
+                    "Anthropic enforces separate input/output token rate limits — "
+                    "use itpm_limit and otpm_limit instead. (Re-using a single "
+                    "tpm value would silently apply it as both itpm and otpm, "
+                    "doubling the intended budget.)"
+                )
+
             if has_tpm and has_itpm_otpm:
                 raise ValueError(
                     "Specify either tpm_limit OR (itpm_limit and otpm_limit), not both."
                 )
 
-            if has_itpm_otpm and (itpm_limit is None or otpm_limit is None):
+            if has_itpm != has_otpm:
                 raise ValueError(
                     "Both itpm_limit and otpm_limit must be provided together."
+                )
+
+            if provider == "anthropic" and not has_itpm_otpm:
+                raise ValueError(
+                    "provider='anthropic' requires itpm_limit and otpm_limit "
+                    "(Anthropic enforces separate input/output token quotas)."
+                )
+
+            if provider != "anthropic" and not has_tpm:
+                raise ValueError(
+                    f"provider='{provider}' requires tpm_limit (combined tokens per minute)."
                 )
 
             self.rpm_limit = rpm_limit
