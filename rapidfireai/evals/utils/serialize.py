@@ -93,7 +93,9 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
 
             return rag_config if rag_config else None
 
-        if isinstance(pipeline, RFvLLMModelConfig):
+        # RFvLLMModelConfig is None on platforms where vLLM cannot be installed
+        # (e.g., macOS Apple Silicon). Guard isinstance() to avoid TypeError.
+        if RFvLLMModelConfig is not None and isinstance(pipeline, RFvLLMModelConfig):
             json_config["pipeline_type"] = "vllm"
 
             # Extract model_config (dict)
