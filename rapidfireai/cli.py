@@ -464,6 +464,7 @@ def run_jupyter():
     app = ServerApp()
     app.open_browser = False
     app.port = JupyterConfig.PORT
+    app.ip = JupyterConfig.HOST
     app.allow_origin = '*'
     app.websocket_ping_interval = 90000
     app.log_level = 'CRITICAL'
@@ -488,9 +489,9 @@ def run_jupyter():
         mlflow_port = MLflowConfig.PORT
 
         if os.getenv("TERM_PROGRAM") == "vscode":
-            print(f"VSCode detected, port {app.port} should automatically be forwarded to localhost")
-            print(f"Manually forward port {dispatcher_port} to localhost, using the Ports tab in VSCode/Cursor/etc.")
-            print(f"Manually forward port {mlflow_port} to localhost, using the Ports tab in VSCode/Cursor/etc.")
+            print(f"VSCode detected, port {app.port} (tcp://{app.ip}:{app.port}) should automatically be forwarded to localhost")
+            print(f"Manually forward port {dispatcher_port} (tcp://{DispatcherConfig.HOST}:{dispatcher_port}) to localhost, using the Ports tab in VSCode/Cursor/etc.")
+            print(f"Manually forward port {mlflow_port} (tcp://{MLflowConfig.HOST}:{mlflow_port}) to localhost, using the Ports tab in VSCode/Cursor/etc.")
         else:
             os_username = os.getenv("USER", os.getenv("LOGNAME", "username"))
             print(f"Manually forward port {app.port} to localhost")
