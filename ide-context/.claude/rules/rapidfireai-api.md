@@ -8,7 +8,9 @@ from rapidfireai import Experiment
 experiment = Experiment(
     experiment_name: str,          # Unique name; auto-suffixed if reused
     mode: str = "fit",             # "fit" or "evals" — cannot mix in same experiment
-    experiment_path: str = "./rapidfire_experiments"
+    experiment_path: str = "$RF_HOME/rapidfire_experiments",
+    num_cpus: int = None,          # evals mode: cap Ray CPU allocation; auto-detected if None
+    num_gpus: int = None,          # evals mode: cap Ray GPU allocation; auto-detected if None
 )
 ```
 
@@ -16,7 +18,7 @@ experiment = Experiment(
 
 | Method | Description |
 |--------|-------------|
-| `run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed=42, num_gpus=1)` | Launch multi-config training |
+| `run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed=42, num_gpus=1, monte_carlo_simulations=1000)` | Launch multi-config training |
 | `run_evals(config_group, dataset, num_shards=4, seed=42, num_actors=None, gpus_per_actor=None, cpus_per_actor=None) → dict` | Launch multi-config evals; returns `{run_id: (aggregated_metrics, cumulative_metrics)}` |
 | `end()` | End experiment, clear system state |
 | `get_runs_info() → pd.DataFrame` | Metadata for all runs (run_id, status, config, etc.) |
@@ -162,21 +164,25 @@ def reward_fn(prompts, completions, completions_ids, trainer_state, **kwargs) ->
 ## RAG / Context Engineering APIs
 
 ### RFLangChainRagSpec
+All component configuration is passed as `*_cfg` dicts. Each dict carries its class/type
+plus the kwargs that class needs.
+
 ```python
 from rapidfireai.automl import RFLangChainRagSpec
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 rag = RFLangChainRagSpec(
-    document_loader,              # LangChain BaseLoader
-    text_splitter,                # LangChain TextSplitter — can be List()
-    embedding_cls=None,           # Pass the CLASS, not an instance
-    embedding_kwargs=None,        # Dict to init embedding_cls
-    vector_store=None,            # Default: FAISS
-    retriever=None,               # Custom retriever; default FAISS if None
-    search_type="similarity",     # "similarity" | "similarity_score_threshold" | "mmr"
-    search_kwargs={"k": 5},       # k, filter, score_threshold, fetch_k, lambda_mult
-    reranker_cls=None,            # Pass the CLASS — can have List() kwargs
-    reranker_kwargs=None,
-    enable_gpu_search=False,      # True → FAISS GPU exact search
+    document_loader,              # LangChain BaseLoader (required unless retriever or vector_store_cfg provided)
+    text_splitter=None,           # LangChain TextSplitter — optional; can be List() across configs
+    embedding_cfg={               # Dict: "class" key + remaining keys are kwargs for the class.
+        "class": HuggingFaceEmbeddings,
+        "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+    },
+    vector_store_cfg={"type": "faiss"},   # See per-type shapes below; ignored if retriever is set
+    retriever=None,               # Custom BaseRetriever; if set, used directly
+    search_cfg={"type": "similarity", "k": 5},   # type ∈ {"similarity","similarity_score_threshold","mmr"} + kwargs
+    reranker_cfg=None,            # Optional dict: {"class": CrossEncoderReranker, **kwargs}
+    enable_gpu_search=False,      # True → FAISS GPU exact search at index build time
     document_template=None,       # Callable[[Document], str]
 )
 
@@ -184,6 +190,29 @@ rag = RFLangChainRagSpec(
 rag.get_context(batch_queries, use_reranker=True, serialize=True)
 rag.serialize_documents(batch_docs)  # list[list[Document]] → list[str]
 ```
+
+**`vector_store_cfg` shapes** (pick one per run; can be List()-wrapped to compare):
+```python
+# FAISS (default; in-memory, per-experiment)
+vector_store_cfg = {"type": "faiss"}
+
+# pgvector (PostgreSQL with pgvector extension)
+vector_store_cfg = {
+    "type": "pgvector",
+    "connection": "postgresql+psycopg://user:pass@host:5432/db",
+    "collection_name": "rapidfire_corpus",
+}
+
+# Pinecone (managed)
+vector_store_cfg = {
+    "type": "pinecone",
+    "index_name": "rapidfire-fiqa",
+    "api_key": PINECONE_API_KEY,
+}
+```
+
+> Removed in 0.15.x: `vector_store=`, `search_type=`, `search_kwargs=`, `reranker_cls=`,
+> `reranker_kwargs=`, `embedding_cls=`, `embedding_kwargs=`. Use the `*_cfg` dicts above.
 
 ### RFvLLMModelConfig (self-hosted LLM)
 ```python
@@ -224,21 +253,50 @@ RFOpenAIAPIModelConfig(
 )
 ```
 
+### RFGeminiAPIModelConfig (Google Gemini API)
+Same constructor shape as `RFOpenAIAPIModelConfig`. Note the `model_config` fallback key
+for token cap is `max_output_tokens` (Gemini convention) rather than `max_completion_tokens`.
+
+```python
+from rapidfireai.automl import RFGeminiAPIModelConfig
+
+RFGeminiAPIModelConfig(
+    client_config={"api_key": GEMINI_API_KEY},   # or {"vertexai": True, "project": "...", "location": "..."}
+    model_config={
+        "model": "gemini-2.0-flash",
+        "temperature": 0.2,
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_output_tokens": 1024,
+    },
+    rpm_limit=500,
+    tpm_limit=500_000,
+    max_completion_tokens=None,    # Falls back to model_config["max_output_tokens"], else 150
+    rag=None,
+    prompt_manager=prompt_manager,
+)
+```
+
 ### RFPromptManager
 ```python
 from rapidfireai.automl import RFPromptManager
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 RFPromptManager(
-    instructions: str = None,           # or instructions_file_path
-    instructions_file_path: str = None,
-    examples: list[dict] = None,        # Few-shot examples
-    embedding_cls=None,
-    embedding_kwargs=None,
-    example_selector_cls=None,          # SemanticSimilarityExampleSelector or MaxMarginalRelevanceExampleSelector
-    example_prompt_template=None,       # LangChain PromptTemplate
-    k: int = 3,                         # Number of examples per prompt
+    instructions: str = "",                # or instructions_file_path
+    instructions_file_path: str = "",
+    examples: list[dict] = [],             # Few-shot examples
+    embedding_cfg={                        # Dict: "class" key + remaining keys are kwargs.
+        "class": HuggingFaceEmbeddings,
+        "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+    },
+    example_selector_cls=None,             # SemanticSimilarityExampleSelector or MaxMarginalRelevanceExampleSelector
+    example_prompt_template=None,          # LangChain PromptTemplate
+    k: int = 3,                            # Number of examples per prompt
 )
 ```
+
+> Removed in 0.15.x: `embedding_cls=`, `embedding_kwargs=`. Use `embedding_cfg` dict.
 
 ### Other Eval Config Knobs (in config dict)
 ```python
@@ -296,7 +354,7 @@ def accumulate_metrics_fn(aggregated_metrics: dict[str, list[dict]]) -> dict[str
 
 ## IC Ops (Interactive Control)
 
-Access via dashboard at `http://0.0.0.0:8853` or in-notebook:
+Access via dashboard at `http://127.0.0.1:8853` or in-notebook:
 ```python
 from rapidfireai.fit.utils.interactive_controller import InteractiveController
 controller = InteractiveController(dispatcher_url="http://127.0.0.1:8851")
@@ -319,14 +377,19 @@ IC Ops execute at chunk boundaries (not immediately). Warm-start only works if c
 ```bash
 rapidfireai doctor                              # Full diagnostic report
 
-# Kill port conflicts:
-lsof -t -i:8852 | xargs kill -9               # mlflow
+# Kill port conflicts (all RapidFire ports):
+lsof -t -i:8850 | xargs kill -9               # jupyter
 lsof -t -i:8851 | xargs kill -9               # dispatcher
+lsof -t -i:8852 | xargs kill -9               # mlflow
 lsof -t -i:8853 | xargs kill -9               # frontend
+lsof -t -i:8855 | xargs kill -9               # ray (evals mode)
 
 # Select GPUs:
 export CUDA_VISIBLE_DEVICES=0,2
 rapidfireai start
+
+# Pin CUDA / compute capability when nvidia-smi is unavailable or auto-detection fails:
+rapidfireai init --evals --cudaversion 12.4 --computecapabilityversion 8.0
 
 # HF login issues: login from SAME venv
 source .venv/bin/activate

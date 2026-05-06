@@ -11,7 +11,7 @@ Supports two workflows:
 - Python **3.12+** (required — verify before creating venv)
 - `pip install rapidfireai`
 - After install: `pip uninstall -y hf-xet` (known upstream bug)
-- Ports used: **8850** (jupyter), **8851** (dispatcher), **8852** (mlflow), **8853** (frontend)
+- Ports used: **8850** (jupyter), **8851** (dispatcher), **8852** (mlflow), **8853** (frontend), **8855** (ray, evals mode)
 
 ## Server Lifecycle
 ```bash
@@ -21,6 +21,30 @@ rapidfireai start         # Start services — leave terminal running
 rapidfireai stop          # Graceful stop (NEVER kill -9)
 rapidfireai doctor        # Diagnostics
 ```
+
+When `nvidia-smi` is unavailable or auto-detection fails, pin CUDA explicitly:
+```bash
+rapidfireai init --evals --cudaversion 12.4 --computecapabilityversion 8.0
+```
+
+## Environment Variables
+Roots and per-service host/port (override only when needed):
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `RF_HOME` | `~/rapidfireai` (`/content/rapidfireai` on Colab) | Root for everything below |
+| `RF_EXPERIMENT_PATH` | `$RF_HOME/rapidfire_experiments` | Experiment artifacts |
+| `RF_LOG_PATH` | `$RF_HOME/logs` | Log output |
+| `RF_DB_PATH` | `$RF_HOME/db` | SQLite store |
+| `RF_TENSORBOARD_LOG_DIR` | `$RF_EXPERIMENT_PATH/tensorboard_logs` | TB events |
+| `RF_API_HOST` / `RF_API_PORT` | `127.0.0.1` / `8851` | Dispatcher |
+| `RF_FRONTEND_HOST` / `RF_FRONTEND_PORT` | `127.0.0.1` / `8853` | Dashboard |
+| `RF_MLFLOW_HOST` / `RF_MLFLOW_PORT` | `127.0.0.1` / `8852` | MLflow |
+| `RF_JUPYTER_HOST` / `RF_JUPYTER_PORT` | `127.0.0.1` / `8850` | Jupyter |
+| `RF_RAY_HOST` / `RF_RAY_PORT` | `0.0.0.0` / `8855` | Ray (evals) |
+| `RF_MLFLOW_ENABLED` | `true` (`false` on Colab) | Toggle MLflow |
+| `RF_TENSORBOARD_ENABLED` | `false` (`true` on Colab) | Toggle TB |
+| `RF_TRACKIO_ENABLED` | `false` | Toggle Trackio |
 
 ## Core Mental Model
 ```

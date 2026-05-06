@@ -22,7 +22,9 @@ rapidfireai init               # SFT/RFT
 rapidfireai init --evals       # RAG/evals
 rapidfireai start              # Start server (keep terminal open)
 ```
-Ports: 8850 (jupyter), 8851 (dispatcher), 8852 (mlflow), 8853 (frontend/dashboard)
+Ports: 8850 (jupyter), 8851 (dispatcher), 8852 (mlflow), 8853 (frontend/dashboard), 8855 (ray, evals mode)
+
+When `nvidia-smi` is unavailable or auto-detection fails: `rapidfireai init --evals --cudaversion 12.4 --computecapabilityversion 8.0`
 
 ## Core Architecture Pattern
 
@@ -48,7 +50,7 @@ from rapidfireai.automl import List, Range, RFGridSearch, RFRandomSearch
 from rapidfireai.automl import RFModelConfig, RFLoraConfig, RFSFTConfig, RFDPOConfig, RFGRPOConfig
 
 # RAG/Evals
-from rapidfireai.automl import RFLangChainRagSpec, RFvLLMModelConfig, RFOpenAIAPIModelConfig, RFPromptManager
+from rapidfireai.automl import RFLangChainRagSpec, RFvLLMModelConfig, RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFPromptManager
 
 # IC Ops (in-notebook control panel)
 from rapidfireai.fit.utils.interactive_controller import InteractiveController
@@ -173,10 +175,12 @@ rag_spec = RFLangChainRagSpec(
         RecursiveCharacterTextSplitter(chunk_size=256, chunk_overlap=32),
         RecursiveCharacterTextSplitter(chunk_size=128, chunk_overlap=32),
     ]),
-    embedding_cls=HuggingFaceEmbeddings,
-    embedding_kwargs={"model_name": "sentence-transformers/all-MiniLM-L6-v2"},
-    search_type="similarity",
-    search_kwargs={"k": 15},
+    embedding_cfg={
+        "class": HuggingFaceEmbeddings,
+        "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+    },
+    vector_store_cfg={"type": "faiss"},   # or {"type":"pgvector",...} / {"type":"pinecone",...}
+    search_cfg={"type": "similarity", "k": 15},
 )
 
 def preprocess(batch, rag, prompt_manager):
@@ -231,7 +235,8 @@ experiment.end()
 | `kill -9` on rapidfireai server | Always `rapidfireai stop` or `Ctrl+C` gracefully |
 | Running `rapidfireai init` every session | `init` is one-time per venv |
 | Forgetting `pip uninstall -y hf-xet` | Always uninstall after `pip install rapidfireai` |
-| Passing embedding instance to `embedding_cls` | Pass the **class** (e.g. `HuggingFaceEmbeddings`), not `HuggingFaceEmbeddings(...)` |
+| Old `embedding_cls=` / `vector_store=` / `search_type=` kwargs | Use `embedding_cfg={"class": ..., **kwargs}`, `vector_store_cfg={"type": "faiss"\|"pgvector"\|"pinecone", ...}`, `search_cfg={"type": "similarity", "k": 5}` (removed in 0.15.x) |
+| Passing an embedding instance to `embedding_cfg["class"]` | Pass the **class** (e.g. `HuggingFaceEmbeddings`), not `HuggingFaceEmbeddings(...)` |
 | `num_chunks=1` or `num_shards=1` | Use ≥ 4 for meaningful concurrent visibility |
 
 ## LoRA Knob Guidance

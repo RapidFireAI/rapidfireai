@@ -41,7 +41,7 @@ your-project/
 - **Core mental model** — Experiment → Config Group → Run → Chunks/Shards
 - **Full API** — `Experiment`, `RFGridSearch`, `RFRandomSearch`, `List()`, `Range()`
 - **SFT/RFT classes** — `RFModelConfig`, `RFLoraConfig`, `RFSFTConfig`, `RFDPOConfig`, `RFGRPOConfig`
-- **RAG classes** — `RFLangChainRagSpec`, `RFvLLMModelConfig`, `RFOpenAIAPIModelConfig`, `RFPromptManager`
+- **RAG classes** — `RFLangChainRagSpec` (FAISS / pgvector / Pinecone via `vector_store_cfg`), `RFvLLMModelConfig`, `RFOpenAIAPIModelConfig`, `RFGeminiAPIModelConfig`, `RFPromptManager`
 - **User function contracts** — signatures and return types for all callbacks
 - **IC Ops** — Stop, Resume, Clone-Modify, Delete semantics
 - **Common mistakes** — `Range()` in GridSearch, wrong mode, `kill -9`, etc.
