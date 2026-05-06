@@ -67,6 +67,13 @@ const getExperimentPageRouteDefs = () => {
       pageId: 'mlflow.experiment.list',
     },
     {
+      path: RoutePaths.experimentPageTabOverview,
+      element: createLazyRouteElement(() => {
+        return import(/* webpackChunkName: "experimentPage" */ './pages/experiment-page-tabs/ExperimentPageTabs');
+      }),
+      pageId: PageId.experimentPageTabOverview,
+    },
+    {
       path: RoutePaths.experimentPageTabbed,
       element: createLazyRouteElement(() => {
         return import(/* webpackChunkName: "experimentPage" */ './pages/experiment-page-tabs/ExperimentPageTabs');

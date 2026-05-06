@@ -76,6 +76,8 @@ def setup_mlflow(experiment_name: str) -> bool:
         ("langchain", mlflow.langchain.autolog),
         ("openai", mlflow.openai.autolog),
         ("gemini", mlflow.gemini.autolog),
+        ("anthropic", mlflow.anthropic.autolog),
+        ("litellm", mlflow.litellm.autolog),
     ]
     for integration_name, autolog_fn in _autolog_integrations:
         try:

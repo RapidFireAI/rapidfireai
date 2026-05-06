@@ -34,16 +34,29 @@ import { useSetInitialTimeFilter } from './hooks/useSetInitialTimeFilter';
 
 export const TracesV3Logs = React.memo(
   ({
-    experimentId,
-    endpointName,
+    experimentId: experimentIdProp,
+    experimentIds,
+    endpointName = '',
     timeRange,
     loggedModelId,
+    // The following props are passed by gateway callers but not used in this fork's implementation.
+    disableActions: _disableActions,
+    columnStorageKeyPrefix: _columnStorageKeyPrefix,
+    additionalFilters: _additionalFilters,
   }: {
-    experimentId: string;
-    endpointName: string;
+    /** Single experiment ID (original API). */
+    experimentId?: string;
+    /** Array of experiment IDs (gateway API — first element is used). */
+    experimentIds?: string[];
+    endpointName?: string;
     timeRange?: { startTime: string | undefined; endTime: string | undefined };
     loggedModelId?: string;
+    disableActions?: boolean;
+    columnStorageKeyPrefix?: string;
+    additionalFilters?: unknown[];
   }) => {
+    // Normalise: gateway passes experimentIds[], non-gateway passes experimentId
+    const experimentId = experimentIdProp ?? (experimentIds && experimentIds[0]) ?? '';
     const makeHtmlFromMarkdown = useMarkdownConverter();
     const intl = useIntl();
     const enableTraceInsights = shouldEnableTraceInsights();

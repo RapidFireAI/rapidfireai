@@ -15,6 +15,14 @@ export const shouldUseRunIdFilterInSearchTraces = () => {
 };
 
 /**
+ * Determines if traces V4 API should be used to fetch traces.
+ * V4 is Databricks-only; OSS always uses V3.
+ */
+export const shouldUseTracesV4API = () => {
+  return false;
+};
+
+/**
  * Page size for MLflow traces 3.0 search api used in eval tab
  */
 export const getMlflowTracesSearchPageSize = () => {

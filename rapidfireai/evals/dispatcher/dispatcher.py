@@ -381,10 +381,11 @@ class Dispatcher:
             {
                 "parent_pipeline_id": int,  # ID of the pipeline to clone
                 "config_json": {            # Edited configuration
-                    "pipeline_type": "vllm" | "openai",
+                    "pipeline_type": "vllm" | "api",
                     "model_config": {...},
                     "sampling_params": {...},  # for vLLM
-                    "client_config": {...},    # for OpenAI
+                    "client_config": {...},    # for API
+                    "endpoint_config": {...},  # for API
                     "batch_size": int,         # optional
                     "online_strategy_kwargs": {...}  # optional
                 }
@@ -420,21 +421,18 @@ class Dispatcher:
             if not pipeline_type:
                 return jsonify({"error": "config_json must include 'pipeline_type'"}), 400
 
-            if pipeline_type.lower() not in ["vllm", "openai", "gemini"]:
-                return jsonify({"error": "pipeline_type must be 'vllm', 'openai', or 'gemini'"}), 400
+            if pipeline_type.lower() not in ["vllm", "api"]:
+                return jsonify({"error": "pipeline_type must be 'vllm' or 'api'"}), 400
 
             # Type-specific validation
             if pipeline_type.lower() == "vllm":
                 if "model_config" not in config_json or "sampling_params" not in config_json:
                     return jsonify({"error": "vLLM pipelines require 'model_config' and 'sampling_params'"}), 400
 
-            elif pipeline_type.lower() == "openai":
-                if "client_config" not in config_json or "model_config" not in config_json:
-                    return jsonify({"error": "OpenAI pipelines require 'client_config' and 'model_config'"}), 400
-
-            elif pipeline_type.lower() == "gemini":
-                if "client_config" not in config_json or "model_config" not in config_json:
-                    return jsonify({"error": "Gemini pipelines require 'client_config' and 'model_config'"}), 400
+            elif pipeline_type.lower() == "api":
+                missing = [k for k in ("client_config", "model_config", "endpoint_config") if k not in config_json]
+                if missing:
+                    return jsonify({"error": f"API pipelines require {', '.join(missing)}"}), 400
 
             # Prepare request data for IC operation
             request_data = {
