@@ -350,6 +350,24 @@ Always use absolute URLs for images in `README.md`, not relative paths. The READ
 
 Use the pattern `https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/...` for all image references to ensure cross-platform compatibility.
 
+## Keeping `docs/AGENTS.md` in sync
+
+`docs/AGENTS.md` is an end-user-facing operational guide read by AI coding agents (Claude Code, Cursor, Codex, GitHub Copilot, Windsurf, Aider, Junie) when they help a user install or integrate `rapidfireai`. It is **not** for contributors — for repo-internal architecture, build, and contributor flow, *this* file (`CLAUDE.md`) is authoritative.
+
+By design, `docs/AGENTS.md` defers all volatile install content — Python version, the `pip install` line, HF auth syntax, the `hf-xet` workaround, port numbers, `ssh -L` syntax, kill-by-port commands — to `README.md` and references the README by section heading. **A README install-step change therefore does NOT require an AGENTS.md update.** That decoupling is intentional and prevents drift.
+
+`docs/AGENTS.md` *does* inline the stable layer the README does not own. **Update `docs/AGENTS.md` whenever you change any of the following**, in the same PR:
+
+- **Public API of `rapidfireai.Experiment`** — the `__init__` signature (especially the `mode` parameter), or any of `run_fit`, `run_evals`, `get_results`, `cancel_current`, `end`, `get_log_file_path`. Reflected in AGENTS.md §5 (Code Integration Patterns) and §7 (Experiment Lifecycle).
+- **Top-level exports** in `rapidfireai/__init__.py` or **AutoML exports** in `rapidfireai/automl/__init__.py` (e.g., `RFGridSearch`, `RFRandomSearch`, `List`, `Range`, `RFModelConfig`, `RFLoraConfig`, `RFSFTConfig`, `RFDPOConfig`, `RFGRPOConfig`, `RFvLLMModelConfig`, `RFAPIModelConfig`, `RFLangChainRagSpec`, `RFPromptManager`). Reflected in §5 and §6.
+- **Trainer-type taxonomy** in `rapidfireai/fit/ml/trainer.py` — the `trainer_type` → trainer-class mapping (currently `SFT` / `DPO` / `GRPO`). Reflected in §2 (Workflow Decision Tree) and §6.
+- **User-supplied callback signatures** — `create_model_fn`, `formatting_func`, `compute_metrics`, `preprocess_fn`, `postprocess_fn`, `compute_metrics_fn`, `accumulate_metrics_fn`. Reflected in §5.
+- **CLI subcommand structure** — adding, renaming, or removing `init`, `init --evals`, `start`, `stop`, `doctor`, `jupyter`, `--version`, or changing the dependency-set choice between fine-tuning and RAG/eval. Reflected in §2 and §3 (Setup Order).
+- **Tutorial taxonomy** — the lite/full split, the OpenAI-vs-self-hosted classification, or filenames under `tutorial_notebooks/{fine-tuning,post-training,rag-contexteng}/` referenced in the §9 (Tutorials) table.
+- **README section headings** — if you rename `§Prerequisites`, `§Install and Get Started`, or `§Troubleshooting` in `README.md`, update the cross-references in `docs/AGENTS.md` (§1, §3, §8) so they still resolve.
+
+`docs/AGENTS.md` must **never** be allowed to inline the volatile content listed above (Python version literals, `pip install` lines, port numbers, etc.). Drift-check by greping `docs/AGENTS.md` for `3.12.x`, `python3 -m venv`, `pip install rapidfireai`, `pip uninstall -y hf-xet`, `hf auth login --token`, `lsof -t -i:`, or bare port numbers `8850`–`8855` — there should be zero matches. If any appear, move the specific value to `README.md` and have AGENTS.md reference it by section instead.
+
 ## Troubleshooting
 
 ### GPU Issues
