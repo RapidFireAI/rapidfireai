@@ -347,7 +347,7 @@ wait_for_service() {
     local max_attempts=${4:-$RF_TIMEOUT_TIME}  # Allow custom timeout, default 30 seconds
     local attempt=1
 
-    print_status "Waiting for $service to be ready on $host:$port (timeout: ${max_attempts} attempts)..."
+    print_status "Waiting for $service to be ready on tcp://$host:$port (timeout: ${max_attempts} attempts)..."
 
     if command -v nc &> /dev/null; then
         ping_command="$(command -v nc) -z $host $port"
