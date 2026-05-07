@@ -298,7 +298,7 @@ rapidfireai = [
     "../setup/evals/requirements-*.txt",
     "../tutorial_notebooks/**/*",
     "../tests/notebooks/*",
-
+    "../tests/staging/tutorial_notebooks/**/*",
 ]
 
 
