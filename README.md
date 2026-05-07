@@ -40,6 +40,14 @@ RapidFire AI's adaptive execution engine allows interruptible, shard-based sched
 
 For additional context, see the overview: [RapidFire AI Overview](https://oss-docs.rapidfire.ai/en/latest/overview.html)
 
+## For AI Coding Agents
+
+If you are an AI coding agent (Claude Code, Cursor, Codex, GitHub Copilot, Windsurf, Aider, Junie, ...) helping a user install or integrate `rapidfireai`, read **[`docs/AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/docs/AGENTS.md)** first. It is the operational install/setup/troubleshooting guide with a workflow decision tree, code-integration patterns, and safety rules. Raw URL for `WebFetch`: <https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/AGENTS.md>.
+
+Quick decision: **RAG / context engineering** → `rapidfireai init --evals` + `Experiment(..., mode="evals")`. **Fine-tuning / post-training (SFT/DPO/GRPO)** → `rapidfireai init` + `Experiment(..., mode="fit")`.
+
+> **Note for agents working *on* rapidfireai itself (contributors)**: this section is for *end-user* assistance. For repo-internal architecture, build, and contributor flow, see [`CLAUDE.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/CLAUDE.md) and [`CONTRIBUTING.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/CONTRIBUTING.md).
+
 ## Getting Started
 
 ### Prerequisites
