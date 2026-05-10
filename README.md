@@ -25,7 +25,7 @@ Built for agentic RAG, context engineering, fine-tuning, and post-training of LL
 Delivers 16-24x higher throughput without extra resources.
 
 <details>
-<summary><strong>For AI coding agents</strong></summary>
+<summary><strong>🤖 AI coding agent installing or integrating rapidfireai? Read first</strong></summary>
 
 If you are an AI coding agent (Claude Code, Cursor, Codex, GitHub Copilot, Windsurf, Aider, Junie, ...) helping a user install or integrate `rapidfireai`, read **[`docs/AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/docs/AGENTS.md)** ([raw](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/AGENTS.md)) first. It is the operational install/setup/troubleshooting guide with a workflow decision tree, code-integration patterns, and safety rules.
 
