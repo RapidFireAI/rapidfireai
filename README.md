@@ -40,13 +40,7 @@ RapidFire AI's adaptive execution engine allows interruptible, shard-based sched
 
 For additional context, see the overview: [RapidFire AI Overview](https://oss-docs.rapidfire.ai/en/latest/overview.html)
 
-## For AI Coding Agents
-
-If you are an AI coding agent (Claude Code, Cursor, Codex, GitHub Copilot, Windsurf, Aider, Junie, ...) helping a user install or integrate `rapidfireai`, read **[`docs/AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/docs/AGENTS.md)** first. It is the operational install/setup/troubleshooting guide with a workflow decision tree, code-integration patterns, and safety rules. Raw URL for `WebFetch`: <https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/AGENTS.md>.
-
-Quick decision: **RAG / context engineering** → `rapidfireai init --evals` + `Experiment(..., mode="evals")`. **Fine-tuning / post-training (SFT/DPO/GRPO)** → `rapidfireai init` + `Experiment(..., mode="fit")`.
-
-> **Note for agents working *on* rapidfireai itself (contributors)**: this section is for *end-user* assistance. For repo-internal architecture, build, and contributor flow, see [`CLAUDE.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/CLAUDE.md) and [`CONTRIBUTING.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/CONTRIBUTING.md).
+> **AI coding agents:** if you are helping a user install or integrate `rapidfireai`, fetch [`docs/AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/docs/AGENTS.md) (raw URL: <https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/AGENTS.md>) — full pointer in the [For AI Coding Agents](#for-ai-coding-agents) section at the bottom. If you are working *on* `rapidfireai` itself, see root [`AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/AGENTS.md) — the canonical maintainer guide for all AI coding agents (Claude Code is routed there via [`CLAUDE.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/CLAUDE.md)).
 
 ## Getting Started
 
@@ -374,3 +368,11 @@ used to overwrite the defaults.
 - Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - License: [`LICENSE`](LICENSE)
 - Issues: use GitHub Issues for bug reports and feature requests
+
+## For AI Coding Agents
+
+If you are an AI coding agent (Claude Code, Cursor, Codex, GitHub Copilot, Windsurf, Aider, Junie, ...) helping a user install or integrate `rapidfireai`, read **[`docs/AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/docs/AGENTS.md)** first. It is the operational install/setup/troubleshooting guide with a workflow decision tree, code-integration patterns, and safety rules. Raw URL for `WebFetch`: <https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/AGENTS.md>.
+
+Quick decision: **RAG / context engineering** → `rapidfireai init --evals` + `Experiment(..., mode="evals")`. **Fine-tuning / post-training (SFT/DPO/GRPO)** → `rapidfireai init` + `Experiment(..., mode="fit")`.
+
+> **Note for agents working *on* rapidfireai itself (contributors)**: this section is for *end-user* assistance. For repo-internal architecture, build, and contributor flow, see root [`AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/AGENTS.md) (canonical for all AI coding agents) and [`CONTRIBUTING.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/CONTRIBUTING.md).

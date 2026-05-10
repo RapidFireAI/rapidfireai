@@ -2,7 +2,7 @@
 
 Operational instructions for **AI coding agents** (Claude Code, Cursor, Codex, GitHub Copilot, Windsurf, Aider, Junie, and similar) that are helping an end user install, configure, and integrate the `rapidfireai` Python package into the user's own project.
 
-This file is **not** for rapidfireai contributors. If you are working *on* rapidfireai itself, stop and read the repo's root [`CLAUDE.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/CLAUDE.md) and [`CONTRIBUTING.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/CONTRIBUTING.md) instead.
+This file is **not** for rapidfireai contributors. If you are working *on* rapidfireai itself, stop and read the repo's root [`AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/AGENTS.md) and [`CONTRIBUTING.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/CONTRIBUTING.md) instead.
 
 ## 1. Audience and authority
 
