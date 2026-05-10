@@ -40,7 +40,12 @@ RapidFire AI's adaptive execution engine allows interruptible, shard-based sched
 
 For additional context, see the overview: [RapidFire AI Overview](https://oss-docs.rapidfire.ai/en/latest/overview.html)
 
-> **AI coding agents:** if you are helping a user install or integrate `rapidfireai`, fetch [`docs/AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/docs/AGENTS.md) ([raw](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/AGENTS.md)) — full pointer in the [For AI Coding Agents](#for-ai-coding-agents) section at the bottom. If you are working *on* `rapidfireai` itself, see root [`AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/AGENTS.md) — the canonical maintainer guide for all AI coding agents.
+<details>
+<summary><strong>For AI coding agents</strong></summary>
+
+If you are helping a user install or integrate `rapidfireai`, fetch [`docs/AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/docs/AGENTS.md) ([raw](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/AGENTS.md)) — full pointer in the [For AI Coding Agents](#for-ai-coding-agents) section at the bottom. If you are working *on* `rapidfireai` itself, see root [`AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/AGENTS.md) — the canonical maintainer guide for all AI coding agents.
+
+</details>
 
 ## Getting Started
 
