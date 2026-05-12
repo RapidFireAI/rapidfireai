@@ -245,3 +245,9 @@ rapidfireai/frontend/build/
 # misc files
 rapidfire_pids.txt
 rf_mode.txt
+
+# Multi-modal testing
+multi-modal-testing/
+
+# document pdfs for mmdocir
+tutorial_notebooks/rag-contexteng/datasets/mmdocir/

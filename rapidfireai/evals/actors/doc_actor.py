@@ -56,12 +56,21 @@ class DocProcessingActor:
         logging_manager = RFLogger(experiment_name=experiment_name, experiment_path=experiment_path)
         self.logger = logging_manager.get_logger("DocProcessingActor")
 
+        # Multimodal summarizer engine state. The same actor is reused across
+        # text -> image -> table modalities; the config-hash check in
+        # initialize_summarizer lets us short-circuit when consecutive
+        # modalities share an engine config (rare, but cheap to support).
+        self.summarizer_engine = None
+        self.summarizer_engine_config_hash: str | None = None
+
         self.logger.info("DocProcessingActor initialized")
 
     def build_rag_components(
         self,
         rag_spec: LangChainRagSpec | None,
         prompt_manager: PromptManager | None = None,
+        summarizer_rate_limiters: dict[str, Any] | None = None,
+        summarizer_batch_size: int | None = None,
     ) -> dict[str, Any]:
         """
         Build RAG components and/or prompt manager and return them for sharing.
@@ -77,6 +86,14 @@ class DocProcessingActor:
             rag_spec: Optional RAG specification with document loader, embeddings config, etc.
                      Can be None for prompt-only pipelines.
             prompt_manager: Optional prompt manager for few-shot examples
+            summarizer_rate_limiters: Optional ``{provider: RateLimiterActor}`` mapping
+                used by API summarizer generators inside ``rag_spec.multimodal_processor``.
+                Forwarded to ``rag_spec.build_pipeline``; ignored if no multimodal
+                summarization is configured.
+            summarizer_batch_size: Optional hard ceiling on the number of prompts
+                sent per ``summarize_batch`` call inside multimodal summarization.
+                Forwarded to ``rag_spec.build_pipeline``; ``None`` means "send
+                each modality in a single call" (engine-internal batching only).
 
         Returns:
             Dictionary containing initialized components ready for sharing:
@@ -105,7 +122,16 @@ class DocProcessingActor:
             # If enable_gpu_search=True, this builds on GPU
             if rag_spec:
                 self.logger.info("Building document index...")
-                rag_spec.build_pipeline()
+                # Pass self as the summarizer_runner so multimodal summarization
+                # (if configured on rag_spec) routes back to this actor's
+                # initialize_summarizer / summarize_batch / cleanup_summarizer
+                # methods. These are called as plain Python methods (not via
+                # .remote()) since we're already inside the actor.
+                rag_spec.build_pipeline(
+                    summarizer_runner=self,
+                    summarizer_rate_limiters=summarizer_rate_limiters,
+                    summarizer_batch_size=summarizer_batch_size,
+                )
                 self.logger.info("Document index built successfully")
 
                 # context_generator_ref contains only index/embedding data that is
@@ -119,6 +145,7 @@ class DocProcessingActor:
                     "embedding_kwargs": rag_spec.embedding_kwargs,
                     "template": rag_spec.template if rag_spec.template is not None else None,
                     "enable_gpu_search": rag_spec.enable_gpu_search if rag_spec.enable_gpu_search is not None else False,
+                    "artifact_storage_cfg": rag_spec.artifact_storage_cfg,
                 })
                 
                 if rag_spec.vector_store is not None and isinstance(rag_spec.vector_store, FAISS):
@@ -202,6 +229,156 @@ class DocProcessingActor:
             raise RuntimeError(
                 f"Failed to build RAG components: {error_type}: {error_message}"
             ) from None  # Don't chain to avoid serialization issues
+
+    # ------------------------------------------------------------------
+    # Multimodal summarizer engine lifecycle
+    #
+    # These three methods are invoked by ``LangChainRagSpec._describe_multi_modal_documents``
+    # via the ``summarizer_runner`` handle (which is ``self`` when called from
+    # within ``build_rag_components``). They mirror the engine-instantiation
+    # pattern in ``QueryProcessingActor.initialize_for_pipeline`` so that
+    # config-hash-based reuse, GPU teardown, and Ray-safe error handling
+    # behave identically across the two phases.
+    # ------------------------------------------------------------------
+
+    def initialize_summarizer(
+        self,
+        generator: Any,
+        rate_limiter_actor: Any | None = None,
+    ) -> None:
+        """
+        Instantiate (or reuse) the inference engine for one summarizer.
+
+        Computes a config hash from the generator's engine class + kwargs (with
+        the same vLLM-only ``model_config`` special-case as ``QueryProcessingActor``,
+        so sampling-param tweaks don't trigger a model reload). When the hash
+        matches the previously initialized engine, the existing engine is reused.
+        Otherwise the previous engine is cleaned up (with GPU cache flush) and
+        a fresh one is built.
+
+        For ``APIInferenceEngine``, ``rate_limiter_actor`` is injected into the
+        engine kwargs (the engine constructor requires it). For vLLM engines
+        the argument is ignored.
+
+        Args:
+            generator: A ``ModelConfig`` instance from a summarizer cfg.
+            rate_limiter_actor: Required for API generators, unused for vLLM.
+
+        Raises:
+            RuntimeError: If engine instantiation fails. The original exception
+                is converted so it can be serialized by Ray.
+        """
+        try:
+            import hashlib
+            engine_class = generator.get_engine_class()
+            engine_kwargs = generator.get_engine_kwargs()
+
+            # API engine constructor requires a rate limiter; vLLM doesn't.
+            if engine_class.__name__ == "APIInferenceEngine":
+                engine_kwargs = {**engine_kwargs, "rate_limiter_actor": rate_limiter_actor}
+
+            # Mirror query_actor's hashing strategy so sampling_params changes
+            # don't unnecessarily reload the model on vLLM.
+            if engine_class.__name__ == "VLLMInferenceEngine":
+                model_config = engine_kwargs.get("model_config", {})
+                config_str = f"{engine_class.__name__}:{repr(sorted(model_config.items()))}"
+            else:
+                config_str = f"{engine_class.__name__}:{repr(sorted(engine_kwargs.items()))}"
+            config_hash = hashlib.md5(config_str.encode()).hexdigest()
+
+            if self.summarizer_engine_config_hash == config_hash and self.summarizer_engine is not None:
+                self.logger.info(
+                    f"Reusing existing summarizer engine (config hash: {config_hash[:8]})"
+                )
+                return
+
+            # Different config — tear the old engine down before allocating a new one.
+            if self.summarizer_engine is not None:
+                self.logger.info(
+                    f"Cleaning up old summarizer engine "
+                    f"(hash: {(self.summarizer_engine_config_hash or '?')[:8]}) before init"
+                )
+                self._teardown_summarizer_engine()
+
+            self.logger.info(
+                f"Initializing summarizer engine {engine_class.__name__} "
+                f"(config hash: {config_hash[:8]})"
+            )
+            self.summarizer_engine = engine_class(**engine_kwargs)
+            self.summarizer_engine_config_hash = config_hash
+
+        except Exception as e:
+            error_type = type(e).__name__
+            error_message = str(e)
+            self.logger.exception(f"Failed to initialize summarizer: {error_type}: {error_message}")
+            raise RuntimeError(
+                f"Failed to initialize summarizer: {error_type}: {error_message}"
+            ) from None
+
+    def summarize_batch(self, prompts: list) -> list[str]:
+        """
+        Generate summaries for a batch of prompts using the active summarizer engine.
+
+        Args:
+            prompts: List of chat-message lists (as built by
+                ``LangChainRagSpec._build_summarization_prompts``).
+
+        Returns:
+            List of generated summary strings, one per prompt.
+
+        Raises:
+            RuntimeError: If no engine has been initialized, or if generation
+                fails. Always converted to ``RuntimeError`` for Ray serialization.
+        """
+        try:
+            if self.summarizer_engine is None:
+                raise RuntimeError(
+                    "summarize_batch called before initialize_summarizer. "
+                    "Call initialize_summarizer() with a generator first."
+                )
+            return self.summarizer_engine.generate(prompts)
+        except Exception as e:
+            error_type = type(e).__name__
+            error_message = str(e)
+            self.logger.exception(f"Error in summarize_batch: {error_type}: {error_message}")
+            raise RuntimeError(
+                f"Error in summarize_batch: {error_type}: {error_message}"
+            ) from None
+
+    def cleanup_summarizer(self) -> None:
+        """
+        Tear down the current summarizer engine and release GPU memory.
+
+        Safe to call when no engine is active — short-circuits in that case.
+        Always called by ``LangChainRagSpec._describe_multi_modal_documents``
+        in a ``finally`` block so vLLM weights don't outlive the modality even
+        if generation raises.
+        """
+        if self.summarizer_engine is None:
+            return
+        self._teardown_summarizer_engine()
+
+    def _teardown_summarizer_engine(self) -> None:
+        """Internal: cleanup engine + force GC + empty CUDA cache (mirrors query_actor)."""
+        try:
+            self.summarizer_engine.cleanup()
+        except Exception as e:
+            self.logger.warning(f"Error during summarizer engine cleanup: {e}")
+
+        del self.summarizer_engine
+        self.summarizer_engine = None
+        self.summarizer_engine_config_hash = None
+
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                self.logger.info("Summarizer engine GPU memory cache cleared")
+        except ImportError:
+            pass
 
 
 # Export for external use
