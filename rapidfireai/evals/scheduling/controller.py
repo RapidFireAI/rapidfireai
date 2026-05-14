@@ -599,149 +599,188 @@ class Controller:
             contexts_to_build
         )
 
-        # Step 1: Create all DocProcessingActors and submit all build tasks
-        actor_tasks = []
-        for context_info in contexts_to_build:
-            rag_spec = context_info["rag"]
-            prompt_manager = context_info["prompt_manager"]
+        # actor_tasks is declared outside the try so the outer `finally`
+        # below can sweep up any actors whose per-task `finally` never ran
+        # (e.g. Step 1 raises mid-loop, or Step 2 raises on task i and never
+        # reaches tasks i+1..N). killed_actors tracks which actors have
+        # already been reaped by the per-task finally so we don't kill twice.
+        actor_tasks: list[dict] = []
+        killed_actors: set[int] = set()
 
-            # Skip if neither RAG nor prompt_manager (shouldn't happen, but safety check)
-            if not rag_spec and not prompt_manager:
-                continue
+        try:
+            # Step 1: Create all DocProcessingActors and submit all build tasks
+            for context_info in contexts_to_build:
+                rag_spec = context_info["rag"]
+                prompt_manager = context_info["prompt_manager"]
 
-            # Allocate resources based on GPU needs:
-            # - If GPU search enabled: 1 GPU + 2 CPUs
-            # - If CPU only: 0 GPUs + 2 CPUs
-            # - If prompt-only with CUDA device requested: 1 GPU + 2 CPUs
-            # - If prompt-only without CUDA: 0 GPUs + 2 CPUs
-            needs_gpu = False
-            if rag_spec and rag_spec.enable_gpu_search:
-                needs_gpu = True
-            elif rag_spec:
-                # Check if rag_spec embeddings or reranker request CUDA (even if enable_gpu_search=False)
-                if rag_spec.embedding_kwargs:
-                    model_kwargs = rag_spec.embedding_kwargs.get("model_kwargs", {})
+                # Skip if neither RAG nor prompt_manager (shouldn't happen, but safety check)
+                if not rag_spec and not prompt_manager:
+                    continue
+
+                # Allocate resources based on GPU needs:
+                # - If GPU search enabled: 1 GPU + 2 CPUs
+                # - If CPU only: 0 GPUs + 2 CPUs
+                # - If prompt-only with CUDA device requested: 1 GPU + 2 CPUs
+                # - If prompt-only without CUDA: 0 GPUs + 2 CPUs
+                needs_gpu = False
+                if rag_spec and rag_spec.enable_gpu_search:
+                    needs_gpu = True
+                elif rag_spec:
+                    # Check if rag_spec embeddings or reranker request CUDA (even if enable_gpu_search=False)
+                    if rag_spec.embedding_kwargs:
+                        model_kwargs = rag_spec.embedding_kwargs.get("model_kwargs", {})
+                        device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
+                        if device and str(device).startswith("cuda"):
+                            needs_gpu = True
+                    if not needs_gpu and rag_spec.reranker_kwargs:
+                        reranker_model_kwargs = rag_spec.reranker_kwargs.get("model_kwargs", {})
+                        device = reranker_model_kwargs.get("device", "") if isinstance(reranker_model_kwargs, dict) else ""
+                        if device and str(device).startswith("cuda"):
+                            needs_gpu = True
+                elif prompt_manager and prompt_manager.embedding_kwargs:
+                    # Check if prompt_manager requests CUDA device
+                    model_kwargs = prompt_manager.embedding_kwargs.get("model_kwargs", {})
                     device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
                     if device and str(device).startswith("cuda"):
                         needs_gpu = True
-                if not needs_gpu and rag_spec.reranker_kwargs:
-                    reranker_model_kwargs = rag_spec.reranker_kwargs.get("model_kwargs", {})
-                    device = reranker_model_kwargs.get("device", "") if isinstance(reranker_model_kwargs, dict) else ""
-                    if device and str(device).startswith("cuda"):
-                        needs_gpu = True
-            elif prompt_manager and prompt_manager.embedding_kwargs:
-                # Check if prompt_manager requests CUDA device
-                model_kwargs = prompt_manager.embedding_kwargs.get("model_kwargs", {})
-                device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
-                if device and str(device).startswith("cuda"):
-                    needs_gpu = True
-            if needs_gpu and self.cluster_num_gpus > 0:
-                num_gpus_for_actor = 1
-            else:
-                num_gpus_for_actor = 0
-            num_cpus_for_actor = self.num_cpus_per_actor
+                if needs_gpu and self.cluster_num_gpus > 0:
+                    num_gpus_for_actor = 1
+                else:
+                    num_gpus_for_actor = 0
+                num_cpus_for_actor = self.num_cpus_per_actor
 
-            # Create DocProcessingActor
-            # Ray will queue actors if resources aren't immediately available
-            doc_actor = DocProcessingActor.options(
-                num_gpus=num_gpus_for_actor,
-                num_cpus=num_cpus_for_actor,
-            ).remote(
-                experiment_name=self.experiment_name,
-                experiment_path=self.experiment_path,
-            )
-
-            # Submit build task (non-blocking). Pass only the rate limiters this
-            # context's summarizers actually need (keyed by provider); empty dict
-            # if the rag_spec has no API-based multimodal_processor.
-            per_context_rate_limiters = context_to_rate_limiters.get(id(context_info), {})
-            components_future = doc_actor.build_rag_components.remote(
-                rag_spec,
-                prompt_manager,
-                summarizer_rate_limiters=per_context_rate_limiters or None,
-                summarizer_batch_size=context_info.get("summarizer_batch_size"),
-            )
-
-            actor_tasks.append(
-                {
-                    "actor": doc_actor,
-                    "future": components_future,
-                    "context_info": context_info,
-                }
-            )
-
-        self.logger.info(f"Submitted {len(actor_tasks)} build task(s) in parallel")
-
-        # Step 2: Wait for all tasks to complete and process results
-        for task in actor_tasks:
-            context_info = task["context_info"]
-            context_hash = context_info["context_hash"]
-            context_id = context_info["context_id"]
-            start_time = context_info["start_time"]
-
-            try:
-                # Wait for this specific build to complete
-                components = ray.get(task["future"])
-                end_time = time.time()
-                duration = end_time - start_time
-
-                # Put CPU-serializable components in Ray object store (shared memory)
-                context_generator_ref = ray.put(components)
-
-                # Update database
-                db.set_context_end_time(context_id, end_time, duration)
-                db.set_context_status(context_id, ContextStatus.ONGOING)
-                self.logger.info(f"Built context {context_id} ({context_hash[:8]}...) successfully in {duration:.2f}s")
-
-                # Cache for session-level reuse
-                self._context_cache[context_hash] = (context_id, context_generator_ref)
-
-                # Update display
-                context_display.update_context(context_hash, status="complete", duration=duration)
-
-            except Exception as e:
-                end_time = time.time()
-                duration = end_time - start_time
-
-                db.set_context_status(context_id, ContextStatus.FAILED)
-                db.set_context_error(context_id, str(e))
-                self.logger.exception(f"Failed to build context {context_id} ({context_hash[:8]}...)")
-
-                # Update display
-                context_display.update_context(context_hash, status="failed", duration=duration)
-
-                # HALT: Context creation is critical - stop the entire experiment
-                context_display.stop()
-                error_message = (
-                    f"\n{'='*80}\n"
-                    f"❌ CRITICAL ERROR: RAG Source Preprocessing Failed\n"
-                    f"{'='*80}\n"
-                    f"RAG Source ID: {context_id}\n"
-                    f"Context Hash: {context_hash[:16]}...\n"
-                    f"Error: {str(e)}\n"
-                    f"{'='*80}\n"
-                    f"\nThe experiment has been halted. Please fix the error and try again.\n"
-                )
-                print(error_message)
-                raise RuntimeError(f"Context creation failed for context {context_id}") from e
-
-            finally:
-                # Clean up DocProcessingActor
-                ray.kill(task["actor"])
-
-        # Tear down build-phase rate limiters (one per provider). They were
-        # only needed while DocProcessingActors were running summarizer
-        # inference; the query-phase loop creates its own set later.
-        for provider, rate_limiter in build_rate_limiters.items():
-            try:
-                ray.kill(rate_limiter)
-            except Exception as e:
-                self.logger.warning(
-                    f"Error killing build-phase rate limiter for provider '{provider}': {e}"
+                # Create DocProcessingActor
+                # Ray will queue actors if resources aren't immediately available
+                doc_actor = DocProcessingActor.options(
+                    num_gpus=num_gpus_for_actor,
+                    num_cpus=num_cpus_for_actor,
+                ).remote(
+                    experiment_name=self.experiment_name,
+                    experiment_path=self.experiment_path,
                 )
 
-        # Stop the context building display
-        context_display.stop()
+                # Submit build task (non-blocking). Pass only the rate limiters this
+                # context's summarizers actually need (keyed by provider); empty dict
+                # if the rag_spec has no API-based multimodal_processor.
+                per_context_rate_limiters = context_to_rate_limiters.get(id(context_info), {})
+                components_future = doc_actor.build_rag_components.remote(
+                    rag_spec,
+                    prompt_manager,
+                    summarizer_rate_limiters=per_context_rate_limiters or None,
+                    summarizer_batch_size=context_info.get("summarizer_batch_size"),
+                )
+
+                actor_tasks.append(
+                    {
+                        "actor": doc_actor,
+                        "future": components_future,
+                        "context_info": context_info,
+                    }
+                )
+
+            self.logger.info(f"Submitted {len(actor_tasks)} build task(s) in parallel")
+
+            # Step 2: Wait for all tasks to complete and process results
+            for task in actor_tasks:
+                context_info = task["context_info"]
+                context_hash = context_info["context_hash"]
+                context_id = context_info["context_id"]
+                start_time = context_info["start_time"]
+
+                try:
+                    # Wait for this specific build to complete
+                    components = ray.get(task["future"])
+                    end_time = time.time()
+                    duration = end_time - start_time
+
+                    # Put CPU-serializable components in Ray object store (shared memory)
+                    context_generator_ref = ray.put(components)
+
+                    # Update database
+                    db.set_context_end_time(context_id, end_time, duration)
+                    db.set_context_status(context_id, ContextStatus.ONGOING)
+                    self.logger.info(f"Built context {context_id} ({context_hash[:8]}...) successfully in {duration:.2f}s")
+
+                    # Cache for session-level reuse
+                    self._context_cache[context_hash] = (context_id, context_generator_ref)
+
+                    # Update display
+                    context_display.update_context(context_hash, status="complete", duration=duration)
+
+                except Exception as e:
+                    end_time = time.time()
+                    duration = end_time - start_time
+
+                    db.set_context_status(context_id, ContextStatus.FAILED)
+                    db.set_context_error(context_id, str(e))
+                    self.logger.exception(f"Failed to build context {context_id} ({context_hash[:8]}...)")
+
+                    # Update display
+                    context_display.update_context(context_hash, status="failed", duration=duration)
+
+                    # HALT: Context creation is critical - stop the entire experiment.
+                    # The outer `finally` below will also call context_display.stop(),
+                    # tear down build_rate_limiters, and reap any actors whose per-task
+                    # finally never ran (tasks i+1..N below the failing task).
+                    error_message = (
+                        f"\n{'='*80}\n"
+                        f"❌ CRITICAL ERROR: RAG Source Preprocessing Failed\n"
+                        f"{'='*80}\n"
+                        f"RAG Source ID: {context_id}\n"
+                        f"Context Hash: {context_hash[:16]}...\n"
+                        f"Error: {str(e)}\n"
+                        f"{'='*80}\n"
+                        f"\nThe experiment has been halted. Please fix the error and try again.\n"
+                    )
+                    print(error_message)
+                    raise RuntimeError(f"Context creation failed for context {context_id}") from e
+
+                finally:
+                    # Clean up this task's DocProcessingActor as soon as the build
+                    # finishes (success or failure) so it doesn't hold GPU/CPU
+                    # resources while later tasks are still running. The outer
+                    # `finally` below uses killed_actors to avoid a double-kill,
+                    # and to reap any actor this branch never reached.
+                    try:
+                        ray.kill(task["actor"])
+                    finally:
+                        killed_actors.add(id(task["actor"]))
+        finally:
+            # Reap any actor whose per-task `finally` above never ran. This
+            # covers two failure modes:
+            #   1. Step 1 raised mid-loop, leaving the actors it had already
+            #      spawned in actor_tasks without ever entering Step 2.
+            #   2. Step 2 raised on task i (the `raise RuntimeError` branch),
+            #      exiting the loop and leaving tasks i+1..N's actors alive.
+            for task in actor_tasks:
+                if id(task["actor"]) in killed_actors:
+                    continue
+                try:
+                    ray.kill(task["actor"])
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error killing DocProcessingActor for context "
+                        f"{task['context_info'].get('context_id', '?')}: {e}"
+                    )
+
+            # Tear down build-phase rate limiters (one per provider). They
+            # were only needed while DocProcessingActors were running
+            # summarizer inference; the query-phase loop creates its own
+            # set later. This MUST live in `finally` — otherwise a failing
+            # build task raises out of the Step 2 loop and orphans every
+            # RateLimiterActor in build_rate_limiters.
+            for provider, rate_limiter in build_rate_limiters.items():
+                try:
+                    ray.kill(rate_limiter)
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error killing build-phase rate limiter for provider '{provider}': {e}"
+                    )
+
+            # Stop the context building display. Idempotent — the failure
+            # branch above may have already called it; calling again just
+            # re-renders the final state.
+            context_display.stop()
 
         self.logger.info(f"Completed parallel context building for {num_contexts} context(s)")
 

@@ -540,9 +540,13 @@ class LangChainRagSpec:
                                 doc.metadata["rf_doc_id"], source_value
                             )
             finally:
-                # Always tear the engine down before the next modality so
-                # vLLM weights are evicted from GPU memory even if generation
-                # raised partway through.
+                # Request cleanup before the next modality. The runner decides
+                # what that actually means per engine type: GPU-bound engines
+                # (e.g. vLLM) are torn down so weights are evicted from VRAM
+                # even if generation raised partway through; stateless API
+                # engines are kept alive so the config-hash short-circuit in
+                # initialize_summarizer can reuse them on the next modality
+                # when configs match.
                 self._summarizer_runner.cleanup_summarizer()
 
         return documents

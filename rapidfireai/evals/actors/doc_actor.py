@@ -59,7 +59,10 @@ class DocProcessingActor:
         # Multimodal summarizer engine state. The same actor is reused across
         # text -> image -> table modalities; the config-hash check in
         # initialize_summarizer lets us short-circuit when consecutive
-        # modalities share an engine config (rare, but cheap to support).
+        # modalities share an engine config. Note that cleanup_summarizer is
+        # type-aware: stateless engines (APIInferenceEngine) are kept alive
+        # between modalities so the hash check actually fires, while GPU-bound
+        # engines (vLLM) are always torn down to free VRAM.
         self.summarizer_engine = None
         self.summarizer_engine_config_hash: str | None = None
 
@@ -347,14 +350,37 @@ class DocProcessingActor:
 
     def cleanup_summarizer(self) -> None:
         """
-        Tear down the current summarizer engine and release GPU memory.
+        Conditionally tear down the current summarizer engine.
+
+        Called by ``LangChainRagSpec._describe_multi_modal_documents`` in a
+        ``finally`` block after every modality. Behavior depends on the engine
+        type:
+
+        - **GPU-bound engines** (e.g. ``VLLMInferenceEngine``) are always torn
+          down so model weights are evicted from VRAM before the next modality
+          loads its own engine. This holds even if generation raised partway
+          through.
+        - **Stateless engines** (e.g. ``APIInferenceEngine``) are *not* torn
+          down. Their ``cleanup()`` is a no-op and they hold no GPU memory, so
+          discarding them only defeats the config-hash short-circuit in
+          :meth:`initialize_summarizer` — which was the entire point of
+          tracking ``summarizer_engine_config_hash`` across modalities. Keeping
+          the engine + hash alive lets the next modality reuse the same client
+          when its generator config matches.
 
         Safe to call when no engine is active — short-circuits in that case.
-        Always called by ``LangChainRagSpec._describe_multi_modal_documents``
-        in a ``finally`` block so vLLM weights don't outlive the modality even
-        if generation raises.
         """
         if self.summarizer_engine is None:
+            return
+        # Stateless API clients have nothing to release and we want to preserve
+        # the cached engine + config hash so the next modality's
+        # initialize_summarizer call can short-circuit when configs match.
+        if type(self.summarizer_engine).__name__ == "APIInferenceEngine":
+            self.logger.debug(
+                f"Skipping teardown for stateless summarizer engine "
+                f"(hash: {(self.summarizer_engine_config_hash or '?')[:8]}); "
+                "kept alive for cross-modality reuse"
+            )
             return
         self._teardown_summarizer_engine()
 
