@@ -35,14 +35,6 @@ from langchain_classic.retrievers.document_compressors import CrossEncoderRerank
 from rapidfireai.evals.utils.storage_utils import CloudStorage
 
 
-
-#     "artifact_storage_cfg": {
-#         "backend": "gcs",
-#         "bucket": "rapidfire-sandbox-us-west1",
-#         "prefix": "mm-rag/artifacts"
-#     }
-
-
 class LangChainRagSpec:
     """
     RAG (Retrieval-Augmented Generation) implementation using LangChain.
@@ -532,17 +524,20 @@ class LangChainRagSpec:
                         # configured.
                         if self.storage_client is None:
                             continue
+                        source_value = doc.metadata.get(source_key)
+                        if not source_value:
+                            continue
                         if modality == "text":
-                            doc.metadata["text_source"] = self.storage_client.put_text(
-                                doc.metadata["rf_doc_id"], doc.metadata["text_source"]
+                            doc.metadata[source_key] = self.storage_client.put_text(
+                                doc.metadata["rf_doc_id"], source_value
                             )
                         elif modality == "image":
-                            doc.metadata["image_source"] = self.storage_client.put_image(
-                                doc.metadata["rf_doc_id"], doc.metadata["image_source"]
+                            doc.metadata[source_key] = self.storage_client.put_image(
+                                doc.metadata["rf_doc_id"], source_value
                             )
                         elif modality == "table":
-                            doc.metadata["table_source"] = self.storage_client.put_html(
-                                doc.metadata["rf_doc_id"], doc.metadata["table_source"]
+                            doc.metadata[source_key] = self.storage_client.put_html(
+                                doc.metadata["rf_doc_id"], source_value
                             )
             finally:
                 # Always tear the engine down before the next modality so
@@ -1145,6 +1140,31 @@ class LangChainRagSpec:
         return cfg
 
     @staticmethod
+    def _json_default_encoder(obj: Any) -> Any:
+        """
+        Shared ``default=`` callback for ``json.dumps`` used by all hashing helpers.
+
+        Centralizes the fallback rules so a fix in one place applies to every
+        config-hash computation (loaders, multimodal processor, full rag dict).
+        Non-JSON-serializable values are converted as follows:
+
+        - Class objects (e.g. ``loader_cls=JSONLoader``) → ``"module.qualname"``.
+        - Functions / bound methods → ``"module.qualname"``.
+        - Objects with an ``asdict()`` method (e.g. ``ServerlessSpec``) → that dict.
+        - Other objects → ``vars(obj)`` if available, else ``str(obj)``.
+        """
+        if isinstance(obj, type):
+            return f"{obj.__module__}.{obj.__qualname__}"
+        if callable(obj) and hasattr(obj, "__qualname__"):
+            return f"{getattr(obj, '__module__', '')}.{obj.__qualname__}"
+        if hasattr(obj, "asdict"):
+            return obj.asdict()
+        try:
+            return vars(obj)
+        except TypeError:
+            return str(obj)
+
+    @staticmethod
     def _hash_loader(loader: BaseLoader) -> str:
         """
         Compute a deterministic hash of a document loader's full configuration.
@@ -1157,11 +1177,8 @@ class LangChainRagSpec:
         canonical JSON form and SHA256-hashes it, so two loaders with
         identical configurations produce the same hash.
 
-        Non-JSON-serializable values are converted as follows:
-        - Class objects (e.g. ``loader_cls=JSONLoader``) → ``"module.qualname"``.
-        - Functions / bound methods → ``"module.qualname"``.
-        - Objects with an ``asdict()`` method → that dict.
-        - Other objects → ``vars(obj)`` if available, else ``str(obj)``.
+        Non-JSON-serializable values are handled by
+        :meth:`_json_default_encoder`.
 
         Args:
             loader: A LangChain ``BaseLoader`` instance.
@@ -1169,23 +1186,13 @@ class LangChainRagSpec:
         Returns:
             SHA256 hash hex string.
         """
-        def _default(obj):
-            if isinstance(obj, type):
-                return f"{obj.__module__}.{obj.__qualname__}"
-            if callable(obj) and hasattr(obj, "__qualname__"):
-                return f"{getattr(obj, '__module__', '')}.{obj.__qualname__}"
-            if hasattr(obj, "asdict"):
-                return obj.asdict()
-            try:
-                return vars(obj)
-            except TypeError:
-                return str(obj)
-
         loader_state = {
             "class": f"{type(loader).__module__}.{type(loader).__qualname__}",
             **vars(loader),
         }
-        loader_json = json.dumps(loader_state, sort_keys=True, default=_default)
+        loader_json = json.dumps(
+            loader_state, sort_keys=True, default=LangChainRagSpec._json_default_encoder
+        )
         return hashlib.sha256(loader_json.encode()).hexdigest()
 
     @staticmethod
@@ -1202,7 +1209,7 @@ class LangChainRagSpec:
         - ``instructions``: the raw prompt string (or whatever the user passed).
         - ``generator_class``: the fully-qualified class name of the generator.
         - ``generator_state``: ``vars(generator)`` (constructor kwargs etc.),
-          serialized via the same fallback encoder used by ``_hash_loader``.
+          serialized via :meth:`_json_default_encoder`.
 
         Missing summarizer keys are skipped, so configurations that differ only
         in which modalities are summarized produce different hashes naturally.
@@ -1213,18 +1220,6 @@ class LangChainRagSpec:
         Returns:
             SHA256 hash hex string.
         """
-        def _default(obj):
-            if isinstance(obj, type):
-                return f"{obj.__module__}.{obj.__qualname__}"
-            if callable(obj) and hasattr(obj, "__qualname__"):
-                return f"{getattr(obj, '__module__', '')}.{obj.__qualname__}"
-            if hasattr(obj, "asdict"):
-                return obj.asdict()
-            try:
-                return vars(obj)
-            except TypeError:
-                return str(obj)
-
         state: dict[str, Any] = {}
         for key in ("text_summarizer_cfg", "image_summarizer_cfg", "table_summarizer_cfg"):
             cfg = processor.get(key)
@@ -1240,7 +1235,9 @@ class LangChainRagSpec:
                 ),
                 "generator_state": vars(generator) if generator is not None else None,
             }
-        payload = json.dumps(state, sort_keys=True, default=_default)
+        payload = json.dumps(
+            state, sort_keys=True, default=LangChainRagSpec._json_default_encoder
+        )
         return hashlib.sha256(payload.encode()).hexdigest()
 
     def get_hash(self) -> str:
@@ -1299,16 +1296,10 @@ class LangChainRagSpec:
         # so it is part of the indexing stage, not retrieval
         rag_dict["enable_gpu_search"] = self.enable_gpu_search
 
-        # Convert to JSON string and hash.
-        # Use a fallback encoder for objects like ServerlessSpec that aren't
-        # natively JSON serializable — try __dict__ first, then str().
-        def _default(obj):
-            if hasattr(obj, "asdict"):
-                return obj.asdict()
-            try:
-                return vars(obj)
-            except TypeError:
-                return str(obj)
-
-        rag_json = json.dumps(rag_dict, sort_keys=True, default=_default)
+        # Convert to JSON string and hash. ``_json_default_encoder`` handles
+        # non-JSON-serializable values like ``ServerlessSpec`` (asdict),
+        # class objects, and arbitrary stateful objects (vars/str fallback).
+        rag_json = json.dumps(
+            rag_dict, sort_keys=True, default=self._json_default_encoder
+        )
         return hashlib.sha256(rag_json.encode()).hexdigest()
