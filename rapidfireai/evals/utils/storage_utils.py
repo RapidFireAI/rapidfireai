@@ -65,11 +65,23 @@ class CloudStorage:
         self._gcs_bucket = None
 
         if backend == "s3":
-            import boto3
+            try:
+                import boto3
+            except ImportError:
+                raise ImportError(
+                    "The 's3' backend requires the 'boto3' package. "
+                    "Install it with: pip install boto3"
+                ) from None
 
             self._s3_client = boto3.client("s3")
         else:
-            from google.cloud import storage
+            try:
+                from google.cloud import storage
+            except ImportError:
+                raise ImportError(
+                    "The 'gcs' backend requires the 'google-cloud-storage' package. "
+                    "Install it with: pip install google-cloud-storage"
+                ) from None
 
             self._gcs_bucket = storage.Client().bucket(bucket)
 
@@ -200,6 +212,12 @@ class CloudStorage:
     def _gcs_client_for(self, bucket: str):
         if bucket == self.bucket:
             return self._gcs_bucket
-        from google.cloud import storage
+        try:
+            from google.cloud import storage
+        except ImportError:
+            raise ImportError(
+                "The 'gcs' backend requires the 'google-cloud-storage' package. "
+                "Install it with: pip install google-cloud-storage"
+            ) from None
 
         return storage.Client().bucket(bucket)
