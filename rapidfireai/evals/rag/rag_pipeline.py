@@ -693,13 +693,15 @@ class LangChainRagSpec:
             for loader in self.document_loader:
                 if loader is not None:
                     _docs = loader.load()
-                    wrapped_cls = getattr(loader, "loader_cls", None)
-                    if isinstance(loader, UnstructuredBaseLoader) or (
-                        isinstance(wrapped_cls, type)
-                        and issubclass(wrapped_cls, UnstructuredBaseLoader)
-                    ):
-                        # Look for multi-modal documents and process them as text
-                        _docs = self._process_multi_modal_documents(_docs)
+                    # Only run multi-modal categorization/summarization when the
+                    # caller has actually configured a multimodal_processor.
+                    if self.multimodal_processor is not None:
+                        wrapped_cls = getattr(loader, "loader_cls", None)
+                        if isinstance(loader, UnstructuredBaseLoader) or (
+                            isinstance(wrapped_cls, type)
+                            and issubclass(wrapped_cls, UnstructuredBaseLoader)
+                        ):
+                            _docs = self._process_multi_modal_documents(_docs)
                     documents.extend(_docs)
             return documents
         finally:
