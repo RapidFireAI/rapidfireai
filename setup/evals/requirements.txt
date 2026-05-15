@@ -33,7 +33,6 @@ langchain-huggingface
 langchain-google-genai>=4.2.1
 
 # Vector Search
-faiss-gpu
 
 # Statistical Analysis
 scipy

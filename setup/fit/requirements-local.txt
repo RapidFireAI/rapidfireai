@@ -34,8 +34,6 @@ langchain-openai
 langchain-huggingface
 langchain-google-genai>=4.2.1
 
-# Vector Search
-faiss-gpu-cu12==1.13.0
 
 # Statistical Analysis
 scipy>=1.16.1

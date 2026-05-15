@@ -87,6 +87,7 @@ def get_doctor_info(log_lines: int = 10):
             "rf-faiss",
             "rf-faiss-gpu-12-8",
             "faiss-gpu-cu12",
+            "faiss-cpu",
             "vllm",
             "flash-attn",
             "flash_attn",
