@@ -17,7 +17,7 @@ describe('EndpointUsageModal', () => {
     open: true,
     onClose: jest.fn(),
     endpointName: 'test-endpoint',
-    baseUrl: 'http://localhost:5000',
+    baseUrl: 'http://localhost:8852',
   };
 
   test('renders modal with title when open', () => {

@@ -49,7 +49,7 @@ describe('Try it tab', () => {
     open: true,
     onClose: jest.fn(),
     endpointName: 'test-endpoint',
-    baseUrl: 'http://localhost:5000',
+    baseUrl: 'http://localhost:8852',
   };
 
   let fetchSpy: ReturnType<typeof jest.spyOn>;
