@@ -5,6 +5,7 @@ from typing import Any
 import dill
 
 from rapidfireai.automl import RFvLLMModelConfig, RFAPIModelConfig
+from rapidfireai.automl.model_config import RFLangGraphAgentConfig
 from rapidfireai.evals.utils.constants import SEARCH_TYPE_KEYS
 
 
@@ -93,7 +94,48 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
 
             return rag_config if rag_config else None
 
-        if isinstance(pipeline, RFvLLMModelConfig):
+        if isinstance(pipeline, RFLangGraphAgentConfig):
+            json_config["pipeline_type"] = "agent"
+
+            # Graph source
+            if pipeline.graph_fn is not None:
+                json_config["graph_fn"] = getattr(pipeline.graph_fn, "__name__", str(pipeline.graph_fn))
+            if pipeline.prebuilt_agent is not None:
+                json_config["prebuilt_agent"] = (
+                    pipeline.prebuilt_agent
+                    if isinstance(pipeline.prebuilt_agent, str)
+                    else getattr(pipeline.prebuilt_agent, "__name__", str(pipeline.prebuilt_agent))
+                )
+
+            # Execution params
+            json_config["max_steps"] = pipeline.max_steps
+            json_config["timeout_seconds"] = pipeline.timeout_seconds
+            json_config["capture_trajectory"] = pipeline.capture_trajectory
+
+            # Sweepable kwargs (serialize only JSON-safe values)
+            sweep_kwargs = {}
+            for key, value in pipeline.graph_fn_kwargs.items():
+                try:
+                    json.dumps(value)
+                    sweep_kwargs[key] = value
+                except (TypeError, ValueError):
+                    sweep_kwargs[key] = str(value)
+            if sweep_kwargs:
+                json_config["graph_fn_kwargs"] = sweep_kwargs
+
+            # Prebuilt agent kwargs (serialize only JSON-safe values)
+            if pipeline.prebuilt_agent_kwargs:
+                prebuilt_kwargs = {}
+                for key, value in pipeline.prebuilt_agent_kwargs.items():
+                    try:
+                        json.dumps(value)
+                        prebuilt_kwargs[key] = value
+                    except (TypeError, ValueError):
+                        prebuilt_kwargs[key] = str(value)
+                if prebuilt_kwargs:
+                    json_config["prebuilt_agent_kwargs"] = prebuilt_kwargs
+
+        elif isinstance(pipeline, RFvLLMModelConfig):
             json_config["pipeline_type"] = "vllm"
 
             # Extract model_config (dict)

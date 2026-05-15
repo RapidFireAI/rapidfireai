@@ -9,6 +9,7 @@ from rapidfireai.utils.constants import ColabConfig, RF_EXPERIMENT_PATH
 from rapidfireai.evals.actors.doc_actor import DocProcessingActor
 from rapidfireai.evals.actors.inference_engines import InferenceEngine
 from rapidfireai.evals.actors.query_actor import QueryProcessingActor
+from rapidfireai.evals.actors.agent_actor import AgentEvalActor
 from rapidfireai.evals.data.dataset import DataLoader
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
@@ -573,7 +574,10 @@ class Controller:
 
             # Determine pipeline_type from the pipeline object
             from rapidfireai.automl import RFAPIModelConfig, RFvLLMModelConfig
-            if isinstance(pipeline, RFAPIModelConfig):
+            from rapidfireai.automl.model_config import RFLangGraphAgentConfig
+            if isinstance(pipeline, RFLangGraphAgentConfig):
+                _pipeline_type = "agent"
+            elif isinstance(pipeline, RFAPIModelConfig):
                 _pipeline_type = "api"
             else:
                 _pipeline_type = "vllm"
@@ -866,22 +870,51 @@ class Controller:
         # PHASE 2: Receive pipeline configurations from user
         self.logger.info(f"Received {len(config_leaves)} pipeline configuration(s)")
 
-        # PHASE 3: Setup context generators (collect unique, check DB, build if needed)
-        self._setup_context_generators(config_leaves, db)
+        # Detect pipeline mode: all-agent, all-RAG, or mixed (not yet supported)
+        from rapidfireai.automl.model_config import RFLangGraphAgentConfig
 
-        # PHASE 4: Create query processing actors (shared pool)
-        # Actors are created without any pipeline or context information
-        # They will receive pipeline-specific context when scheduled
+        _agent_leaves = [c for c in config_leaves if isinstance(c.get("pipeline"), RFLangGraphAgentConfig)]
+        _is_agent_mode = len(_agent_leaves) > 0
+
+        if _is_agent_mode and len(_agent_leaves) != len(config_leaves):
+            raise ValueError(
+                "Mixed agent and RAG/inference pipelines in the same experiment "
+                "are not yet supported. All pipelines must be either agent-based "
+                "(RFLangGraphAgentConfig) or inference-based (RFvLLMModelConfig / RFAPIModelConfig)."
+            )
+
+        # PHASE 3: Setup context generators (collect unique, check DB, build if needed)
+        # Agent pipelines don't use RAG contexts — skip entirely.
+        if not _is_agent_mode:
+            self._setup_context_generators(config_leaves, db)
+
+        # PHASE 4: Create processing actors (shared pool)
+        # Agent pipelines use AgentEvalActor; RAG/inference use QueryProcessingActor.
         query_actors = []
         for i in range(self.num_actors):
-            actor = QueryProcessingActor.options(num_gpus=self.num_gpus_per_actor, num_cpus=self.num_cpus_per_actor).remote(
-                experiment_name=self.experiment_name,
-                experiment_path=self.experiment_path,
-                actor_id=i,
-            )
+            if _is_agent_mode:
+                actor = AgentEvalActor.options(
+                    num_gpus=self.num_gpus_per_actor,
+                    num_cpus=self.num_cpus_per_actor,
+                ).remote(
+                    experiment_name=self.experiment_name,
+                    experiment_path=self.experiment_path,
+                    actor_id=i,
+                )
+            else:
+                actor = QueryProcessingActor.options(
+                    num_gpus=self.num_gpus_per_actor,
+                    num_cpus=self.num_cpus_per_actor,
+                ).remote(
+                    experiment_name=self.experiment_name,
+                    experiment_path=self.experiment_path,
+                    actor_id=i,
+                )
             query_actors.append(actor)
 
-        self.logger.info(f"Created {num_actors} query processing actors (generic pool)")
+        self.logger.info(
+            f"Created {num_actors} {'agent' if _is_agent_mode else 'query'} processing actors (generic pool)"
+        )
 
         # PHASE 5: Register pipelines in database
         pipeline_ids, pipeline_id_to_config = self._register_pipelines(config_leaves, db)
@@ -930,6 +963,27 @@ class Controller:
             pipeline = pipeline_config["pipeline"]
             if hasattr(pipeline, "model_name"):
                 model_name = pipeline.model_name
+
+            # Agent pipelines have a different set of display fields
+            if isinstance(pipeline, RFLangGraphAgentConfig):
+                pipeline_info_dict = {
+                    "pipeline_id": pipeline_id,
+                    "pipeline_config": pipeline_config,
+                    "model_name": model_name,
+                }
+                if pipeline.max_steps:
+                    pipeline_info_dict["max_steps"] = pipeline.max_steps
+                if pipeline.capture_trajectory:
+                    pipeline_info_dict["capture_trajectory"] = True
+
+                # Include sweep params for display
+                sweep = pipeline.get_sweep_summary()
+                if sweep:
+                    pipeline_info_dict["sweep_params"] = sweep
+
+                pipeline_info.append(pipeline_info_dict)
+                continue
+
             if hasattr(pipeline, "model_config") and pipeline.model_config:
                 # ``model_name`` is already shown separately; drop ``"model"`` from
                 # the copied config so vLLM pipelines don't display it redundantly.
@@ -1006,6 +1060,7 @@ class Controller:
         pipeline_to_rate_limiter = {}
         pipeline_to_max_completion_tokens = {}
 
+        # Agent pipelines manage their own API calls — no rate limiter needed.
         # Group API pipelines by provider so each provider gets its own rate limiter.
         # provider_key -> {"pipeline_ids": [...], "model_rate_limits": {...}, "max_completion_tokens_by_model": {...}}
         provider_groups: dict[str, dict] = {}
@@ -1013,6 +1068,10 @@ class Controller:
         for pipeline_id, pipeline_config in pipeline_id_to_config.items():
             from rapidfireai.automl import RFAPIModelConfig
             pipeline = pipeline_config["pipeline"]
+
+            # Agent pipelines handle their own LLM calls — skip rate limiter.
+            if isinstance(pipeline, RFLangGraphAgentConfig):
+                continue
 
             if isinstance(pipeline, RFAPIModelConfig):
                 endpoint_name = pipeline.model_name
@@ -1399,93 +1458,111 @@ class Controller:
             # In future, we could parallelize batches across actors for each (pipeline, shard)
             actor = query_actors[actor_id]
 
-            # Initialize actor for this pipeline
-            # Get context_generator_ref for this pipeline
-            context_generator_ref = None
             pipeline_config = pipeline_id_to_config[pipeline_id]
             pipeline = pipeline_config["pipeline"]
-            has_rag_attr = hasattr(pipeline, "rag")
-            rag_spec = getattr(pipeline, "rag", None) if has_rag_attr else None
-            prompt_manager = getattr(pipeline, "prompt_manager", None)
-
-            # Check if pipeline has RAG or prompt_manager to look up context
-            if rag_spec or prompt_manager:
-                # Get RAG hash if present
-                rag_hash = rag_spec.get_hash() if rag_spec else None
-
-                # Get prompt_manager hash if present
-                prompt_hash = prompt_manager.get_hash() if prompt_manager else None
-
-                # Create combined context hash (matches logic in _collect_unique_contexts)
-                if rag_hash and prompt_hash:
-                    context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
-                elif rag_hash:
-                    context_hash = rag_hash
-                elif prompt_hash:
-                    context_hash = prompt_hash
-                else:
-                    context_hash = None
-
-                if context_hash and context_hash in self._context_cache:
-                    _, context_generator_ref = self._context_cache[context_hash]
-
-            engine_kwargs = pipeline.get_engine_kwargs()
-
-            if pipeline_id in pipeline_to_rate_limiter:
-                rate_limiter = pipeline_to_rate_limiter[pipeline_id]
-                if rate_limiter is None:
-                    raise ValueError(
-                        f"Rate limiter actor is None for API pipeline {pipeline_id}. "
-                        f"This should not happen - the rate limiter should be initialized "
-                        f"for all API pipelines."
-                    )
-                engine_kwargs["rate_limiter_actor"] = rate_limiter
-                engine_kwargs["max_completion_tokens"] = pipeline_to_max_completion_tokens[pipeline_id]
-
-            # Extract pipeline-specific retrieval config from the rag_spec.
-            # These are passed separately (not baked into context_generator_ref) so that
-            # clone-modified pipelines can override search/reranker params independently
-            # while still sharing the same pre-built index (context_generator_ref).
-            pipeline_search_cfg = None
-            pipeline_reranker_cfg = None
-            if rag_spec is not None:
-                pipeline_search_cfg = {"type": rag_spec.search_type, **rag_spec.search_kwargs}
-                if rag_spec.reranker_cls is not None:
-                    pipeline_reranker_cfg = {"class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs}
-
             pipeline_model_name = pipeline.model_name if hasattr(pipeline, "model_name") else "Unknown"
 
             pipeline_data = db.get_pipeline(pipeline_id)
             metric_run_id = pipeline_data.get("metric_run_id") if pipeline_data else None
 
-            try:
-                ray.get(
-                    actor.initialize_for_pipeline.remote(
-                        engine_class=pipeline.get_engine_class(),
-                        engine_kwargs=engine_kwargs,
-                        context_generator_ref=context_generator_ref,
-                        pipeline_search_cfg=pipeline_search_cfg,
-                        pipeline_reranker_cfg=pipeline_reranker_cfg,
-                        pipeline_id=pipeline_id,
-                        model_name=pipeline_model_name,
-                        metric_run_id=metric_run_id,
+            # ---- Agent pipeline initialization ----
+            if isinstance(pipeline, RFLangGraphAgentConfig):
+                try:
+                    ray.get(
+                        actor.initialize_for_pipeline.remote(
+                            agent_config=pipeline,
+                            pipeline_id=pipeline_id,
+                            model_name=pipeline_model_name,
+                            metric_run_id=metric_run_id,
+                        )
                     )
-                )
-            except Exception as init_err:
-                # Mark only this pipeline as FAILED; free the actor and continue.
-                error_msg = str(init_err)
-                self.logger.exception(
-                    f"Pipeline {pipeline_id} ({pipeline_name}) failed to initialize "
-                    f"on actor {actor_id}: {error_msg}"
-                )
-                db.set_actor_task_status(task_id, TaskStatus.FAILED)
-                db.set_actor_task_error(task_id, error_msg)
-                db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
-                db.set_pipeline_error(pipeline_id, error_msg)
-                scheduler.remove_pipeline(pipeline_id)
-                if progress_display:
-                    progress_display.update_pipeline(pipeline_id, status="FAILED")
-                continue
+                except Exception as init_err:
+                    error_msg = str(init_err)
+                    self.logger.exception(
+                        f"Agent pipeline {pipeline_id} ({pipeline_name}) failed to initialize "
+                        f"on actor {actor_id}: {error_msg}"
+                    )
+                    db.set_actor_task_status(task_id, TaskStatus.FAILED)
+                    db.set_actor_task_error(task_id, error_msg)
+                    db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
+                    db.set_pipeline_error(pipeline_id, error_msg)
+                    scheduler.remove_pipeline(pipeline_id)
+                    if progress_display:
+                        progress_display.update_pipeline(pipeline_id, status="FAILED")
+                    continue
+
+            # ---- RAG/inference pipeline initialization ----
+            else:
+                # Get context_generator_ref for this pipeline
+                context_generator_ref = None
+                has_rag_attr = hasattr(pipeline, "rag")
+                rag_spec = getattr(pipeline, "rag", None) if has_rag_attr else None
+                prompt_manager = getattr(pipeline, "prompt_manager", None)
+
+                if rag_spec or prompt_manager:
+                    rag_hash = rag_spec.get_hash() if rag_spec else None
+                    prompt_hash = prompt_manager.get_hash() if prompt_manager else None
+
+                    if rag_hash and prompt_hash:
+                        context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
+                    elif rag_hash:
+                        context_hash = rag_hash
+                    elif prompt_hash:
+                        context_hash = prompt_hash
+                    else:
+                        context_hash = None
+
+                    if context_hash and context_hash in self._context_cache:
+                        _, context_generator_ref = self._context_cache[context_hash]
+
+                engine_kwargs = pipeline.get_engine_kwargs()
+
+                if pipeline_id in pipeline_to_rate_limiter:
+                    rate_limiter = pipeline_to_rate_limiter[pipeline_id]
+                    if rate_limiter is None:
+                        raise ValueError(
+                            f"Rate limiter actor is None for API pipeline {pipeline_id}. "
+                            f"This should not happen - the rate limiter should be initialized "
+                            f"for all API pipelines."
+                        )
+                    engine_kwargs["rate_limiter_actor"] = rate_limiter
+                    engine_kwargs["max_completion_tokens"] = pipeline_to_max_completion_tokens[pipeline_id]
+
+                pipeline_search_cfg = None
+                pipeline_reranker_cfg = None
+                rag_spec = getattr(pipeline, "rag", None) if hasattr(pipeline, "rag") else None
+                if rag_spec is not None:
+                    pipeline_search_cfg = {"type": rag_spec.search_type, **rag_spec.search_kwargs}
+                    if rag_spec.reranker_cls is not None:
+                        pipeline_reranker_cfg = {"class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs}
+
+                try:
+                    ray.get(
+                        actor.initialize_for_pipeline.remote(
+                            engine_class=pipeline.get_engine_class(),
+                            engine_kwargs=engine_kwargs,
+                            context_generator_ref=context_generator_ref,
+                            pipeline_search_cfg=pipeline_search_cfg,
+                            pipeline_reranker_cfg=pipeline_reranker_cfg,
+                            pipeline_id=pipeline_id,
+                            model_name=pipeline_model_name,
+                            metric_run_id=metric_run_id,
+                        )
+                    )
+                except Exception as init_err:
+                    error_msg = str(init_err)
+                    self.logger.exception(
+                        f"Pipeline {pipeline_id} ({pipeline_name}) failed to initialize "
+                        f"on actor {actor_id}: {error_msg}"
+                    )
+                    db.set_actor_task_status(task_id, TaskStatus.FAILED)
+                    db.set_actor_task_error(task_id, error_msg)
+                    db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
+                    db.set_pipeline_error(pipeline_id, error_msg)
+                    scheduler.remove_pipeline(pipeline_id)
+                    if progress_display:
+                        progress_display.update_pipeline(pipeline_id, status="FAILED")
+                    continue
 
             self.logger.debug(f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})")
 

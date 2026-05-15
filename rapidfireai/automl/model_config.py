@@ -648,3 +648,200 @@ else:
     RFAPIModelConfig = _make_unavailable_class(
         "RFAPIModelConfig", "rapidfireai[evals]"
     )
+
+
+# ============================================================================
+# LangGraph Agent Config (evals mode — agentic experiment support)
+# ============================================================================
+
+# LangGraph is an optional dependency.
+try:
+    import langgraph  # noqa: F401
+
+    _LANGGRAPH_AVAILABLE = True
+except ImportError:
+    _LANGGRAPH_AVAILABLE = False
+
+
+class RFLangGraphAgentConfig:
+    """Configuration for LangGraph agent evaluation pipelines.
+
+    The central contract between user LangGraph code and RF's experiment
+    engine. Supply *either* ``graph_fn`` (a factory that returns an
+    **uncompiled** ``StateGraph`` builder) *or* ``prebuilt_agent`` (a
+    LangGraph prebuilt constructor like ``create_react_agent``).
+
+    Every ``**graph_fn_kwargs`` value (and every value inside
+    ``prebuilt_agent_kwargs``) can be a ``List()`` or ``Range()`` —
+    RF resolves them before building.
+
+    RF owns compilation: the user never calls ``.compile()`` — RF does
+    it internally so it can inject callbacks, recursion limits, and
+    future middleware.
+    """
+
+    CONTROL_KEYS = frozenset({
+        "graph_fn",
+        "prebuilt_agent",
+        "prebuilt_agent_kwargs",
+        "input_mapper",
+        "output_mapper",
+        "capture_trajectory",
+        "max_steps",
+        "timeout_seconds",
+    })
+
+    PREBUILT_REGISTRY: dict[str, str] = {
+        "react": "langgraph.prebuilt:create_react_agent",
+    }
+
+    def __init__(
+        self,
+        # --- graph source (supply exactly one) ---
+        graph_fn: Callable | None = None,
+        prebuilt_agent: str | Callable | None = None,
+        prebuilt_agent_kwargs: dict | None = None,
+        # --- mappers ---
+        input_mapper: Callable | None = None,
+        output_mapper: Callable | None = None,
+        # --- execution ---
+        capture_trajectory: bool = False,
+        max_steps: int = 25,
+        timeout_seconds: float = 180.0,
+        # --- sweep kwargs (everything else) ---
+        **graph_fn_kwargs,
+    ):
+        if (graph_fn is None) == (prebuilt_agent is None):
+            raise ValueError(
+                "Provide exactly one of graph_fn or prebuilt_agent, not both (or neither)."
+            )
+
+        self.graph_fn = graph_fn
+        self.prebuilt_agent = prebuilt_agent
+        self.prebuilt_agent_kwargs = prebuilt_agent_kwargs or {}
+        self.input_mapper = input_mapper
+        self.output_mapper = output_mapper
+        self.capture_trajectory = capture_trajectory
+        self.max_steps = max_steps
+        self.timeout_seconds = timeout_seconds
+        self.graph_fn_kwargs = graph_fn_kwargs
+
+        # _user_params drives grid/random search expansion.
+        # Keys outside CONTROL_KEYS are passed as **graph_fn_kwargs on
+        # re-instantiation.
+        self._user_params = {
+            "graph_fn": graph_fn,
+            "prebuilt_agent": prebuilt_agent,
+            "prebuilt_agent_kwargs": prebuilt_agent_kwargs,
+            "input_mapper": input_mapper,
+            "output_mapper": output_mapper,
+            "capture_trajectory": capture_trajectory,
+            "max_steps": max_steps,
+            "timeout_seconds": timeout_seconds,
+            **graph_fn_kwargs,
+        }
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
+    @property
+    def model_name(self) -> str:
+        """Human-readable name for progress display and logging."""
+        if self.prebuilt_agent is not None:
+            name = (
+                self.prebuilt_agent
+                if isinstance(self.prebuilt_agent, str)
+                else getattr(self.prebuilt_agent, "__name__", str(self.prebuilt_agent))
+            )
+            model_kwarg = self.prebuilt_agent_kwargs.get("model", "")
+            if model_kwarg and isinstance(model_kwarg, str):
+                return f"{name}({model_kwarg})"
+            return f"prebuilt:{name}"
+
+        if self.graph_fn is not None:
+            return getattr(self.graph_fn, "__name__", "custom_graph")
+        return "unknown_agent"
+
+    # ------------------------------------------------------------------
+    # Prebuilt resolution
+    # ------------------------------------------------------------------
+
+    def _resolve_prebuilt(self) -> Callable:
+        """Resolve a string shorthand to the actual LangGraph constructor."""
+        agent = self.prebuilt_agent
+        if callable(agent):
+            return agent
+
+        if not isinstance(agent, str):
+            raise TypeError(
+                f"prebuilt_agent must be a string or callable, got {type(agent).__name__}"
+            )
+
+        dotpath = self.PREBUILT_REGISTRY.get(agent)
+        if dotpath is None:
+            supported = ", ".join(sorted(self.PREBUILT_REGISTRY))
+            raise ValueError(
+                f"Unknown prebuilt agent '{agent}'. Supported shorthands: {supported}"
+            )
+
+        module_path, attr_name = dotpath.rsplit(":", 1)
+        import importlib
+
+        mod = importlib.import_module(module_path)
+        return getattr(mod, attr_name)
+
+    # ------------------------------------------------------------------
+    # Build + compile
+    # ------------------------------------------------------------------
+
+    def build_and_compile(self, resolved_kwargs: dict | None = None):
+        """Build the graph and compile it.
+
+        RF calls this — the user never calls ``.compile()`` themselves.
+
+        Args:
+            resolved_kwargs: Concrete kwargs (all ``List``/``Range``
+                values already resolved). If *None*, falls back to
+                ``self.graph_fn_kwargs`` or ``self.prebuilt_agent_kwargs``.
+
+        Returns:
+            A compiled LangGraph graph ready for ``.invoke()``.
+        """
+        if self.prebuilt_agent is not None:
+            return self._build_prebuilt(resolved_kwargs)
+
+        kwargs = resolved_kwargs if resolved_kwargs is not None else self.graph_fn_kwargs
+        builder = self.graph_fn(**kwargs)
+        return builder.compile(recursion_limit=self.max_steps)
+
+    def _build_prebuilt(self, resolved_kwargs: dict | None = None):
+        """Build a prebuilt agent (already compiled by the constructor)."""
+        constructor = self._resolve_prebuilt()
+        kwargs = resolved_kwargs if resolved_kwargs is not None else self.prebuilt_agent_kwargs
+        return constructor(**kwargs)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def get_sweep_summary(self) -> dict[str, Any]:
+        """Return a JSON-serializable summary of sweepable parameters."""
+        summary: dict[str, Any] = {}
+        for key, value in self._user_params.items():
+            if isinstance(value, List):
+                summary[key] = {"type": "List", "values": [str(v) for v in value.values]}
+            elif isinstance(value, Range):
+                summary[key] = {"type": "Range", "start": value.start, "end": value.end}
+            elif isinstance(value, dict):
+                nested = {}
+                for k, v in value.items():
+                    if isinstance(v, List):
+                        nested[k] = {"type": "List", "values": [str(x) for x in v.values]}
+                    elif isinstance(v, Range):
+                        nested[k] = {"type": "Range", "start": v.start, "end": v.end}
+                summary[key] = nested
+        return summary
+
+    def __repr__(self) -> str:
+        return f"RFLangGraphAgentConfig(model_name={self.model_name!r}, max_steps={self.max_steps})"

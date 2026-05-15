@@ -41,6 +41,9 @@ except (ImportError, AttributeError, TypeError):
     RFAPIModelConfig = _make_unavailable_class("RFAPIModelConfig", "rapidfireai[evals]")
     _EVALS_CONFIGS_AVAILABLE = False
 
+# LangGraph agent config (always importable — langgraph is only needed at runtime)
+from .model_config import RFLangGraphAgentConfig
+
 # Conditionally import evals-specific helper classes
 try:
     from .model_config import RFLangChainRagSpec, RFPromptManager
@@ -86,3 +89,6 @@ if _EVALS_CONFIGS_AVAILABLE:
 # Conditionally add evals helper classes to __all__
 if _EVALS_HELPERS_AVAILABLE:
     __all__.extend(["RFLangChainRagSpec", "RFPromptManager"])
+
+# Agent config is always available
+__all__.append("RFLangGraphAgentConfig")
