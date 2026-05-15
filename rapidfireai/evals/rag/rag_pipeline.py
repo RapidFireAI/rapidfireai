@@ -10,6 +10,7 @@ from typing import Any, Optional
 import hashlib
 import json
 import os
+import uuid
 import mlflow
 from mlflow.entities import SpanType
 
@@ -18,6 +19,7 @@ from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPE
 import faiss
 from pinecone import Pinecone, ServerlessSpec, PodSpec, ByocSpec
 from langchain_community.document_loaders.base import BaseLoader
+from langchain_community.document_loaders.unstructured import UnstructuredBaseLoader
 from langchain_core.documents import Document
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
@@ -30,6 +32,8 @@ from langchain_core.vectorstores import VectorStore
 from langchain_text_splitters import TextSplitter
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+from rapidfireai.evals.utils.storage_utils import CloudStorage
+
 
 class LangChainRagSpec:
     """
@@ -61,15 +65,30 @@ class LangChainRagSpec:
     for use on Ray.
     """
 
+    # Mapping of internal modality name -> (multimodal_processor key, *_source metadata key).
+    # Iteration order is significant: text first, then image, then table — so vLLM users
+    # never have more than one summarizer model resident in VRAM at a time.
+    _SUMMARIZER_MODALITIES: tuple[tuple[str, str, str], ...] = (
+        ("text", "text_summarizer_cfg", "text_source"),
+        ("image", "image_summarizer_cfg", "image_source"),
+        ("table", "table_summarizer_cfg", "table_source"),
+    )
+
+    # Accepted values for ``artifact_storage_cfg["backend"]``. Passed straight
+    # through to ``CloudStorage`` without translation.
+    _VALID_STORAGE_BACKENDS: frozenset[str] = frozenset({"s3", "gcs"})
+
     def __init__(
         self,
-        document_loader: Optional[BaseLoader] | None = None,
+        document_loader: BaseLoader | list[Optional[BaseLoader]] | None = None,
+        multimodal_processor: Optional[dict[str, Any]] | None = None,
         text_splitter: Optional[TextSplitter] | None = None,
         embedding_cfg: Optional[dict[str, Any]] | None = None,
         vector_store_cfg: Optional[dict[str, Any]] | None = None,
         retriever: Optional[BaseRetriever] | None = None,
         search_cfg: Optional[dict[str, Any]] | None = None,
         reranker_cfg: Optional[dict[str, Any]] | None = None,
+        artifact_storage_cfg: Optional[dict[str, Any]] | None = None,
         enable_gpu_search: bool = False,
         document_template: Optional[Callable[[Document], str]] | None = None,
     ) -> None:
@@ -82,7 +101,18 @@ class LangChainRagSpec:
         - reranker_cfg: Must have "class" key (reranker class, e.g. CrossEncoderReranker); rest are kwargs.
 
         Args:
-            document_loader: Optional. Required only when neither retriever nor vector_store_cfg is provided.
+            document_loader: Optional. May be a single BaseLoader, a list of BaseLoaders (with
+                None entries allowed and skipped), or None. A single loader is normalized to a
+                one-element list internally; documents from all loaders are concatenated.
+                Required only when neither retriever nor vector_store_cfg is provided.
+            multimodal_processor: Optional dict configuring per-modality summarizers used by
+                ``_describe_multi_modal_documents`` to turn raw text/table/image chunks into
+                LLM-generated descriptions. Recognized keys are ``text_summarizer_cfg``,
+                ``image_summarizer_cfg``, and ``table_summarizer_cfg``; each maps to a sub-dict
+                with ``instructions`` (str) and ``generator`` (a ``ModelConfig`` instance, e.g.
+                ``RFAPIModelConfig`` or ``RFvLLMModelConfig``). Each cfg is optional — omit a
+                modality to skip summarization for it. If ``None``, no multimodal summarization
+                is performed.
             text_splitter: Optional. When building from documents, chunks before embedding; if None, embed whole pages.
             embedding_cfg: Dict with "class" (embedding class) and remaining keys as kwargs. If None, uses HuggingFaceEmbeddings with no extra kwargs.
             vector_store_cfg: Optional config dict with a "type" key ("faiss", "pgvector", "pinecone")
@@ -91,6 +121,13 @@ class LangChainRagSpec:
             retriever: Optional. If provided, used directly.
             search_cfg: Dict with "type" (search algorithm) and remaining keys as search kwargs (k, filter, fetch_k, lambda_mult). If None, defaults to similarity with k=5.
             reranker_cfg: Dict with "class" (reranker class) and remaining keys as kwargs. If None, no reranker.
+            artifact_storage_cfg: Optional dict configuring an object-store backend for offloading
+                large per-document artifacts (raw images, table HTML) out of the vector DB record.
+                Required keys: ``backend`` (``"s3"`` or ``"gcs"``), ``bucket`` (str).
+                Optional key: ``prefix`` (str, default ``"artifacts"``). The cfg is kept flat on
+                the rag spec; the actual ``CloudStorage`` client is instantiated on demand by
+                :meth:`init_storage_client` and is not part of the persisted rag config. If
+                ``None``, no artifact offloading is performed.
             enable_gpu_search: Use GPU FAISS when building index; default False.
             document_template: Optional function (Document -> str) to format documents.
 
@@ -98,11 +135,77 @@ class LangChainRagSpec:
             ValueError: If embedding_cfg is missing "class", search_cfg has invalid "type",
                 or document_loader is missing when building from documents.
         """
+        # Normalize document_loader to a list[Optional[BaseLoader]] | None so
+        # downstream code (load, hash, copy) can treat it uniformly. Accept:
+        #   - None                     -> stays None
+        #   - a single BaseLoader      -> wrapped in a one-element list
+        #   - a list of BaseLoader/None-> kept as-is
+        if document_loader is not None and not isinstance(document_loader, list):
+            if not isinstance(document_loader, BaseLoader):
+                raise TypeError(
+                    "document_loader must be a BaseLoader, a list of BaseLoaders (with optional "
+                    f"None entries), or None; got {type(document_loader).__name__}."
+                )
+            document_loader = [document_loader]
+
         if not document_loader and not vector_store_cfg and not retriever:
             raise ValueError(
                 "document_loader is required when neither retriever nor vector_store_cfg is provided "
                 "(a FAISS index will be built from loaded documents)."
             )
+
+        # Light validation of multimodal_processor: catch typos in summarizer
+        # keys and missing 'generator' entries early, before any documents are
+        # processed. Each summarizer cfg itself is optional.
+        if multimodal_processor is not None:
+            if not isinstance(multimodal_processor, dict):
+                raise TypeError(
+                    "multimodal_processor must be a dict or None; "
+                    f"got {type(multimodal_processor).__name__}."
+                )
+            valid_keys = {"text_summarizer_cfg", "image_summarizer_cfg", "table_summarizer_cfg"}
+            unknown = set(multimodal_processor) - valid_keys
+            if unknown:
+                raise ValueError(
+                    f"multimodal_processor has unknown keys: {sorted(unknown)}. "
+                    f"Valid keys: {sorted(valid_keys)}."
+                )
+            for key, cfg in multimodal_processor.items():
+                if not isinstance(cfg, dict):
+                    raise TypeError(
+                        f"multimodal_processor['{key}'] must be a dict; got {type(cfg).__name__}."
+                    )
+                if "generator" not in cfg:
+                    raise ValueError(
+                        f"multimodal_processor['{key}'] must contain a 'generator' key "
+                        "(a ModelConfig instance such as RFAPIModelConfig or RFvLLMModelConfig)."
+                    )
+
+        # Light validation of artifact_storage_cfg: catch typos in backend
+        # names and missing bucket entries early, before any documents are
+        # processed. The actual SDK is imported lazily by CloudStorage.
+        if artifact_storage_cfg is not None:
+            if not isinstance(artifact_storage_cfg, dict):
+                raise TypeError(
+                    "artifact_storage_cfg must be a dict or None; "
+                    f"got {type(artifact_storage_cfg).__name__}."
+                )
+            backend = artifact_storage_cfg.get("backend")
+            if backend not in self._VALID_STORAGE_BACKENDS:
+                raise ValueError(
+                    f"artifact_storage_cfg['backend'] must be one of "
+                    f"{sorted(self._VALID_STORAGE_BACKENDS)}; got {backend!r}."
+                )
+            bucket = artifact_storage_cfg.get("bucket")
+            if not isinstance(bucket, str) or not bucket:
+                raise ValueError(
+                    "artifact_storage_cfg['bucket'] must be a non-empty string."
+                )
+            prefix = artifact_storage_cfg.get("prefix", "artifacts")
+            if not isinstance(prefix, str):
+                raise TypeError(
+                    "artifact_storage_cfg['prefix'] must be a string when provided."
+                )
 
         if vector_store_cfg and retriever:
             warnings.warn(
@@ -175,6 +278,13 @@ class LangChainRagSpec:
             self.reranker_kwargs = dict(cfg)
 
         self.document_loader = document_loader
+        self.multimodal_processor = multimodal_processor
+        # Kept flat (no copy) so callers can introspect/mutate the cfg in place.
+        # The live CloudStorage handle is created on demand via init_storage_client()
+        # and must never be hashed/serialized as part of the rag spec — it's
+        # runtime state, not configuration.
+        self.artifact_storage_cfg = artifact_storage_cfg
+        self.storage_client: CloudStorage | None = None
         self.text_splitter = text_splitter
         self.embedding: Embeddings | None = None  # Will be created in build_pipeline()
         if document_template:
@@ -189,6 +299,13 @@ class LangChainRagSpec:
         self.experiment_name: str | None = None  # Injected by Controller before use
         self.pipeline_id: int | None = None       # Injected by Actor before use
         self.model_name: str | None = None        # Injected by Actor before use
+        # Multimodal summarizer plumbing — injected by build_pipeline() at
+        # context-build time. Kept as private attrs so they don't accidentally
+        # leak into hashing/copying logic. All default to None so query-time
+        # rag specs (which never summarize) and unit tests work unchanged.
+        self._summarizer_runner: Any | None = None
+        self._summarizer_rate_limiters: dict[str, Any] | None = None
+        self._summarizer_batch_size: int | None = None
 
     @staticmethod
     def default_template(doc: Document) -> str:
@@ -204,14 +321,397 @@ class LangChainRagSpec:
         metadata = "; ".join([f"{k}: {v}" for k, v in doc.metadata.items()])
         return f"{metadata}:\n{doc.page_content}"
 
-    def _load_documents(self) -> list[Document]:
+    def _categorize_multi_modal_documents(self, documents: list[Document]) -> list[Document]:
         """
-        Load documents using the configured document loader.
+        Normalize Unstructured multi-modal chunks into a single typed list of Documents.
+
+        Walks chunks produced by an ``UnstructuredBaseLoader`` and tags each output
+        Document with a ``document_type`` of ``"text"``, ``"table"``, or ``"image"``.
+        Mutates input documents in place where possible; only image Documents are
+        newly minted (since a single Composite or Table chunk may contain multiple
+        embedded images, each of which becomes its own Document inheriting the
+        parent's metadata).
+
+        Per-category handling, keyed off ``metadata["category"]``:
+
+        - ``"CompositeElement"`` -> emitted as a text Document. Any ``Image`` or
+          ``Table`` elements found in ``metadata["orig_elements"]`` (gzipped-JSON
+          encoded Unstructured elements) are emitted as additional image Documents
+          carrying a copy of the parent's metadata.
+        - ``"Table"`` -> emitted as a table Document. If the chunk also has an
+          ``image_base64`` rendering, an additional image Document is emitted.
+        - ``"Image"`` -> emitted as an image Document.
+        - Any other category is skipped.
+
+        For every emitted Document:
+
+        - ``orig_elements``, ``image_base64``, and ``text_as_html`` are stripped
+          from metadata (heavy / volatile fields not needed downstream).
+        - A fresh ``rf_doc_id`` (UUID4 string) is assigned.
+        - A ``*_source`` field is set per type:
+          ``text_source`` = ``page_content`` for text,
+          ``table_source`` = original ``text_as_html`` for tables,
+          ``image_source`` = original ``image_base64`` for images.
+
+        Args:
+            documents: Raw Documents from an ``UnstructuredBaseLoader.load()``.
 
         Returns:
-            List[Document]: A list of loaded documents.
+            A single list of typed Documents (text, table, and image, in input order),
+            ready for downstream embedding / vector-store ingestion.
         """
-        return self.document_loader.load() if self.document_loader is not None else []
+        from unstructured.staging.base import elements_from_base64_gzipped_json
+
+        DROP_KEYS = ("orig_elements", "image_base64", "text_as_html")
+
+        def _strip(metadata: dict) -> None:
+            for key in DROP_KEYS:
+                metadata.pop(key, None)
+
+        def _new_image_doc(image_b64: str, parent_metadata: dict) -> Document:
+            new_meta = {k: v for k, v in parent_metadata.items() if k not in DROP_KEYS}
+            new_meta["document_type"] = "image"
+            new_meta["image_source"] = image_b64
+            new_meta["rf_doc_id"] = str(uuid.uuid4())
+            return Document(page_content="", metadata=new_meta)
+
+        result: list[Document] = []
+
+        for chunk in documents:
+            category = chunk.metadata.get("category")
+
+            if category == "Table":
+                # A table chunk may also have a rendered image; surface it as a
+                # separate image Document so it can be embedded / described.
+                table_image_b64 = chunk.metadata.get("image_base64")
+                if table_image_b64:
+                    result.append(_new_image_doc(table_image_b64, chunk.metadata))
+
+                table_html = chunk.metadata.get("text_as_html")
+                _strip(chunk.metadata)
+                chunk.metadata["document_type"] = "table"
+                if table_html is not None:
+                    chunk.metadata["table_source"] = table_html
+                chunk.metadata["rf_doc_id"] = str(uuid.uuid4())
+                # Authoritative content now lives in metadata["table_source"];
+                # clear page_content to avoid storing it twice.
+                chunk.page_content = ""
+                result.append(chunk)
+
+            elif category == "Image":
+                image_b64 = chunk.metadata.get("image_base64")
+                _strip(chunk.metadata)
+                chunk.metadata["document_type"] = "image"
+                if image_b64 is not None:
+                    chunk.metadata["image_source"] = image_b64
+                chunk.metadata["rf_doc_id"] = str(uuid.uuid4())
+                # Authoritative content now lives in metadata["image_source"];
+                # clear page_content to avoid storing it twice.
+                chunk.page_content = ""
+                result.append(chunk)
+
+            elif category == "CompositeElement":
+                # Pull nested Image/Table base64 out of orig_elements *before*
+                # stripping the parent metadata, so each becomes its own image
+                # Document carrying the composite chunk's contextual metadata
+                # (filename, page_number, etc.).
+                orig_b64 = chunk.metadata.get("orig_elements")
+                if orig_b64:
+                    for el in elements_from_base64_gzipped_json(orig_b64):
+                        if type(el).__name__ in ("Image", "Table"):
+                            nested_b64 = getattr(el.metadata, "image_base64", None)
+                            if nested_b64:
+                                result.append(_new_image_doc(nested_b64, chunk.metadata))
+
+                text_content = chunk.page_content
+                _strip(chunk.metadata)
+                chunk.metadata["document_type"] = "text"
+                chunk.metadata["text_source"] = text_content
+                chunk.metadata["rf_doc_id"] = str(uuid.uuid4())
+                # Authoritative content now lives in metadata["text_source"];
+                # clear page_content to avoid storing it twice.
+                chunk.page_content = ""
+                result.append(chunk)
+
+        return result
+
+    def _describe_multi_modal_documents(self, documents: list[Document]) -> list[Document]:
+        """
+        Generate per-modality summaries and write them back as ``page_content``.
+
+        For each modality (in ``text -> image -> table`` order), this method:
+
+        1. Partitions the input list by ``metadata["document_type"]``.
+        2. Builds prompts via :meth:`_build_summarization_prompts` using the
+           appropriate ``*_source`` metadata field as model input.
+        3. Initializes a single inference engine on the configured
+           ``summarizer_runner`` (typically the enclosing ``DocProcessingActor``),
+           calls ``summarize_batch``, and tears the engine down before moving
+           on to the next modality. Sequential initialization avoids holding
+           multiple vLLM models in GPU memory at once.
+        4. Writes each generated summary to the corresponding ``Document``'s
+           ``page_content`` (in place — no new Documents are allocated).
+
+        No-ops (returns ``documents`` unchanged) when:
+
+        - ``self.multimodal_processor`` is ``None`` (no summarization configured),
+        - ``documents`` is empty, or
+        - ``self._summarizer_runner`` was not injected (e.g. when the rag spec
+          is constructed at query-time inside ``QueryProcessingActor``, where
+          summarization is not applicable).
+
+        Args:
+            documents: Categorized Documents from
+                :meth:`_categorize_multi_modal_documents`. Each must carry a
+                ``document_type`` of ``"text"``, ``"table"``, or ``"image"``
+                and the corresponding ``text_source`` / ``table_source`` /
+                ``image_source`` metadata field.
+
+        Returns:
+            The same list, with each Document's ``page_content`` overwritten by
+            its generated summary (or left as ``""`` for modalities without a
+            configured summarizer).
+        """
+        if not self.multimodal_processor or not documents or self._summarizer_runner is None:
+            return documents
+
+        by_type: dict[str, list[Document]] = {"text": [], "image": [], "table": []}
+        for doc in documents:
+            doc_type = doc.metadata.get("document_type")
+            if doc_type in by_type:
+                by_type[doc_type].append(doc)
+
+        for modality, cfg_key, source_key in self._SUMMARIZER_MODALITIES:
+            cfg = self.multimodal_processor.get(cfg_key)
+            modality_docs = by_type[modality]
+            if not cfg or not modality_docs:
+                continue
+
+            generator = cfg["generator"]
+            instructions = cfg.get("instructions", "")
+            prompts = self._build_summarization_prompts(
+                modality_docs, instructions, modality, source_key
+            )
+            rate_limiter = self._lookup_summarizer_rate_limiter(generator)
+
+            # Hard ceiling on prompts per summarize_batch() call. When unset
+            # (None) or non-positive, fall back to "send everything in one
+            # call" and rely on the engine's own internal batching.
+            batch_size = self._summarizer_batch_size
+            if not batch_size or batch_size <= 0:
+                batch_size = len(prompts)
+
+            self._summarizer_runner.initialize_summarizer(generator, rate_limiter)
+            try:
+                # Stream summaries straight back to docs so we never hold a
+                # full duplicate list of summaries in memory, and so partial
+                # progress survives if a later batch fails (page_content for
+                # earlier docs has already been written).
+                for batch_start in range(0, len(prompts), batch_size):
+                    batch_end = batch_start + batch_size
+                    batch_prompts = prompts[batch_start:batch_end]
+                    batch_docs = modality_docs[batch_start:batch_end]
+                    batch_summaries = self._summarizer_runner.summarize_batch(batch_prompts)
+                    for doc, summary in zip(batch_docs, batch_summaries):
+                        doc.page_content = summary
+                        # Offload the original artifact (text body / base64 image /
+                        # table HTML) to object storage and replace its in-metadata
+                        # value with the returned URI. Critical for text: the
+                        # splitter fans each text doc into N children that all
+                        # inherit the same parent metadata, so a 20 KB text_source
+                        # gets duplicated N times into the vector store unless we
+                        # offload first. No-op when artifact_storage_cfg was not
+                        # configured.
+                        if self.storage_client is None:
+                            continue
+                        source_value = doc.metadata.get(source_key)
+                        if not source_value:
+                            continue
+                        if modality == "text":
+                            doc.metadata[source_key] = self.storage_client.put_text(
+                                doc.metadata["rf_doc_id"], source_value
+                            )
+                        elif modality == "image":
+                            doc.metadata[source_key] = self.storage_client.put_image(
+                                doc.metadata["rf_doc_id"], source_value
+                            )
+                        elif modality == "table":
+                            doc.metadata[source_key] = self.storage_client.put_html(
+                                doc.metadata["rf_doc_id"], source_value
+                            )
+            finally:
+                # Request cleanup before the next modality. The runner decides
+                # what that actually means per engine type: GPU-bound engines
+                # (e.g. vLLM) are torn down so weights are evicted from VRAM
+                # even if generation raised partway through; stateless API
+                # engines are kept alive so the config-hash short-circuit in
+                # initialize_summarizer can reuse them on the next modality
+                # when configs match.
+                self._summarizer_runner.cleanup_summarizer()
+
+        return documents
+
+    def _build_summarization_prompts(
+        self,
+        documents: list[Document],
+        instructions: str,
+        modality: str,
+        source_key: str,
+    ) -> list[list[dict[str, Any]]]:
+        """
+        Build OpenAI chat-message prompts for a batch of same-modality documents.
+
+        - For ``text`` and ``table`` modalities the prompt is a single user
+          message concatenating ``instructions`` and the raw ``*_source``
+          string.
+        - For ``image`` the prompt is the OpenAI multimodal format with a
+          text part (the instructions) followed by an ``image_url`` part
+          carrying the base64-encoded image as a ``data:`` URL — the same
+          shape used in ``multi-modal-testing/unstructured-langchain.ipynb``.
+
+        Args:
+            documents: Documents of a single modality.
+            instructions: Free-form prompt prefix from the summarizer cfg.
+            modality: ``"text"``, ``"image"``, or ``"table"``.
+            source_key: Metadata key whose value is fed to the model
+                (``text_source`` / ``image_source`` / ``table_source``).
+
+        Returns:
+            One chat-message list per document, suitable for
+            ``InferenceEngine.generate``.
+        """
+        prompts: list[list[dict[str, Any]]] = []
+        for doc in documents:
+            source = doc.metadata.get(source_key, "") or ""
+            if modality == "image":
+                prompts.append([{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": instructions},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{source}"},
+                        },
+                    ],
+                }])
+            else:
+                prompts.append([{
+                    "role": "user",
+                    "content": f"{instructions}\n\n{source}".strip(),
+                }])
+        return prompts
+
+    def _lookup_summarizer_rate_limiter(self, generator: Any) -> Any | None:
+        """
+        Resolve the RateLimiterActor handle for a summarizer generator, if any.
+
+        API generators (``RFAPIModelConfig``) require a rate-limiter actor; the
+        Controller pre-creates one per provider and injects them via
+        :meth:`build_pipeline`. vLLM generators don't need one — we return
+        ``None`` and let ``initialize_summarizer`` skip the injection.
+
+        Args:
+            generator: The ``ModelConfig`` instance from the summarizer cfg.
+
+        Returns:
+            A Ray ActorHandle for the matching provider's RateLimiterActor,
+            or ``None`` if no rate-limiters were injected or the generator is
+            not API-based.
+        """
+        if not self._summarizer_rate_limiters:
+            return None
+        endpoint_config = getattr(generator, "endpoint_config", None)
+        if not isinstance(endpoint_config, dict):
+            return None
+        provider = endpoint_config.get("provider", "openai")
+        return self._summarizer_rate_limiters.get(provider)
+
+    def _process_multi_modal_documents(self, documents: list[Document]) -> list[Document]:
+        """
+        Process multi-modal documents into text, table, and image documents.
+        """
+        _docs = self._categorize_multi_modal_documents(documents)
+        _docs = self._describe_multi_modal_documents(_docs)
+        return _docs
+
+    def init_storage_client(self) -> None:
+        """
+        Idempotently instantiate ``self.storage_client`` from ``self.artifact_storage_cfg``.
+
+        Safe to call any number of times from any caller. The method is a no-op
+        when:
+
+        - ``self.storage_client`` is already set (already initialized), or
+        - ``self.artifact_storage_cfg`` is ``None`` (artifact offloading not
+          configured).
+
+        Otherwise, instantiates a :class:`CloudStorage` using the flat cfg
+        stored on the rag spec. The credential chain is the underlying SDK's
+        default — see ``rapidfireai.evals.utils.storage_utils`` for details.
+
+        Lifecycle:
+
+        - **Build path** (``DocProcessingActor``): :meth:`_load_documents`
+          calls this on entry and resets ``self.storage_client = None`` once
+          loading is finished, so the SDK handle does not outlive ingestion.
+        - **Query path** (``QueryProcessingActor``): the actor calls this once
+          after reconstructing the rag spec and lets the handle live for the
+          rest of the actor's lifetime, making it available to user-supplied
+          ``preprocess_fn`` callbacks via ``rag_spec.storage_client``.
+        """
+        if self.storage_client is not None:
+            return
+        if self.artifact_storage_cfg is None:
+            return
+
+        backend = self.artifact_storage_cfg["backend"]
+        bucket = self.artifact_storage_cfg["bucket"]
+        prefix = self.artifact_storage_cfg.get("prefix", "artifacts")
+        self.storage_client = CloudStorage(backend=backend, bucket=bucket, prefix=prefix)
+
+    def _load_documents(self) -> list[Document]:
+        """
+        Load documents from all configured document loaders.
+
+        Iterates through ``self.document_loader`` (a list of optional BaseLoader
+        instances), invoking ``load()`` on each non-None loader and concatenating
+        the results.
+
+        Storage-client lifecycle: if ``self.artifact_storage_cfg`` is set, a
+        :class:`CloudStorage` handle is created via :meth:`init_storage_client`
+        before any loader runs (so loaders / multimodal processing can offload
+        artifacts via ``self.storage_client``) and is torn down to ``None``
+        once all loaders complete, so build-time SDK handles do not outlive
+        ingestion. Idempotency means subsequent calls into
+        ``init_storage_client`` are cheap no-ops.
+
+        Returns:
+            List[Document]: A list of loaded documents from all loaders.
+        """
+        if not self.document_loader:
+            return []
+
+        self.init_storage_client()
+        try:
+            documents: list[Document] = []
+            for loader in self.document_loader:
+                if loader is not None:
+                    _docs = loader.load()
+                    # Only run multi-modal categorization/summarization when the
+                    # caller has actually configured a multimodal_processor.
+                    if self.multimodal_processor is not None:
+                        wrapped_cls = getattr(loader, "loader_cls", None)
+                        if isinstance(loader, UnstructuredBaseLoader) or (
+                            isinstance(wrapped_cls, type)
+                            and issubclass(wrapped_cls, UnstructuredBaseLoader)
+                        ):
+                            _docs = self._process_multi_modal_documents(_docs)
+                    documents.extend(_docs)
+            return documents
+        finally:
+            # Build-phase only: drop the handle so it doesn't live past
+            # ingestion. The query path keeps its own handle alive separately.
+            self.storage_client = None
 
     def _split_documents(self, documents: list[Document]) -> list[Document]:
         """
@@ -347,7 +847,7 @@ class LangChainRagSpec:
             )
         else:
             raise NotImplementedError(f"Vector store type {type} not implemented")
-            
+    
     def _build_vector_store(self) -> None:
         """
         Build the vector store by loading documents, optionally splitting, and adding.
@@ -364,7 +864,12 @@ class LangChainRagSpec:
         for i in range(0, len(documents), batch_size):
             self.vector_store.add_documents(documents=documents[i: i + batch_size])
 
-    def build_pipeline(self) -> None:
+    def build_pipeline(
+        self,
+        summarizer_runner: Any | None = None,
+        summarizer_rate_limiters: dict[str, Any] | None = None,
+        summarizer_batch_size: int | None = None,
+    ) -> None:
         """
         Create the embedding instance and ensure a retriever is available.
 
@@ -380,10 +885,39 @@ class LangChainRagSpec:
         - enable_gpu_search=True: IndexFlatL2 on GPU (exact L2 search).
         - enable_gpu_search=False: IndexHNSWFlat on CPU (approximate HNSW search).
 
+        Args:
+            summarizer_runner: Optional handle exposing
+                ``initialize_summarizer(generator, rate_limiter_actor)``,
+                ``summarize_batch(prompts) -> list[str]``, and
+                ``cleanup_summarizer()``. Used by
+                :meth:`_describe_multi_modal_documents` when
+                ``self.multimodal_processor`` is set. Typically the enclosing
+                ``DocProcessingActor`` passes ``self`` here. When ``None``,
+                multimodal summarization is silently skipped — appropriate for
+                query-time rag specs and for ingestion without a
+                ``multimodal_processor``.
+            summarizer_rate_limiters: Optional ``{provider: RateLimiterActor}``
+                mapping. Used by API summarizer generators
+                (``RFAPIModelConfig``); vLLM generators don't need it. Keyed
+                by ``endpoint_config["provider"]``.
+            summarizer_batch_size: Optional hard ceiling on the number of
+                prompts sent to ``summarizer_runner.summarize_batch()`` in a
+                single call. When ``None`` (default), the entire modality is
+                sent in one call and the underlying engine handles its own
+                internal batching. Typically supplied by the Controller as
+                the maximum ``batch_size`` across all pipelines that share
+                this context.
+
         Raises:
             Exception: If embedding instantiation fails.
             ImportError: If faiss (or faiss-gpu) is not available when building index.
         """
+        # Stash so _describe_multi_modal_documents (called transitively via
+        # _load_documents) can see them.
+        self._summarizer_runner = summarizer_runner
+        self._summarizer_rate_limiters = summarizer_rate_limiters
+        self._summarizer_batch_size = summarizer_batch_size
+
         # Create embedding instance with provided configuration
         if self.embedding_cls is not None:
             self.embedding = self.embedding_cls(**self.embedding_kwargs)
@@ -546,6 +1080,8 @@ class LangChainRagSpec:
             search_cfg = None
         new_rag = LangChainRagSpec(
             document_loader=self.document_loader,
+            multimodal_processor=copy.deepcopy(self.multimodal_processor) if self.multimodal_processor else None,
+            artifact_storage_cfg=copy.deepcopy(self.artifact_storage_cfg) if self.artifact_storage_cfg else None,
             text_splitter=self.text_splitter,
             embedding_cfg=embedding_cfg,
             vector_store_cfg=copy.deepcopy(self.vector_store_cfg) if self.vector_store_cfg else None,
@@ -609,6 +1145,107 @@ class LangChainRagSpec:
                     cfg["type"] = f"{class_name}(hf:{tokenizer.name_or_path})"
         return cfg
 
+    @staticmethod
+    def _json_default_encoder(obj: Any) -> Any:
+        """
+        Shared ``default=`` callback for ``json.dumps`` used by all hashing helpers.
+
+        Centralizes the fallback rules so a fix in one place applies to every
+        config-hash computation (loaders, multimodal processor, full rag dict).
+        Non-JSON-serializable values are converted as follows:
+
+        - Class objects (e.g. ``loader_cls=JSONLoader``) → ``"module.qualname"``.
+        - Functions / bound methods → ``"module.qualname"``.
+        - Objects with an ``asdict()`` method (e.g. ``ServerlessSpec``) → that dict.
+        - Other objects → ``vars(obj)`` if available, else ``str(obj)``.
+        """
+        if isinstance(obj, type):
+            return f"{obj.__module__}.{obj.__qualname__}"
+        if callable(obj) and hasattr(obj, "__qualname__"):
+            return f"{getattr(obj, '__module__', '')}.{obj.__qualname__}"
+        if hasattr(obj, "asdict"):
+            return obj.asdict()
+        try:
+            return vars(obj)
+        except TypeError:
+            return str(obj)
+
+    @staticmethod
+    def _hash_loader(loader: BaseLoader) -> str:
+        """
+        Compute a deterministic hash of a document loader's full configuration.
+
+        LangChain's ``BaseLoader`` does not expose a built-in hash, but most
+        loader subclasses store their configuration as plain instance
+        attributes (e.g. ``DirectoryLoader`` keeps ``path``, ``glob``,
+        ``loader_cls``, ``loader_kwargs``, ``recursive``, ``sample_seed``,
+        etc. on ``self``). This method serializes ``vars(loader)`` to a
+        canonical JSON form and SHA256-hashes it, so two loaders with
+        identical configurations produce the same hash.
+
+        Non-JSON-serializable values are handled by
+        :meth:`_json_default_encoder`.
+
+        Args:
+            loader: A LangChain ``BaseLoader`` instance.
+
+        Returns:
+            SHA256 hash hex string.
+        """
+        loader_state = {
+            "class": f"{type(loader).__module__}.{type(loader).__qualname__}",
+            **vars(loader),
+        }
+        loader_json = json.dumps(
+            loader_state, sort_keys=True, default=LangChainRagSpec._json_default_encoder
+        )
+        return hashlib.sha256(loader_json.encode()).hexdigest()
+
+    @staticmethod
+    def _hash_multimodal_processor(processor: dict[str, Any]) -> str:
+        """
+        Compute a deterministic hash of a multimodal processor configuration.
+
+        The processor dict drives summarization of text/table/image chunks, so
+        any change to a summarizer's instructions or generator (model) must
+        invalidate cached descriptions. For each known summarizer key
+        (``text_summarizer_cfg``, ``image_summarizer_cfg``, ``table_summarizer_cfg``)
+        this captures:
+
+        - ``instructions``: the raw prompt string (or whatever the user passed).
+        - ``generator_class``: the fully-qualified class name of the generator.
+        - ``generator_state``: ``vars(generator)`` (constructor kwargs etc.),
+          serialized via :meth:`_json_default_encoder`.
+
+        Missing summarizer keys are skipped, so configurations that differ only
+        in which modalities are summarized produce different hashes naturally.
+
+        Args:
+            processor: The validated multimodal_processor dict.
+
+        Returns:
+            SHA256 hash hex string.
+        """
+        state: dict[str, Any] = {}
+        for key in ("text_summarizer_cfg", "image_summarizer_cfg", "table_summarizer_cfg"):
+            cfg = processor.get(key)
+            if cfg is None:
+                continue
+            generator = cfg.get("generator")
+            state[key] = {
+                "instructions": cfg.get("instructions"),
+                "generator_class": (
+                    f"{type(generator).__module__}.{type(generator).__qualname__}"
+                    if generator is not None
+                    else None
+                ),
+                "generator_state": vars(generator) if generator is not None else None,
+            }
+        payload = json.dumps(
+            state, sort_keys=True, default=LangChainRagSpec._json_default_encoder
+        )
+        return hashlib.sha256(payload.encode()).hexdigest()
+
     def get_hash(self) -> str:
         """
         Generate a unique hash for this RAG configuration.
@@ -622,9 +1259,33 @@ class LangChainRagSpec:
         rag_dict = {}
         rag_dict["experiment_name"] = self.experiment_name or "unknown"
 
-        # Document loader configuration
-        if self.document_loader is not None and hasattr(self.document_loader, "path"):
-            rag_dict["documents_path"] = self.document_loader.path
+        # Hash each loader and sort the hashes to make the order-insensitive
+        if self.document_loader:
+            loader_hashes = sorted(
+                self._hash_loader(loader)
+                for loader in self.document_loader
+                if loader is not None
+            )
+            if loader_hashes:
+                rag_dict["document_loaders"] = loader_hashes
+
+        # Multimodal processor: changing instructions or generator model
+        # invalidates cached summaries, so it must contribute to the hash.
+        if self.multimodal_processor:
+            rag_dict["multimodal_processor"] = self._hash_multimodal_processor(
+                self.multimodal_processor
+            )
+
+        # Artifact storage cfg: bucket/prefix changes mean URIs baked into
+        # docstore metadata point at a different location, so a fresh build
+        # is required. The live storage_client handle is excluded — it's
+        # runtime state, not config.
+        if self.artifact_storage_cfg:
+            rag_dict["artifact_storage_cfg"] = {
+                "backend": self.artifact_storage_cfg.get("backend"),
+                "bucket": self.artifact_storage_cfg.get("bucket"),
+                "prefix": self.artifact_storage_cfg.get("prefix", "artifacts"),
+            }
 
         # Text splitter configuration (optional)
         if self.text_splitter is not None:
@@ -641,16 +1302,10 @@ class LangChainRagSpec:
         # so it is part of the indexing stage, not retrieval
         rag_dict["enable_gpu_search"] = self.enable_gpu_search
 
-        # Convert to JSON string and hash.
-        # Use a fallback encoder for objects like ServerlessSpec that aren't
-        # natively JSON serializable — try __dict__ first, then str().
-        def _default(obj):
-            if hasattr(obj, "asdict"):
-                return obj.asdict()
-            try:
-                return vars(obj)
-            except TypeError:
-                return str(obj)
-
-        rag_json = json.dumps(rag_dict, sort_keys=True, default=_default)
+        # Convert to JSON string and hash. ``_json_default_encoder`` handles
+        # non-JSON-serializable values like ``ServerlessSpec`` (asdict),
+        # class objects, and arbitrary stateful objects (vars/str fallback).
+        rag_json = json.dumps(
+            rag_dict, sort_keys=True, default=self._json_default_encoder
+        )
         return hashlib.sha256(rag_json.encode()).hexdigest()

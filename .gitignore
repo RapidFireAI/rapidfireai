@@ -245,3 +245,9 @@ rapidfireai/frontend/build/
 # misc files
 rapidfire_pids.txt
 rf_mode.txt
+
+# document pdfs for mmdocir
+tutorial_notebooks/rag-contexteng/datasets/mmdocir/
+
+# MLFlow Artifacts
+mlartifacts/

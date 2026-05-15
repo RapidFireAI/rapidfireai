@@ -275,8 +275,15 @@ class QueryProcessingActor:
                         reranker_cfg=reranker_cfg,
                         enable_gpu_search=False,
                         document_template=context_generator_ref.get("template"),
+                        artifact_storage_cfg=context_generator_ref.get("artifact_storage_cfg"),
                     )
                     self.rag_spec.build_pipeline()
+                    # Initialize the cloud storage SDK handle once and keep it
+                    # alive for the rest of the actor's lifetime (or until the
+                    # rag_spec is replaced for a new pipeline). User-supplied
+                    # preprocess_fn callbacks reach it via rag_spec.storage_client.
+                    # No-op when artifact_storage_cfg was not configured.
+                    self.rag_spec.init_storage_client()
                     self.logger.info("Recreated RAG spec with retrieval mode")
 
                 # Set up PromptManager if provided (reinitialize after deserialization)
