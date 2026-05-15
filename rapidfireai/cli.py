@@ -201,13 +201,36 @@ def install_packages(
         print(
             " ⚠️ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
             "    Disabling CUDA usage for evaluation dependencies.\n"
-            "    If you want to override this expelicitly pass the CUDA version, for example:\n"
+            "    If you want to override this explicitly pass the CUDA version, for example:\n"
             "        rapidfireai init --evals --cudaversion 12.4\n"
             "    If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).\n"
             "          If there is no GPU available, you can ignore this warning.",
             file=sys.stderr,
         )
-
+        compute_capability_version = "0.0"
+    if compute_capability_version is not None:
+        compute_cap = parse_compute_capability_string(compute_capability_version)
+        if compute_cap is None:
+            print(
+                "❌ Invalid --computecapabilityversion: use major.minor (e.g. 8.0 or 8.6).",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        compute_cap = get_compute_capability()
+        if compute_cap is None:
+            print(
+                "⚠️ Could not detect GPU compute capability (nvidia-smi unavailable or failed).\n"
+                "   Disabling CUDA usage for evaluation dependencies.\n"
+                "   Pass it explicitly, for example:\n"
+                "   rapidfireai init --evals --computecapabilityversion 8.0\n"
+                "   (Use your GPU's SM version, e.g. 8.9 for Ada, 9.0 for Blackwell.)\n"
+                "          If there is no GPU available, you can ignore this warning.",
+                file=sys.stderr,
+            )
+            compute_cap = 0.0
+            cuda_major = 0
+            cuda_minor = 0
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
     setup_directory = None
@@ -255,6 +278,11 @@ def install_packages(
     torchaudio_version = "2.5.1"
     torch_cuda = "cu121"
     flash_cuda = "cu121"
+    if cuda_major==0:
+        torch_version = "2.8.0"
+        torchvision_version = "0.23.0"
+        torchaudio_version = "2.8.0"
+        torch_cuda = "cpu"
     if cuda_major==12:
         if cuda_minor>=9:
             # Supports Torch 2.8.0
@@ -323,6 +351,12 @@ def install_packages(
 
     
     ## TODO: re-enable for fit once trl has fix
+    if not ColabConfig.ON_COLAB and cuda_major==0:
+        print(f"\n🎯 Using CPU, using {torch_cuda}")
+        packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade"]})
+        packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade"]})
+        packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade"]})
+
     if not ColabConfig.ON_COLAB and cuda_major >= 12:
         if cuda_from_user:
             print(f"\n🎯 Using CUDA {cuda_major}.{cuda_minor} (from --cudaversion), using {torch_cuda}")
@@ -343,26 +377,7 @@ def install_packages(
             packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-            if compute_capability_version is not None:
-                compute_cap = parse_compute_capability_string(compute_capability_version)
-                if compute_cap is None:
-                    print(
-                        "❌ Invalid --computecapabilityversion: use major.minor (e.g. 8.0 or 8.6).",
-                        file=sys.stderr,
-                    )
-                    return 1
-            else:
-                compute_cap = get_compute_capability()
-                if compute_cap is None:
-                    print(
-                        "⚠️ Could not detect GPU compute capability (nvidia-smi unavailable or failed).\n"
-                        "   Disabling CUDA usage for evaluation dependencies.\n"
-                        "   Pass it explicitly, for example:\n"
-                        "   rapidfireai init --evals --computecapabilityversion 8.0\n"
-                        "   (Use your GPU's SM version, e.g. 8.9 for Ada, 9.0 for Blackwell.)",
-                        file=sys.stderr,
-                    )
-                    compute_cap = 0.0
+
             if compute_cap is not None and compute_cap >= 8.0:
                 packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
                 # Re-install torch, torchvision, and torchaudio to ensure compatibility as flash-attn requires an old version of torch but will upgrade torch to an incompatible version
