@@ -176,6 +176,10 @@ class Controller:
             manager.log_param(run_id, "rpm_limit", str(pipeline.rpm_limit))
         if hasattr(pipeline, "tpm_limit") and pipeline.tpm_limit:
             manager.log_param(run_id, "tpm_limit", str(pipeline.tpm_limit))
+        if hasattr(pipeline, "itpm_limit") and pipeline.itpm_limit:
+            manager.log_param(run_id, "itpm_limit", str(pipeline.itpm_limit))
+        if hasattr(pipeline, "otpm_limit") and pipeline.otpm_limit:
+            manager.log_param(run_id, "otpm_limit", str(pipeline.otpm_limit))
 
         # Log prompt_manager params
         if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager:
@@ -212,6 +216,66 @@ class Controller:
         # Log max_completion_tokens
         if hasattr(pipeline, "max_completion_tokens") and pipeline.max_completion_tokens:
             manager.log_param(run_id, "max_completion_tokens", str(pipeline.max_completion_tokens))
+
+    @staticmethod
+    def _collect_summarizer_batch_sizes(
+        config_leaves: Any,
+    ) -> dict[str, int]:
+        """
+        Build a ``context_hash -> max(batch_size)`` map.
+
+        The summarizer in :meth:`LangChainRagSpec._describe_multi_modal_documents`
+        accepts a hard ceiling on prompts per ``summarize_batch`` call. Because a
+        single context (rag_spec + prompt_manager) may be shared by many
+        pipelines — each with its own per-pipeline ``batch_size`` — we pick the
+        most permissive (max) value for the build-time summarizer. Picking max
+        is the most generous choice: build is shared infrastructure, so we
+        respect the largest user's intent. Pipelines with no ``batch_size`` set
+        contribute nothing; if no pipeline supplies one, the context is absent
+        from the map and the rag spec falls back to "send the modality in a
+        single call".
+
+        Args:
+            config_leaves: List of pipeline config dictionaries (same input as
+                :meth:`_collect_unique_contexts`).
+
+        Returns:
+            ``{context_hash: max_batch_size}`` for every context that has at
+            least one pipeline with a positive integer ``batch_size``.
+        """
+        ceilings: dict[str, int] = {}
+        for config_leaf in config_leaves:
+            pipeline_config = config_leaf.get("pipeline") if isinstance(config_leaf, dict) else None
+            if not pipeline_config:
+                continue
+
+            rag_spec = getattr(pipeline_config, "rag", None)
+            prompt_manager = getattr(pipeline_config, "prompt_manager", None)
+            if not rag_spec and not prompt_manager:
+                continue
+
+            rag_hash = rag_spec.get_hash() if rag_spec else None
+            prompt_hash = prompt_manager.get_hash() if prompt_manager else None
+            if rag_hash and prompt_hash:
+                context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
+            elif rag_hash:
+                context_hash = rag_hash
+            elif prompt_hash:
+                context_hash = prompt_hash
+            else:
+                continue
+
+            # Only positive integers are valid ceilings; silently skip anything
+            # else so a stray None / 0 / non-int doesn't poison the max().
+            batch_size = config_leaf.get("batch_size") if isinstance(config_leaf, dict) else None
+            if not isinstance(batch_size, int) or batch_size <= 0:
+                continue
+
+            current = ceilings.get(context_hash)
+            if current is None or batch_size > current:
+                ceilings[context_hash] = batch_size
+
+        return ceilings
 
     @staticmethod
     def _collect_unique_contexts(
@@ -304,6 +368,13 @@ class Controller:
 
         self.logger.info(f"Found {len(unique_contexts)} unique RAG context(s)")
 
+        # Per-context hard ceiling for the multimodal summarizer, derived from
+        # the per-pipeline batch_size of any pipeline that targets the context.
+        # Contexts without a positive int batch_size on any consumer pipeline
+        # are absent from this map; the rag spec then defaults to "send the
+        # whole modality in one summarize_batch() call".
+        summarizer_batch_sizes = self._collect_summarizer_batch_sizes(config_leaves)
+
         # Step 2: Identify contexts that need to be built
         contexts_to_build = []
         for context_hash, (rag_spec, prompt_manager) in unique_contexts.items():
@@ -331,6 +402,7 @@ class Controller:
                     "rag": rag_spec,
                     "prompt_manager": prompt_manager,
                     "start_time": time.time(),
+                    "summarizer_batch_size": summarizer_batch_sizes.get(context_hash),
                 }
             )
 
@@ -345,6 +417,134 @@ class Controller:
         except Exception:
             self.logger.exception("Failed to build contexts in parallel")
             raise
+
+    def _provision_summarizer_rate_limiters(
+        self,
+        contexts_to_build: list[dict],
+    ) -> tuple[dict[str, Any], dict[int, dict[str, Any]]]:
+        """
+        Create one ``RateLimiterActor`` per provider used by build-time summarizers.
+
+        Walks ``contexts_to_build`` looking at each ``rag_spec.multimodal_processor``
+        for ``RFAPIModelConfig`` summarizer generators. Aggregates per-endpoint
+        rate limits into per-provider buckets (same shape as the query-side
+        ``provider_groups`` dict in PHASE 6) and provisions one
+        ``RateLimiterActor`` per distinct provider.
+
+        Args:
+            contexts_to_build: The list of context dicts being built in this
+                batch (each has a ``"rag"`` key holding a ``LangChainRagSpec``).
+
+        Returns:
+            A tuple of:
+
+            - ``build_rate_limiters``: ``{provider: RateLimiterActor}``.
+              Empty dict if no contexts use API summarizers. Caller is
+              responsible for ``ray.kill``-ing each actor when done.
+            - ``context_to_rate_limiters``: ``{id(context_info): {provider: actor}}``
+              — keyed by ``id()`` because ``context_info`` dicts aren't
+              hashable. Each context only sees the providers its own
+              summarizers actually reference.
+        """
+        try:
+            from rapidfireai.automl import RFAPIModelConfig
+        except ImportError:
+            return {}, {}
+
+        SUMMARIZER_KEYS = ("text_summarizer_cfg", "image_summarizer_cfg", "table_summarizer_cfg")
+
+        # Pass 1: aggregate per-provider rate limits and remember which
+        # providers each context uses, without building any actors yet.
+        provider_groups: dict[str, dict] = {}
+        context_to_providers: dict[int, set[str]] = {}
+
+        for context_info in contexts_to_build:
+            rag_spec = context_info.get("rag")
+            if not rag_spec or not getattr(rag_spec, "multimodal_processor", None):
+                continue
+
+            providers_used: set[str] = set()
+            for cfg_key in SUMMARIZER_KEYS:
+                cfg = rag_spec.multimodal_processor.get(cfg_key)
+                if not cfg:
+                    continue
+                generator = cfg.get("generator")
+                if not isinstance(generator, RFAPIModelConfig):
+                    # vLLM / unknown generators don't need a rate limiter.
+                    continue
+
+                provider = generator.endpoint_config.get("provider", "openai")
+                endpoint_name = generator.model_name
+
+                # Reuse the same validation the query-side path enforces, so
+                # build-time summarizers don't sneak past missing limits.
+                has_tpm = generator.tpm_limit is not None
+                has_itpm_otpm = (
+                    generator.itpm_limit is not None and generator.otpm_limit is not None
+                )
+                if generator.rpm_limit is None or (not has_tpm and not has_itpm_otpm):
+                    raise ValueError(
+                        f"Multimodal {cfg_key} generator (endpoint: {endpoint_name}, "
+                        f"provider: {provider}) is missing rate limits. Provide "
+                        f"rpm_limit and (tpm_limit or itpm_limit+otpm_limit) on the "
+                        f"RFAPIModelConfig used as the summarizer generator."
+                    )
+
+                group = provider_groups.setdefault(provider, {
+                    "model_rate_limits": {},
+                    "max_completion_tokens_by_model": {},
+                })
+
+                rate_limit_dict = generator.get_rate_limit_dict()
+                if endpoint_name not in group["model_rate_limits"]:
+                    group["model_rate_limits"][endpoint_name] = rate_limit_dict
+                    group["max_completion_tokens_by_model"][endpoint_name] = (
+                        generator.max_completion_tokens
+                    )
+                elif group["model_rate_limits"][endpoint_name] != rate_limit_dict:
+                    self.logger.warning(
+                        f"Summarizer endpoint {endpoint_name} (provider {provider}) has "
+                        f"inconsistent rate limits across contexts. Using first encountered "
+                        f"values: {group['model_rate_limits'][endpoint_name]}"
+                    )
+
+                providers_used.add(provider)
+
+            if providers_used:
+                context_to_providers[id(context_info)] = providers_used
+
+        if not provider_groups:
+            return {}, {}
+
+        # Pass 2: spawn one RateLimiterActor per provider.
+        from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
+
+        build_rate_limiters: dict[str, Any] = {}
+        for provider, group in provider_groups.items():
+            max_tokens = max(group["max_completion_tokens_by_model"].values()) if (
+                group["max_completion_tokens_by_model"]
+            ) else 150
+            build_rate_limiters[provider] = RateLimiterActor.remote(
+                model_rate_limits=group["model_rate_limits"],
+                max_completion_tokens=max_tokens,
+                limit_safety_ratio=0.95,
+                minimum_wait_time=1.0,
+                backend=provider,
+                experiment_name=self.experiment_name,
+                experiment_path=self.experiment_path,
+            )
+            self.logger.info(
+                f"Provisioned build-phase rate limiter for provider '{provider}' "
+                f"(endpoints: {sorted(group['model_rate_limits'].keys())})"
+            )
+
+        # Pass 3: project the global dict down to per-context views.
+        context_to_rate_limiters: dict[int, dict[str, Any]] = {
+            ctx_id: {p: build_rate_limiters[p] for p in providers}
+            for ctx_id, providers in context_to_providers.items()
+        }
+
+        return build_rate_limiters, context_to_rate_limiters
 
     def build_rag_components(
         self,
@@ -388,130 +588,199 @@ class Controller:
         context_display = ContextBuildingDisplay(contexts_to_build)
         context_display.start()
 
-        # Step 1: Create all DocProcessingActors and submit all build tasks
-        actor_tasks = []
-        for context_info in contexts_to_build:
-            rag_spec = context_info["rag"]
-            prompt_manager = context_info["prompt_manager"]
+        # Provision per-provider RateLimiterActors for any API summarizer
+        # generators referenced by rag_spec.multimodal_processor across the
+        # contexts being built. We mirror the query-side per-provider grouping
+        # (see PHASE 6 below, ~line 1010) so rate limits are aggregated across
+        # contexts that share a provider, and only one actor exists per provider.
+        # Actors are kept alive for the duration of this method only — they're
+        # purely a build-phase concern.
+        build_rate_limiters, context_to_rate_limiters = self._provision_summarizer_rate_limiters(
+            contexts_to_build
+        )
 
-            # Skip if neither RAG nor prompt_manager (shouldn't happen, but safety check)
-            if not rag_spec and not prompt_manager:
-                continue
+        # actor_tasks is declared outside the try so the outer `finally`
+        # below can sweep up any actors whose per-task `finally` never ran
+        # (e.g. Step 1 raises mid-loop, or Step 2 raises on task i and never
+        # reaches tasks i+1..N). killed_actors tracks which actors have
+        # already been reaped by the per-task finally so we don't kill twice.
+        actor_tasks: list[dict] = []
+        killed_actors: set[int] = set()
 
-            # Allocate resources based on GPU needs:
-            # - If GPU search enabled: 1 GPU + 2 CPUs
-            # - If CPU only: 0 GPUs + 2 CPUs
-            # - If prompt-only with CUDA device requested: 1 GPU + 2 CPUs
-            # - If prompt-only without CUDA: 0 GPUs + 2 CPUs
-            needs_gpu = False
-            if rag_spec and rag_spec.enable_gpu_search:
-                needs_gpu = True
-            elif rag_spec:
-                # Check if rag_spec embeddings or reranker request CUDA (even if enable_gpu_search=False)
-                if rag_spec.embedding_kwargs:
-                    model_kwargs = rag_spec.embedding_kwargs.get("model_kwargs", {})
+        try:
+            # Step 1: Create all DocProcessingActors and submit all build tasks
+            for context_info in contexts_to_build:
+                rag_spec = context_info["rag"]
+                prompt_manager = context_info["prompt_manager"]
+
+                # Skip if neither RAG nor prompt_manager (shouldn't happen, but safety check)
+                if not rag_spec and not prompt_manager:
+                    continue
+
+                # Allocate resources based on GPU needs:
+                # - If GPU search enabled: 1 GPU + 2 CPUs
+                # - If CPU only: 0 GPUs + 2 CPUs
+                # - If prompt-only with CUDA device requested: 1 GPU + 2 CPUs
+                # - If prompt-only without CUDA: 0 GPUs + 2 CPUs
+                needs_gpu = False
+                if rag_spec and rag_spec.enable_gpu_search:
+                    needs_gpu = True
+                elif rag_spec:
+                    # Check if rag_spec embeddings or reranker request CUDA (even if enable_gpu_search=False)
+                    if rag_spec.embedding_kwargs:
+                        model_kwargs = rag_spec.embedding_kwargs.get("model_kwargs", {})
+                        device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
+                        if device and str(device).startswith("cuda"):
+                            needs_gpu = True
+                    if not needs_gpu and rag_spec.reranker_kwargs:
+                        reranker_model_kwargs = rag_spec.reranker_kwargs.get("model_kwargs", {})
+                        device = reranker_model_kwargs.get("device", "") if isinstance(reranker_model_kwargs, dict) else ""
+                        if device and str(device).startswith("cuda"):
+                            needs_gpu = True
+                elif prompt_manager and prompt_manager.embedding_kwargs:
+                    # Check if prompt_manager requests CUDA device
+                    model_kwargs = prompt_manager.embedding_kwargs.get("model_kwargs", {})
                     device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
                     if device and str(device).startswith("cuda"):
                         needs_gpu = True
-                if not needs_gpu and rag_spec.reranker_kwargs:
-                    reranker_model_kwargs = rag_spec.reranker_kwargs.get("model_kwargs", {})
-                    device = reranker_model_kwargs.get("device", "") if isinstance(reranker_model_kwargs, dict) else ""
-                    if device and str(device).startswith("cuda"):
-                        needs_gpu = True
-            elif prompt_manager and prompt_manager.embedding_kwargs:
-                # Check if prompt_manager requests CUDA device
-                model_kwargs = prompt_manager.embedding_kwargs.get("model_kwargs", {})
-                device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
-                if device and str(device).startswith("cuda"):
-                    needs_gpu = True
-            if needs_gpu and self.cluster_num_gpus > 0:
-                num_gpus_for_actor = 1
-            else:
-                num_gpus_for_actor = 0
-            num_cpus_for_actor = self.num_cpus_per_actor
+                if needs_gpu and self.cluster_num_gpus > 0:
+                    num_gpus_for_actor = 1
+                else:
+                    num_gpus_for_actor = 0
+                num_cpus_for_actor = self.num_cpus_per_actor
 
-            # Create DocProcessingActor
-            # Ray will queue actors if resources aren't immediately available
-            doc_actor = DocProcessingActor.options(
-                num_gpus=num_gpus_for_actor,
-                num_cpus=num_cpus_for_actor,
-            ).remote(
-                experiment_name=self.experiment_name,
-                experiment_path=self.experiment_path,
-            )
-
-            # Submit build task (non-blocking)
-            components_future = doc_actor.build_rag_components.remote(rag_spec, prompt_manager)
-
-            actor_tasks.append(
-                {
-                    "actor": doc_actor,
-                    "future": components_future,
-                    "context_info": context_info,
-                }
-            )
-
-        self.logger.info(f"Submitted {len(actor_tasks)} build task(s) in parallel")
-
-        # Step 2: Wait for all tasks to complete and process results
-        for task in actor_tasks:
-            context_info = task["context_info"]
-            context_hash = context_info["context_hash"]
-            context_id = context_info["context_id"]
-            start_time = context_info["start_time"]
-
-            try:
-                # Wait for this specific build to complete
-                components = ray.get(task["future"])
-                end_time = time.time()
-                duration = end_time - start_time
-
-                # Put CPU-serializable components in Ray object store (shared memory)
-                context_generator_ref = ray.put(components)
-
-                # Update database
-                db.set_context_end_time(context_id, end_time, duration)
-                db.set_context_status(context_id, ContextStatus.ONGOING)
-                self.logger.info(f"Built context {context_id} ({context_hash[:8]}...) successfully in {duration:.2f}s")
-
-                # Cache for session-level reuse
-                self._context_cache[context_hash] = (context_id, context_generator_ref)
-
-                # Update display
-                context_display.update_context(context_hash, status="complete", duration=duration)
-
-            except Exception as e:
-                end_time = time.time()
-                duration = end_time - start_time
-
-                db.set_context_status(context_id, ContextStatus.FAILED)
-                db.set_context_error(context_id, str(e))
-                self.logger.exception(f"Failed to build context {context_id} ({context_hash[:8]}...)")
-
-                # Update display
-                context_display.update_context(context_hash, status="failed", duration=duration)
-
-                # HALT: Context creation is critical - stop the entire experiment
-                context_display.stop()
-                error_message = (
-                    f"\n{'='*80}\n"
-                    f"❌ CRITICAL ERROR: RAG Source Preprocessing Failed\n"
-                    f"{'='*80}\n"
-                    f"RAG Source ID: {context_id}\n"
-                    f"Context Hash: {context_hash[:16]}...\n"
-                    f"Error: {str(e)}\n"
-                    f"{'='*80}\n"
-                    f"\nThe experiment has been halted. Please fix the error and try again.\n"
+                # Create DocProcessingActor
+                # Ray will queue actors if resources aren't immediately available
+                doc_actor = DocProcessingActor.options(
+                    num_gpus=num_gpus_for_actor,
+                    num_cpus=num_cpus_for_actor,
+                ).remote(
+                    experiment_name=self.experiment_name,
+                    experiment_path=self.experiment_path,
                 )
-                print(error_message)
-                raise RuntimeError(f"Context creation failed for context {context_id}") from e
 
-            finally:
-                # Clean up DocProcessingActor
-                ray.kill(task["actor"])
+                # Submit build task (non-blocking). Pass only the rate limiters this
+                # context's summarizers actually need (keyed by provider); empty dict
+                # if the rag_spec has no API-based multimodal_processor.
+                per_context_rate_limiters = context_to_rate_limiters.get(id(context_info), {})
+                components_future = doc_actor.build_rag_components.remote(
+                    rag_spec,
+                    prompt_manager,
+                    summarizer_rate_limiters=per_context_rate_limiters or None,
+                    summarizer_batch_size=context_info.get("summarizer_batch_size"),
+                )
 
-        # Stop the context building display
-        context_display.stop()
+                actor_tasks.append(
+                    {
+                        "actor": doc_actor,
+                        "future": components_future,
+                        "context_info": context_info,
+                    }
+                )
+
+            self.logger.info(f"Submitted {len(actor_tasks)} build task(s) in parallel")
+
+            # Step 2: Wait for all tasks to complete and process results
+            for task in actor_tasks:
+                context_info = task["context_info"]
+                context_hash = context_info["context_hash"]
+                context_id = context_info["context_id"]
+                start_time = context_info["start_time"]
+
+                try:
+                    # Wait for this specific build to complete
+                    components = ray.get(task["future"])
+                    end_time = time.time()
+                    duration = end_time - start_time
+
+                    # Put CPU-serializable components in Ray object store (shared memory)
+                    context_generator_ref = ray.put(components)
+
+                    # Update database
+                    db.set_context_end_time(context_id, end_time, duration)
+                    db.set_context_status(context_id, ContextStatus.ONGOING)
+                    self.logger.info(f"Built context {context_id} ({context_hash[:8]}...) successfully in {duration:.2f}s")
+
+                    # Cache for session-level reuse
+                    self._context_cache[context_hash] = (context_id, context_generator_ref)
+
+                    # Update display
+                    context_display.update_context(context_hash, status="complete", duration=duration)
+
+                except Exception as e:
+                    end_time = time.time()
+                    duration = end_time - start_time
+
+                    db.set_context_status(context_id, ContextStatus.FAILED)
+                    db.set_context_error(context_id, str(e))
+                    self.logger.exception(f"Failed to build context {context_id} ({context_hash[:8]}...)")
+
+                    # Update display
+                    context_display.update_context(context_hash, status="failed", duration=duration)
+
+                    # HALT: Context creation is critical - stop the entire experiment.
+                    # The outer `finally` below will also call context_display.stop(),
+                    # tear down build_rate_limiters, and reap any actors whose per-task
+                    # finally never ran (tasks i+1..N below the failing task).
+                    error_message = (
+                        f"\n{'='*80}\n"
+                        f"❌ CRITICAL ERROR: RAG Source Preprocessing Failed\n"
+                        f"{'='*80}\n"
+                        f"RAG Source ID: {context_id}\n"
+                        f"Context Hash: {context_hash[:16]}...\n"
+                        f"Error: {str(e)}\n"
+                        f"{'='*80}\n"
+                        f"\nThe experiment has been halted. Please fix the error and try again.\n"
+                    )
+                    print(error_message)
+                    raise RuntimeError(f"Context creation failed for context {context_id}") from e
+
+                finally:
+                    # Clean up this task's DocProcessingActor as soon as the build
+                    # finishes (success or failure) so it doesn't hold GPU/CPU
+                    # resources while later tasks are still running. The outer
+                    # `finally` below uses killed_actors to avoid a double-kill,
+                    # and to reap any actor this branch never reached.
+                    try:
+                        ray.kill(task["actor"])
+                    finally:
+                        killed_actors.add(id(task["actor"]))
+        finally:
+            # Reap any actor whose per-task `finally` above never ran. This
+            # covers two failure modes:
+            #   1. Step 1 raised mid-loop, leaving the actors it had already
+            #      spawned in actor_tasks without ever entering Step 2.
+            #   2. Step 2 raised on task i (the `raise RuntimeError` branch),
+            #      exiting the loop and leaving tasks i+1..N's actors alive.
+            for task in actor_tasks:
+                if id(task["actor"]) in killed_actors:
+                    continue
+                try:
+                    ray.kill(task["actor"])
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error killing DocProcessingActor for context "
+                        f"{task['context_info'].get('context_id', '?')}: {e}"
+                    )
+
+            # Tear down build-phase rate limiters (one per provider). They
+            # were only needed while DocProcessingActors were running
+            # summarizer inference; the query-phase loop creates its own
+            # set later. This MUST live in `finally` — otherwise a failing
+            # build task raises out of the Step 2 loop and orphans every
+            # RateLimiterActor in build_rate_limiters.
+            for provider, rate_limiter in build_rate_limiters.items():
+                try:
+                    ray.kill(rate_limiter)
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error killing build-phase rate limiter for provider '{provider}': {e}"
+                    )
+
+            # Stop the context building display. Idempotent — the failure
+            # branch above may have already called it; calling again just
+            # re-renders the final state.
+            context_display.stop()
 
         self.logger.info(f"Completed parallel context building for {num_contexts} context(s)")
 
@@ -573,11 +842,9 @@ class Controller:
             flattened_config = get_flattened_config_leaf(json_config) if json_config else {}
 
             # Determine pipeline_type from the pipeline object
-            from rapidfireai.automl import RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig, RFvLLMModelConfig
-            if isinstance(pipeline, RFOpenAIAPIModelConfig):
-                _pipeline_type = "openai"
-            elif isinstance(pipeline, RFGeminiAPIModelConfig):
-                _pipeline_type = "gemini"
+            from rapidfireai.automl import RFAPIModelConfig, RFvLLMModelConfig
+            if isinstance(pipeline, RFAPIModelConfig):
+                _pipeline_type = "api"
             else:
                 _pipeline_type = "vllm"
 
@@ -598,9 +865,8 @@ class Controller:
 
                     pipeline = pipeline_config.get("pipeline")
                     if pipeline:
-                        if hasattr(pipeline, "model_config") and pipeline.model_config:
-                            model_name = pipeline.model_config.get("model", "unknown")
-                            self.metric_manager.log_param(metric_run_id, "model", model_name)
+                        if hasattr(pipeline, "model_name"):
+                            self.metric_manager.log_param(metric_run_id, "model", pipeline.model_name)
 
                         if hasattr(pipeline, "rag") and pipeline.rag:
                             if hasattr(pipeline.rag, "search_type"):
@@ -1005,135 +1271,174 @@ class Controller:
 
         # Initialize progress display table
         pipeline_info = []
-        for pipeline_id in pipeline_ids:
-            pipeline_info.append(
-                self._extract_pipeline_info(pipeline_id, pipeline_id_to_config[pipeline_id])
-            )
+        pipeline_configs = [pipeline_id_to_config[pipeline_id] for pipeline_id in pipeline_ids]
+        for pipeline_id, pipeline_config in zip(pipeline_ids, pipeline_configs, strict=False):
+            model_name = "Unknown"
+            # Indexing-stage fields (read-only in progress display)
+            text_splitter_cfg = None
+            embedding_cfg = None
+            vector_store_cfg = None
+            # Retrieval-stage fields
+            search_cfg = None
+            reranker_cfg = None
+            # Generation-stage fields
+            sampling_params = None
+            prompt_manager_k = None
+            model_config = None
+
+            pipeline = pipeline_config["pipeline"]
+            if hasattr(pipeline, "model_name"):
+                model_name = pipeline.model_name
+            if hasattr(pipeline, "model_config") and pipeline.model_config:
+                # ``model_name`` is already shown separately; drop ``"model"`` from
+                # the copied config so vLLM pipelines don't display it redundantly.
+                model_config_copy = dict(pipeline.model_config)
+                model_config_copy.pop("model", None)
+                if model_config_copy:
+                    model_config = model_config_copy
+
+            # Extract ALL RAG fields for display
+            if hasattr(pipeline, "rag") and pipeline.rag is not None:
+                rag = pipeline.rag
+
+                # Indexing stage
+                if hasattr(rag, "text_splitter") and rag.text_splitter is not None:
+                    text_splitter_cfg = rag.get_text_splitter_cfg()
+                if getattr(rag, "embedding_cls", None) is not None:
+                    cls_name = rag.embedding_cls.__name__ if isinstance(rag.embedding_cls, type) else str(rag.embedding_cls)
+                    embedding_cfg = {"class": cls_name}
+                    if getattr(rag, "embedding_kwargs", None):
+                        embedding_cfg.update(rag.embedding_kwargs)
+                if getattr(rag, "vector_store_cfg", None) is not None:
+                    vector_store_cfg = dict(rag.vector_store_cfg)
+
+                # Retrieval stage
+                if getattr(rag, "search_type", None) is not None:
+                    search_cfg = {"type": rag.search_type}
+                    if hasattr(rag, "search_kwargs") and rag.search_kwargs:
+                        allowed_keys = SEARCH_TYPE_KEYS.get(rag.search_type, set(rag.search_kwargs.keys()))
+                        search_cfg.update({k: v for k, v in rag.search_kwargs.items() if k in allowed_keys and v is not None})
+                if getattr(rag, "reranker_cls", None) is not None:
+                    reranker_cfg = {"class": rag.reranker_cls.__qualname__ if isinstance(rag.reranker_cls, type) else str(rag.reranker_cls)}
+                    if hasattr(rag, "reranker_kwargs") and rag.reranker_kwargs:
+                        reranker_cfg.update({k: v for k, v in rag.reranker_kwargs.items() if v is not None})
+
+            # Extract sampling params
+            if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
+                sampling_params = pipeline._user_params.get("sampling_params", None)
+
+            # Extract prompt_manager fields
+            if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
+                prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
+
+            pipeline_info_dict = {
+                "pipeline_id": pipeline_id,
+                "pipeline_config": pipeline_config,
+                "model_name": model_name,
+            }
+
+            # Add optional fields only if they're not None
+            # Indexing stage (read-only display)
+            if text_splitter_cfg is not None:
+                pipeline_info_dict["text_splitter_cfg"] = text_splitter_cfg
+            if embedding_cfg is not None:
+                pipeline_info_dict["embedding_cfg"] = embedding_cfg
+            if vector_store_cfg is not None:
+                pipeline_info_dict["vector_store_cfg"] = vector_store_cfg
+            # Retrieval stage
+            if search_cfg is not None:
+                pipeline_info_dict["search_cfg"] = search_cfg
+            if reranker_cfg is not None:
+                pipeline_info_dict["reranker_cfg"] = reranker_cfg
+            # Generation stage
+            if sampling_params is not None:
+                pipeline_info_dict["sampling_params"] = sampling_params
+            if prompt_manager_k is not None:
+                pipeline_info_dict["prompt_manager_k"] = prompt_manager_k
+            if model_config is not None:
+                pipeline_info_dict["model_config"] = model_config
+
+            pipeline_info.append(pipeline_info_dict)
 
         progress_display = PipelineProgressDisplay(pipeline_info, num_shards)
 
         pipeline_to_rate_limiter = {}
         pipeline_to_max_completion_tokens = {}
 
-        # Per-backend tracking for rate limiter creation
-        openai_pipeline_ids = []
-        openai_model_rate_limits = {}
-        openai_max_completion_tokens_by_model = {}
-
-        gemini_pipeline_ids = []
-        gemini_model_rate_limits = {}
-        gemini_max_completion_tokens_by_model = {}
+        # Group API pipelines by provider so each provider gets its own rate limiter.
+        # provider_key -> {"pipeline_ids": [...], "model_rate_limits": {...}, "max_completion_tokens_by_model": {...}}
+        provider_groups: dict[str, dict] = {}
 
         for pipeline_id, pipeline_config in pipeline_id_to_config.items():
-            from rapidfireai.automl import RFOpenAIAPIModelConfig, RFGeminiAPIModelConfig
+            from rapidfireai.automl import RFAPIModelConfig
             pipeline = pipeline_config["pipeline"]
 
-            if hasattr(pipeline, "model_config") and isinstance(pipeline, RFOpenAIAPIModelConfig):
-                model_config = pipeline.model_config
-                model_name = model_config.get("model", "gpt-5-mini")
+            if isinstance(pipeline, RFAPIModelConfig):
+                endpoint_name = pipeline.model_name
+                provider = pipeline.endpoint_config.get("provider", "openai")
 
-                if pipeline.rpm_limit is None or pipeline.tpm_limit is None:
+                has_tpm = pipeline.tpm_limit is not None
+                has_itpm_otpm = pipeline.itpm_limit is not None and pipeline.otpm_limit is not None
+                if pipeline.rpm_limit is None or (not has_tpm and not has_itpm_otpm):
                     raise ValueError(
-                        f"OpenAI pipeline {pipeline_id} (model: {model_name}) is missing rate limits. "
-                        f"Please provide rpm_limit and tpm_limit to RFOpenAIAPIModelConfig."
+                        f"API pipeline {pipeline_id} (endpoint: {endpoint_name}) is missing rate limits. "
+                        f"Please provide rpm_limit and (tpm_limit or itpm_limit+otpm_limit) to RFAPIModelConfig."
                     )
 
-                if model_name not in openai_model_rate_limits:
-                    openai_model_rate_limits[model_name] = {
-                        "rpm": pipeline.rpm_limit,
-                        "tpm": pipeline.tpm_limit,
+                if provider not in provider_groups:
+                    provider_groups[provider] = {
+                        "pipeline_ids": [],
+                        "model_rate_limits": {},
+                        "max_completion_tokens_by_model": {},
                     }
-                    openai_max_completion_tokens_by_model[model_name] = pipeline.max_completion_tokens
-                elif (openai_model_rate_limits[model_name]["rpm"] != pipeline.rpm_limit or
-                      openai_model_rate_limits[model_name]["tpm"] != pipeline.tpm_limit):
+
+                group = provider_groups[provider]
+                group["pipeline_ids"].append(pipeline_id)
+
+                rate_limit_dict = pipeline.get_rate_limit_dict()
+                if endpoint_name not in group["model_rate_limits"]:
+                    group["model_rate_limits"][endpoint_name] = rate_limit_dict
+                    group["max_completion_tokens_by_model"][endpoint_name] = pipeline.max_completion_tokens
+                elif group["model_rate_limits"][endpoint_name] != rate_limit_dict:
                     self.logger.warning(
-                        f"Model {model_name} has inconsistent rate limits across pipelines. "
-                        f"Using first encountered values: {openai_model_rate_limits[model_name]}"
+                        f"Endpoint {endpoint_name} has inconsistent rate limits across pipelines. "
+                        f"Using first encountered values: {group['model_rate_limits'][endpoint_name]}"
                     )
 
                 pipeline_to_max_completion_tokens[pipeline_id] = pipeline.max_completion_tokens
-                openai_pipeline_ids.append(pipeline_id)
                 pipeline_to_rate_limiter[pipeline_id] = None
 
-            elif hasattr(pipeline, "model_config") and isinstance(pipeline, RFGeminiAPIModelConfig):
-                model_config = pipeline.model_config
-                model_name = model_config.get("model", "gemini-2.0-flash")
-
-                if pipeline.rpm_limit is None or pipeline.tpm_limit is None:
-                    raise ValueError(
-                        f"Gemini pipeline {pipeline_id} (model: {model_name}) is missing rate limits. "
-                        f"Please provide rpm_limit and tpm_limit to RFGeminiAPIModelConfig."
-                    )
-
-                if model_name not in gemini_model_rate_limits:
-                    gemini_model_rate_limits[model_name] = {
-                        "rpm": pipeline.rpm_limit,
-                        "tpm": pipeline.tpm_limit,
-                    }
-                    gemini_max_completion_tokens_by_model[model_name] = pipeline.max_completion_tokens
-                elif (gemini_model_rate_limits[model_name]["rpm"] != pipeline.rpm_limit or
-                      gemini_model_rate_limits[model_name]["tpm"] != pipeline.tpm_limit):
-                    self.logger.warning(
-                        f"Model {model_name} has inconsistent rate limits across pipelines. "
-                        f"Using first encountered values: {gemini_model_rate_limits[model_name]}"
-                    )
-
-                pipeline_to_max_completion_tokens[pipeline_id] = pipeline.max_completion_tokens
-                gemini_pipeline_ids.append(pipeline_id)
-                pipeline_to_rate_limiter[pipeline_id] = None
-
-        if openai_pipeline_ids:
+        # Create one rate limiter actor per provider
+        for provider, group in provider_groups.items():
             from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
 
-            _max_tokens = max(openai_max_completion_tokens_by_model.values()) if openai_max_completion_tokens_by_model else 150
+            _max_tokens = max(group["max_completion_tokens_by_model"].values()) if group["max_completion_tokens_by_model"] else 150
 
-            openai_rate_limiter_actor = RateLimiterActor.remote(
-                model_rate_limits=openai_model_rate_limits,
+            rate_limiter_actor = RateLimiterActor.remote(
+                model_rate_limits=group["model_rate_limits"],
                 max_completion_tokens=_max_tokens,
                 limit_safety_ratio=0.95,
                 minimum_wait_time=1.0,
-                backend="openai",
+                backend=provider,
                 experiment_name=self.experiment_name,
                 experiment_path=self.experiment_path,
             )
 
-            for pipeline_id in openai_pipeline_ids:
-                pipeline_to_rate_limiter[pipeline_id] = openai_rate_limiter_actor
+            for pipeline_id in group["pipeline_ids"]:
+                pipeline_to_rate_limiter[pipeline_id] = rate_limiter_actor
+
+            def _format_limits(limits: dict) -> str:
+                if "tpm" in limits:
+                    return f"{limits['rpm']} RPM, {limits['tpm']} TPM"
+                return f"{limits['rpm']} RPM, {limits['itpm']} ITPM, {limits['otpm']} OTPM"
 
             limits_summary = ", ".join([
-                f"{model}: {limits['rpm']} RPM, {limits['tpm']} TPM"
-                for model, limits in openai_model_rate_limits.items()
+                f"{model}: {_format_limits(limits)}"
+                for model, limits in group["model_rate_limits"].items()
             ])
             self.logger.info(
-                f"Created experiment-wide OpenAI rate limiter actor for {len(openai_pipeline_ids)} pipeline(s) "
-                f"with per-model limits ({limits_summary})"
-            )
-
-        if gemini_pipeline_ids:
-            from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
-
-            _max_tokens = max(gemini_max_completion_tokens_by_model.values()) if gemini_max_completion_tokens_by_model else 150
-
-            gemini_rate_limiter_actor = RateLimiterActor.remote(
-                model_rate_limits=gemini_model_rate_limits,
-                max_completion_tokens=_max_tokens,
-                limit_safety_ratio=0.95,
-                minimum_wait_time=1.0,
-                backend="gemini",
-                experiment_name=self.experiment_name,
-                experiment_path=self.experiment_path,
-            )
-
-            for pipeline_id in gemini_pipeline_ids:
-                pipeline_to_rate_limiter[pipeline_id] = gemini_rate_limiter_actor
-
-            limits_summary = ", ".join([
-                f"{model}: {limits['rpm']} RPM, {limits['tpm']} TPM"
-                for model, limits in gemini_model_rate_limits.items()
-            ])
-            self.logger.info(
-                f"Created experiment-wide Gemini rate limiter actor for {len(gemini_pipeline_ids)} pipeline(s) "
-                f"with per-model limits ({limits_summary})"
+                f"Created experiment-wide {provider} rate limiter actor for "
+                f"{len(group['pipeline_ids'])} pipeline(s) with per-model limits ({limits_summary})"
             )
 
         # PHASE 7: Main scheduling loop
@@ -1562,9 +1867,9 @@ class Controller:
                 rate_limiter = pipeline_to_rate_limiter[pipeline_id]
                 if rate_limiter is None:
                     raise ValueError(
-                        f"Rate limiter actor is None for OpenAI pipeline {pipeline_id}. "
+                        f"Rate limiter actor is None for API pipeline {pipeline_id}. "
                         f"This should not happen - the rate limiter should be initialized "
-                        f"for all OpenAI pipelines."
+                        f"for all API pipelines."
                     )
                 engine_kwargs["rate_limiter_actor"] = rate_limiter
                 engine_kwargs["max_completion_tokens"] = pipeline_to_max_completion_tokens[pipeline_id]
@@ -1580,9 +1885,7 @@ class Controller:
                 if rag_spec.reranker_cls is not None:
                     pipeline_reranker_cfg = {"class": rag_spec.reranker_cls, **rag_spec.reranker_kwargs}
 
-            pipeline_model_name = "Unknown"
-            if hasattr(pipeline, "model_config") and pipeline.model_config:
-                pipeline_model_name = pipeline.model_config.get("model", "Unknown")
+            pipeline_model_name = pipeline.model_name if hasattr(pipeline, "model_name") else "Unknown"
 
             pipeline_data = db.get_pipeline(pipeline_id)
             metric_run_id = pipeline_data.get("metric_run_id") if pipeline_data else None

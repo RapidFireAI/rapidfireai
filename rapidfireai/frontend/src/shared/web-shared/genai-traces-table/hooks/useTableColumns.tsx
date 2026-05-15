@@ -29,6 +29,8 @@ export const RUN_NAME_COLUMN_ID = 'run_name';
 export const LOGGED_MODEL_COLUMN_ID = 'logged_model';
 export const TOKENS_COLUMN_ID = 'tokens';
 export const CUSTOM_METADATA_COLUMN_ID = 'custom_metadata';
+export const SPAN_NAME_COLUMN_ID = 'span.name';
+export const SPAN_STATUS_COLUMN_ID = 'span.status';
 
 export const SORTABLE_INFO_COLUMNS = [EXECUTION_DURATION_COLUMN_ID, REQUEST_TIME_COLUMN_ID, SESSION_COLUMN_ID];
 // Columns that are sortable by the server. Server-side sorting should be prioritized over client-side sorting.

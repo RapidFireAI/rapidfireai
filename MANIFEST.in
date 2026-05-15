@@ -38,6 +38,8 @@ recursive-include rapidfireai/evals/utils *.py
 
 # Include tutorial notebooks (including datasets)
 recursive-include tutorial_notebooks *
+recursive-include tests/notebooks *
+recursive-include tests/staging/tutorial_notebooks *
 
 # Explicitly exclude unwanted files and directories - be very specific
 exclude rapidfireai/frontend/node_modules

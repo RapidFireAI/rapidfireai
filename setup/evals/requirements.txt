@@ -21,6 +21,9 @@ tiktoken
 # Gemini API
 google-genai>=1.69.0
 
+# Anthropic API
+anthropic>=0.96.0
+
 # LangChain Ecosystem
 langchain
 langchain-core
@@ -30,7 +33,6 @@ langchain-huggingface
 langchain-google-genai>=4.2.1
 
 # Vector Search
-faiss-gpu
 
 # Statistical Analysis
 scipy

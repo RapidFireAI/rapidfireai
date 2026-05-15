@@ -1,6 +1,7 @@
 """Grid search implementation for AutoML training configurations."""
 
 import copy
+import inspect
 from itertools import product
 from typing import Any
 
@@ -10,12 +11,23 @@ from rapidfireai.automl.automl_utils import filter_evals_runs_valid_reranker
 from rapidfireai.fit.utils.exceptions import AutoMLException
 
 
+def _accepts_verbose(cls: type) -> bool:
+    """Check whether *cls.__init__* accepts a ``verbose`` keyword argument."""
+    try:
+        return "verbose" in inspect.signature(cls.__init__).parameters
+    except (ValueError, TypeError):
+        return False
+
+
 def recursive_expand_gridsearch(item: Any):
     """Recursively expand nested structures with List datatypes into all combinations."""
     # Handle objects with _user_params (like RF config classes)
     if hasattr(item, "_user_params"):
         expanded_params_list = list(recursive_expand_gridsearch(item._user_params))
+        suppress = _accepts_verbose(item.__class__)
         for params in expanded_params_list:
+            if suppress:
+                params = {**params, "verbose": False}
             yield item.__class__(**params)
     elif isinstance(item, dict):
         keys = list(item.keys())
@@ -160,13 +172,11 @@ class RFGridSearch(AutoMLAlgorithm):
         """Generate runs for evals mode."""
         runs = []
         for config in self.configs:
-            # Handle pipeline config (vllm_config, openai_config, or gemini_config)
+            # Handle pipeline config (vllm_config, or api_config)
             if "vllm_config" in config:
                 pipeline = config["vllm_config"]
-            elif "openai_config" in config:
-                pipeline = config["openai_config"]
-            elif "gemini_config" in config:
-                pipeline = config["gemini_config"]
+            elif "api_config" in config:
+                pipeline = config["api_config"]
             elif "pipeline" in config:
                 pipeline = config["pipeline"]
             else:
@@ -191,7 +201,7 @@ class RFGridSearch(AutoMLAlgorithm):
                 additional_kwargs = {
                     k: v
                     for k, v in config.items()
-                    if k not in {"pipeline", "vllm_config", "openai_config", "gemini_config"}
+                    if k not in {"pipeline", "vllm_config", "api_config"}
                     and v is not None
                 }
                 additional_kwargs_instances = (
@@ -203,7 +213,9 @@ class RFGridSearch(AutoMLAlgorithm):
                     for additional_kwargs_dict in additional_kwargs_instances:
                         # pipeline_params could be an instance (from recursive_expand_gridsearch) or a dict
                         if isinstance(pipeline_params, dict):
-                            pipeline_instance = pipeline.__class__(**pipeline_params)
+                            # Suppress verbose gateway provisioning output for grid search reinstantiation
+                            kwargs = {**pipeline_params, "verbose": False} if _accepts_verbose(pipeline.__class__) else pipeline_params
+                            pipeline_instance = pipeline.__class__(**kwargs)
                         else:
                             pipeline_instance = pipeline_params
 

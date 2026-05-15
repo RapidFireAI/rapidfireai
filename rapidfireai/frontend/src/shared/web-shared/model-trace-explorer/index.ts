@@ -12,3 +12,8 @@ export {
 export { getIsMlflowTraceUIEnabled } from './FeatureUtils';
 export * from './ModelTrace.types';
 export * from './oss-notebook-renderer/mlflow-fetch-utils';
+export * from './TraceMetrics.types';
+export * from './CostUtils';
+export * from './constants';
+
+export const shouldEnableTracesTableStatePersistence = () => false;

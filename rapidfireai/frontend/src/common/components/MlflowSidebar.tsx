@@ -3,41 +3,32 @@ import {
   Button,
   DropdownMenu,
   ModelsIcon,
+  CloudModelIcon,
   PlusIcon,
-  TextBoxIcon,
   useDesignSystemTheme,
 } from '@databricks/design-system';
-import { Link, matchPath, useLocation, Location, useNavigate } from '../utils/RoutingUtils';
+import { Link, matchPath, useLocation, Location } from '../utils/RoutingUtils';
 import ExperimentTrackingRoutes from '../../experiment-tracking/routes';
+import GatewayRoutes from '../../gateway/routes';
 import { ModelRegistryRoutes } from '../../model-registry/routes';
 import { CreateExperimentModal } from '../../experiment-tracking/components/modals/CreateExperimentModal';
 import { useState } from 'react';
 import { useInvalidateExperimentList } from '../../experiment-tracking/components/experiment-page/hooks/useExperimentListQuery';
 import { CreateModelModal } from '../../model-registry/components/CreateModelModal';
-import {
-  CreatePromptModalMode,
-  useCreatePromptModal,
-} from '../../experiment-tracking/pages/prompts/hooks/useCreatePromptModal';
-import Routes from '../../experiment-tracking/routes';
 import { FormattedMessage } from 'react-intl';
 
 const isExperimentsActive = (location: Location) =>
   matchPath('/experiments/*', location.pathname) || matchPath('/compare-experiments/*', location.pathname);
 const isModelsActive = (location: Location) => matchPath('/models/*', location.pathname);
-const isPromptsActive = (location: Location) => matchPath('/prompts/*', location.pathname);
+const isAIGatewayActive = (location: Location) => matchPath('/gateway/*', location.pathname);
 
 export function MlflowSidebar() {
   const location = useLocation();
   const { theme } = useDesignSystemTheme();
   const invalidateExperimentList = useInvalidateExperimentList();
-  const navigate = useNavigate();
 
   const [showCreateExperimentModal, setShowCreateExperimentModal] = useState(false);
   const [showCreateModelModal, setShowCreateModelModal] = useState(false);
-  const { CreatePromptModal, openModal: openCreatePromptModal } = useCreatePromptModal({
-    mode: CreatePromptModalMode.CreatePrompt,
-    onSuccess: ({ promptName }) => navigate(Routes.getPromptDetailsPageRoute(promptName)),
-  });
 
   const menuItems = [
     {
@@ -79,22 +70,12 @@ export function MlflowSidebar() {
       },
     },
     {
-      key: 'prompts',
-      icon: <TextBoxIcon />,
+      key: 'ai-gateway',
+      icon: <CloudModelIcon />,
       linkProps: {
-        to: ExperimentTrackingRoutes.promptsPageRoute,
-        isActive: isPromptsActive,
-        children: <FormattedMessage defaultMessage="Prompts" description="Sidebar link for prompts tab" />,
-      },
-      dropdownProps: {
-        componentId: 'mlflow_sidebar.create_prompt_button',
-        onClick: openCreatePromptModal,
-        children: (
-          <FormattedMessage
-            defaultMessage="Prompt"
-            description="Sidebar button inside the 'new' popover to create new prompt"
-          />
-        ),
+        to: GatewayRoutes.gatewayPageRoute,
+        isActive: isAIGatewayActive,
+        children: <FormattedMessage defaultMessage="AI Gateway" description="Sidebar link for AI Gateway tab" />,
       },
     },
   ];
@@ -115,16 +96,16 @@ export function MlflowSidebar() {
           <Button componentId="mlflow_sidebar.new_button" icon={<PlusIcon />}>
             <FormattedMessage
               defaultMessage="New"
-              description="Sidebar create popover button to create new experiment, model or prompt"
+              description="Sidebar create popover button to create new experiment or model"
             />
           </Button>
         </DropdownMenu.Trigger>
 
         <DropdownMenu.Content side="right" sideOffset={theme.spacing.sm} align="start">
-          {menuItems.map(({ key, icon, dropdownProps }) => (
-            <DropdownMenu.Item key={key} componentId={dropdownProps.componentId} onClick={dropdownProps.onClick}>
+          {menuItems.filter(({ dropdownProps }) => dropdownProps).map(({ key, icon, dropdownProps }) => (
+            <DropdownMenu.Item key={key} componentId={dropdownProps!.componentId} onClick={dropdownProps!.onClick}>
               <DropdownMenu.IconWrapper>{icon}</DropdownMenu.IconWrapper>
-              {dropdownProps.children}
+              {dropdownProps!.children}
             </DropdownMenu.Item>
           ))}
         </DropdownMenu.Content>
@@ -175,7 +156,6 @@ export function MlflowSidebar() {
         onExperimentCreated={invalidateExperimentList}
       />
       <CreateModelModal modalVisible={showCreateModelModal} hideModal={() => setShowCreateModelModal(false)} />
-      {CreatePromptModal}
     </aside>
   );
 }

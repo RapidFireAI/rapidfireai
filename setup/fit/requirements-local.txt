@@ -22,6 +22,9 @@ tiktoken==0.11.0
 # Gemini API
 google-genai>=1.69.0
 
+# Anthropic API
+anthropic>=0.96.0
+
 # LangChain Ecosystem
 langchain
 langchain-classic
@@ -31,8 +34,6 @@ langchain-openai
 langchain-huggingface
 langchain-google-genai>=4.2.1
 
-# Vector Search
-faiss-gpu-cu12==1.13.0
 
 # Statistical Analysis
 scipy>=1.16.1
@@ -61,7 +62,7 @@ nltk>=3.9.1
 evaluate>=0.4.5
 rouge-score>=0.1.2
 sentencepiece>=0.2.1
-# mlflow>=3.2.0
+mlflow>=3.11.1
 requests>=2.32.0  # Relaxed for Colab (2.32.4)
 loguru>=0.7.3
 ipython>=7.34.0  # Colab compatibility (7.34.0)

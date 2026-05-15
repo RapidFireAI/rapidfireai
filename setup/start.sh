@@ -14,16 +14,16 @@ else
     RF_HOME="${RF_HOME:=/content/rapidfireai}"
 fi
 RF_JUPYTER_PORT=${RF_JUPYTER_PORT:=8850}
-RF_JUPYTER_HOST=${RF_JUPYTER_HOST:=127.0.0.1}
+RF_JUPYTER_HOST=${RF_JUPYTER_HOST:=0.0.0.0}
 RF_RAY_PORT=${RF_RAY_PORT:=8855}
-RF_RAY_HOST=${RF_RAY_HOST:=127.0.0.1}
+RF_RAY_HOST=${RF_RAY_HOST:=0.0.0.0}
 RF_MLFLOW_PORT=${RF_MLFLOW_PORT:=8852}
-RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=127.0.0.1}
+RF_MLFLOW_HOST=${RF_MLFLOW_HOST:=0.0.0.0}
 RF_FRONTEND_PORT=${RF_FRONTEND_PORT:=8853}
 RF_FRONTEND_HOST=${RF_FRONTEND_HOST:=0.0.0.0}
 # API server configuration - these should match DispatcherConfig in constants.py
 RF_API_PORT=${RF_API_PORT:=8851}
-RF_API_HOST=${RF_API_HOST:=127.0.0.1}
+RF_API_HOST=${RF_API_HOST:=0.0.0.0}
 
 RF_DB_PATH="${RF_DB_PATH:=$RF_HOME/db}"
 RF_LOG_PATH="${RF_LOG_PATH:=$RF_HOME/logs}"
@@ -76,6 +76,16 @@ fi
 # When false, do not start the RapidFire dashboard (Flask) or Converge frontend; MLflow + API still run when enabled.
 RF_START_FRONTEND=${RF_START_FRONTEND:=true}
 
+export RF_FRONTEND_HOST
+export RF_FRONTEND_PORT
+export RF_API_HOST
+export RF_API_PORT
+export RF_MLFLOW_HOST
+export RF_MLFLOW_PORT
+export RF_RAY_HOST
+export RF_RAY_PORT
+export RF_JUPYTER_HOST
+export RF_JUPYTER_PORT
 
 # Colors for output
 RED='\033[0;31m'
@@ -160,10 +170,13 @@ setup_python_env() {
 
 # Function to cleanup processes on exit
 cleanup() {
+    local signal="${1:-}"
     # Clear the trap to prevent being called twice (SIGINT + EXIT)
     trap - SIGINT SIGTERM EXIT
 
-    if [ "$RF_FORCE" != "true" ]; then
+    # Skip the confirmation prompt when triggered by SIGTERM (e.g., system
+    # shutdown, `kill <pid>`, supervisor sending TERM) or when RF_FORCE=true.
+    if [ "$RF_FORCE" != "true" ] && [ "$signal" != "SIGTERM" ]; then
         # Confirm cleanup
         read -p "Do you want to shutdown services and delete the PID file? (y/n) " -n 1 -r REPLY
         echo
@@ -334,7 +347,7 @@ wait_for_service() {
     local max_attempts=${4:-$RF_TIMEOUT_TIME}  # Allow custom timeout, default 30 seconds
     local attempt=1
 
-    print_status "Waiting for $service to be ready on $host:$port (timeout: ${max_attempts} attempts)..."
+    print_status "Waiting for $service to be ready on tcp://$host:$port (timeout: ${max_attempts} attempts)..."
 
     if command -v nc &> /dev/null; then
         ping_command="$(command -v nc) -z $host $port"
@@ -366,6 +379,14 @@ start_mlflow() {
 
     # Start MLflow server in background with logging
     print_status "MLflow logs will be written to: $RF_LOG_PATH/mlflow.log"
+
+    # Set tracking URI so the gateway's internal tracing sends traces via HTTP
+    # rather than trying to use the SQLite backend-store URI directly.
+    if [[ "$RF_MLFLOW_HOST" == "0.0.0.0" ]]; then
+        export MLFLOW_TRACKING_URI="http://localhost:$RF_MLFLOW_PORT"
+    else
+        export MLFLOW_TRACKING_URI="http://$RF_MLFLOW_HOST:$RF_MLFLOW_PORT"
+    fi
 
     # Use setsid on Linux, nohup on macOS
     if command -v setsid &> /dev/null; then
@@ -463,7 +484,6 @@ start_api_server() {
     # Wait for API server to be ready - use longer timeout for API server
     if wait_for_service $RF_API_HOST $RF_API_PORT "API server" $((RF_TIMEOUT_TIME * 2)); then
         print_success "API server started (PID: $api_pid)"
-        print_status "API server available at: http://$RF_API_HOST:$RF_API_PORT"
         return 0
     else
         print_error "API server failed to start. Checking for errors..."
@@ -567,12 +587,14 @@ start_frontend() {
     fi
 
     # Wait for frontend to be ready - check both localhost and 127.0.0.1
+    # TODO: Remove this loop completely as RF_FRONTEND_HOST is now 0.0.0.0
+    #local check_hosts=("localhost" "127.0.0.1" "$RF_FRONTEND_HOST")
+    local check_hosts=("$RF_FRONTEND_HOST")
     local frontend_ready=false
-    local check_hosts=("localhost" "127.0.0.1" "$RF_FRONTEND_HOST")
 
     for host in "${check_hosts[@]}"; do
         if wait_for_service $host $RF_FRONTEND_PORT "Frontend server" $RF_TIMEOUT_TIME; then
-            print_success "Frontend Flask server started (PID: $frontend_pid) on $host:$RF_FRONTEND_PORT"
+            print_success "Frontend Flask server started (PID: $frontend_pid)"
             frontend_ready=true
             break
         fi
@@ -746,8 +768,13 @@ show_status() {
         if [[ "$RF_START_FRONTEND" != "true" ]]; then
             print_status "⊗ Frontend not started (RF_START_FRONTEND=false or rapidfireai start --no-frontend)"
         elif ping_port $RF_FRONTEND_HOST $RF_FRONTEND_PORT; then
+            if [[ "$RF_FRONTEND_HOST" == "0.0.0.0" ]]; then
+                DISPLAY_URL="http://localhost:$RF_FRONTEND_PORT"
+            else
+                DISPLAY_URL="http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
+            fi
             print_success "🚀 RapidFire Frontend is ready!"
-            print_status "👉 Open your browser and navigate to: http://$RF_FRONTEND_HOST:$RF_FRONTEND_PORT"
+            print_status "👉 Open your browser and navigate to: $DISPLAY_URL"
             print_status "   (Click the link above or copy/paste the URL into your browser)"
         else
             print_error "🚨 RapidFire Frontend is not ready!"
@@ -954,8 +981,13 @@ main() {
     rf_version=$(rapidfireai --version)
     print_status "Starting ${rf_version} services..."
 
-    # Set up signal handlers for cleanup
-    trap cleanup SIGINT SIGTERM EXIT
+    # Set up signal handlers for cleanup.
+    # SIGTERM is handled separately so cleanup can skip the interactive
+    # confirmation prompt when the script is terminated non-interactively
+    # (e.g., `kill <pid>`, systemd stop, container shutdown).
+    trap 'cleanup SIGTERM' SIGTERM
+    trap 'cleanup SIGINT' SIGINT
+    trap 'cleanup EXIT' EXIT
 
     # Check for required commands
     for cmd in mlflow gunicorn; do

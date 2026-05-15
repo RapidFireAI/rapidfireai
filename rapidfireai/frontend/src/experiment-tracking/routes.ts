@@ -13,6 +13,7 @@ export enum PageId {
   experimentLoggedModelDetailsPage = 'mlflow.logged-model.details',
   experimentPage = 'mlflow.experiment.details',
   // Child routes for experiment page:
+  experimentPageTabOverview = 'mlflow.experiment.tab.overview',
   experimentPageTabRuns = 'mlflow.experiment.tab.runs',
   experimentPageTabModels = 'mlflow.experiment.tab.models',
   experimentPageTabTraces = 'mlflow.experiment.tab.traces',
@@ -39,6 +40,9 @@ export class RoutePaths {
     return createMLflowRoutePath('/experiments/:experimentId');
   }
   // Child routes for experiment page:
+  static get experimentPageTabOverview() {
+    return createMLflowRoutePath('/experiments/:experimentId/overview/:overviewTab');
+  }
   static get experimentPageTabRuns() {
     return createMLflowRoutePath('/experiments/:experimentId/runs');
   }
@@ -140,6 +144,15 @@ class Routes {
   }
 
   static getExperimentPageTabRoute(experimentId: string, tabName: ExperimentPageTabName) {
+    // The Overview page is registered under a sub-tabbed path
+    // (`/experiments/:id/overview/:overviewTab`), so build that URL with the
+    // default sub-tab instead of the flat `:tabName` template.
+    if (tabName === ExperimentPageTabName.Overview) {
+      return generatePath(RoutePaths.experimentPageTabOverview, {
+        experimentId,
+        overviewTab: 'usage',
+      });
+    }
     return generatePath(RoutePaths.experimentPageTabbed, { experimentId, tabName });
   }
 

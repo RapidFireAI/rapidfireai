@@ -139,7 +139,8 @@ class ProxyMiddleware:
             '/ajax-api',
             '/get-artifact',
             '/model-versions/get-artifact',
-            '/dispatcher'
+            '/dispatcher',
+            '/gateway'
         ]
         
         return any(path.startswith(proxy_path) for proxy_path in proxy_paths)
@@ -149,6 +150,8 @@ class ProxyMiddleware:
         user_proxy = self.proxy_manager.get_user_proxy(user_id)
         
         if path.startswith('/ajax-api'):
+            return user_proxy['main_proxy_target']
+        elif path.startswith('/gateway'):
             return user_proxy['main_proxy_target']
         elif path.startswith('/get-artifact') or path.startswith('/model-versions/get-artifact'):
             return user_proxy['static_proxy_target']

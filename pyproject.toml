@@ -54,7 +54,7 @@ dependencies = [
     # Experiment tracking
     "trackio",
     "trackio[gpu]",
-    "mlflow",
+    "mlflow[genai]>=3.11.1",
     "tensorboard~=2.19.0",
 
     # Other
@@ -112,7 +112,7 @@ colab_fit = [
     "evaluate>=0.4.5",
     "rouge-score>=0.1.2",
     "sentencepiece>=0.2.1",
-    "mlflow>=3.2.0",
+    "mlflow>=3.11.1",
     "requests>=2.32.0",  # Relaxed for Colab (2.32.4)
     "loguru>=0.7.3",
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
@@ -179,7 +179,7 @@ local_evals = [
     "evaluate>=0.4.5",
     "rouge-score>=0.1.2",
     "sentencepiece>=0.2.1",
-    "mlflow>=3.2.0",
+    "mlflow>=3.11.1",
     "requests>=2.32.0",  # Relaxed for Colab (2.32.4)
     "loguru>=0.7.3",
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
@@ -246,7 +246,7 @@ local_fit = [
     "rouge-score>=0.1.2",
     "sentencepiece>=0.2.1",
     "dill>=0.3.8",
-    "mlflow>=3.2.0",
+    "mlflow>=3.11.1",
     "requests>=2.32.0",  # Relaxed for Colab (2.32.4)
     "loguru>=0.7.3",
     "ipython>=7.34.0",  # Colab compatibility (7.34.0)
@@ -301,7 +301,7 @@ rapidfireai = [
     "../setup/evals/requirements-*.txt",
     "../tutorial_notebooks/**/*",
     "../tests/notebooks/*",
-
+    "../tests/staging/tutorial_notebooks/**/*",
 ]
 
 

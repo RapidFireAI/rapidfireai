@@ -63,27 +63,56 @@ def run_script(args):
     if not os.access(script_path, os.X_OK):
         os.chmod(script_path, 0o755)
 
-    # Ignore SIGINT in the parent process so Python doesn't raise KeyboardInterrupt.
-    # The child process resets SIGINT to default via preexec_fn so the shell script
-    # can handle Ctrl+C with its own trap (cleanup function with user prompt).
-    old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    # Ignore SIGINT in the parent process *before* spawning the child so Python
+    # doesn't raise KeyboardInterrupt in the window between Popen and proc.wait().
+    # Otherwise a Ctrl+C landing in that gap would orphan the shell script and
+    # all of its sub-processes. The child resets SIGINT to default via
+    # preexec_fn so the shell script handles Ctrl+C with its own trap.
+    old_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    proc: subprocess.Popen | None = None
+
+    def _forward_signal(signum, _frame):
+        # Forward terminating signals (SIGTERM, SIGHUP) to the shell script so
+        # its trap handlers run a proper cleanup (killing MLflow, API server,
+        # frontend, Converge, etc.) instead of leaving them orphaned when the
+        # Python wrapper is killed.
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.send_signal(signum)
+            except (ProcessLookupError, OSError):
+                pass
+
+    old_sigterm = signal.signal(signal.SIGTERM, _forward_signal)
+    # SIGHUP isn't available on Windows; guard the install/restore.
+    sighup = getattr(signal, "SIGHUP", None)
+    old_sighup = signal.signal(sighup, _forward_signal) if sighup is not None else None
 
     try:
-        result = subprocess.run(
-            [str(script_path)] + args,
-            check=True,
-            preexec_fn=_reset_sigint,
-        )
-        return result.returncode
-    except subprocess.CalledProcessError as e:
-        # Non-zero exit from shell script (could be from cleanup or failure)
-        return e.returncode
-    except FileNotFoundError:
-        print(f"Error: start.sh script not found at {script_path}", file=sys.stderr)
-        return 1
+        try:
+            proc = subprocess.Popen(
+                [str(script_path)] + args,
+                preexec_fn=_reset_sigint,
+            )
+        except FileNotFoundError:
+            print(f"Error: start.sh script not found at {script_path}", file=sys.stderr)
+            return 1
+
+        # Wait for the shell script to exit. If we receive SIGTERM/SIGHUP, the
+        # handler above forwards it to the child; the child runs its cleanup
+        # trap and exits, and proc.wait() returns its status.
+        while True:
+            try:
+                return proc.wait()
+            except KeyboardInterrupt:
+                # Shouldn't happen since SIGINT is ignored above, but if it
+                # does, forward to the child and keep waiting.
+                _forward_signal(signal.SIGINT, None)
     finally:
-        # Restore the original signal handler
-        signal.signal(signal.SIGINT, old_handler)
+        signal.signal(signal.SIGINT, old_sigint)
+        signal.signal(signal.SIGTERM, old_sigterm)
+        if sighup is not None and old_sighup is not None:
+            signal.signal(sighup, old_sighup)
 
 
 def run_doctor(log_lines: int = 10):
@@ -152,7 +181,7 @@ def install_packages(
         parsed_cuda = parse_cuda_version_string(cuda_version)
         if parsed_cuda is None:
             print(
-                "❌ Invalid --cudaversion: use major.minor (e.g. 12.4) or major only (e.g. 12).",
+                "❌ Invalid --cudaversion: use major.minor (e.g. 12.4), major only (e.g. 12) or 0.0 to disable CUDA usage.",
                 file=sys.stderr,
             )
             return 1
@@ -170,14 +199,38 @@ def install_packages(
         and evals
     ):
         print(
-            "❌ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
-            "   Pass your CUDA version explicitly, for example:\n"
-            "   rapidfireai init --evals --cudaversion 12.4\n"
-            "   If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).",
+            " ⚠️ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
+            "    Disabling CUDA usage for evaluation dependencies.\n"
+            "    If you want to override this explicitly pass the CUDA version, for example:\n"
+            "        rapidfireai init --evals --cudaversion 12.4\n"
+            "    If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).\n"
+            "          If there is no GPU available, you can ignore this warning.",
             file=sys.stderr,
         )
-        return 1
-
+        compute_capability_version = "0.0"
+    if compute_capability_version is not None:
+        compute_cap = parse_compute_capability_string(compute_capability_version)
+        if compute_cap is None:
+            print(
+                "❌ Invalid --computecapabilityversion: use major.minor (e.g. 8.0 or 8.6).",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        compute_cap = get_compute_capability()
+        if compute_cap is None:
+            print(
+                "⚠️ Could not detect GPU compute capability (nvidia-smi unavailable or failed).\n"
+                "   Disabling CUDA usage for evaluation dependencies.\n"
+                "   Pass it explicitly, for example:\n"
+                "   rapidfireai init --evals --computecapabilityversion 8.0\n"
+                "   (Use your GPU's SM version, e.g. 8.9 for Ada, 9.0 for Blackwell.)\n"
+                "          If there is no GPU available, you can ignore this warning.",
+                file=sys.stderr,
+            )
+            compute_cap = 0.0
+            cuda_major = 0
+            cuda_minor = 0
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
     setup_directory = None
@@ -225,7 +278,13 @@ def install_packages(
     torchaudio_version = "2.5.1"
     torch_cuda = "cu121"
     flash_cuda = "cu121"
-    if cuda_major==12:
+    if cuda_major==0:
+        torch_version = "2.8.0"
+        torchvision_version = "0.23.0"
+        torchaudio_version = "2.8.0"
+        torch_cuda = "cpu"
+
+    elif cuda_major==12:
         if cuda_minor>=9:
             # Supports Torch 2.8.0
             torch_version = "2.8.0"
@@ -293,6 +352,17 @@ def install_packages(
 
     
     ## TODO: re-enable for fit once trl has fix
+    if not ColabConfig.ON_COLAB and cuda_major==0:
+        print(f"\n🎯 Using CPU")
+        packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade"]})
+        packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade"]})
+        packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade"]})
+    
+    if cuda_major >= 12:
+        packages.append({"package": f"faiss-gpu-cu12", "extra_args": ["--upgrade"]})
+    else:
+        packages.append({"package": f"faiss-cpu", "extra_args": ["--upgrade"]})
+
     if not ColabConfig.ON_COLAB and cuda_major >= 12:
         if cuda_from_user:
             print(f"\n🎯 Using CUDA {cuda_major}.{cuda_minor} (from --cudaversion), using {torch_cuda}")
@@ -313,25 +383,7 @@ def install_packages(
             packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-            if compute_capability_version is not None:
-                compute_cap = parse_compute_capability_string(compute_capability_version)
-                if compute_cap is None:
-                    print(
-                        "❌ Invalid --computecapabilityversion: use major.minor (e.g. 8.0 or 8.6).",
-                        file=sys.stderr,
-                    )
-                    return 1
-            else:
-                compute_cap = get_compute_capability()
-                if compute_cap is None:
-                    print(
-                        "❌ Could not detect GPU compute capability (nvidia-smi unavailable or failed).\n"
-                        "   Pass it explicitly, for example:\n"
-                        "   rapidfireai init --evals --computecapabilityversion 8.0\n"
-                        "   (Use your GPU's SM version, e.g. 8.9 for Ada, 9.0 for Blackwell.)",
-                        file=sys.stderr,
-                    )
-                    return 1
+
             if compute_cap is not None and compute_cap >= 8.0:
                 packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
                 # Re-install torch, torchvision, and torchaudio to ensure compatibility as flash-attn requires an old version of torch but will upgrade torch to an incompatible version
@@ -408,14 +460,25 @@ def copy_test_notebooks():
         test_path = os.getenv("RF_TEST_PATH", os.path.join(".", "tutorial_notebooks", "tests"))
         site_packages_path = site.getsitepackages()[0]
         source_path = os.path.join(site_packages_path, "tests", "notebooks")
-        print(f"Copying test notebooks from {source_path} to {test_path}...")
+        print(f"Copying test tutorial notebooks from {source_path} to {test_path}...")
         os.makedirs(test_path, exist_ok=True)
         shutil.copytree(source_path, test_path, dirs_exist_ok=True)
-        print(f"✅ Successfully copied test notebooks to {test_path}")
+        print(f"✅ Successfully copied test tutorial notebooks to {test_path}")
     except Exception as e:
-        print(f"❌ Failed to copy test notebooks to {test_path} from {source_path}")
+        print(f"❌ Failed to copy test tutorial notebooks to {test_path} from {source_path}")
         print(f"   Error: {e}")
-        print("   You may need to copy test notebooks manually")
+        print("   You may need to copy test tutorial notebooks manually")
+        return 1
+    try:
+        dest_path = os.getenv("RF_TEST_PATH", os.path.join(".", "tutorial_notebooks"))
+        source_path = os.path.join(site_packages_path, "tests", "staging", "tutorial_notebooks")
+        print(f"Copying staging tutorial notebooks from {source_path} to {dest_path}...")
+        shutil.copytree(source_path, dest_path, dirs_exist_ok=True)
+        print(f"✅ Successfully copied staging tutorial notebooks to {dest_path}")
+    except Exception as e:
+        print(f"❌ Failed to copy staging tutorial notebooks to {dest_path} from {source_path}")
+        print(f"   Error: {e}")
+        print("   You may need to copy staging tutorial notebooks manually")
         return 1
     return 0
 
@@ -434,6 +497,7 @@ def run_jupyter():
     app = ServerApp()
     app.open_browser = False
     app.port = JupyterConfig.PORT
+    app.ip = JupyterConfig.HOST
     app.allow_origin = '*'
     app.websocket_ping_interval = 90000
     app.log_level = 'CRITICAL'
@@ -458,9 +522,9 @@ def run_jupyter():
         mlflow_port = MLflowConfig.PORT
 
         if os.getenv("TERM_PROGRAM") == "vscode":
-            print(f"VSCode detected, port {app.port} should automatically be forwarded to localhost")
-            print(f"Manually forward port {dispatcher_port} to localhost, using the Ports tab in VSCode/Cursor/etc.")
-            print(f"Manually forward port {mlflow_port} to localhost, using the Ports tab in VSCode/Cursor/etc.")
+            print(f"VSCode detected, port {app.port} (tcp://{app.ip}:{app.port}) should automatically be forwarded to localhost")
+            print(f"Manually forward port {dispatcher_port} (tcp://{DispatcherConfig.HOST}:{dispatcher_port}) to localhost, using the Ports tab in VSCode/Cursor/etc.")
+            print(f"Manually forward port {mlflow_port} (tcp://{MLflowConfig.HOST}:{mlflow_port}) to localhost, using the Ports tab in VSCode/Cursor/etc.")
         else:
             os_username = os.getenv("USER", os.getenv("LOGNAME", "username"))
             print(f"Manually forward port {app.port} to localhost")

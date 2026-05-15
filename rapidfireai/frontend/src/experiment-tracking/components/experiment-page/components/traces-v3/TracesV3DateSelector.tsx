@@ -26,7 +26,7 @@ export interface DateRange {
   endDate: string;
 }
 
-export const TracesV3DateSelector = React.memo(() => {
+export const TracesV3DateSelector = React.memo(({ excludeOptions: _excludeOptions }: { excludeOptions?: string[] } = {}) => {
   const intl = useIntl();
   const { theme } = useDesignSystemTheme();
 
