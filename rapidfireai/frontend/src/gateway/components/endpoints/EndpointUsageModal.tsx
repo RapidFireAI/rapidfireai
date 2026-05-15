@@ -16,8 +16,8 @@ import { CopyButton } from '@mlflow/mlflow/src/shared/building_blocks/CopyButton
 import { CodeSnippet } from '@databricks/web-shared/snippet';
 import { TryItPanel } from './TryItPanel';
 
-const rfMlflowHost: string = process.env.RF_MLFLOW_HOST || 'localhost';
-const rfMlflowPort: string = process.env.RF_MLFLOW_PORT || '8852';
+const rfMlflowHost: string = process.env["RF_MLFLOW_HOST"] || 'localhost';
+const rfMlflowPort: string = process.env["RF_MLFLOW_PORT"] || '8852';
 const rfMlflowUrl: string = `http://${rfMlflowHost}:${rfMlflowPort}`;
 
 type Provider = 'openai' | 'anthropic' | 'gemini';
