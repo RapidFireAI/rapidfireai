@@ -283,7 +283,8 @@ def install_packages(
         torchvision_version = "0.23.0"
         torchaudio_version = "2.8.0"
         torch_cuda = "cpu"
-    if cuda_major==12:
+
+    elif cuda_major==12:
         if cuda_minor>=9:
             # Supports Torch 2.8.0
             torch_version = "2.8.0"
