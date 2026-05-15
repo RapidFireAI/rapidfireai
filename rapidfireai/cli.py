@@ -352,10 +352,15 @@ def install_packages(
     
     ## TODO: re-enable for fit once trl has fix
     if not ColabConfig.ON_COLAB and cuda_major==0:
-        print(f"\n🎯 Using CPU, using {torch_cuda}")
+        print(f"\n🎯 Using CPU")
         packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade"]})
         packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade"]})
         packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade"]})
+    
+    if cuda_major >= 12:
+        packages.append({"package": f"faiss-gpu-cu12", "extra_args": ["--upgrade"]})
+    else:
+        packages.append({"package": f"faiss-cpu", "extra_args": ["--upgrade"]})
 
     if not ColabConfig.ON_COLAB and cuda_major >= 12:
         if cuda_from_user:
