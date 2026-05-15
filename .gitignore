@@ -201,7 +201,7 @@ cython_debug/
 .cursor/
 .cursorignore
 .cursorindexingignore
-!.cursor/BUGBOT.md
+
 
 # Marimo
 marimo/_static/
