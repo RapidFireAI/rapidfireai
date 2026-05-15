@@ -380,6 +380,14 @@ start_mlflow() {
     # Start MLflow server in background with logging
     print_status "MLflow logs will be written to: $RF_LOG_PATH/mlflow.log"
 
+    # Set tracking URI so the gateway's internal tracing sends traces via HTTP
+    # rather than trying to use the SQLite backend-store URI directly.
+    if [[ "$RF_MLFLOW_HOST" == "0.0.0.0" ]]; then
+        export MLFLOW_TRACKING_URI="http://localhost:$RF_MLFLOW_PORT"
+    else
+        export MLFLOW_TRACKING_URI="http://$RF_MLFLOW_HOST:$RF_MLFLOW_PORT"
+    fi
+
     # Use setsid on Linux, nohup on macOS
     if command -v setsid &> /dev/null; then
         setsid mlflow server \
