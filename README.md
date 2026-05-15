@@ -24,6 +24,17 @@ Rapid experimentation for easier, faster, and more impactful AI customization.
 Built for agentic RAG, context engineering, fine-tuning, and post-training of LLMs and other DL models. 
 Delivers 16-24x higher throughput without extra resources.
 
+<details>
+<summary><strong>🤖 AI coding agent installing or integrating rapidfireai? Read first</strong></summary>
+
+If you are an AI coding agent (Claude Code, Cursor, Codex, GitHub Copilot, Windsurf, Aider, Junie, ...) helping a user install or integrate `rapidfireai`, read **[`docs/AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/docs/AGENTS.md)** ([raw](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/docs/AGENTS.md)) first. It is the operational install/setup/troubleshooting guide with a workflow decision tree, code-integration patterns, and safety rules.
+
+Quick decision: **RAG / context engineering** → `rapidfireai init --evals` + `Experiment(..., mode="evals")`. **Fine-tuning / post-training (SFT/DPO/GRPO)** → `rapidfireai init` + `Experiment(..., mode="fit")`.
+
+> **Note for agents working *on* rapidfireai itself (contributors)**: this disclosure is for *end-user* assistance. For repo-internal architecture, build, and contributor flow, see root [`AGENTS.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/AGENTS.md) (canonical for all AI coding agents) and [`CONTRIBUTING.md`](https://github.com/RapidFireAI/rapidfireai/blob/main/CONTRIBUTING.md).
+
+</details>
+
 ## Overview
 
 RapidFire AI is a new experiment execution framework that transforms your AI customization experimentation from slow, sequential processes into rapid, intelligent workflows with hyperparallelized execution, dynamic real-time experiment control, and automatic system optimization.

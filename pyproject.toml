@@ -255,6 +255,7 @@ local_fit = [
 Homepage = "https://rapidfire.ai"
 Documentation = "https://oss-docs.rapidfire.ai"
 Repository = "https://github.com/RapidFireAI/rapidfireai"
+AI-Agent-Guide = "https://github.com/RapidFireAI/rapidfireai/blob/main/docs/AGENTS.md"
 
 
 [project.scripts]
