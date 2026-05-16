@@ -583,6 +583,7 @@ class Controller:
         seed: int = 42,
         num_gpus: int = 1,
         monte_carlo_simulations: int = 1000,
+        chunk_callback=None,
     ) -> None:
         """Run the fit."""
 
@@ -615,7 +616,7 @@ class Controller:
         # create models
         try:
             len_train_dataset = len(train_dataset)
-            self._create_models(
+            run_ids = self._create_models(
                 param_config,
                 RunSource.INITIAL,
                 seed,
@@ -625,6 +626,16 @@ class Controller:
             self.logger.debug("Created models.")
         except Exception as e:
             raise ControllerException(f"Error creating models: {e}") from e
+
+        # RFOptuna: ``get_runs()`` (inside _create_models) creates the Optuna study.
+        # ``get_callback()`` must run after that or it returns None and trials never finalize.
+        if chunk_callback is None and hasattr(param_config, "get_callback"):
+            chunk_callback = param_config.get_callback(num_chunks=num_chunks)
+
+        # Bind Optuna trials to the newly created DB run IDs
+        if chunk_callback is not None and hasattr(param_config, "bind_initial_trials"):
+            param_config.bind_initial_trials(run_ids)
+            self.logger.info(f"Optuna callback bound to {len(run_ids)} initial runs")
 
         # set experiment task to create models
         self.db.set_experiment_current_task(ExperimentTask.RUN_FIT)
@@ -747,6 +758,46 @@ class Controller:
                         else 0
                     )
                     self.db.set_controller_progress(run_id, progress_percentage)
+
+                    # Optuna callback: evaluate run after chunk and potentially prune
+                    if (
+                        chunk_callback is not None
+                        and run_details["completed_steps"] < run_details["total_steps"]
+                    ):
+                        try:
+                            metric_run_id = run_details.get("metric_run_id")
+                            run_metrics = (
+                                self.metric_logger.get_run_metrics(metric_run_id)
+                                if metric_run_id
+                                else {}
+                            )
+                            decision = chunk_callback.on_chunk_complete(run_id, chunk_id, run_metrics)
+                            if decision.action == "prune":
+                                scheduler.remove_run(run_id)
+                                self.db.set_run_details(
+                                    run_id=run_id,
+                                    status=RunStatus.STOPPED,
+                                    ended_by=RunEndedBy.OPTUNA_PRUNED,
+                                )
+                                self._clear_run_from_shm(run_id)
+                                self.logger.info(f"Optuna pruned run {run_id} after chunk {chunk_id}")
+                                if decision.replacement_config:
+                                    new_run_ids = self._create_models(
+                                        decision.replacement_config,
+                                        RunSource.OPTUNA,
+                                        seed,
+                                        len_train_dataset,
+                                        num_chunks=num_chunks,
+                                    )
+                                    if hasattr(chunk_callback, "_remap_pending_trial"):
+                                        for new_id in new_run_ids:
+                                            chunk_callback._remap_pending_trial(new_id)
+                                    self.logger.info(
+                                        f"Optuna suggested replacement run(s): {new_run_ids}"
+                                    )
+                                continue
+                        except Exception as e:
+                            self.logger.warning(f"Optuna callback error for run {run_id}: {e}")
 
                     # Check if run has completed all epochs
                     # completed_steps can go beyond total_steps since we stop only at a chunk boundary
@@ -898,6 +949,19 @@ class Controller:
 
                 # Small delay
                 time.sleep(1)
+
+            # Finalize Optuna callback with final metrics from all runs
+            if chunk_callback is not None:
+                try:
+                    final_metrics = {}
+                    for rid, rdetails in self.db.get_all_runs().items():
+                        metric_run_id = rdetails.get("metric_run_id")
+                        if metric_run_id:
+                            final_metrics[rid] = self.metric_logger.get_run_metrics(metric_run_id)
+                    chunk_callback.finalize(final_metrics)
+                    self.logger.info("Optuna callback finalized")
+                except Exception as e:
+                    self.logger.warning(f"Optuna finalize error: {e}")
 
             # set experiment task to idle
             self.db.set_experiment_current_task(ExperimentTask.IDLE)
