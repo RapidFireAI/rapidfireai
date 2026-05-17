@@ -211,5 +211,4 @@ The CLI does **not** start the Controller — that's instantiated by `Experiment
 
 ## 11. Code Flow Diagram
 
-See [`RapidFire-CodeFlow.png`](./images/RapidFire-CodeFlow.png) for complete flow daigram.
 See [`code-flow.md`](./code-flow.md) for the full mermaid diagram of the same flow described above.
