@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 RapidFire AI is an experiment execution framework for LLM fine-tuning and post-training that enables hyperparallelized training, dynamic real-time experiment control (IC Ops), and automatic multi-GPU orchestration. The system uses chunk-based scheduling to allow concurrent training of multiple configurations even on a single GPU.
 
+> For an in-depth code walkthrough with `file:line` citations, see [`docs/DEVELOPER.md`](./docs/DEVELOPER.md). For a visual overview of the flow, see [`docs/code-flow.md`](./docs/code-flow.md).
+
 ## Key Commands
 
 ### Development Setup
@@ -25,12 +27,14 @@ node ./yarn/releases/yarn-4.9.1.cjs build
 cd ../..
 
 # Start all services in development mode
-chmod +x ./rapidfireai/start_dev.sh
-./rapidfireai/start_dev.sh start
+chmod +x ./setup/fit/start_dev.sh
+./setup/fit/start_dev.sh start
 
 # Stop services
-./rapidfireai/start_dev.sh stop
+./setup/fit/start_dev.sh stop
 ```
+
+> Note: `setup/start.sh` is the production startup script invoked by the installed `rapidfireai start` CLI command. `setup/fit/start_dev.sh` is for running from a source checkout.
 
 ### Running from Installed Package
 
@@ -84,9 +88,9 @@ ruff check --fix .
 rm -rf dist/ *.egg-info/ .eggs/ && python -m build
 
 # Bump version (creates commit and tag)
-./bump_version.sh patch  # 0.10.1 → 0.10.2
-./bump_version.sh minor  # 0.10.1 → 0.11.0
-./bump_version.sh major  # 0.10.1 → 1.0.0
+./setup/bump_version.sh patch  # 0.10.1 → 0.10.2
+./setup/bump_version.sh minor  # 0.10.1 → 0.11.0
+./setup/bump_version.sh major  # 0.10.1 → 1.0.0
 
 # Push version tag to trigger TestPyPI deployment
 git push origin test0.10.2
@@ -103,40 +107,45 @@ lsof -t -i:8853 | xargs kill -9  # frontend
 
 ## Architecture
 
-RapidFire AI uses a microservices-inspired distributed architecture:
+RapidFire AI is split into two pipelines under the `rapidfireai/` package:
+
+- **`fit/`** — the training pipeline (the focus of most development).
+- **`evals/`** — a separate evaluation pipeline (actors, RAG, metric aggregation).
+
+Both pipelines share the same architectural pattern: a Controller in the user process, Worker subprocesses per GPU, a SQLite-backed task queue, a Flask dispatcher, and the React frontend. The components below describe the **fit** pipeline.
 
 ### Core Components
 
-1. **Experiment** (`experiment.py`): Top-level API for users. Manages experiment lifecycle, creates database tables, sets up logging and signal handlers. Entry point for `run_fit()` and `get_results()`.
+1. **Experiment** (`rapidfireai/experiment.py`): Top-level API for users. Manages experiment lifecycle, creates database tables, sets up logging and signal handlers. Entry point for `run_fit()` and `get_results()`.
 
-2. **Controller** (`backend/controller.py`): Orchestrates the entire training lifecycle. Runs in the user's process. Responsible for:
+2. **Controller** (`rapidfireai/fit/backend/controller.py`): Orchestrates the entire training lifecycle. Runs in the user's process. Responsible for:
    - Creating models from parameter configurations
    - Initializing and managing Workers
    - Running the Scheduler to assign chunks to workers
    - Handling Interactive Control Operations (IC Ops)
    - Monitoring training progress
 
-3. **Scheduler** (`backend/scheduler.py`): Pure scheduling logic that assigns runs to available workers for specific chunks. Uses round-robin and fairness algorithms to ensure optimal GPU utilization. Tracks which runs have completed which chunks.
+3. **Scheduler** (`rapidfireai/fit/backend/scheduler.py`): Pure scheduling logic that assigns runs to available workers for specific chunks. Uses Monte-Carlo simulated fairness algorithms to ensure optimal GPU utilization. Tracks which runs have completed which chunks.
 
-4. **Worker** (`backend/worker.py`): Separate GPU processes that execute actual training. Each worker:
+4. **Worker** (`rapidfireai/fit/backend/worker.py`): Separate GPU processes that execute actual training. Each worker:
    - Polls database for assigned tasks
    - Loads model checkpoints from shared memory or disk
    - Trains on assigned data chunks
    - Saves checkpoints back to shared memory/disk
    - Reports progress to MLflow
 
-5. **Dispatcher** (`dispatcher/dispatcher.py`): Flask-based REST API for UI communication. Provides endpoints for:
+5. **Dispatcher** (`rapidfireai/fit/dispatcher/dispatcher.py`): Flask-based REST API for UI communication. Provides endpoints for:
    - Viewing experiment status
    - Interactive Control Operations (stop, resume, clone, delete runs)
    - Real-time run metrics
 
-6. **Database** (`db/rf_db.py`): SQLite-based persistence layer with async operations. Stores:
+6. **Database** (`rapidfireai/fit/db/rf_db.py`, schema in `rapidfireai/fit/db/tables.sql`): SQLite-based persistence layer. Stores:
    - Experiment metadata
    - Run configurations and status
    - Task scheduling state
    - Checkpoint locations
 
-7. **Frontend** (`frontend/`): React-based dashboard (MLflow fork) with IC Ops panel. Displays live experiment tracking and enables dynamic control.
+7. **Frontend** (`rapidfireai/frontend/`): React-based dashboard (MLflow fork) with IC Ops panel. Displays live experiment tracking and enables dynamic control.
 
 ### Data Flow
 
@@ -150,11 +159,11 @@ RapidFire AI uses a microservices-inspired distributed architecture:
 
 ### Shared Memory System
 
-RapidFire uses shared memory (`utils/shm_manager.py`) to avoid disk I/O bottlenecks:
+RapidFire uses shared memory (`rapidfireai/fit/utils/shm_manager.py`) to avoid disk I/O bottlenecks:
 - Model checkpoints stored in shared memory between chunks (configurable via `USE_SHARED_MEMORY`)
 - Registry tracks which models are in memory
 - Process locks prevent concurrent access issues
-- Fallback to disk for larger models
+- Fallback to disk on the final chunk and for larger models
 
 ### Interactive Control (IC Ops)
 
@@ -169,19 +178,41 @@ Implemented via database state changes that Controller/Workers poll.
 ## Directory Structure
 
 ```
-rapidfireai/
-├── automl/           # Grid search, random search, AutoML algorithms
-├── backend/          # Controller, Scheduler, Worker, Chunks
-├── db/               # SQLite database interface
-├── dispatcher/       # Flask REST API for UI
-├── frontend/         # React dashboard (MLflow fork with IC Ops)
-├── ml/               # Trainer classes, checkpoint utils, callbacks
-├── utils/            # Logging, MLflow manager, shared memory, serialization
-├── experiment.py     # Main Experiment class (user-facing API)
-├── cli.py            # CLI commands (rapidfireai start/stop/init/doctor)
-├── start.sh          # Production server startup script
-├── start_dev.sh      # Development mode startup script
-└── version.py        # Version number
+rapidfireai/                    # Repo root
+├── rapidfireai/                # Python package
+│   ├── experiment.py           # Main Experiment class (user-facing API)
+│   ├── cli.py                  # CLI commands (rapidfireai start/stop/init/doctor)
+│   ├── version.py              # Version number
+│   ├── automl/                 # Grid search, random search
+│   ├── fit/                    # Training pipeline
+│   │   ├── backend/            # Controller, Scheduler, Worker, Chunks
+│   │   ├── db/                 # SQLite interface (rf_db.py, tables.sql)
+│   │   ├── dispatcher/         # Flask REST API for UI
+│   │   ├── ml/                 # Trainer, callbacks, checkpoint utils
+│   │   └── utils/              # SHM, worker manager, IC controller, logging
+│   ├── evals/                  # Evaluation pipeline (separate from fit)
+│   │   ├── actors/             # Doc/Query/RateLimiter actors, inference engines
+│   │   ├── data/               # Dataset loaders
+│   │   ├── db/                 # Eval-specific DB interface + schema
+│   │   ├── dispatcher/         # Eval Flask REST API
+│   │   ├── metrics/            # Aggregator, online strategies
+│   │   ├── rag/                # RAG pipeline + prompt manager
+│   │   ├── scheduling/         # Eval controller/scheduler/pipeline scheduler
+│   │   └── utils/              # Eval helpers (gateway, mlflow, ratelimiter, ...)
+│   ├── frontend/               # React dashboard (MLflow fork with IC Ops)
+│   └── utils/                  # CLI/system helpers (doctor, gpu_info, colab, ping)
+├── setup/                      # Install + ops scripts
+│   ├── start.sh                # Production startup (used by `rapidfireai start`)
+│   ├── bump_version.sh         # Version bumping
+│   ├── build_frontend.sh       # Frontend build helper
+│   ├── fit/                    # Fit-side install scripts + start_dev.sh
+│   └── evals/                  # Evals-side install scripts
+├── docs/                       # Developer docs (DEVELOPER.md, code-flow.md, ...)
+├── tests/                      # pytest suite
+├── tutorial_notebooks/         # User-facing tutorials
+├── community_notebooks/
+├── requirements.txt
+└── requirements-dev.txt
 ```
 
 ## Key Concepts
@@ -237,11 +268,12 @@ node ./yarn/releases/yarn-4.9.1.cjs start  # Runs on localhost:8853
 
 ### Database Schema
 
-Defined in `db/*.sql` files. Tables include:
-- experiments: Experiment metadata and paths
-- runs: Run configurations, status, metrics
-- tasks: Task queue for controller-worker coordination
-- checkpoints: Checkpoint locations and metadata
+Defined in `rapidfireai/fit/db/tables.sql` (and `rapidfireai/evals/db/tables.sql` for evals). Tables include:
+- `experiments`: Experiment metadata, current task, status
+- `runs`: Run configurations (`config_leaf` BLOB), status, completed/total steps, MLflow run ID
+- `worker_task`: Queue between Controller and Workers — `(worker_id, run_id, chunk_id, status, multi_worker_details)`
+- `interactive_control`: IC Ops queue, drained by the Controller
+- `controller_progress`, `worker_progress`: liveness/progress counters
 
 ### Environment Variables
 
@@ -311,10 +343,9 @@ param_config = GridSearch({
 
 ## Git Workflow
 
-Current branch: `feat/enable-colab`
 Main branch: `main`
 
-Use standard PR workflow to merge features into main.
+Use standard PR workflow to merge feature branches into `main`.
 
 ## Dependencies
 
