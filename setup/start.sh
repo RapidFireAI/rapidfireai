@@ -190,8 +190,21 @@ cleanup() {
         exit 0
     fi
 
+    # NOTE: We intentionally do NOT run `ray stop --force` or broad
+    # `pkill -f "raylet|plasma_store|gcs_server|ray::"` here. Those commands
+    # would terminate every Ray process owned by the current user on this
+    # host -- including Ray clusters or workers started outside RapidFire AI
+    # (e.g. another notebook, another project, or another user on a shared
+    # box). Ray is only ever started from inside the user's experiment
+    # process (`ray.init()` in `rapidfireai/experiment.py`, evals mode), and
+    # that same process is responsible for tearing it down via
+    # `Experiment.end_experiment()` -> `ray.shutdown()`. The only Ray-related
+    # cleanup that is safe to do from here is freeing the RapidFire-
+    # configured Ray dashboard port (RF_RAY_PORT), which the port-kill loop
+    # below handles.
+
     # Kill processes by port (more reliable for MLflow)
-    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT $RF_JUPYTER_PORT; do
+    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT $RF_JUPYTER_PORT $RF_RAY_PORT; do
         local pids=$(lsof -ti :$port 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
             print_status "Killing processes on port $port"
@@ -233,6 +246,10 @@ cleanup() {
         # Stop Converge if it was running
         pkill -f "converge start" 2>/dev/null || true
         pkill -f "uvicorn.*main:app" 2>/dev/null || true
+        # Deliberately no broad `pkill -f "raylet|plasma_store|gcs_server|ray::"`
+        # here -- see the note in the Ray cleanup section above. Those patterns
+        # would reap Ray processes belonging to other projects or other users
+        # on the same machine, not just RapidFire's own experiment.
     fi
 
     print_success "All services stopped"
