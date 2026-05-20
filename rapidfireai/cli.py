@@ -162,102 +162,6 @@ def parse_compute_capability_string(cap: str) -> float | None:
     return major + minor / 10.0
 
 
-# Canonical (Debian/Ubuntu) package name -> per-package-manager native name.
-# Used by the `--multimodal` init option to install OS dependencies required by
-# `unstructured[all-docs]` (PDF / OCR / XML toolchain).
-_MULTIMODAL_OS_PACKAGES = {
-    "libmagic1":    {"apt": "libmagic1",    "dnf": "file-libs",     "yum": "file-libs",     "pacman": "file",     "zypper": "file-magic",   "brew": "libmagic"},
-    "poppler-utils":{"apt": "poppler-utils","dnf": "poppler-utils", "yum": "poppler-utils", "pacman": "poppler",  "zypper": "poppler-tools","brew": "poppler"},
-    "tesseract-ocr":{"apt": "tesseract-ocr","dnf": "tesseract",     "yum": "tesseract",     "pacman": "tesseract","zypper": "tesseract-ocr","brew": "tesseract"},
-    "libxml2":      {"apt": "libxml2",      "dnf": "libxml2",       "yum": "libxml2",       "pacman": "libxml2",  "zypper": "libxml2-2",    "brew": "libxml2"},
-    "libxslt1-dev": {"apt": "libxslt1-dev", "dnf": "libxslt-devel", "yum": "libxslt-devel", "pacman": "libxslt",  "zypper": "libxslt-devel","brew": "libxslt"},
-    "wget":         {"apt": "wget",         "dnf": "wget",          "yum": "wget",          "pacman": "wget",     "zypper": "wget",         "brew": "wget"},
-    "unrar":        {"apt": "unrar",        "dnf": "unrar",         "yum": "unrar",         "pacman": "unrar",    "zypper": "unrar",        "brew": "unrar"},
-}
-
-
-def _detect_pkg_manager():
-    """Detect the OS package manager.
-
-    Returns (manager, distro_id). ``manager`` is one of
-    ``apt``/``dnf``/``yum``/``pacman``/``zypper``/``brew`` or ``None`` if
-    nothing supported is available.
-    """
-    system = platform.system()
-    if system == "Darwin":
-        return ("brew" if shutil.which("brew") else None, "macos")
-    if system != "Linux":
-        return (None, system.lower())
-
-    try:
-        import distro  # type: ignore
-        dist_id = (distro.id() or "").lower()
-    except Exception:
-        dist_id = ""
-
-    debian_like = {"debian", "ubuntu", "linuxmint", "pop", "kali", "raspbian", "elementary"}
-    rhel_like = {"rhel", "centos", "fedora", "rocky", "almalinux", "amzn", "ol"}
-    arch_like = {"arch", "manjaro", "endeavouros"}
-    suse_like = {"opensuse", "opensuse-leap", "opensuse-tumbleweed", "sles"}
-
-    if dist_id in debian_like and shutil.which("apt-get"):
-        return ("apt", dist_id)
-    if dist_id in rhel_like:
-        if shutil.which("dnf"):
-            return ("dnf", dist_id)
-        if shutil.which("yum"):
-            return ("yum", dist_id)
-    if dist_id in arch_like and shutil.which("pacman"):
-        return ("pacman", dist_id)
-    if dist_id in suse_like and shutil.which("zypper"):
-        return ("zypper", dist_id)
-
-    for mgr, cmd in (("apt", "apt-get"), ("dnf", "dnf"), ("yum", "yum"),
-                      ("pacman", "pacman"), ("zypper", "zypper")):
-        if shutil.which(cmd):
-            return (mgr, dist_id)
-
-    return (None, dist_id)
-
-
-def _is_os_pkg_installed(manager: str, name: str) -> bool:
-    """Return True if an OS package is installed via the given package manager."""
-    try:
-        if manager == "apt":
-            r = subprocess.run(["dpkg", "-s", name], capture_output=True, text=True, check=False)
-            return r.returncode == 0 and "Status: install ok installed" in r.stdout
-        if manager in ("dnf", "yum", "zypper"):
-            r = subprocess.run(["rpm", "-q", name], capture_output=True, text=True, check=False)
-            return r.returncode == 0
-        if manager == "pacman":
-            r = subprocess.run(["pacman", "-Q", name], capture_output=True, text=True, check=False)
-            return r.returncode == 0
-        if manager == "brew":
-            r = subprocess.run(["brew", "list", "--formula", name], capture_output=True, text=True, check=False)
-            return r.returncode == 0
-    except FileNotFoundError:
-        return False
-    return False
-
-
-def _build_install_cmd(manager: str, names: list[str]) -> list[str] | None:
-    """Build the install command for the given package manager."""
-    if manager == "apt":
-        return ["sudo", "apt-get", "install", "-y"] + names
-    if manager == "dnf":
-        return ["sudo", "dnf", "install", "-y"] + names
-    if manager == "yum":
-        return ["sudo", "yum", "install", "-y"] + names
-    if manager == "pacman":
-        return ["sudo", "pacman", "-S", "--noconfirm", "--needed"] + names
-    if manager == "zypper":
-        return ["sudo", "zypper", "--non-interactive", "install"] + names
-    if manager == "brew":
-        # Homebrew explicitly refuses to run under sudo.
-        return ["brew", "install"] + names
-    return None
-
-
 def install_multimodal_system_packages() -> int:
     """Ensure OS packages needed for multimodal document parsing are installed.
 
@@ -268,16 +172,21 @@ def install_multimodal_system_packages() -> int:
     package manager is detected, a warning is printed and the function returns
     non-zero without raising so the rest of init can continue.
     """
-    canonical_pkgs = list(_MULTIMODAL_OS_PACKAGES.keys())
-    manager, dist_id = _detect_pkg_manager()
+    from rapidfireai.utils.os_utils import (
+        MULTIMODAL_OS_PACKAGES,
+        build_install_cmd,
+        check_multimodal_os_packages,
+    )
+
+    result = check_multimodal_os_packages()
+    manager = result["manager"]
     if manager is None:
         print("⚠️ Could not detect a supported OS package manager for multimodal dependencies.")
         print("   Please install the following packages manually using sudo or the equivalent")
-        print(f"   for your operating system: {', '.join(canonical_pkgs)}")
+        print(f"   for your operating system: {', '.join(MULTIMODAL_OS_PACKAGES.keys())}")
         return 1
 
-    native_names = [_MULTIMODAL_OS_PACKAGES[p].get(manager, p) for p in canonical_pkgs]
-    missing = [n for n in native_names if not _is_os_pkg_installed(manager, n)]
+    missing = result["missing"]
     if not missing:
         print(f"✅ All multimodal system dependencies already installed (via {manager})")
         return 0
@@ -291,7 +200,7 @@ def install_multimodal_system_packages() -> int:
         except FileNotFoundError:
             pass
 
-    cmd = _build_install_cmd(manager, missing)
+    cmd = build_install_cmd(manager, missing)
     if cmd is None:
         print(f"⚠️ No install command available for package manager '{manager}'.")
         print(f"   Please install these packages manually: {', '.join(missing)}")

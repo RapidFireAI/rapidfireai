@@ -8,6 +8,10 @@ from pathlib import Path
 from rapidfireai.utils.python_info import get_python_info, get_pip_packages
 from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
 from rapidfireai.utils.ping import ping_server
+from rapidfireai.utils.os_utils import (
+    check_multimodal_os_packages,
+    check_multimodal_python_packages,
+)
 from rapidfireai.utils.constants import (
     JupyterConfig,
     DispatcherConfig,
@@ -164,6 +168,48 @@ def get_doctor_info(log_lines: int = 10):
     else:
         status = 1 if status == 0 else status
         print("⚠️ Torch CUDA Version: unknown")
+
+    # Multimodal document parsing dependencies (rapidfireai init --evals --multimodal)
+    print("\n🧰 Multimodal Document Parsing Dependencies:")
+    print("-" * 30)
+    os_check = check_multimodal_os_packages()
+    if os_check["manager"] is None:
+        status = 1 if status == 0 else status
+        print("⚠️ Could not detect a supported OS package manager; cannot verify OS packages.")
+        print(f"   Distro detected: {os_check['distro_id'] or 'unknown'}")
+        print("   Expected packages (Debian/Ubuntu names): "
+              + ", ".join(p["canonical"] for p in os_check["packages"]))
+    else:
+        print(f"OS Package Manager: {os_check['manager']} (distro: {os_check['distro_id'] or 'unknown'})")
+        any_missing = False
+        for pkg in os_check["packages"]:
+            if pkg["installed"]:
+                marker = "✅"
+            else:
+                marker = "❌"
+                any_missing = True
+            label = pkg["canonical"]
+            if pkg["native"] != pkg["canonical"]:
+                label = f"{pkg['canonical']} ({pkg['native']})"
+            print(f"  {marker} {label}")
+        if any_missing:
+            status = 1 if status == 0 else status
+            print("⚠️ Missing OS packages above are needed for multimodal document parsing.")
+            print("   Reinstall with: rapidfireai init --evals --multimodal")
+
+    py_check = check_multimodal_python_packages()
+    print("Multimodal Python packages:")
+    any_py_missing = False
+    for pkg in py_check["packages"]:
+        if pkg["installed"]:
+            print(f"  ✅ {pkg['name']} {pkg['version']}")
+        else:
+            print(f"  ❌ {pkg['name']} (not installed)")
+            any_py_missing = True
+    if any_py_missing:
+        status = 1 if status == 0 else status
+        print("⚠️ Missing Python packages above are needed for multimodal document parsing.")
+        print("   Reinstall with: rapidfireai init --evals --multimodal")
 
     # Check RapidFire AI ports
     print ("\n🛜 RapidFire AI Ports:")
