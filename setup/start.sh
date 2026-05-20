@@ -190,8 +190,15 @@ cleanup() {
         exit 0
     fi
 
+    # Stop Ray cluster if running (best-effort) so its child processes
+    # (raylet, plasma store, GCS, dashboard, workers) are reaped before we
+    # fall back to killing whoever is bound to RF_RAY_PORT.
+    if command -v ray &> /dev/null; then
+        ray stop --force >/dev/null 2>&1 || true
+    fi
+
     # Kill processes by port (more reliable for MLflow)
-    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT $RF_JUPYTER_PORT; do
+    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT $RF_JUPYTER_PORT $RF_RAY_PORT; do
         local pids=$(lsof -ti :$port 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
             print_status "Killing processes on port $port"
@@ -233,6 +240,11 @@ cleanup() {
         # Stop Converge if it was running
         pkill -f "converge start" 2>/dev/null || true
         pkill -f "uvicorn.*main:app" 2>/dev/null || true
+        # Reap any Ray stragglers that ray stop / port-kill missed.
+        pkill -f "raylet" 2>/dev/null || true
+        pkill -f "plasma_store" 2>/dev/null || true
+        pkill -f "gcs_server" 2>/dev/null || true
+        pkill -f "ray::" 2>/dev/null || true
     fi
 
     print_success "All services stopped"
