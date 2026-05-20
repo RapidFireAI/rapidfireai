@@ -554,20 +554,22 @@ class LangChainRagSpec:
                     batch_summaries = self._summarizer_runner.summarize_batch(batch_prompts)
                     for doc, summary in zip(batch_docs, batch_summaries):
                         doc.page_content = summary
-                        source_value = doc.metadata.get(source_key)
-                        if not source_value:
-                            continue
                         # Two paths for the raw *_source after summarization:
-                        # 1. Offload to the configured storage backend and
-                        #    replace the in-metadata value with the returned
-                        #    URI / path.
-                        # 2. Drop the key entirely when the caller opted out
+                        # 1. Drop the key entirely when the caller opted out
                         #    via artifact_storage_cfg=False (or, defensively,
                         #    if storage_client is unset for any other
                         #    reason). The summary in page_content is now the
-                        #    only surviving copy of the artifact. 
+                        #    only surviving copy of the artifact.
+                        # 2. Offload to the configured storage backend and
+                        #    replace the in-metadata value with the returned
+                        #    URI / path. Empty source values are skipped --
+                        #    there's nothing to upload, and the existing
+                        #    (empty) key is harmless.
                         if self.storage_client is None:
                             doc.metadata.pop(source_key, None)
+                            continue
+                        source_value = doc.metadata.get(source_key)
+                        if not source_value:
                             continue
                         if modality == "text":
                             doc.metadata[source_key] = self.storage_client.put_text(
