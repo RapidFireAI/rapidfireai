@@ -162,6 +162,180 @@ def parse_compute_capability_string(cap: str) -> float | None:
     return major + minor / 10.0
 
 
+# Canonical (Debian/Ubuntu) package name -> per-package-manager native name.
+# Used by the `--multimodal` init option to install OS dependencies required by
+# `unstructured[all-docs]` (PDF / OCR / XML toolchain).
+_MULTIMODAL_OS_PACKAGES = {
+    "libmagic1":    {"apt": "libmagic1",    "dnf": "file-libs",     "yum": "file-libs",     "pacman": "file",     "zypper": "file-magic",   "brew": "libmagic"},
+    "poppler-utils":{"apt": "poppler-utils","dnf": "poppler-utils", "yum": "poppler-utils", "pacman": "poppler",  "zypper": "poppler-tools","brew": "poppler"},
+    "tesseract-ocr":{"apt": "tesseract-ocr","dnf": "tesseract",     "yum": "tesseract",     "pacman": "tesseract","zypper": "tesseract-ocr","brew": "tesseract"},
+    "libxml2":      {"apt": "libxml2",      "dnf": "libxml2",       "yum": "libxml2",       "pacman": "libxml2",  "zypper": "libxml2-2",    "brew": "libxml2"},
+    "libxslt1-dev": {"apt": "libxslt1-dev", "dnf": "libxslt-devel", "yum": "libxslt-devel", "pacman": "libxslt",  "zypper": "libxslt-devel","brew": "libxslt"},
+    "wget":         {"apt": "wget",         "dnf": "wget",          "yum": "wget",          "pacman": "wget",     "zypper": "wget",         "brew": "wget"},
+    "unrar":        {"apt": "unrar",        "dnf": "unrar",         "yum": "unrar",         "pacman": "unrar",    "zypper": "unrar",        "brew": "unrar"},
+}
+
+
+def _detect_pkg_manager():
+    """Detect the OS package manager.
+
+    Returns (manager, distro_id). ``manager`` is one of
+    ``apt``/``dnf``/``yum``/``pacman``/``zypper``/``brew`` or ``None`` if
+    nothing supported is available.
+    """
+    system = platform.system()
+    if system == "Darwin":
+        return ("brew" if shutil.which("brew") else None, "macos")
+    if system != "Linux":
+        return (None, system.lower())
+
+    try:
+        import distro  # type: ignore
+        dist_id = (distro.id() or "").lower()
+    except Exception:
+        dist_id = ""
+
+    debian_like = {"debian", "ubuntu", "linuxmint", "pop", "kali", "raspbian", "elementary"}
+    rhel_like = {"rhel", "centos", "fedora", "rocky", "almalinux", "amzn", "ol"}
+    arch_like = {"arch", "manjaro", "endeavouros"}
+    suse_like = {"opensuse", "opensuse-leap", "opensuse-tumbleweed", "sles"}
+
+    if dist_id in debian_like and shutil.which("apt-get"):
+        return ("apt", dist_id)
+    if dist_id in rhel_like:
+        if shutil.which("dnf"):
+            return ("dnf", dist_id)
+        if shutil.which("yum"):
+            return ("yum", dist_id)
+    if dist_id in arch_like and shutil.which("pacman"):
+        return ("pacman", dist_id)
+    if dist_id in suse_like and shutil.which("zypper"):
+        return ("zypper", dist_id)
+
+    for mgr, cmd in (("apt", "apt-get"), ("dnf", "dnf"), ("yum", "yum"),
+                      ("pacman", "pacman"), ("zypper", "zypper")):
+        if shutil.which(cmd):
+            return (mgr, dist_id)
+
+    return (None, dist_id)
+
+
+def _is_os_pkg_installed(manager: str, name: str) -> bool:
+    """Return True if an OS package is installed via the given package manager."""
+    try:
+        if manager == "apt":
+            r = subprocess.run(["dpkg", "-s", name], capture_output=True, text=True, check=False)
+            return r.returncode == 0 and "Status: install ok installed" in r.stdout
+        if manager in ("dnf", "yum", "zypper"):
+            r = subprocess.run(["rpm", "-q", name], capture_output=True, text=True, check=False)
+            return r.returncode == 0
+        if manager == "pacman":
+            r = subprocess.run(["pacman", "-Q", name], capture_output=True, text=True, check=False)
+            return r.returncode == 0
+        if manager == "brew":
+            r = subprocess.run(["brew", "list", "--formula", name], capture_output=True, text=True, check=False)
+            return r.returncode == 0
+    except FileNotFoundError:
+        return False
+    return False
+
+
+def _build_install_cmd(manager: str, names: list[str]) -> list[str] | None:
+    """Build the install command for the given package manager."""
+    if manager == "apt":
+        return ["sudo", "apt-get", "install", "-y"] + names
+    if manager == "dnf":
+        return ["sudo", "dnf", "install", "-y"] + names
+    if manager == "yum":
+        return ["sudo", "yum", "install", "-y"] + names
+    if manager == "pacman":
+        return ["sudo", "pacman", "-S", "--noconfirm", "--needed"] + names
+    if manager == "zypper":
+        return ["sudo", "zypper", "--non-interactive", "install"] + names
+    if manager == "brew":
+        # Homebrew explicitly refuses to run under sudo.
+        return ["brew", "install"] + names
+    return None
+
+
+def install_multimodal_system_packages() -> int:
+    """Ensure OS packages needed for multimodal document parsing are installed.
+
+    Checks for ``libmagic1``, ``poppler-utils``, ``tesseract-ocr``, ``libxml2``,
+    ``libxslt1-dev``, ``wget`` and ``unrar`` (mapped to the equivalent package
+    names on non-Debian distros / macOS). Missing packages are installed via
+    ``sudo`` and the detected package manager. On failure or when no supported
+    package manager is detected, a warning is printed and the function returns
+    non-zero without raising so the rest of init can continue.
+    """
+    canonical_pkgs = list(_MULTIMODAL_OS_PACKAGES.keys())
+    manager, dist_id = _detect_pkg_manager()
+    if manager is None:
+        print("⚠️ Could not detect a supported OS package manager for multimodal dependencies.")
+        print("   Please install the following packages manually using sudo or the equivalent")
+        print(f"   for your operating system: {', '.join(canonical_pkgs)}")
+        return 1
+
+    native_names = [_MULTIMODAL_OS_PACKAGES[p].get(manager, p) for p in canonical_pkgs]
+    missing = [n for n in native_names if not _is_os_pkg_installed(manager, n)]
+    if not missing:
+        print(f"✅ All multimodal system dependencies already installed (via {manager})")
+        return 0
+
+    print(f"📦 Installing missing multimodal system dependencies via {manager}: {', '.join(missing)}")
+
+    if manager == "apt":
+        # Refresh the package index so package names like ``libxslt1-dev`` resolve.
+        try:
+            subprocess.run(["sudo", "apt-get", "update"], check=False)
+        except FileNotFoundError:
+            pass
+
+    cmd = _build_install_cmd(manager, missing)
+    if cmd is None:
+        print(f"⚠️ No install command available for package manager '{manager}'.")
+        print(f"   Please install these packages manually: {', '.join(missing)}")
+        return 1
+
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Failed to install multimodal system dependencies (exit code {e.returncode}).")
+        print("   Please install them manually with sudo or the equivalent for your OS:")
+        print(f"   $ {' '.join(cmd)}")
+        return 1
+    except FileNotFoundError as e:
+        print(f"⚠️ Could not run installer ({e}).")
+        print("   Please install these packages manually with sudo or the equivalent for your OS:")
+        print(f"     {', '.join(missing)}")
+        return 1
+
+    print("✅ Successfully installed multimodal system dependencies")
+    return 0
+
+
+def install_multimodal_python_packages() -> int:
+    """Install the Python packages required for multimodal document parsing."""
+    packages = ["unstructured[all-docs]", "nltk"]
+    print("📦 Installing multimodal Python packages...")
+    for pkg in packages:
+        cmd = [sys.executable, "-m", "uv", "pip", "install", "--upgrade", pkg]
+        print(f"   Installing {pkg}...")
+        try:
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            print(f"✅ Successfully installed {pkg}")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to install {pkg}")
+            print(f"   Error: {e}")
+            if e.stdout:
+                print(f"   Standard output: {e.stdout}")
+            if e.stderr:
+                print(f"   Standard error: {e.stderr}")
+            print(f"   You may need to install {pkg} manually")
+            return 1
+    return 0
+
+
 def install_packages(
     evals: bool = False,
     init_packages: list[str] | None = None,
@@ -435,12 +609,26 @@ def copy_tutorial_notebooks():
 
 def run_init(
     evals: bool = False,
+    multimodal: bool = False,
     cuda_version: str | None = None,
     compute_capability_version: str | None = None,
 ):
     """Run the init command to initialize the project."""
     print("🔧 Initializing RapidFire AI project...")
     print("-" * 30)
+
+    if multimodal and not evals:
+        print("⚠️ --multimodal requires --evals; ignoring --multimodal.")
+        multimodal = False
+
+    if multimodal:
+        print("Setting up multimodal document parsing dependencies...")
+        # System-package install failures are non-fatal: warnings are printed
+        # so the user can install manually, but init continues.
+        install_multimodal_system_packages()
+        if install_multimodal_python_packages() != 0:
+            return 1
+
     print("Initializing project...")
     if (
         install_packages(
@@ -577,6 +765,9 @@ Examples:
   # Basic Initialize with evaluation dependencies
   rapidfireai init --evals
 
+  # Initialize with evaluation + multimodal document parsing dependencies
+  rapidfireai init --evals --multimodal
+
   # Init when nvcc/nvidia-smi are unavailable (pin CUDA / compute capability)
   rapidfireai init --evals --cudaversion 12.4 --computecapabilityversion 8.0
   
@@ -637,6 +828,14 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument("--force", "-f", action="store_true", help="Force action without confirmation")
 
     parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
+
+    parser.add_argument(
+        "--multimodal",
+        action="store_true",
+        help="(Only with --evals) Install OS dependencies (libmagic1, poppler-utils, tesseract-ocr, "
+             "libxml2, libxslt1-dev, wget, unrar) and Python packages (unstructured[all-docs], nltk) "
+             "needed for multimodal document parsing.",
+    )
 
     parser.add_argument(
         "--cudaversion",
@@ -701,6 +900,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     if args.command == "init":
         return run_init(
             args.evals,
+            multimodal=args.multimodal,
             cuda_version=args.cuda_version,
             compute_capability_version=args.compute_capability_version,
         )
