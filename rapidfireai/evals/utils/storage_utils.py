@@ -325,19 +325,25 @@ class LocalStorage:
             return f.read()
 
     def _build_path(self, document_type: str, doc_id: str) -> str:
+        """Return the realpath of the write target, rejecting symlink escapes.
+
+        Shares :meth:`_contained_realpath` with the read path so a symlink
+        under ``self._base_dir`` pointing outside the root is caught here at
+        write time, not later at read time when the locator round-trips.
+        """
         if not doc_id:
             raise ValueError("doc_id must be a non-empty string")
-        candidate = os.path.abspath(
-            os.path.join(self._base_dir, document_type, doc_id, _DOCUMENT_FILENAME)
-        )
-        base_prefix = self._base_dir + os.sep
-        if not candidate.startswith(base_prefix):
+        candidate = os.path.join(self._base_dir, document_type, doc_id, _DOCUMENT_FILENAME)
+        real_base, real_target = self._contained_realpath(candidate)
+        if real_target != real_base and not real_target.startswith(real_base + os.sep):
             raise ValueError(
-                f"doc_id={doc_id!r} resolves to a path outside the "
-                f"artifact root {self._base_dir!r}; refusing to write "
-                "outside the configured storage area."
+                f"document_type={document_type!r}, doc_id={doc_id!r} resolves "
+                f"to {real_target!r}, which is outside the artifact root "
+                f"{real_base!r} (typically because a symlink under the root "
+                "points elsewhere); refusing to write outside the configured "
+                "storage area."
             )
-        return candidate
+        return real_target
 
     def _resolve_safe_path(self, path: str) -> str:
         """Return the realpath of ``path`` after verifying it sits under ``self._base_dir``.
@@ -349,16 +355,26 @@ class LocalStorage:
         """
         if not isinstance(path, str) or not path:
             raise ValueError("path must be a non-empty string")
-        real_base = os.path.realpath(self._base_dir)
-        real_target = os.path.realpath(os.path.abspath(path))
-        base_prefix = real_base + os.sep
-        if real_target != real_base and not real_target.startswith(base_prefix):
+        real_base, real_target = self._contained_realpath(path)
+        if real_target != real_base and not real_target.startswith(real_base + os.sep):
             raise ValueError(
                 f"path={path!r} resolves to {real_target!r}, which is "
                 f"outside the artifact root {real_base!r}; refusing to "
                 "read outside the configured storage area."
             )
         return real_target
+
+    def _contained_realpath(self, path: str) -> tuple[str, str]:
+        """Return ``(real_base, real_target)`` with symlinks resolved.
+
+        Shared by the write and read paths so both apply the same
+        symlink-resolving normalization. ``realpath`` is safe on
+        not-yet-existing leaves; it still resolves symlinks among any
+        existing parent components, which is what catches escapes.
+        """
+        real_base = os.path.realpath(self._base_dir)
+        real_target = os.path.realpath(os.path.abspath(path))
+        return real_base, real_target
 
     @staticmethod
     def _write_bytes(path: str, data: bytes) -> None:
