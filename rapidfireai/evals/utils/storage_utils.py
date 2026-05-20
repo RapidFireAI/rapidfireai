@@ -312,16 +312,53 @@ class LocalStorage:
         return self.read_bytes(path).decode("utf-8")
 
     def read_bytes(self, path: str) -> bytes:
-        """Read the raw bytes of any artifact at ``path``."""
-        with open(path, "rb") as f:
+        """Read the raw bytes of any artifact at ``path``.
+
+        ``path`` is validated to resolve to a location under
+        ``self._base_dir`` before the file is opened. Values that escape
+        the artifact root via ``..`` segments, unrelated absolute paths,
+        or symlinks pointing outside the root are rejected with
+        ``ValueError``. 
+        """
+        safe_path = self._resolve_safe_path(path)
+        with open(safe_path, "rb") as f:
             return f.read()
 
     def _build_path(self, document_type: str, doc_id: str) -> str:
         if not doc_id:
             raise ValueError("doc_id must be a non-empty string")
-        return os.path.abspath(
+        candidate = os.path.abspath(
             os.path.join(self._base_dir, document_type, doc_id, _DOCUMENT_FILENAME)
         )
+        base_prefix = self._base_dir + os.sep
+        if not candidate.startswith(base_prefix):
+            raise ValueError(
+                f"doc_id={doc_id!r} resolves to a path outside the "
+                f"artifact root {self._base_dir!r}; refusing to write "
+                "outside the configured storage area."
+            )
+        return candidate
+
+    def _resolve_safe_path(self, path: str) -> str:
+        """Return the realpath of ``path`` after verifying it sits under ``self._base_dir``.
+
+        Uses ``os.path.realpath`` (not just ``abspath``) so that symlinks
+        in either the artifact root or the supplied path are resolved
+        before the containment check — this prevents a planted symlink
+        from being used to escape the storage area.
+        """
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        real_base = os.path.realpath(self._base_dir)
+        real_target = os.path.realpath(os.path.abspath(path))
+        base_prefix = real_base + os.sep
+        if real_target != real_base and not real_target.startswith(base_prefix):
+            raise ValueError(
+                f"path={path!r} resolves to {real_target!r}, which is "
+                f"outside the artifact root {real_base!r}; refusing to "
+                "read outside the configured storage area."
+            )
+        return real_target
 
     @staticmethod
     def _write_bytes(path: str, data: bytes) -> None:
