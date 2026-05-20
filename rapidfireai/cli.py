@@ -162,6 +162,89 @@ def parse_compute_capability_string(cap: str) -> float | None:
     return major + minor / 10.0
 
 
+def install_multimodal_system_packages() -> int:
+    """Ensure OS packages needed for multimodal document parsing are installed.
+
+    Checks for ``libmagic1``, ``poppler-utils``, ``tesseract-ocr``, ``libxml2``,
+    ``libxslt1-dev``, ``wget`` and ``unrar`` (mapped to the equivalent package
+    names on non-Debian distros / macOS). Missing packages are installed via
+    ``sudo`` and the detected package manager. On failure or when no supported
+    package manager is detected, a warning is printed and the function returns
+    non-zero without raising so the rest of init can continue.
+    """
+    from rapidfireai.utils.os_utils import (
+        MULTIMODAL_OS_PACKAGES,
+        build_install_cmd,
+        check_multimodal_os_packages,
+    )
+
+    result = check_multimodal_os_packages()
+    manager = result["manager"]
+    if manager is None:
+        print("⚠️ Could not detect a supported OS package manager for multimodal dependencies.")
+        print("   Please install the following packages manually using sudo or the equivalent")
+        print(f"   for your operating system: {', '.join(MULTIMODAL_OS_PACKAGES.keys())}")
+        return 1
+
+    missing = result["missing"]
+    if not missing:
+        print(f"✅ All multimodal system dependencies already installed (via {manager})")
+        return 0
+
+    print(f"📦 Installing missing multimodal system dependencies via {manager}: {', '.join(missing)}")
+
+    if manager == "apt":
+        # Refresh the package index so package names like ``libxslt1-dev`` resolve.
+        try:
+            subprocess.run(["sudo", "apt-get", "update"], check=False)
+        except FileNotFoundError:
+            pass
+
+    cmd = build_install_cmd(manager, missing)
+    if cmd is None:
+        print(f"⚠️ No install command available for package manager '{manager}'.")
+        print(f"   Please install these packages manually: {', '.join(missing)}")
+        return 1
+
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Failed to install multimodal system dependencies (exit code {e.returncode}).")
+        print("   Please install them manually with sudo or the equivalent for your OS:")
+        print(f"   $ {' '.join(cmd)}")
+        return 1
+    except FileNotFoundError as e:
+        print(f"⚠️ Could not run installer ({e}).")
+        print("   Please install these packages manually with sudo or the equivalent for your OS:")
+        print(f"     {', '.join(missing)}")
+        return 1
+
+    print("✅ Successfully installed multimodal system dependencies")
+    return 0
+
+
+def install_multimodal_python_packages() -> int:
+    """Install the Python packages required for multimodal document parsing."""
+    packages = ["unstructured[all-docs]", "nltk"]
+    print("📦 Installing multimodal Python packages...")
+    for pkg in packages:
+        cmd = [sys.executable, "-m", "uv", "pip", "install", "--upgrade", pkg]
+        print(f"   Installing {pkg}...")
+        try:
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            print(f"✅ Successfully installed {pkg}")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to install {pkg}")
+            print(f"   Error: {e}")
+            if e.stdout:
+                print(f"   Standard output: {e.stdout}")
+            if e.stderr:
+                print(f"   Standard error: {e.stderr}")
+            print(f"   You may need to install {pkg} manually")
+            return 1
+    return 0
+
+
 def install_packages(
     evals: bool = False,
     init_packages: list[str] | None = None,
@@ -435,12 +518,26 @@ def copy_tutorial_notebooks():
 
 def run_init(
     evals: bool = False,
+    multimodal: bool = False,
     cuda_version: str | None = None,
     compute_capability_version: str | None = None,
 ):
     """Run the init command to initialize the project."""
     print("🔧 Initializing RapidFire AI project...")
     print("-" * 30)
+
+    if multimodal and not evals:
+        print("⚠️ --multimodal requires --evals; ignoring --multimodal.")
+        multimodal = False
+
+    if multimodal:
+        print("Setting up multimodal document parsing dependencies...")
+        # System-package install failures are non-fatal: warnings are printed
+        # so the user can install manually, but init continues.
+        install_multimodal_system_packages()
+        if install_multimodal_python_packages() != 0:
+            return 1
+
     print("Initializing project...")
     if (
         install_packages(
@@ -577,6 +674,9 @@ Examples:
   # Basic Initialize with evaluation dependencies
   rapidfireai init --evals
 
+  # Initialize with evaluation + multimodal document parsing dependencies
+  rapidfireai init --evals --multimodal
+
   # Init when nvcc/nvidia-smi are unavailable (pin CUDA / compute capability)
   rapidfireai init --evals --cudaversion 12.4 --computecapabilityversion 8.0
   
@@ -637,6 +737,14 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     parser.add_argument("--force", "-f", action="store_true", help="Force action without confirmation")
 
     parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
+
+    parser.add_argument(
+        "--multimodal",
+        action="store_true",
+        help="(Only with --evals) Install OS dependencies (libmagic1, poppler-utils, tesseract-ocr, "
+             "libxml2, libxslt1-dev, wget, unrar) and Python packages (unstructured[all-docs], nltk) "
+             "needed for multimodal document parsing.",
+    )
 
     parser.add_argument(
         "--cudaversion",
@@ -701,6 +809,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
     if args.command == "init":
         return run_init(
             args.evals,
+            multimodal=args.multimodal,
             cuda_version=args.cuda_version,
             compute_capability_version=args.compute_capability_version,
         )
