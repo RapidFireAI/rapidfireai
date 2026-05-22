@@ -20,7 +20,6 @@ from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabCo
 from rapidfireai.utils.doctor import get_doctor_info
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME
 from rapidfireai.utils.gpu_info import get_compute_capability
-
 from .version import __version__
 
 RF_CONVERGE_MODE = os.getenv("RF_CONVERGE_MODE", "all")
