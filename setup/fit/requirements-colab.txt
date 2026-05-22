@@ -4,7 +4,7 @@ pandas>=2.0.0,<2.3.0  # Colab compatibility (2.2.2) and cudf constraint
 psutil>=5.9.0
 torch>=2.8.0
 transformers>=4.55.2
-peft>=0.17.0
+peft>=0.17.0,<0.19.0
 trl==0.21.0
 bitsandbytes>=0.47.0
 nltk>=3.9.1

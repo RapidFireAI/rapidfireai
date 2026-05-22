@@ -20,7 +20,6 @@ from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabCo
 from rapidfireai.utils.doctor import get_doctor_info
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME
 from rapidfireai.utils.gpu_info import get_compute_capability
-
 from .version import __version__
 
 RF_CONVERGE_MODE = os.getenv("RF_CONVERGE_MODE", "all")
@@ -478,6 +477,10 @@ def install_packages(
             # packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
 
         packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
+    
+    if ColabConfig.ON_COLAB:
+        packages.append({"package": "cupy-cuda12x==14.0.1", "extra_args": ["--upgrade"]})
+        packages.append({"package": "numpy==2.0.1", "extra_args": ["--upgrade"]})
 
     for package_info in packages:
         try:
