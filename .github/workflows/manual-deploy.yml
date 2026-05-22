@@ -157,11 +157,12 @@ jobs:
       - name: Verify package metadata
         run: twine check dist/*
       
-      - name: Upload build artifacts
+      - name: Upload wheel artifact
         uses: actions/upload-artifact@v7
         with:
-          name: python-package-distributions
-          path: dist/
+          name: rapidfireai-${{ steps.determine_version.outputs.new_numeric_version }}-wheel-${{ github.ref_name }}
+          path: dist/*.whl
+          retention-days: 60
           if-no-files-found: error
 
   publish-to-pypi:
@@ -181,7 +182,7 @@ jobs:
     - name: Download build artifacts
       uses: actions/download-artifact@v8
       with:
-        name: python-package-distributions
+        name: rapidfireai-${{ needs.version-and-build.outputs.new_numeric_version }}-wheel-${{ github.ref_name }}
         path: dist/
         
     - name: Publish to PyPI
