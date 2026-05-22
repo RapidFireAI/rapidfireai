@@ -14,7 +14,6 @@ import subprocess
 import sys
 from pathlib import Path
 from importlib.resources import files
-from rapidfireai.utils import colab
 from rapidfireai.utils.get_ip_address import get_ip_address
 from rapidfireai.utils.python_info import get_python_info
 from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabConfig, MLflowConfig
