@@ -1063,14 +1063,14 @@ class Controller:
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
                                 except Exception as e:
-                                    self.logger.debug(f"Failed to log final metric {metric_name} to MetricLogger: {e}")
+                                    self.logger.warning(f"Failed to log final metric {metric_name} to MetricLogger: {e}")
 
                             # Log confidence_interval if available
                             if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_confidence_interval", float(confidence_interval), step=step)
                                 except Exception as e:
-                                    self.logger.debug(f"Failed to log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
+                                    self.logger.warning(f"Failed to log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
                         try:
                             self.metric_manager.end_run(metric_run_id)
@@ -1588,14 +1588,14 @@ class Controller:
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
                                                 except Exception as e:
-                                                    self.logger.debug(f"Failed to log metric {metric_name} to MetricLogger: {e}")
+                                                    self.logger.warning(f"Failed to log metric {metric_name} to MetricLogger: {e}")
 
                                             # Log confidence_interval if available
                                             if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_confidence_interval", float(confidence_interval), step=step)
                                                 except Exception as e:
-                                                    self.logger.debug(f"Failed to log metric {metric_name}_confidence_interval to MetricLogger: {e}")
+                                                    self.logger.warning(f"Failed to log metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
                                         if "Throughput" in display_metrics:
                                             throughput_value = display_metrics["Throughput"]["value"]
