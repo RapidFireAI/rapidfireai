@@ -17,6 +17,24 @@ from rapidfireai.fit.utils.logging import RFLogger
 
 
 class GenerationMetricsCallback(TrainerCallback):
+    # Keys that may appear inside the user-supplied generation_config dict but
+    # are NOT valid kwargs for model.generate(). They configure this callback's
+    # tokenization / chat-templating behavior. Keeping them inside
+    # generation_config lets users override defaults without editing the
+    # installed package -- they're popped off before being forwarded to
+    # model.generate().
+    _CALLBACK_CONTROL_KEYS = (
+        "max_input_length",
+        "add_generation_prompt",
+        "truncation_side",
+    )
+
+    # Sentinel used by HF when a tokenizer has no real max length set
+    # (transformers stores VERY_LARGE_INTEGER == 1e30). Anything at or above
+    # this threshold is treated as "unset".
+    _UNSET_MODEL_MAX_LENGTH = 10**9
+    _DEFAULT_MODEL_MAX_LENGTH = 4096
+
     def __init__(
         self,
         tokenizer,
@@ -28,12 +46,18 @@ class GenerationMetricsCallback(TrainerCallback):
         metric_run_id: str = None,
         completed_steps: int = 0,
         use_fsdp: bool = False,
+        max_input_length: int | None = None,
+        add_generation_prompt: bool = True,
+        truncation_side: str = "left",
     ):
         self.tokenizer = tokenizer
         self.eval_dataset = eval_dataset
         self.compute_metrics = compute_metrics
         self.batch_size = batch_size
-        self.generation_config = generation_config or {
+
+        # Copy so we don't mutate the caller's dict, and so callback-control
+        # keys can be popped safely.
+        gen_cfg = dict(generation_config) if generation_config else {
             "max_new_tokens": 128,
             "temperature": 0.7,
             "do_sample": True,
@@ -41,13 +65,53 @@ class GenerationMetricsCallback(TrainerCallback):
             "pad_token_id": tokenizer.pad_token_id,
             "eos_token_id": tokenizer.eos_token_id,
         }
+
+        # Values inside generation_config take precedence over kwargs so users
+        # can configure this callback from their RFModelConfig without any
+        # API/package changes (just add the keys to their generation_config).
+        self.max_input_length = gen_cfg.pop("max_input_length", max_input_length)
+        self.add_generation_prompt = gen_cfg.pop(
+            "add_generation_prompt", add_generation_prompt
+        )
+        self.truncation_side = gen_cfg.pop("truncation_side", truncation_side)
+
+        # Let caller/model defaults decide on KV cache (can cause OOM)
+        gen_cfg.pop("use_cache", None)
+
+        self.generation_config = gen_cfg
         self.metric_logger = metric_logger
         self.metric_run_id = metric_run_id
         self.completed_steps = completed_steps
         self.use_fsdp = use_fsdp
 
-        # Let caller/model defaults decide on KV cache (can cause OOM)
-        self.generation_config.pop("use_cache", None)
+        self._logger = RFLogger().create_logger(__name__)
+        self._truncation_warned = False
+
+    def _resolve_max_input_length(self) -> int:
+        """Resolve the tokenizer truncation length for eval prompts.
+
+        Priority:
+        1. Explicit `max_input_length` (kwarg or generation_config override).
+        2. `tokenizer.model_max_length`, minus `max_new_tokens` so the response
+           has room to fit inside the model's real context window.
+        3. A conservative 4096-token default when the tokenizer reports an
+           unset/sentinel value.
+        """
+        if self.max_input_length is not None and self.max_input_length > 0:
+            return int(self.max_input_length)
+
+        model_max = getattr(self.tokenizer, "model_max_length", None)
+        if (
+            not isinstance(model_max, int)
+            or model_max <= 0
+            or model_max >= self._UNSET_MODEL_MAX_LENGTH
+        ):
+            model_max = self._DEFAULT_MODEL_MAX_LENGTH
+
+        max_new_tokens = int(self.generation_config.get("max_new_tokens", 128) or 0)
+        # Reserve room for the generated response; never collapse below 64
+        # tokens of prompt budget.
+        return max(64, model_max - max_new_tokens)
 
     def on_evaluate(
         self,
@@ -119,9 +183,24 @@ class GenerationMetricsCallback(TrainerCallback):
             elif "prompt" in item and "completion" in item:
                 input_text = item["prompt"]
                 reference = item["completion"][-1]["content"]
-                input_text = self.tokenizer.apply_chat_template(
-                    input_text, tokenize=False
-                )
+                try:
+                    # add_generation_prompt=True is required for instruction-tuned
+                    # chat models so the prompt ends at the assistant turn cue
+                    # (e.g. <|start_header_id|>assistant<|end_header_id|>) and
+                    # the model continues from there. Without it, the chat
+                    # template closes the user turn and the model has no signal
+                    # to begin an assistant response, which hurts eval quality.
+                    input_text = self.tokenizer.apply_chat_template(
+                        input_text,
+                        tokenize=False,
+                        add_generation_prompt=self.add_generation_prompt,
+                    )
+                except Exception as e:
+                    self._logger.warning(
+                        f"apply_chat_template failed (add_generation_prompt="
+                        f"{self.add_generation_prompt}); skipping example: {e}"
+                    )
+                    continue
             elif "text" in item:
                 # SFT format - use text as input, response as reference
                 input_text = item["text"]
@@ -144,25 +223,83 @@ class GenerationMetricsCallback(TrainerCallback):
         return input_texts, references
 
     def _generate_batch(self, model, input_texts: list[str]) -> torch.Tensor:
-        """Generate text for a batch of inputs with defensive validation"""
-        # Defensive validation for empty inputs
+        """Tokenize a batch of prompts for generation.
+
+        Truncates to `self._resolve_max_input_length()` rather than a hardcoded
+        cap, and uses `self.truncation_side` (default "left") so that for
+        chat-style prompts the most recent / most relevant tail of the
+        conversation is preserved when truncation is unavoidable.
+        """
         if not input_texts:
             return torch.empty((0, 0), dtype=torch.long).to(model.device)
 
+        max_input_length = self._resolve_max_input_length()
+
         try:
-            # Tokenize batch
+            self._maybe_warn_on_truncation(input_texts, max_input_length)
+        except Exception:
+            # Warning path must never break generation.
+            pass
+
+        original_truncation_side = getattr(self.tokenizer, "truncation_side", "right")
+        try:
+            if (
+                self.truncation_side
+                and self.truncation_side != original_truncation_side
+            ):
+                self.tokenizer.truncation_side = self.truncation_side
+
             inputs = self.tokenizer(
                 input_texts,
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=512,  # Adjust based on your model's context length
+                max_length=max_input_length,
             ).to(model.device)
 
             return inputs["input_ids"]
         except Exception as e:
-            print(f"Warning: Tokenization error in generation callback: {e}")
+            self._logger.warning(
+                f"Tokenization error in generation callback: {e}"
+            )
             return torch.empty((0, 0), dtype=torch.long).to(model.device)
+        finally:
+            # Restore so we don't mutate state shared with the trainer.
+            self.tokenizer.truncation_side = original_truncation_side
+
+    def _maybe_warn_on_truncation(
+        self, input_texts: list[str], max_input_length: int
+    ) -> None:
+        """Emit a single warning when eval prompts would be truncated."""
+        if self._truncation_warned:
+            return
+
+        raw_lengths = [
+            len(
+                self.tokenizer(
+                    text,
+                    add_special_tokens=False,
+                    truncation=False,
+                )["input_ids"]
+            )
+            for text in input_texts
+        ]
+        if not raw_lengths:
+            return
+
+        longest = max(raw_lengths)
+        if longest <= max_input_length:
+            return
+
+        truncated = sum(1 for length in raw_lengths if length > max_input_length)
+        self._logger.warning(
+            f"GenerationMetricsCallback is truncating {truncated}/{len(input_texts)} "
+            f"eval prompts at max_input_length={max_input_length} tokens "
+            f"(longest raw prompt = {longest} tokens, truncation_side="
+            f"'{self.truncation_side}'). Increase the limit by adding "
+            f"'max_input_length' to your generation_config."
+        )
+        self._truncation_warned = True
 
     @staticmethod
     def _truncate_at_eos(
