@@ -1,3 +1,4 @@
+import copy
 import math
 import os
 import warnings
@@ -471,6 +472,14 @@ def _configure_training_args(
     training_args: dict, trainer_config: TrainerConfig, use_fsdp: bool = False
 ) -> dict:
     """Configure training arguments with default values."""
+    # Work on a deep copy so we don't mutate the caller's dict.
+    # The caller passes config_leaf["training_args"] by reference; mutating it
+    # (e.g. replacing user-set max_steps with num_train_epochs=1 below) would
+    # leak into the run's persisted config_leaf in the DB, and any subsequent
+    # clone / warm-clone would inherit those derived chunk-level values
+    # instead of the user's original config (see Cloned runs picking up
+    # num_train_epochs=1 instead of parent's max_steps).
+    training_args = copy.deepcopy(training_args)
     completed_steps = trainer_config.completed_steps
     if completed_steps > 0:
         training_args.pop("warmup_ratio", None)
