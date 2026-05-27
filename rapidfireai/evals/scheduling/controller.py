@@ -759,7 +759,7 @@ class Controller:
                     ray.kill(task["actor"])
                 except Exception as e:
                     self.logger.warning(
-                        f"Error killing DocProcessingActor for context "
+                        f"Could not kill DocProcessingActor for context "
                         f"{task['context_info'].get('context_id', '?')}: {e}"
                     )
 
@@ -774,7 +774,7 @@ class Controller:
                     ray.kill(rate_limiter)
                 except Exception as e:
                     self.logger.warning(
-                        f"Error killing build-phase rate limiter for provider '{provider}': {e}"
+                        f"Could not kill build-phase rate limiter for provider '{provider}': {e}"
                     )
 
             # Stop the context building display. Idempotent — the failure
@@ -884,7 +884,7 @@ class Controller:
 
                     self.logger.debug(f"Created Metrics run {metric_run_id} for pipeline {pipeline_id}")
                 except Exception as e:
-                    self.logger.warning(f"Failed to create Metrics run for pipeline {pipeline_id}: {e}")
+                    self.logger.warning(f"Could not create Metrics run for pipeline {pipeline_id}; continuing without metric tracking: {e}")
 
             pipeline_ids.append(pipeline_id)
             pipeline_id_to_config[pipeline_id] = pipeline_config
@@ -934,7 +934,7 @@ class Controller:
             # Skip DELETED and FAILED pipelines
             if pipeline_status in [PipelineStatus.DELETED.value, PipelineStatus.FAILED.value]:
                 if pipeline_status == PipelineStatus.FAILED.value:
-                    self.logger.warning(f"Pipeline {pipeline_id} failed, skipping final metrics")
+                    self.logger.warning(f"Skipping final metrics for pipeline {pipeline_id} (status: FAILED)")
                 else:
                     self.logger.info(f"Pipeline {pipeline_id} deleted, skipping final metrics")
                 continue
@@ -1063,14 +1063,14 @@ class Controller:
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
                                 except Exception as e:
-                                    self.logger.warning(f"Failed to log final metric {metric_name} to MetricLogger: {e}")
+                                    self.logger.warning(f"Could not log final metric {metric_name} to MetricLogger: {e}")
 
                             # Log confidence_interval if available
                             if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_confidence_interval", float(confidence_interval), step=step)
                                 except Exception as e:
-                                    self.logger.warning(f"Failed to log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
+                                    self.logger.warning(f"Could not log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
                         try:
                             self.metric_manager.end_run(metric_run_id)
@@ -1588,14 +1588,14 @@ class Controller:
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
                                                 except Exception as e:
-                                                    self.logger.warning(f"Failed to log metric {metric_name} to MetricLogger: {e}")
+                                                    self.logger.warning(f"Could not log metric {metric_name} to MetricLogger: {e}")
 
                                             # Log confidence_interval if available
                                             if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_confidence_interval", float(confidence_interval), step=step)
                                                 except Exception as e:
-                                                    self.logger.warning(f"Failed to log metric {metric_name}_confidence_interval to MetricLogger: {e}")
+                                                    self.logger.warning(f"Could not log metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
                                         if "Throughput" in display_metrics:
                                             throughput_value = display_metrics["Throughput"]["value"]
@@ -1692,7 +1692,7 @@ class Controller:
                                         )
                             except Exception as e:
                                 self.logger.warning(
-                                    f"Optuna shard callback error for pipeline {pipeline_id}: {e}"
+                                    f"Optuna shard callback issue for pipeline {pipeline_id}: {e}"
                                 )
 
                         # Mark for cleanup
@@ -1969,7 +1969,7 @@ class Controller:
                 shard_callback.finalize(final_cb_metrics)
                 self.logger.info("Optuna shard callback finalized")
             except Exception as e:
-                self.logger.warning(f"Optuna shard callback finalize error: {e}")
+                self.logger.warning(f"Optuna shard callback finalize issue: {e}")
 
         # PHASE 8: Compute final metrics for each pipeline (including dynamically cloned ones).
         # pipeline_id_to_config contains all pipelines (originals + clones added via _handle_clone).
