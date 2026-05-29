@@ -6,7 +6,7 @@ RAG (Retrieval-Augmented Generation) Specification using LangChain components.
 import copy
 import warnings
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 import hashlib
 import json
 import os
@@ -32,7 +32,8 @@ from langchain_core.vectorstores import VectorStore
 from langchain_text_splitters import TextSplitter
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
-from rapidfireai.evals.utils.storage_utils import CloudStorage
+from rapidfireai.evals.utils.storage_utils import CloudStorage, LocalStorage
+from rapidfireai.utils.constants import RF_HOME
 
 
 class LangChainRagSpec:
@@ -74,9 +75,14 @@ class LangChainRagSpec:
         ("table", "table_summarizer_cfg", "table_source"),
     )
 
-    # Accepted values for ``artifact_storage_cfg["backend"]``. Passed straight
-    # through to ``CloudStorage`` without translation.
-    _VALID_STORAGE_BACKENDS: frozenset[str] = frozenset({"s3", "gcs"})
+    # Accepted values for ``artifact_storage_cfg["backend"]``. ``"s3"`` and
+    # ``"gcs"`` are forwarded to ``CloudStorage``; ``"local"`` is the default
+    # and is handled by ``LocalStorage`` (writes to the filesystem under
+    # ``bucket/prefix``. For local storage, ``bucket`` doubles as a directory path.
+    _VALID_STORAGE_BACKENDS: frozenset[str] = frozenset({"s3", "gcs", "local"})
+
+    # Default artifact storage when the caller doesn't pass one. 
+    _DEFAULT_STORAGE_PREFIX: str = "artifacts"
 
     def __init__(
         self,
@@ -88,7 +94,7 @@ class LangChainRagSpec:
         retriever: Optional[BaseRetriever] | None = None,
         search_cfg: Optional[dict[str, Any]] | None = None,
         reranker_cfg: Optional[dict[str, Any]] | None = None,
-        artifact_storage_cfg: Optional[dict[str, Any]] | None = None,
+        artifact_storage_cfg: dict[str, Any] | Literal[False] | None = None,
         enable_gpu_search: bool = False,
         document_template: Optional[Callable[[Document], str]] | None = None,
     ) -> None:
@@ -121,19 +127,37 @@ class LangChainRagSpec:
             retriever: Optional. If provided, used directly.
             search_cfg: Dict with "type" (search algorithm) and remaining keys as search kwargs (k, filter, fetch_k, lambda_mult). If None, defaults to similarity with k=5.
             reranker_cfg: Dict with "class" (reranker class) and remaining keys as kwargs. If None, no reranker.
-            artifact_storage_cfg: Optional dict configuring an object-store backend for offloading
-                large per-document artifacts (raw images, table HTML) out of the vector DB record.
-                Required keys: ``backend`` (``"s3"`` or ``"gcs"``), ``bucket`` (str).
-                Optional key: ``prefix`` (str, default ``"artifacts"``). The cfg is kept flat on
-                the rag spec; the actual ``CloudStorage`` client is instantiated on demand by
-                :meth:`init_storage_client` and is not part of the persisted rag config. If
-                ``None``, no artifact offloading is performed.
+            artifact_storage_cfg: Optional dict configuring a storage backend for offloading
+                large per-document artifacts (raw text bodies, base64 images, table HTML) out
+                of the vector DB record. Accepts one of three forms:
+
+                - ``None`` (default): local-disk offload to ``RF_HOME/artifacts/...``, so
+                  vector-store metadata stays small without any explicit configuration.
+                - ``False``: explicit opt-out. Nothing is written to storage **and** the
+                  raw ``*_source`` metadata field is dropped (set to ``None``) right
+                  after summarization, so the summary in ``page_content`` is the only
+                  surviving copy of the artifact and metadata stays small. The original
+                  bytes are unrecoverable after this, so use only when you don't need
+                  them downstream.
+                - ``dict``: full control. Required keys: ``backend`` (``"s3"``, ``"gcs"``,
+                  or ``"local"``), ``bucket`` (str — a cloud bucket name for
+                  ``s3``/``gcs``, or a base directory path for ``local``). Optional key:
+                  ``prefix`` (str, default ``"artifacts"``).
+
+                The cfg is kept flat on the rag spec; the actual storage client
+                (``CloudStorage`` or ``LocalStorage``) is instantiated on demand by
+                :meth:`init_storage_client` and is not part of the persisted rag config.
             enable_gpu_search: Use GPU FAISS when building index; default False.
             document_template: Optional function (Document -> str) to format documents.
 
         Raises:
-            ValueError: If embedding_cfg is missing "class", search_cfg has invalid "type",
-                or document_loader is missing when building from documents.
+            ValueError: If embedding_cfg is missing "class", search_cfg has invalid
+                "type", document_loader is missing when building from documents, or
+                artifact_storage_cfg is invalid (``True``, an unknown ``backend``,
+                or an empty/missing ``bucket``).
+            TypeError: If document_loader is the wrong shape, multimodal_processor is
+                not a dict, or artifact_storage_cfg is neither a dict, ``False``, nor
+                ``None`` (or its ``prefix`` is not a string).
         """
         # Normalize document_loader to a list[Optional[BaseLoader]] | None so
         # downstream code (load, hash, copy) can treat it uniformly. Accept:
@@ -181,13 +205,27 @@ class LangChainRagSpec:
                         "(a ModelConfig instance such as RFAPIModelConfig or RFvLLMModelConfig)."
                     )
 
-        # Light validation of artifact_storage_cfg: catch typos in backend
-        # names and missing bucket entries early, before any documents are
-        # processed. The actual SDK is imported lazily by CloudStorage.
-        if artifact_storage_cfg is not None:
+        # Three accepted shapes: None (defaults to local-disk), False (explicit opt-out), dict (full control).
+        # ``True`` is rejected outright.
+        if artifact_storage_cfg is None:
+            artifact_storage_cfg = {
+                "backend": "local",
+                "bucket": RF_HOME,
+                "prefix": self._DEFAULT_STORAGE_PREFIX,
+            }
+        elif artifact_storage_cfg is True:
+            raise ValueError(
+                "artifact_storage_cfg=True is not a valid value. Use None for the "
+                "default local-disk offload, False to disable offloading entirely, "
+                "or a dict with 'backend' and 'bucket' for explicit configuration."
+            )
+
+        # Validate the dict form. The False sentinel bypasses validation since
+        # there's nothing to instantiate.
+        if artifact_storage_cfg is not False:
             if not isinstance(artifact_storage_cfg, dict):
                 raise TypeError(
-                    "artifact_storage_cfg must be a dict or None; "
+                    "artifact_storage_cfg must be a dict, False, or None; "
                     f"got {type(artifact_storage_cfg).__name__}."
                 )
             backend = artifact_storage_cfg.get("backend")
@@ -199,9 +237,11 @@ class LangChainRagSpec:
             bucket = artifact_storage_cfg.get("bucket")
             if not isinstance(bucket, str) or not bucket:
                 raise ValueError(
-                    "artifact_storage_cfg['bucket'] must be a non-empty string."
+                    "artifact_storage_cfg['bucket'] must be a non-empty string "
+                    "(a cloud bucket name for 's3'/'gcs', or a base directory path "
+                    "for 'local')."
                 )
-            prefix = artifact_storage_cfg.get("prefix", "artifacts")
+            prefix = artifact_storage_cfg.get("prefix", self._DEFAULT_STORAGE_PREFIX)
             if not isinstance(prefix, str):
                 raise TypeError(
                     "artifact_storage_cfg['prefix'] must be a string when provided."
@@ -280,11 +320,11 @@ class LangChainRagSpec:
         self.document_loader = document_loader
         self.multimodal_processor = multimodal_processor
         # Kept flat (no copy) so callers can introspect/mutate the cfg in place.
-        # The live CloudStorage handle is created on demand via init_storage_client()
-        # and must never be hashed/serialized as part of the rag spec — it's
-        # runtime state, not configuration.
+        # The live storage client handle (CloudStorage for s3/gcs, LocalStorage
+        # for local) is created on demand via init_storage_client() and must
+        # never be hashed/serialized as part of the rag spec — it's a runtime state, not a configuration.
         self.artifact_storage_cfg = artifact_storage_cfg
-        self.storage_client: CloudStorage | None = None
+        self.storage_client: CloudStorage | LocalStorage | None = None
         self.text_splitter = text_splitter
         self.embedding: Embeddings | None = None  # Will be created in build_pipeline()
         if document_template:
@@ -514,15 +554,19 @@ class LangChainRagSpec:
                     batch_summaries = self._summarizer_runner.summarize_batch(batch_prompts)
                     for doc, summary in zip(batch_docs, batch_summaries):
                         doc.page_content = summary
-                        # Offload the original artifact (text body / base64 image /
-                        # table HTML) to object storage and replace its in-metadata
-                        # value with the returned URI. Critical for text: the
-                        # splitter fans each text doc into N children that all
-                        # inherit the same parent metadata, so a 20 KB text_source
-                        # gets duplicated N times into the vector store unless we
-                        # offload first. No-op when artifact_storage_cfg was not
-                        # configured.
+                        # Two paths for the raw *_source after summarization:
+                        # 1. Drop the key entirely when the caller opted out
+                        #    via artifact_storage_cfg=False (or, defensively,
+                        #    if storage_client is unset for any other
+                        #    reason). The summary in page_content is now the
+                        #    only surviving copy of the artifact.
+                        # 2. Offload to the configured storage backend and
+                        #    replace the in-metadata value with the returned
+                        #    URI / path. Empty source values are skipped --
+                        #    there's nothing to upload, and the existing
+                        #    (empty) key is harmless.
                         if self.storage_client is None:
+                            doc.metadata.pop(source_key, None)
                             continue
                         source_value = doc.metadata.get(source_key)
                         if not source_value:
@@ -641,13 +685,19 @@ class LangChainRagSpec:
         Safe to call any number of times from any caller. The method is a no-op
         when:
 
-        - ``self.storage_client`` is already set (already initialized), or
-        - ``self.artifact_storage_cfg`` is ``None`` (artifact offloading not
-          configured).
+        - ``self.storage_client`` is already set (already initialized),
+        - ``self.artifact_storage_cfg`` is ``False`` (caller explicitly opted
+          out — ``_describe_multi_modal_documents`` will drop ``*_source``
+          from metadata instead of offloading), or
+        - ``self.artifact_storage_cfg`` is ``None`` (only possible if the
+          caller mutated it after construction; defensive guard).
 
-        Otherwise, instantiates a :class:`CloudStorage` using the flat cfg
-        stored on the rag spec. The credential chain is the underlying SDK's
-        default — see ``rapidfireai.evals.utils.storage_utils`` for details.
+        Otherwise, dispatches on ``backend``:
+
+        - ``"s3"`` / ``"gcs"`` → :class:`CloudStorage` using the SDK's default
+          credential chain (see ``rapidfireai.evals.utils.storage_utils``).
+        - ``"local"`` → :class:`LocalStorage`, writing under
+          ``bucket/prefix/...`` on the local filesystem.
 
         Lifecycle:
 
@@ -661,13 +711,19 @@ class LangChainRagSpec:
         """
         if self.storage_client is not None:
             return
-        if self.artifact_storage_cfg is None:
+        # ``False`` is the explicit opt-out; ``None`` is normally replaced with
+        # the default dict in __init__ but we still guard here defensively in
+        # case a caller mutated self.artifact_storage_cfg after construction.
+        if self.artifact_storage_cfg is False or self.artifact_storage_cfg is None:
             return
 
         backend = self.artifact_storage_cfg["backend"]
         bucket = self.artifact_storage_cfg["bucket"]
-        prefix = self.artifact_storage_cfg.get("prefix", "artifacts")
-        self.storage_client = CloudStorage(backend=backend, bucket=bucket, prefix=prefix)
+        prefix = self.artifact_storage_cfg.get("prefix", self._DEFAULT_STORAGE_PREFIX)
+        if backend == "local":
+            self.storage_client = LocalStorage(bucket=bucket, prefix=prefix)
+        else:
+            self.storage_client = CloudStorage(backend=backend, bucket=bucket, prefix=prefix)
 
     def _load_documents(self) -> list[Document]:
         """
@@ -1081,7 +1137,11 @@ class LangChainRagSpec:
         new_rag = LangChainRagSpec(
             document_loader=self.document_loader,
             multimodal_processor=copy.deepcopy(self.multimodal_processor) if self.multimodal_processor else None,
-            artifact_storage_cfg=copy.deepcopy(self.artifact_storage_cfg) if self.artifact_storage_cfg else None,
+            artifact_storage_cfg=(
+                False
+                if self.artifact_storage_cfg is False
+                else copy.deepcopy(self.artifact_storage_cfg)
+            ),
             text_splitter=self.text_splitter,
             embedding_cfg=embedding_cfg,
             vector_store_cfg=copy.deepcopy(self.vector_store_cfg) if self.vector_store_cfg else None,
@@ -1278,13 +1338,20 @@ class LangChainRagSpec:
 
         # Artifact storage cfg: bucket/prefix changes mean URIs baked into
         # docstore metadata point at a different location, so a fresh build
-        # is required. The live storage_client handle is excluded — it's
-        # runtime state, not config.
-        if self.artifact_storage_cfg:
+        # is required. The False opt-out is also distinct — *_source is
+        # dropped from metadata entirely in that mode, so the resulting
+        # docstore is materially different from any offload-enabled run.
+        # The live storage_client handle is excluded — it's runtime state,
+        # not config.
+        if self.artifact_storage_cfg is False:
+            rag_dict["artifact_storage_cfg"] = {"backend": "disabled"}
+        elif self.artifact_storage_cfg:
             rag_dict["artifact_storage_cfg"] = {
                 "backend": self.artifact_storage_cfg.get("backend"),
                 "bucket": self.artifact_storage_cfg.get("bucket"),
-                "prefix": self.artifact_storage_cfg.get("prefix", "artifacts"),
+                "prefix": self.artifact_storage_cfg.get(
+                    "prefix", self._DEFAULT_STORAGE_PREFIX
+                ),
             }
 
         # Text splitter configuration (optional)

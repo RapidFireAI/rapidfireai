@@ -1,23 +1,34 @@
-"""Cloud storage abstraction for multimodal RAG artifacts.
+"""Storage abstraction for multimodal RAG artifacts.
 
-This module provides :class:`CloudStorage`, a thin wrapper over either
-Amazon S3 or Google Cloud Storage. It is used by the multimodal
-unstructured-loader notebook to offload large per-document artifacts
-(images, table HTML) out of the vector DB record and into object
-storage, keeping vector metadata well under provider size limits.
+This module provides :class:`CloudStorage` (S3 / GCS) and
+:class:`LocalStorage` (local filesystem) — both expose an identical
+``put_*`` / ``get_*`` / ``read_bytes`` interface and are used to
+offload large per-document artifacts (raw text bodies, base64 images,
+table HTML) out of the vector DB record. This keeps vector metadata
+well under provider size limits (e.g. Pinecone's ~40 KB cap), which
+matters most for text whose post-split children all inherit the same
+parent metadata.
 
-Object key layout::
+Object key / path layout (identical across backends)::
 
     {prefix}/{document_type}/{rf_doc_id}/document
 
-The filename is literally ``document`` (no extension); the cloud
-object's ``Content-Type`` is set based on ``document_type``.
+The filename is literally ``document`` (no extension); on cloud backends
+the object's ``Content-Type`` is set based on ``document_type``.
+
+Resource locators returned by ``put_*``:
+
+    - ``CloudStorage`` -> ``s3://{bucket}/{key}`` or ``gs://{bucket}/{key}``
+    - ``LocalStorage`` -> the absolute filesystem path
+      ``{bucket}/{prefix}/{document_type}/{rf_doc_id}/document``
 
 Authentication relies on each SDK's default credential chain:
     - S3: ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` env vars,
       shared credentials file, IAM role, etc.
     - GCS: ``GOOGLE_APPLICATION_CREDENTIALS`` env var, ADC, attached
       service account, etc.
+    - Local: no credentials needed; the process must have read/write
+      permission to ``bucket``.
 
 Backend SDKs are imported lazily so callers only need whichever one
 they use (``pip install boto3`` or ``pip install google-cloud-storage``).
@@ -26,6 +37,7 @@ they use (``pip install boto3`` or ``pip install google-cloud-storage``).
 from __future__ import annotations
 
 import base64
+import os
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -221,3 +233,151 @@ class CloudStorage:
             ) from None
 
         return storage.Client().bucket(bucket)
+
+
+class LocalStorage:
+    """Read/write artifacts to the local filesystem with the same interface as :class:`CloudStorage`.
+
+    Used as the default artifact-offload backend so the raw per-document
+    bodies (text/image/table) never end up duplicated in the vector store's
+    metadata when no cloud bucket has been configured. Files are laid out
+    on disk under ``{bucket}/{prefix}/{document_type}/{rf_doc_id}/document``,
+    mirroring the cloud key layout. ``put_*`` returns the absolute
+    filesystem path of the written file; that same path is what
+    ``get_*`` / ``read_bytes`` expect back.
+
+    Parameters
+    ----------
+    bucket:
+        Base directory under which all artifacts are written. Created on
+        first write if it doesn't already exist. Typically ``RF_HOME`` so
+        artifacts live alongside other RapidFire state.
+    prefix:
+        Sub-directory under ``bucket`` used as the first path component
+        for every artifact. Defaults to ``"artifacts"``.
+    """
+
+    backend: Literal["local"] = "local"
+
+    def __init__(self, bucket: str, prefix: str = "artifacts") -> None:
+        if not isinstance(bucket, str) or not bucket:
+            raise ValueError("bucket must be a non-empty string")
+
+        self.bucket = os.path.abspath(bucket)
+        self.prefix = prefix.strip("/")
+        self._base_dir = os.path.join(self.bucket, self.prefix) if self.prefix else self.bucket
+
+    def put_image(self, doc_id: str, image_base64: str) -> str:
+        """Decode and write a base64 image, returning its absolute path."""
+        if not isinstance(image_base64, str) or not image_base64:
+            raise ValueError("image_base64 must be a non-empty base64 string")
+        data = base64.b64decode(image_base64)
+        path = self._build_path("image", doc_id)
+        self._write_bytes(path, data)
+        return path
+
+    def put_html(self, doc_id: str, html: str) -> str:
+        """Write table HTML as UTF-8 and return its absolute path."""
+        if not isinstance(html, str) or not html:
+            raise ValueError("html must be a non-empty string")
+        data = html.encode("utf-8")
+        path = self._build_path("table", doc_id)
+        self._write_bytes(path, data)
+        return path
+
+    def put_text(self, doc_id: str, text: str) -> str:
+        """Write raw text as UTF-8 and return its absolute path.
+
+        Mirrors :meth:`CloudStorage.put_text`: used by multimodal RAG to
+        offload the original Composite-element body so the post-split
+        children sharing this path don't bloat per-upsert payload size.
+        """
+        if not isinstance(text, str) or not text:
+            raise ValueError("text must be a non-empty string")
+        data = text.encode("utf-8")
+        path = self._build_path("text", doc_id)
+        self._write_bytes(path, data)
+        return path
+
+    def get_image_base64(self, path: str) -> str:
+        """Read an image artifact and return it as a base64 string."""
+        return base64.b64encode(self.read_bytes(path)).decode("ascii")
+
+    def get_html(self, path: str) -> str:
+        """Read a table HTML artifact and return it as a string."""
+        return self.read_bytes(path).decode("utf-8")
+
+    def get_text(self, path: str) -> str:
+        """Read a text artifact and return it as a string."""
+        return self.read_bytes(path).decode("utf-8")
+
+    def read_bytes(self, path: str) -> bytes:
+        """Read the raw bytes of any artifact at ``path``.
+
+        ``path`` is validated to resolve to a location under
+        ``self._base_dir`` before the file is opened. Values that escape
+        the artifact root via ``..`` segments, unrelated absolute paths,
+        or symlinks pointing outside the root are rejected with
+        ``ValueError``. 
+        """
+        safe_path = self._resolve_safe_path(path)
+        with open(safe_path, "rb") as f:
+            return f.read()
+
+    def _build_path(self, document_type: str, doc_id: str) -> str:
+        """Return the realpath of the write target, rejecting symlink escapes.
+
+        Shares :meth:`_contained_realpath` with the read path so a symlink
+        under ``self._base_dir`` pointing outside the root is caught here at
+        write time, not later at read time when the locator round-trips.
+        """
+        if not doc_id:
+            raise ValueError("doc_id must be a non-empty string")
+        candidate = os.path.join(self._base_dir, document_type, doc_id, _DOCUMENT_FILENAME)
+        real_base, real_target = self._contained_realpath(candidate)
+        if real_target != real_base and not real_target.startswith(real_base + os.sep):
+            raise ValueError(
+                f"document_type={document_type!r}, doc_id={doc_id!r} resolves "
+                f"to {real_target!r}, which is outside the artifact root "
+                f"{real_base!r} (typically because a symlink under the root "
+                "points elsewhere); refusing to write outside the configured "
+                "storage area."
+            )
+        return real_target
+
+    def _resolve_safe_path(self, path: str) -> str:
+        """Return the realpath of ``path`` after verifying it sits under ``self._base_dir``.
+
+        Uses ``os.path.realpath`` (not just ``abspath``) so that symlinks
+        in either the artifact root or the supplied path are resolved
+        before the containment check — this prevents a planted symlink
+        from being used to escape the storage area.
+        """
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        real_base, real_target = self._contained_realpath(path)
+        if real_target != real_base and not real_target.startswith(real_base + os.sep):
+            raise ValueError(
+                f"path={path!r} resolves to {real_target!r}, which is "
+                f"outside the artifact root {real_base!r}; refusing to "
+                "read outside the configured storage area."
+            )
+        return real_target
+
+    def _contained_realpath(self, path: str) -> tuple[str, str]:
+        """Return ``(real_base, real_target)`` with symlinks resolved.
+
+        Shared by the write and read paths so both apply the same
+        symlink-resolving normalization. ``realpath`` is safe on
+        not-yet-existing leaves; it still resolves symlinks among any
+        existing parent components, which is what catches escapes.
+        """
+        real_base = os.path.realpath(self._base_dir)
+        real_target = os.path.realpath(os.path.abspath(path))
+        return real_base, real_target
+
+    @staticmethod
+    def _write_bytes(path: str, data: bytes) -> None:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(data)

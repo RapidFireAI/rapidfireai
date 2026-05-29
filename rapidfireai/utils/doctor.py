@@ -63,6 +63,8 @@ def get_doctor_info(log_lines: int = 10):
         # Show only relevant packages
         relevant_packages = [
             "rapidfireai",
+            "cupy-cuda12x",
+            "cupy-cuda13x",
             "mlflow",
             "torch",
             "transformers",
