@@ -63,7 +63,7 @@ pip install rapidfireai
 
 rapidfireai --version
 # Verify it prints the following:
-# RapidFire AI 0.16.0rc5
+# RapidFire AI 0.15.2
 
 # Replace YOUR_TOKEN with your actual Hugging Face token
 # https://huggingface.co/docs/hub/en/security-tokens
@@ -111,7 +111,7 @@ rapidfireai start
 rapidfireai jupyter
 
 # Forward these ports if you installed rapidfireai on a remote machine
-ssh -L 8850:localhost:8850 -L 8851:localhost:8851 -L 8853:localhost:8853 -L 8852:localhost:8852 username@remote-machine
+ssh -L 8850:localhost:8850 -L 8851:localhost:8851 -L 8853:localhost:8853 username@remote-machine
 
 # Open the URL provided by the jupyter notebook command above via your browser
 # Open an example notebook from ./tutorial_notebooks/rag-contexteng/ and start experiment
@@ -341,23 +341,21 @@ used to overwrite the defaults.
 - `RF_TRACKIO_ENABLED` - Enable Trackio tracking backend
 - `RF_COLAB_MODE` - Whether running on colab (default: false on Non-Google Colab and true on Google Colab)
 - `RF_TUTORIAL_PATH` - Location that `rapidfireai init` copies `tutorial_notebooks` to (default: ./tutorial_notebooks)
-- `RF_TEST_PATH` - Location that `rapidfireai --test-notebooks` copies test notebooks to (default: ./tutorial_notebooks/tests)
-- `RF_JUPYTER_HOST` - Host that `rapidfireai jupyter` creates a Jupyter listener for (default: 0.0.0.0)
+- `RF_TEST_PATH` - Location that `rapidfireai --test-noteobooks` copies test notebooks to (default: ./tutorial_notebooks/tests)
+- `RF_JUPYTER_HOST` - Host that `rapidfireai jupyter` creates a Jupyter listener for (default: 127.0.0.1)
 - `RF_JUPYTER_PORT` - Port that `rapidfireai jupyter` creates a Jupyter listener for (default: 8850)
-- `RF_API_HOST` - Host that `rapidfireai start` or Experiment creates an API listener for (default: 0.0.0.0)
+- `RF_API_HOST` - Host that `rapidfireai start` or Experiment creates an API listener for (default: 127.0.0.1)
 - `RF_API_PORT` - Port that `rapidfireai start` or Experiment creates an API listener for (default: 8851)
-- `RF_MLFLOW_HOST` - Host that `rapidfireai start` creates a MLflow listener for (default: 0.0.0.0)
-- `RF_MLFLOW_PORT` - Port that `rapidfireai start` creates a MLflow listener for (default: 8852)
+- `RF_MLFLOW_HOST` - Host that `rapidfireai start` creates a MLFow listener for (default: 127.0.0.1)
+- `RF_MLFLOW_PORT` - Port that `rapidfireai start` creates a MLFow listener for (default: 127.0.0.1)
 - `RF_FRONTEND_HOST` - Host that `rapidfireai start` creates a Frontend listener for (default: 0.0.0.0)
-- `RF_FRONTEND_PORT` - Port that `rapidfireai start` creates a Frontend listener for (default: 8853)
-- `RF_RAY_HOST` - Host that Experiment creates a Ray dashboard listener for (default: 0.0.0.0)
-- `RF_RAY_PORT` - Port that Experiment creates a Ray dashboard listener for (default: 8855)
+- `RF_FRONTEND_PORT` - Port that `rapidfireai start` creates a Frontend listener for (default: 0.0.0.0)
+- `RF_RAY_HOST` - Host that Experiment creates a Ray dashboard listener for (default: 127.0.0.1)
+- `RF_RAY_PORT` - Port that Experiment creates a Ray dashboard listener for (default: 127.0.0.1)
 - `RF_TIMEOUT_TIME` - Time in seconds that services wait to start (default: 30)
 - `RF_PID_FILE` - File to store process ids of started services (default: ${RF_HOME}/rapidfire_pids.txt)
 - `RF_PYTHON_EXECUTABLE` - Python executable (default: python3 falls back to python if not found)
 - `RF_PIP_EXECUTABLE` - pip executable (default: pip3 falls back to pip if not found)
-- `RF_CONVERGE_MODE` - Whether to use Rapidfire AI Converge frontend and backend if available (default: all)
-- `RF_NO_FRONTEND` - Option to disable starting the frontend
 
 ## Community & Governance
 

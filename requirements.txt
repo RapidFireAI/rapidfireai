@@ -1,4 +1,4 @@
-# version 0.16.0rc5
+# version 0.15.2
 
 # ml
 pandas>=2.0.0,<2.3.0  # Colab compatibility (2.2.2) and cudf constraint
@@ -14,7 +14,7 @@ sentencepiece>=0.2.1
 
 # misc
 dill>=0.3.8
-mlflow>=3.11.1
+mlflow>=3.2.0
 pytest>=8.4.1
 flask>=3.1.1
 flask-cors>=6.0.1
