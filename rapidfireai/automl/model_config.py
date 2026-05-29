@@ -104,7 +104,14 @@ def _create_rf_class(base_class: type, class_name: str):
         parent_kwargs = {}
         for key, value in kwargs.items():
             if not isinstance(value, (List | Range)):
-                parent_kwargs[key] = value
+                # RapidFire-specific sentinel: 'chunk' is not a valid HF SaveStrategy,
+                # but is recognized by the RapidFire worker. Translate to 'no' for the
+                # underlying HF/TRL class while preserving 'chunk' in _user_params so
+                # the worker can pick it up via config_leaf["training_args"].
+                if key == "save_strategy" and value == "chunk":
+                    parent_kwargs[key] = "no"
+                else:
+                    parent_kwargs[key] = value
 
         base_class.__init__(self, **parent_kwargs)
 

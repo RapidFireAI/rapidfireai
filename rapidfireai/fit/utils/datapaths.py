@@ -59,6 +59,55 @@ class DataPath:
         return base_run_path / "checkpoints" / "intermediate_checkpoints"
 
     @classmethod
+    def intermediate_checkpoint_for_step(
+        cls, base_run_path: Path, completed_steps: int
+    ) -> Path:
+        """Return a per-step subfolder under ``intermediate_checkpoints/``.
+
+        Each chunk save lands in its own ``checkpoint-<step>`` folder (mirrors
+        HF Trainer's convention) so users get one snapshot per chunk instead of
+        a single overwritten folder. The legacy ``checkpoint`` name is kept as
+        a fallback for the rare case ``completed_steps`` is 0 (e.g. an initial
+        intermediate save before any training step has run).
+        """
+        if completed_steps and completed_steps > 0:
+            return (
+                cls.intermediate_checkpoint_path(base_run_path)
+                / f"checkpoint-{completed_steps}"
+            )
+        return cls.intermediate_checkpoint_path(base_run_path) / "checkpoint"
+
+    @classmethod
+    def latest_intermediate_checkpoint(cls, base_run_path: Path) -> Path | None:
+        """Return the most recent ``checkpoint-<step>`` folder for this run.
+
+        Falls back to the legacy ``checkpoint`` folder (without a step suffix)
+        for backwards compatibility with runs created before per-step folders
+        were introduced. Returns ``None`` if no intermediate checkpoint exists.
+        """
+        root = cls.intermediate_checkpoint_path(base_run_path)
+        if not root.exists():
+            return None
+        best_step = -1
+        best_path: Path | None = None
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            name = child.name
+            if name.startswith("checkpoint-"):
+                try:
+                    step = int(name.split("-", 1)[1])
+                except ValueError:
+                    continue
+                if step > best_step:
+                    best_step = step
+                    best_path = child
+            elif name == "checkpoint" and best_path is None:
+                # legacy single-folder layout; only used if no step folder exists
+                best_path = child
+        return best_path
+
+    @classmethod
     def val_metrics_path(cls, base_run_path: Path) -> Path:
         """Return the validation metrics path"""
         return cls.work_dir_path(base_run_path) / "val_metrics.csv"

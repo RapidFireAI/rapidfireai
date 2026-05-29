@@ -790,8 +790,12 @@ def save_checkpoint_to_disk(
     elif last:
         checkpoint_path = DataPath.final_checkpoint_path(base_run_path)
     else:
-        checkpoint_path = (
-            DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"
+        # One folder per chunk save, suffixed by completed_steps. Prior to this
+        # change every intermediate save overwrote the same "checkpoint" folder,
+        # which silently dropped per-chunk snapshots even when the user opted
+        # in to save_strategy="chunk".
+        checkpoint_path = DataPath.intermediate_checkpoint_for_step(
+            base_run_path, completed_steps
         )
     device = "cpu"
 
@@ -882,14 +886,10 @@ def load_checkpoint_from_disk(
     checkpoint_path = None
     if trainer_config.warm_started_from and trainer_config.completed_steps == 0:
         base_run_path = DataPath.base_run_path(trainer_config.cloned_from)
-        checkpoint_path = (
-            DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"
-        )
+        checkpoint_path = DataPath.latest_intermediate_checkpoint(base_run_path)
     elif trainer_config.completed_steps > 0:
         base_run_path = DataPath.base_run_path(trainer_config.run_id)
-        checkpoint_path = (
-            DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"
-        )
+        checkpoint_path = DataPath.latest_intermediate_checkpoint(base_run_path)
 
     model_instance, tokenizer = create_model_instance(
         trainer_config.config_leaf,
@@ -921,9 +921,10 @@ def restore_trainer_from_disk(
 ) -> SFTTrainer | DPOTrainer | GRPOTrainer:
     """Restore trainer from disk with proper state accumulation"""
     base_run_path = DataPath.base_run_path(trainer_config.run_id)
-    checkpoint_path = (
-        DataPath.intermediate_checkpoint_path(base_run_path) / "checkpoint"
-    )
+    checkpoint_path = DataPath.latest_intermediate_checkpoint(base_run_path)
+    if checkpoint_path is None:
+        # No intermediate checkpoint on disk yet; nothing to restore.
+        return trainer
 
     trainer_state_path = checkpoint_path / "trainer_state.json"
     if trainer_state_path.exists():
