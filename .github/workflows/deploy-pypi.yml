@@ -57,7 +57,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: rapidfireai-${{ steps.version.outputs.version }}-wheel-${{ github.ref_name }}
-          path: dist/*.whl
+          path: dist/*
           retention-days: 90
           if-no-files-found: error
 
