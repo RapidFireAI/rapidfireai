@@ -486,8 +486,6 @@ def install_packages(
             packages.append({"package": "cupy-cuda12x==14.0.1", "extra_args": ["--upgrade"]})
         elif cuda_major==13:
             packages.append({"package": "cupy-cuda13x==14.0.1", "extra_args": ["--upgrade"]})
-        else:
-            packages.append({"package": "cupy==14.0.1", "extra_args": ["--upgrade"]})
 
     if ColabConfig.ON_COLAB:
         # packages.append({"package": "cupy-cuda12x==14.0.1", "extra_args": ["--upgrade"]})
