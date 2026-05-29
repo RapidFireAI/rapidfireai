@@ -482,14 +482,16 @@ def install_packages(
         # Temporarily pin cupy-cuda12x to 14.0.1 on all platforms to avoid issues
         #  with cupy-cuda12x 14.1.0
         # https://github.com/cupy/cupy/pull/9965
+        # This also requres numpy to be less than 2.3
         if cuda_major==12:
             packages.append({"package": "cupy-cuda12x==14.0.1", "extra_args": ["--upgrade"]})
         elif cuda_major==13:
             packages.append({"package": "cupy-cuda13x==14.0.1", "extra_args": ["--upgrade"]})
-
-    if ColabConfig.ON_COLAB:
-        # packages.append({"package": "cupy-cuda12x==14.0.1", "extra_args": ["--upgrade"]})
         packages.append({"package": "numpy==2.0.1", "extra_args": ["--upgrade"]})
+
+    # if ColabConfig.ON_COLAB:
+    #     packages.append({"package": "cupy-cuda12x==14.0.1", "extra_args": ["--upgrade"]})
+    #     packages.append({"package": "numpy==2.0.1", "extra_args": ["--upgrade"]})
 
     for package_info in packages:
         try:
