@@ -8,35 +8,41 @@ import os
 import time
 import traceback
 from collections.abc import Callable
-from typing import Any
 from pathlib import Path
-from rapidfireai.utils.ping import ping_server
+from typing import Any
 
 import pandas as pd
+
 from rapidfireai.utils.constants import (
-    ColabConfig, 
-    RayConfig, 
-    RF_EXPERIMENT_PATH, 
-    RF_LOG_FILENAME, 
-    RF_TRAINING_LOG_FILENAME, 
+    RF_EXPERIMENT_PATH,
+    RF_LOG_FILENAME,
     RF_LOG_PATH,
-    RF_MLFLOW_ENABLED
+    RF_MLFLOW_ENABLED,
+    RF_TRAINING_LOG_FILENAME,
+    ColabConfig,
+    RayConfig,
 )
+from rapidfireai.utils.mode_utils import assert_mode_matches, get_installed_mode
+from rapidfireai.utils.ping import ping_server
 
 
 class _StopExecution(Exception):
     """Raised to halt cell execution silently after an error is displayed in Jupyter."""
 
+
 def display_pretty_error(msg: str) -> None:
     try:
         from IPython import get_ipython
         from IPython.display import HTML, display
+
         ip = get_ipython()
-        display(HTML(
-            f'<div style="border: 1px solid #c0392b; border-radius: 6px; padding: 10px 14px; '
-            f'color: #c0392b;">'
-            f'ERROR: {msg}</div>'
-        ))
+        display(
+            HTML(
+                f'<div style="border: 1px solid #c0392b; border-radius: 6px; padding: 10px 14px; '
+                f'color: #c0392b;">'
+                f"ERROR: {msg}</div>"
+            )
+        )
         if ip is not None:
             # Register _StopExecution as silently handled so IPython shows
             # nothing beyond the red box above.
@@ -82,10 +88,10 @@ class Experiment:
 
         if num_cpus is not None and num_cpus <= 0:
             display_pretty_error(f"Invalid number of CPUs: {num_cpus}. Must be greater than 0")
-        
+
         if num_gpus is not None and num_gpus < 0:
             display_pretty_error(f"Invalid number of GPUs: {num_gpus}. Must be non-negative")
-        
+
         # Initialize based on mode
         if mode == "fit":
             self._init_fit_mode()
@@ -93,7 +99,9 @@ class Experiment:
             self._ray_resource_config = self._auto_detect_resources(num_cpus=num_cpus, num_gpus=num_gpus)
             cfg = self._ray_resource_config
             print(f"Allocating {cfg['cpus_for_ray']} CPUs and {cfg['gpus_for_ray']} GPUs to the experiment")
-            print(f"Using {cfg['num_actors']} actors, {cfg['gpus_per_actor']} GPUs per actor, {cfg['cpus_per_actor']} CPUs per actor")
+            print(
+                f"Using {cfg['num_actors']} actors, {cfg['gpus_per_actor']} GPUs per actor, {cfg['cpus_per_actor']} CPUs per actor"
+            )
             self._init_evals_mode()
 
     def _auto_detect_resources(self, num_cpus: int = None, num_gpus: int = None) -> dict[str, float]:
@@ -120,6 +128,7 @@ class Experiment:
         """
         try:
             import torch
+
             available_gpus: float = float(torch.cuda.device_count()) if torch.cuda.is_available() else 0.0
         except Exception:
             available_gpus: float = 0.0
@@ -129,15 +138,21 @@ class Experiment:
             display_pretty_error(f"Not enough CPUs available: {available_cpus} CPUs, Minimum required: 2 CPUs")
 
         if num_gpus is not None and num_gpus > available_gpus:
-            display_pretty_error(f"Requested more GPUs than available: {num_gpus} GPUs, Available: {available_gpus} GPUs")
+            display_pretty_error(
+                f"Requested more GPUs than available: {num_gpus} GPUs, Available: {available_gpus} GPUs"
+            )
 
         if num_cpus is not None and num_cpus > available_cpus:
-            display_pretty_error(f"Requested more CPUs than available: {num_cpus} CPUs, Available: {available_cpus} CPUs")
+            display_pretty_error(
+                f"Requested more CPUs than available: {num_cpus} CPUs, Available: {available_cpus} CPUs"
+            )
 
         # Use all available GPUs if not specified
         num_gpus = available_gpus if num_gpus is None else num_gpus
         # Use 90% of available CPUs if not specified
-        num_cpus = int(available_cpus * 0.9) if num_cpus is None else num_cpus # equivalent to floor(available_cpus * 0.9)
+        num_cpus = (
+            int(available_cpus * 0.9) if num_cpus is None else num_cpus
+        )  # equivalent to floor(available_cpus * 0.9)
 
         def _num_actors_for_cpus(available_cpus: float) -> int:
             if available_cpus <= 2.0:
@@ -167,7 +182,7 @@ class Experiment:
             "gpus_for_ray": int(num_gpus),
             "num_actors": num_actors,
             "gpus_per_actor": gpus_per_actor,
-            "cpus_per_actor": cpus_per_actor
+            "cpus_per_actor": cpus_per_actor,
         }
 
     def _init_fit_mode(self) -> None:
@@ -236,13 +251,13 @@ class Experiment:
         from rapidfireai.evals.db import RFDatabase
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.utils.colab import get_colab_auth_token
-        from rapidfireai.utils.constants import DispatcherConfig
         from rapidfireai.evals.utils.constants import get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
-        from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
         from rapidfireai.evals.utils.notebook_ui import NotebookUI
+        from rapidfireai.utils.colab import get_colab_auth_token
+        from rapidfireai.utils.constants import DispatcherConfig
+        from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 
         # Store ray reference for later use
         self._ray = ray
@@ -286,8 +301,8 @@ class Experiment:
         )
 
         ray.init(
-            num_cpus=int(self._ray_resource_config['cpus_for_ray']),
-            num_gpus=int(self._ray_resource_config['gpus_for_ray']),
+            num_cpus=int(self._ray_resource_config["cpus_for_ray"]),
+            num_gpus=int(self._ray_resource_config["gpus_for_ray"]),
             logging_level=logging.ERROR,
             log_to_driver=False,
             configure_logging=True,
@@ -326,13 +341,14 @@ class Experiment:
             metric_experiment_id = self.metric_loggers.create_experiment(self.experiment_name)
             self.db.db.execute(
                 "UPDATE experiments SET metric_experiment_id = ? WHERE experiment_id = ?",
-                (metric_experiment_id, self.experiment_id), commit=True
+                (metric_experiment_id, self.experiment_id),
+                commit=True,
             )
             self.logger.info(f"Initialized MetricLogger experiment: {metric_experiment_id}")
         except Exception as e:
             self.logger.warning(f"Failed to initialize MetricLogger: {e}. MetricLogger logging will be disabled.")
             self.metric_loggers = None
-        
+
         # Initialize the controller
         self.controller = Controller(
             experiment_name=self.experiment_name,
@@ -342,12 +358,16 @@ class Experiment:
 
         # Start dispatcher in background thread for interactive control
         if ping_server(DispatcherConfig.HOST, DispatcherConfig.PORT, 2):
-            self.logger.info(f"Using existing dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
+            self.logger.info(
+                f"Using existing dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}."
+            )
             self.dispatcher_thread = None
-            
+
         else:
             self.logger.info(f"Starting new dispatcher/api server at {DispatcherConfig.HOST}:{DispatcherConfig.PORT}.")
-            self.dispatcher_thread = start_dispatcher_thread(host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger)
+            self.dispatcher_thread = start_dispatcher_thread(
+                host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger
+            )
 
         # Initialize notebook UI controller with auth token for Colab
         self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
@@ -380,6 +400,13 @@ class Experiment:
         if self.mode != "fit":
             raise ValueError("run_fit() is only available in 'fit' mode")
 
+        # Block if the installed mode (rf_mode.txt) conflicts with fit mode — otherwise the
+        # dispatcher/IC Ops would be bound to the wrong database and silently stay disabled.
+        try:
+            assert_mode_matches("fit", get_installed_mode())
+        except ValueError as e:
+            display_pretty_error(str(e))
+
         from rapidfireai.fit.backend.controller import Controller
 
         ExperimentException = self._ExperimentException
@@ -410,7 +437,17 @@ class Experiment:
 
                 try:
                     controller = Controller(self.experiment_id, self.experiment_name)
-                    controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations, chunk_callback=chunk_callback)
+                    controller.run_fit(
+                        param_config,
+                        create_model_fn,
+                        train_dataset,
+                        eval_dataset,
+                        num_chunks,
+                        seed,
+                        num_gpus,
+                        monte_carlo_simulations,
+                        chunk_callback=chunk_callback,
+                    )
                 except Exception as e:
                     # Restore stdout for error logging
                     sys.stdout = old_stdout
@@ -449,7 +486,17 @@ class Experiment:
             # Original blocking behavior for non-Colab environments
             try:
                 controller = Controller(self.experiment_id, self.experiment_name)
-                controller.run_fit(param_config, create_model_fn, train_dataset, eval_dataset, num_chunks, seed, num_gpus, monte_carlo_simulations, chunk_callback=chunk_callback)
+                controller.run_fit(
+                    param_config,
+                    create_model_fn,
+                    train_dataset,
+                    eval_dataset,
+                    num_chunks,
+                    seed,
+                    num_gpus,
+                    monte_carlo_simulations,
+                    chunk_callback=chunk_callback,
+                )
             except Exception as e:
                 if hasattr(self, "logger"):
                     self.logger.opt(exception=True).error(f"Error running fit: {e}")
@@ -487,17 +534,24 @@ class Experiment:
         if self.mode != "evals":
             raise ValueError("run_evals() is only available in 'evals' mode")
 
+        # Block if the installed mode (rf_mode.txt) conflicts with evals mode — otherwise the
+        # dispatcher/IC Ops would be bound to the wrong database and silently stay disabled.
+        try:
+            assert_mode_matches("evals", get_installed_mode())
+        except ValueError as e:
+            display_pretty_error(str(e))
+
         from rapidfireai.evals.utils.constants import ExperimentStatus
 
-        available_cpus = self._ray_resource_config['cpus_for_ray']
-        available_gpus = self._ray_resource_config['gpus_for_ray']
+        available_cpus = self._ray_resource_config["cpus_for_ray"]
+        available_gpus = self._ray_resource_config["gpus_for_ray"]
 
         if num_actors is None:
-            num_actors = self._ray_resource_config['num_actors']
+            num_actors = self._ray_resource_config["num_actors"]
         if gpus_per_actor is None:
-            gpus_per_actor = self._ray_resource_config['gpus_per_actor']
+            gpus_per_actor = self._ray_resource_config["gpus_per_actor"]
         if cpus_per_actor is None:
-            cpus_per_actor = self._ray_resource_config['cpus_per_actor']
+            cpus_per_actor = self._ray_resource_config["cpus_per_actor"]
 
         if num_actors * gpus_per_actor > available_gpus or num_actors * cpus_per_actor > available_cpus:
             msg = (
@@ -507,7 +561,6 @@ class Experiment:
                 f"Available: {available_gpus} GPU(s), {available_cpus} CPU(s)."
             )
             display_pretty_error(msg)
-
 
         if gpus_per_actor == 0:
             self.logger.warning("No GPUs available. Be sure to use external APIs for inference.")
@@ -595,6 +648,7 @@ class Experiment:
 
             # Lazy import - only import when we actually have metric runs to fetch
             from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+
             try:
                 metric_loggers = RFMetricLogger.get_default_metric_loggers(experiment_name=self.experiment_name)
                 self.metric_loggers = RFMetricLogger(metric_loggers, logger=self.logger)
