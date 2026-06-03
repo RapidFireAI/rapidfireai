@@ -55,17 +55,17 @@ dependencies = [
     "trackio",
     "trackio[gpu]",
     "mlflow[genai]>=3.11.1",
-    "tensorboard~=2.19.0",
+    "tensorboard>=2.19.0",
 
     # Other
-    "dill<0.3.9",
+    "dill",
     "jedi",
-    "setuptools<80",
+    "setuptools",
     # "pytest>=8.4.2",
     "uv",
-    "fsspec<=2025.10.0",
-    "numpy<2.1",
-    "huggingface-hub<1.0.0",
+    "fsspec>=2025.10.0",
+    "numpy>=2.0.1",
+    "huggingface-hub>=1.0.0",
 ]
 
 [project.optional-dependencies]
