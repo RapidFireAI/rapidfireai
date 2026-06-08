@@ -209,6 +209,45 @@ def _extract_search_space(
 _PRIMITIVE_TYPES = (type(None), bool, int, float, str)
 
 
+def _attrs_for_labeling(obj: Any) -> dict[str, Any] | None:
+    """Return a primitive-only attribute dict describing *obj* for label building.
+
+    Returns ``None`` when *obj* has no labellable structure (e.g. ``None``,
+    a list/tuple, or a built-in type without a ``__dict__``) -- the caller
+    falls back to ``repr(obj)`` for those.
+
+    - ``dict``                       -> shallow copy of primitive entries
+    - object with ``__dict__``       -> ``vars(obj)`` filtered to primitives
+    - everything else                -> ``None``
+    """
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        src: dict[Any, Any] = obj
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        return None
+    else:
+        src = getattr(obj, "__dict__", None)
+        if not src:
+            return None
+    attrs: dict[str, Any] = {}
+    for key, val in src.items():
+        if isinstance(val, _PRIMITIVE_TYPES):
+            attrs[str(key).lstrip("_")] = val
+        elif isinstance(val, type):
+            attrs[str(key).lstrip("_")] = val.__name__
+    return attrs
+
+
+def _label_prefix(obj: Any) -> str:
+    """Return the class-name-like prefix used when building a label for *obj*."""
+    if obj is None:
+        return "None"
+    if isinstance(obj, dict):
+        return "cfg"
+    return type(obj).__name__
+
+
 def _object_labels(objects: list[Any]) -> list[str]:
     """Build concise labels showing only the attributes that differ across *objects*.
 
@@ -220,30 +259,38 @@ def _object_labels(objects: list[Any]) -> list[str]:
 
     Shared defaults (``keep_separator``, ``strip_whitespace``, etc.) are omitted
     so the labels stay short and meaningful in Optuna trial output.
+
+    A single ``List([...])`` may freely mix:
+
+    - regular objects (labelled by class name + differing attrs)
+    - plain ``dict`` configs (labelled ``cfg(...)``)
+    - ``list`` / ``tuple`` literals (labelled via ``repr``)
+    - ``None`` (labelled ``"None"``, e.g. an optional reranker)
     """
-    per_obj: list[tuple[str, dict[str, Any]]] = []
-    for obj in objects:
-        attrs = {}
-        for key, val in sorted(vars(obj).items()):
-            if isinstance(val, _PRIMITIVE_TYPES):
-                attrs[key.lstrip("_")] = val
-        per_obj.append((type(obj).__name__, attrs))
+    per_obj: list[tuple[str, dict[str, Any] | None]] = [
+        (_label_prefix(obj), _attrs_for_labeling(obj)) for obj in objects
+    ]
 
     all_keys: set[str] = set()
     for _, attrs in per_obj:
-        all_keys.update(attrs)
+        if attrs:
+            all_keys.update(attrs)
 
     varying = {
         k for k in all_keys
-        if len({attrs.get(k) for _, attrs in per_obj}) > 1
+        if len({(attrs or {}).get(k) for _, attrs in per_obj}) > 1
     }
     if not varying:
         varying = all_keys
 
     labels: list[str] = []
-    for cls_name, attrs in per_obj:
+    for i, (prefix, attrs) in enumerate(per_obj):
+        obj = objects[i]
+        if attrs is None:
+            labels.append("None" if obj is None else repr(obj))
+            continue
         parts = [f"{k}={attrs[k]!r}" for k in sorted(varying) if k in attrs]
-        labels.append(f"{cls_name}({', '.join(parts)})" if parts else repr(objects[len(labels)]))
+        labels.append(f"{prefix}({', '.join(parts)})" if parts else prefix)
     return labels
 
 
@@ -271,10 +318,11 @@ def _suggest_value(trial: optuna.Trial, name: str, param: Range | List) -> Any:
     elif isinstance(param, List):
         if all(isinstance(v, _PRIMITIVE_TYPES) for v in param.values):
             return trial.suggest_categorical(name, param.values)
-        if all(isinstance(v, (list, tuple, dict)) for v in param.values):
-            labels = [repr(v) for v in param.values]
-        else:
-            labels = _object_labels(param.values)
+        # Mixed primitive / dict / object choices (including ``None`` for an
+        # optional component such as a reranker) -- always go through
+        # ``_object_labels``, which handles every type uniformly and never calls
+        # ``vars()`` on a value that lacks ``__dict__``.
+        labels = _object_labels(param.values)
         if len(set(labels)) < len(labels):
             labels = [f"{lbl}#{i}" for i, lbl in enumerate(labels)]
         chosen = trial.suggest_categorical(name, labels)
@@ -428,12 +476,30 @@ def _template_to_leaf_fit(config_obj: Any, trainer_type: str) -> dict[str, Any]:
     return leaf
 
 
+_PIPELINE_KEY_ALIASES = (
+    "pipeline",
+    "vllm_config",
+    "api_config",
+    "openai_config",
+    "gemini_config",
+)
+
+
 def _template_to_leaf_evals(config_dict: dict[str, Any]) -> dict[str, Any]:
-    """Convert a sampled evals config dict into a config-leaf dict for the controller."""
+    """Convert a sampled evals config dict into a config-leaf dict for the controller.
+
+    Mirrors :func:`grid_search._get_runs_evals` /
+    :func:`random_search._get_runs_evals` by recognising any of the historical
+    pipeline keys (``pipeline``, ``vllm_config``, ``api_config``,
+    ``openai_config``, ``gemini_config``) and normalising the result to a
+    single ``"pipeline"`` key -- the controller looks up ``config_leaf["pipeline"]``
+    unconditionally, so omitting an alias here used to crash sharded evals
+    runs that built their config with ``api_config=...``.
+    """
     from rapidfireai.automl.random_search import recursive_expand_randomsearch
 
     pipeline_key = None
-    for key in ("pipeline", "vllm_config", "openai_config", "gemini_config"):
+    for key in _PIPELINE_KEY_ALIASES:
         if key in config_dict:
             pipeline_key = key
             break
@@ -447,8 +513,7 @@ def _template_to_leaf_evals(config_dict: dict[str, Any]) -> dict[str, Any]:
     additional = {
         k: recursive_expand_randomsearch(v)
         for k, v in config_dict.items()
-        if k not in {"pipeline", "vllm_config", "openai_config", "gemini_config"}
-        and v is not None
+        if k not in _PIPELINE_KEY_ALIASES and v is not None
     }
 
     return {"pipeline": pipeline_instance, **additional}

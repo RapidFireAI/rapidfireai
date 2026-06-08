@@ -13,6 +13,7 @@ from rapidfireai.automl.optuna_search import (
     OptunaShardCallback,
     RFOptuna,
     _extract_search_space,
+    _object_labels,
     _resolve_metric_history,
     _resolve_scalar_for_objective,
     _sample_from_trial,
@@ -804,3 +805,108 @@ class TestMultiTemplate:
         assert replacement is not None
         assert isinstance(replacement, dict)
         assert cb._spawned == 3
+
+
+# ---------------------------------------------------------------------------
+# Categorical-choice labelling and evals-leaf pipeline-key normalisation
+# (regression tests for issues found while running RFOptuna on RAG configs
+# whose List(...) categoricals mixed dicts, None, and lists, or whose evals
+# template used ``api_config`` instead of ``vllm_config``/``pipeline``).
+# ---------------------------------------------------------------------------
+
+
+class TestObjectLabels:
+    def test_dict_only_choices(self):
+        labels = _object_labels(
+            [{"type": "similarity", "k": k} for k in (5, 10, 20)]
+        )
+        assert labels == ["cfg(k=5)", "cfg(k=10)", "cfg(k=20)"]
+
+    def test_none_plus_dict_choices(self):
+        labels = _object_labels([None, {"class": str, "top_n": 5}])
+        assert labels[0] == "None"
+        assert labels[1].startswith("cfg(")
+        assert "top_n=5" in labels[1]
+
+    def test_list_of_lists_choices(self):
+        choices = [["q_proj", "v_proj"], ["q_proj", "k_proj", "v_proj", "o_proj"]]
+        labels = _object_labels(choices)
+        assert labels == [repr(c) for c in choices]
+
+    def test_object_choices_with_dict(self):
+        class Splitter:
+            def __init__(self, chunk_size, overlap):
+                self.chunk_size = chunk_size
+                self._overlap = overlap
+
+        labels = _object_labels([Splitter(256, 32), Splitter(512, 32)])
+        assert labels == ["Splitter(chunk_size=256)", "Splitter(chunk_size=512)"]
+
+    def test_mixed_obj_dict_none_list(self):
+        class TS:
+            def __init__(self, chunk_size):
+                self.chunk_size = chunk_size
+
+        labels = _object_labels([TS(128), {"k": 10}, None, ["a", "b"]])
+        assert labels[0].startswith("TS(")
+        assert labels[1].startswith("cfg(")
+        assert labels[2] == "None"
+        assert labels[3] == "['a', 'b']"
+
+    def test_suggest_value_mixed_none_dict_does_not_crash(self):
+        study = optuna.create_study(direction="maximize")
+        trial = study.ask()
+        choices = [None, {"class": str, "top_n": 5}]
+        sampled = _suggest_value(trial, "reranker_cfg", List(choices))
+        assert sampled in choices
+
+    def test_suggest_value_dict_choices(self):
+        study = optuna.create_study(direction="maximize")
+        trial = study.ask()
+        choices = [{"type": "similarity", "k": k} for k in (5, 10, 20)]
+        sampled = _suggest_value(trial, "search_cfg", List(choices))
+        assert sampled in choices
+
+
+class TestTemplateToLeafEvalsPipelineAliases:
+    """``_template_to_leaf_evals`` must normalise every supported pipeline alias
+    to a ``"pipeline"`` key, matching grid_search/random_search and the
+    controller's ``config_leaf["pipeline"]`` lookup."""
+
+    def test_pipeline_alias_passthrough(self):
+        leaf = _template_to_leaf_evals({"pipeline": "p", "batch_size": 4})
+        assert leaf["pipeline"] == "p"
+        assert leaf["batch_size"] == 4
+
+    def test_vllm_alias_renamed(self):
+        leaf = _template_to_leaf_evals({"vllm_config": "v", "x": 1})
+        assert leaf["pipeline"] == "v"
+        assert "vllm_config" not in leaf
+        assert leaf["x"] == 1
+
+    def test_api_alias_renamed(self):
+        """Regression: api_config was silently dropped, leaving the leaf
+        without a ``pipeline`` key and crashing the controller downstream."""
+        sentinel = object()
+        leaf = _template_to_leaf_evals(
+            {"api_config": sentinel, "batch_size": 32, "preprocess_fn": "fn"}
+        )
+        assert leaf["pipeline"] is sentinel
+        assert "api_config" not in leaf
+        assert leaf["batch_size"] == 32
+        assert leaf["preprocess_fn"] == "fn"
+
+    def test_gemini_alias_renamed(self):
+        leaf = _template_to_leaf_evals({"gemini_config": "g"})
+        assert leaf["pipeline"] == "g"
+        assert "gemini_config" not in leaf
+
+    def test_openai_alias_renamed(self):
+        leaf = _template_to_leaf_evals({"openai_config": "o"})
+        assert leaf["pipeline"] == "o"
+        assert "openai_config" not in leaf
+
+    def test_unknown_keys_returned_unchanged(self):
+        original = {"foo": 1, "bar": 2}
+        leaf = _template_to_leaf_evals(original)
+        assert leaf == original
