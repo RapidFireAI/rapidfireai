@@ -1671,6 +1671,26 @@ class Controller:
                                                 "start_time": None,
                                             }
                                             scheduler.add_pipeline(new_pid, shards_completed=0)
+
+                                            # Replacement pipelines must inherit the
+                                            # parent's API resources. The rate limiter
+                                            # actor + max-completion-tokens maps are only
+                                            # populated for the initial wave of pipelines
+                                            # at experiment setup; without copying the
+                                            # parent's (``pipeline_id``) entries here the
+                                            # worker would build an ``APIInferenceEngine``
+                                            # with no ``rate_limiter_actor`` and fail to
+                                            # initialize (only manifests under sharding,
+                                            # where pruning + relaunch actually happens).
+                                            if pipeline_id in pipeline_to_rate_limiter:
+                                                pipeline_to_rate_limiter[new_pid] = (
+                                                    pipeline_to_rate_limiter[pipeline_id]
+                                                )
+                                            if pipeline_id in pipeline_to_max_completion_tokens:
+                                                pipeline_to_max_completion_tokens[new_pid] = (
+                                                    pipeline_to_max_completion_tokens[pipeline_id]
+                                                )
+
                                             if hasattr(shard_callback, "_remap_pending_trial"):
                                                 shard_callback._remap_pending_trial(new_pid)
 
