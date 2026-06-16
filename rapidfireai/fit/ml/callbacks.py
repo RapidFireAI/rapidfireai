@@ -17,6 +17,24 @@ from rapidfireai.fit.utils.logging import RFLogger
 
 
 class GenerationMetricsCallback(TrainerCallback):
+    # Keys that may appear inside the user-supplied generation_config dict but
+    # are NOT valid kwargs for model.generate(). They configure this callback's
+    # tokenization / chat-templating behavior. Keeping them inside
+    # generation_config lets users override defaults without editing the
+    # installed package -- they're popped off before being forwarded to
+    # model.generate().
+    _CALLBACK_CONTROL_KEYS = (
+        "max_input_length",
+        "add_generation_prompt",
+        "truncation_side",
+    )
+
+    # Sentinel used by HF when a tokenizer has no real max length set
+    # (transformers stores VERY_LARGE_INTEGER == 1e30). Anything at or above
+    # this threshold is treated as "unset".
+    _UNSET_MODEL_MAX_LENGTH = 10**9
+    _DEFAULT_MODEL_MAX_LENGTH = 4096
+
     def __init__(
         self,
         tokenizer,
@@ -28,12 +46,18 @@ class GenerationMetricsCallback(TrainerCallback):
         metric_run_id: str = None,
         completed_steps: int = 0,
         use_fsdp: bool = False,
+        max_input_length: int | None = None,
+        add_generation_prompt: bool = True,
+        truncation_side: str = "left",
     ):
         self.tokenizer = tokenizer
         self.eval_dataset = eval_dataset
         self.compute_metrics = compute_metrics
         self.batch_size = batch_size
-        self.generation_config = generation_config or {
+
+        # Copy so we don't mutate the caller's dict, and so callback-control
+        # keys can be popped safely.
+        gen_cfg = dict(generation_config) if generation_config else {
             "max_new_tokens": 128,
             "temperature": 0.7,
             "do_sample": True,
@@ -41,13 +65,53 @@ class GenerationMetricsCallback(TrainerCallback):
             "pad_token_id": tokenizer.pad_token_id,
             "eos_token_id": tokenizer.eos_token_id,
         }
+
+        # Values inside generation_config take precedence over kwargs so users
+        # can configure this callback from their RFModelConfig without any
+        # API/package changes (just add the keys to their generation_config).
+        self.max_input_length = gen_cfg.pop("max_input_length", max_input_length)
+        self.add_generation_prompt = gen_cfg.pop(
+            "add_generation_prompt", add_generation_prompt
+        )
+        self.truncation_side = gen_cfg.pop("truncation_side", truncation_side)
+
+        # Let caller/model defaults decide on KV cache (can cause OOM)
+        gen_cfg.pop("use_cache", None)
+
+        self.generation_config = gen_cfg
         self.metric_logger = metric_logger
         self.metric_run_id = metric_run_id
         self.completed_steps = completed_steps
         self.use_fsdp = use_fsdp
 
-        # Let caller/model defaults decide on KV cache (can cause OOM)
-        self.generation_config.pop("use_cache", None)
+        self._logger = RFLogger().create_logger(__name__)
+        self._truncation_warned = False
+
+    def _resolve_max_input_length(self) -> int:
+        """Resolve the tokenizer truncation length for eval prompts.
+
+        Priority:
+        1. Explicit `max_input_length` (kwarg or generation_config override).
+        2. `tokenizer.model_max_length`, minus `max_new_tokens` so the response
+           has room to fit inside the model's real context window.
+        3. A conservative 4096-token default when the tokenizer reports an
+           unset/sentinel value.
+        """
+        if self.max_input_length is not None and self.max_input_length > 0:
+            return int(self.max_input_length)
+
+        model_max = getattr(self.tokenizer, "model_max_length", None)
+        if (
+            not isinstance(model_max, int)
+            or model_max <= 0
+            or model_max >= self._UNSET_MODEL_MAX_LENGTH
+        ):
+            model_max = self._DEFAULT_MODEL_MAX_LENGTH
+
+        max_new_tokens = int(self.generation_config.get("max_new_tokens", 128) or 0)
+        # Reserve room for the generated response; never collapse below 64
+        # tokens of prompt budget.
+        return max(64, model_max - max_new_tokens)
 
     def on_evaluate(
         self,
@@ -119,9 +183,24 @@ class GenerationMetricsCallback(TrainerCallback):
             elif "prompt" in item and "completion" in item:
                 input_text = item["prompt"]
                 reference = item["completion"][-1]["content"]
-                input_text = self.tokenizer.apply_chat_template(
-                    input_text, tokenize=False
-                )
+                try:
+                    # add_generation_prompt=True is required for instruction-tuned
+                    # chat models so the prompt ends at the assistant turn cue
+                    # (e.g. <|start_header_id|>assistant<|end_header_id|>) and
+                    # the model continues from there. Without it, the chat
+                    # template closes the user turn and the model has no signal
+                    # to begin an assistant response, which hurts eval quality.
+                    input_text = self.tokenizer.apply_chat_template(
+                        input_text,
+                        tokenize=False,
+                        add_generation_prompt=self.add_generation_prompt,
+                    )
+                except Exception as e:
+                    self._logger.warning(
+                        f"apply_chat_template failed (add_generation_prompt="
+                        f"{self.add_generation_prompt}); skipping example: {e}"
+                    )
+                    continue
             elif "text" in item:
                 # SFT format - use text as input, response as reference
                 input_text = item["text"]
@@ -143,26 +222,114 @@ class GenerationMetricsCallback(TrainerCallback):
 
         return input_texts, references
 
-    def _generate_batch(self, model, input_texts: list[str]) -> torch.Tensor:
-        """Generate text for a batch of inputs with defensive validation"""
-        # Defensive validation for empty inputs
+    def _generate_batch(
+        self, model, input_texts: list[str]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Tokenize a batch of prompts for generation.
+
+        Returns `(input_ids, attention_mask)`. Both tensors are needed by
+        `model.generate()` for batched decoder-only generation:
+
+        - Without `attention_mask`, HF falls back to `input_ids != pad_token_id`
+          which is wrong whenever `pad_token_id == eos_token_id` (the default
+          for Llama-3 / most chat tokenizers): real EOS tokens get masked out
+          and padding may be left unmasked.
+        - Padding side is forced to "left" for the same reason: decoder-only
+          models continue from the right edge of the sequence, so short
+          sequences must have their pads on the left to keep real tokens
+          flush against the generation position. Right-padding silently
+          corrupts batched generation outputs.
+
+        Truncation honors `self._resolve_max_input_length()` and uses
+        `self.truncation_side` (default "left") so the most recent tail of
+        chat-style prompts is preserved when truncation is unavoidable.
+        """
+        empty = torch.empty((0, 0), dtype=torch.long).to(model.device)
         if not input_texts:
-            return torch.empty((0, 0), dtype=torch.long).to(model.device)
+            return empty, empty
+
+        max_input_length = self._resolve_max_input_length()
 
         try:
-            # Tokenize batch
+            self._maybe_warn_on_truncation(input_texts, max_input_length)
+        except Exception:
+            # Warning path must never break generation.
+            pass
+
+        original_truncation_side = getattr(self.tokenizer, "truncation_side", "right")
+        original_padding_side = getattr(self.tokenizer, "padding_side", "right")
+        try:
+            if (
+                self.truncation_side
+                and self.truncation_side != original_truncation_side
+            ):
+                self.tokenizer.truncation_side = self.truncation_side
+            # Left-pad for batched decoder-only generation.
+            self.tokenizer.padding_side = "left"
+
             inputs = self.tokenizer(
                 input_texts,
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=512,  # Adjust based on your model's context length
+                max_length=max_input_length,
             ).to(model.device)
 
-            return inputs["input_ids"]
+            input_ids = inputs["input_ids"]
+            attention_mask = inputs.get("attention_mask")
+            if attention_mask is None:
+                # Fast-tokenizer paths always return a mask; this is a
+                # safety net for exotic/custom tokenizers.
+                pad_id = self.tokenizer.pad_token_id
+                if pad_id is None:
+                    attention_mask = torch.ones_like(input_ids)
+                else:
+                    attention_mask = (input_ids != pad_id).long()
+
+            return input_ids, attention_mask
         except Exception as e:
-            print(f"Warning: Tokenization error in generation callback: {e}")
-            return torch.empty((0, 0), dtype=torch.long).to(model.device)
+            self._logger.warning(
+                f"Tokenization error in generation callback: {e}"
+            )
+            return empty, empty
+        finally:
+            # Restore so we don't mutate state shared with the trainer.
+            self.tokenizer.truncation_side = original_truncation_side
+            self.tokenizer.padding_side = original_padding_side
+
+    def _maybe_warn_on_truncation(
+        self, input_texts: list[str], max_input_length: int
+    ) -> None:
+        """Emit a single warning when eval prompts would be truncated."""
+        if self._truncation_warned:
+            return
+
+        raw_lengths = [
+            len(
+                self.tokenizer(
+                    text,
+                    add_special_tokens=False,
+                    truncation=False,
+                )["input_ids"]
+            )
+            for text in input_texts
+        ]
+        if not raw_lengths:
+            return
+
+        longest = max(raw_lengths)
+        if longest <= max_input_length:
+            return
+
+        truncated = sum(1 for length in raw_lengths if length > max_input_length)
+        self._logger.warning(
+            f"GenerationMetricsCallback is truncating {truncated}/{len(input_texts)} "
+            f"eval prompts at max_input_length={max_input_length} tokens "
+            f"(longest raw prompt = {longest} tokens, truncation_side="
+            f"'{self.truncation_side}'). Increase the limit by adding "
+            f"'max_input_length' to your generation_config."
+        )
+        self._truncation_warned = True
 
     @staticmethod
     def _truncate_at_eos(
@@ -186,11 +353,18 @@ class GenerationMetricsCallback(TrainerCallback):
         input_ids: torch.Tensor,
         batch_references: list[str],
         device,
+        attention_mask: torch.Tensor | None = None,
         override_batch_size: int | None = None,
         generation_config: dict | None = None,
         eos_token_ids: list[int] | None = None,
     ) -> tuple[list[str], list[str]]:
-        """Run autoregressive generation over batches and return predictions + references."""
+        """Run autoregressive generation over batches and return predictions + references.
+
+        `attention_mask` must align row-for-row with `input_ids`. It is forwarded
+        to `model.generate()` so HF doesn't have to guess the mask from
+        `pad_token_id` -- guessing is incorrect whenever pad and EOS share an
+        id (the default for most chat tokenizers).
+        """
         predictions = []
         references = []
         num_samples = input_ids.shape[0]
@@ -204,9 +378,15 @@ class GenerationMetricsCallback(TrainerCallback):
         with torch.no_grad():
             for i in range(0, num_samples, batch_size):
                 input_ids_batch = input_ids[i : i + batch_size].to(device)
+                attention_mask_batch = None
+                if attention_mask is not None:
+                    attention_mask_batch = attention_mask[i : i + batch_size].to(device)
 
                 with torch.inference_mode(), torch.amp.autocast("cuda"):
-                    outputs_batch = model.generate(input_ids_batch, **gen_config)
+                    generate_kwargs = dict(gen_config)
+                    if attention_mask_batch is not None:
+                        generate_kwargs["attention_mask"] = attention_mask_batch
+                    outputs_batch = model.generate(input_ids_batch, **generate_kwargs)
 
                 # Keep only newly generated tokens
                 new_tokens = outputs_batch[:, input_ids_batch.shape[1] :]
@@ -224,6 +404,8 @@ class GenerationMetricsCallback(TrainerCallback):
 
                 # Free GPU tensors from this batch immediately
                 del outputs_batch, input_ids_batch, new_tokens
+                if attention_mask_batch is not None:
+                    del attention_mask_batch
                 torch.cuda.empty_cache()
 
         # Final cleanup after all batches - clear any lingering CUDA state
@@ -247,7 +429,7 @@ class GenerationMetricsCallback(TrainerCallback):
         if not input_texts:
             return {}
 
-        input_ids = self._generate_batch(model, input_texts)
+        input_ids, attention_mask = self._generate_batch(model, input_texts)
 
         # Check for empty generation batch
         if input_ids.numel() == 0:
@@ -259,14 +441,21 @@ class GenerationMetricsCallback(TrainerCallback):
         try:
             if self.use_fsdp:
                 metrics = self._compute_metrics_fsdp(
-                    model, input_ids, batch_references, gen_batch_size
+                    model,
+                    input_ids,
+                    batch_references,
+                    gen_batch_size,
+                    attention_mask=attention_mask,
                 )
             else:
                 metrics = self._compute_metrics_standard(
-                    model, input_ids, batch_references
+                    model,
+                    input_ids,
+                    batch_references,
+                    attention_mask=attention_mask,
                 )
         finally:
-            del input_ids
+            del input_ids, attention_mask
             torch.cuda.empty_cache()
             gc.collect()
 
@@ -277,10 +466,15 @@ class GenerationMetricsCallback(TrainerCallback):
         model,
         input_ids: torch.Tensor,
         batch_references: list[str],
+        attention_mask: torch.Tensor | None = None,
     ) -> dict[str, float]:
         """Non-FSDP generation path."""
         predictions, references = self._run_generation_loop(
-            model, input_ids, batch_references, model.device
+            model,
+            input_ids,
+            batch_references,
+            model.device,
+            attention_mask=attention_mask,
         )
 
         metrics = {}
@@ -302,6 +496,7 @@ class GenerationMetricsCallback(TrainerCallback):
         input_ids: torch.Tensor,
         batch_references: list[str],
         gen_batch_size: int = 4,
+        attention_mask: torch.Tensor | None = None,
     ) -> dict[str, float]:
         """FSDP-aware generation with data sharding across ranks."""
         rank = dist.get_rank() if dist.is_initialized() else 0
@@ -316,14 +511,22 @@ class GenerationMetricsCallback(TrainerCallback):
 
         shard_input_ids = input_ids[start_idx:end_idx]
         shard_references = batch_references[start_idx:end_idx]
+        shard_attention_mask = (
+            attention_mask[start_idx:end_idx] if attention_mask is not None else None
+        )
         actual_samples_on_this_gpu = shard_input_ids.shape[0]
 
-        # Pad to keep generate() call count identical across ranks (NCCL collective)
+        # Pad to keep generate() call count identical across ranks (NCCL collective).
+        # The attention_mask must be sharded/padded in lockstep with input_ids,
+        # otherwise the mask rows won't align with the prompt rows on each GPU.
         if actual_samples_on_this_gpu < samples_per_gpu:
             pad_count = samples_per_gpu - actual_samples_on_this_gpu
             pad_ids = input_ids[:pad_count]  # reuse first samples as padding
             shard_input_ids = torch.cat([shard_input_ids, pad_ids], dim=0)
             shard_references = shard_references + batch_references[:pad_count]
+            if shard_attention_mask is not None:
+                pad_mask = attention_mask[:pad_count]
+                shard_attention_mask = torch.cat([shard_attention_mask, pad_mask], dim=0)
 
         # Disable eos_token_id to keep ranks in sync; truncate post-generation
         gen_config = dict(self.generation_config)
@@ -343,6 +546,7 @@ class GenerationMetricsCallback(TrainerCallback):
             shard_input_ids,
             shard_references,
             model.device,
+            attention_mask=shard_attention_mask,
             override_batch_size=gen_batch_size,
             generation_config=gen_config,
             eos_token_ids=real_eos_ids,
@@ -350,6 +554,8 @@ class GenerationMetricsCallback(TrainerCallback):
 
         # Free per-rank GPU shard (predictions already decoded to strings)
         del shard_input_ids
+        if shard_attention_mask is not None:
+            del shard_attention_mask
         torch.cuda.empty_cache()
 
         # Drop padding predictions

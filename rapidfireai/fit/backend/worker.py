@@ -351,6 +351,14 @@ class Worker:
             sys.stdout = tee_stdout
             sys.stderr = tee_stderr
 
+            # Snapshot the user's save_strategy before any downstream code can
+            # mutate it. This is the single source of truth for RapidFire's
+            # checkpoint cadence (e.g. the "chunk" sentinel is not a valid HF
+            # SaveStrategy and only RapidFire understands it).
+            rf_save_strategy = config_leaf.get("training_args", {}).get(
+                "save_strategy", "no"
+            )
+
             trainer_instance, base_model_name = create_trainer_instance(
                 trainer_config,
                 self.shm_manager,
@@ -479,10 +487,7 @@ class Worker:
                         barrier()
 
                     # save checkpoint to disk based on save strategy
-                    save_strategy = trainer_config.config_leaf.get("training_args", {}).get(
-                        "save_strategy", "epoch"
-                    )
-                    if save_strategy == "chunk":
+                    if rf_save_strategy == "chunk":
                         save_checkpoint_to_disk(
                             trainer_instance,
                             trainer_config,
