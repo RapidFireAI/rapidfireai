@@ -759,7 +759,7 @@ class Controller:
                     ray.kill(task["actor"])
                 except Exception as e:
                     self.logger.warning(
-                        f"Error killing DocProcessingActor for context "
+                        f"Could not kill DocProcessingActor for context "
                         f"{task['context_info'].get('context_id', '?')}: {e}"
                     )
 
@@ -774,7 +774,7 @@ class Controller:
                     ray.kill(rate_limiter)
                 except Exception as e:
                     self.logger.warning(
-                        f"Error killing build-phase rate limiter for provider '{provider}': {e}"
+                        f"Could not kill build-phase rate limiter for provider '{provider}': {e}"
                     )
 
             # Stop the context building display. Idempotent — the failure
@@ -884,7 +884,7 @@ class Controller:
 
                     self.logger.debug(f"Created Metrics run {metric_run_id} for pipeline {pipeline_id}")
                 except Exception as e:
-                    self.logger.warning(f"Failed to create Metrics run for pipeline {pipeline_id}: {e}")
+                    self.logger.warning(f"Could not create Metrics run for pipeline {pipeline_id}; continuing without metric tracking: {e}")
 
             pipeline_ids.append(pipeline_id)
             pipeline_id_to_config[pipeline_id] = pipeline_config
@@ -934,7 +934,7 @@ class Controller:
             # Skip DELETED and FAILED pipelines
             if pipeline_status in [PipelineStatus.DELETED.value, PipelineStatus.FAILED.value]:
                 if pipeline_status == PipelineStatus.FAILED.value:
-                    self.logger.warning(f"Pipeline {pipeline_id} failed, skipping final metrics")
+                    self.logger.warning(f"Skipping final metrics for pipeline {pipeline_id} (status: FAILED)")
                 else:
                     self.logger.info(f"Pipeline {pipeline_id} deleted, skipping final metrics")
                 continue
@@ -1063,14 +1063,14 @@ class Controller:
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
                                 except Exception as e:
-                                    self.logger.debug(f"Failed to log final metric {metric_name} to MetricLogger: {e}")
+                                    self.logger.warning(f"Could not log final metric {metric_name} to MetricLogger: {e}")
 
                             # Log confidence_interval if available
                             if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_confidence_interval", float(confidence_interval), step=step)
                                 except Exception as e:
-                                    self.logger.debug(f"Failed to log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
+                                    self.logger.warning(f"Could not log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
                         try:
                             self.metric_manager.end_run(metric_run_id)
@@ -1588,14 +1588,14 @@ class Controller:
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
                                                 except Exception as e:
-                                                    self.logger.debug(f"Failed to log metric {metric_name} to MetricLogger: {e}")
+                                                    self.logger.warning(f"Could not log metric {metric_name} to MetricLogger: {e}")
 
                                             # Log confidence_interval if available
                                             if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_confidence_interval", float(confidence_interval), step=step)
                                                 except Exception as e:
-                                                    self.logger.debug(f"Failed to log metric {metric_name}_confidence_interval to MetricLogger: {e}")
+                                                    self.logger.warning(f"Could not log metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
                                         if "Throughput" in display_metrics:
                                             throughput_value = display_metrics["Throughput"]["value"]
@@ -1692,7 +1692,7 @@ class Controller:
                                         )
                             except Exception as e:
                                 self.logger.warning(
-                                    f"Optuna shard callback error for pipeline {pipeline_id}: {e}"
+                                    f"Optuna shard callback issue for pipeline {pipeline_id}: {e}"
                                 )
 
                         # Mark for cleanup
@@ -1789,7 +1789,19 @@ class Controller:
                         f"Busy actors: {status['busy_actors']}, "
                         f"Gen: {status['current_generation']}"
                     )
-                time.sleep(0.5)
+                # Block until something new happens so a dead actor's failed
+                # futures surface here. ray.wait must be filtered to not-yet-ready
+                # futures: any already-resolved batch ref would satisfy
+                # num_returns=1 and turn this into a tight spin.
+                all_futures = []
+                for task_info in active_tasks.values():
+                    all_futures.extend(task_info["futures"])
+                if all_futures:
+                    _ready, not_ready = ray.wait(all_futures, num_returns=len(all_futures), timeout=0)
+                    if not_ready:
+                        ray.wait(not_ready, num_returns=1, timeout=0.5)
+                else:
+                    time.sleep(0.5)
                 continue
 
             # Execute schedule
@@ -1921,35 +1933,54 @@ class Controller:
 
             self.logger.debug(f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})")
 
-            futures = []
-            preprocess_fn = pipeline_config.get("preprocess_fn")
-            postprocess_fn = pipeline_config.get("postprocess_fn")
-            compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
-            accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
-            for batch in batches:
-                future = actor.process_batch.remote(
-                    batch,
-                    preprocess_fn=preprocess_fn,
-                    postprocess_fn=postprocess_fn,
-                    compute_metrics_fn=compute_metrics_fn if accumulate_metrics_fn else None,
+            # Mirror the init-failure handler: if dispatch or bookkeeping
+            # raises, free the actor via remove_pipeline so it doesn't leak
+            # busy state.
+            try:
+                futures = []
+                preprocess_fn = pipeline_config.get("preprocess_fn")
+                postprocess_fn = pipeline_config.get("postprocess_fn")
+                compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
+                accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
+                for batch in batches:
+                    future = actor.process_batch.remote(
+                        batch,
+                        preprocess_fn=preprocess_fn,
+                        postprocess_fn=postprocess_fn,
+                        compute_metrics_fn=compute_metrics_fn if accumulate_metrics_fn else None,
+                    )
+                    futures.append(future)
+
+                # Track task
+                task_start_time = time.time()
+                active_tasks[actor_id] = {
+                    "futures": futures,
+                    "pipeline_id": pipeline_id,
+                    "shard_id": shard_id,
+                    "task_id": task_id,
+                    "batch_count": len(batches),
+                    "start_time": task_start_time,
+                }
+
+                # Update task status to in-progress
+                db.set_actor_task_start_time(task_id, task_start_time)
+                db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
+                db.set_pipeline_current_shard(pipeline_id, shard_id)
+            except Exception as dispatch_err:
+                error_msg = str(dispatch_err)
+                self.logger.exception(
+                    f"Pipeline {pipeline_id} ({pipeline_name}) failed during batch "
+                    f"dispatch on actor {actor_id}: {error_msg}"
                 )
-                futures.append(future)
-
-            # Track task
-            task_start_time = time.time()
-            active_tasks[actor_id] = {
-                "futures": futures,
-                "pipeline_id": pipeline_id,
-                "shard_id": shard_id,
-                "task_id": task_id,
-                "batch_count": len(batches),
-                "start_time": task_start_time,
-            }
-
-            # Update task status to in-progress
-            db.set_actor_task_start_time(task_id, task_start_time)
-            db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
-            db.set_pipeline_current_shard(pipeline_id, shard_id)
+                db.set_actor_task_status(task_id, TaskStatus.FAILED)
+                db.set_actor_task_error(task_id, error_msg)
+                db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
+                db.set_pipeline_error(pipeline_id, error_msg)
+                active_tasks.pop(actor_id, None)
+                scheduler.remove_pipeline(pipeline_id)
+                if progress_display:
+                    progress_display.update_pipeline(pipeline_id, status="FAILED")
+                continue
 
         # Finalize Optuna shard callback with final metrics from all pipelines.
         # We must accumulate the raw per-shard metric lists into flat dicts
@@ -1969,7 +2000,7 @@ class Controller:
                 shard_callback.finalize(final_cb_metrics)
                 self.logger.info("Optuna shard callback finalized")
             except Exception as e:
-                self.logger.warning(f"Optuna shard callback finalize error: {e}")
+                self.logger.warning(f"Optuna shard callback finalize issue: {e}")
 
         # PHASE 8: Compute final metrics for each pipeline (including dynamically cloned ones).
         # pipeline_id_to_config contains all pipelines (originals + clones added via _handle_clone).

@@ -1,6 +1,7 @@
 """This module contains the MLflowManager class which is responsible for managing the MLflow runs."""
 
 import os
+import re
 import mlflow
 from mlflow.tracking import MlflowClient
 from typing import Any
@@ -8,6 +9,30 @@ from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.utils.ping import ping_server
 from rapidfireai.utils.constants import MLflowConfig
 from rapidfireai.evals.utils.logger import RFLogger
+
+
+# MLflow only allows alphanumerics, underscores (_), dashes (-), periods (.),
+# colons (:), slashes (/), and spaces in metric and param names. Common
+# RAG/IR-style metric names such as ``NDCG@5`` or ``Recall@10`` therefore fail
+# MLflow validation and never reach the dashboard. We replace ``@`` with
+# ``_at_`` to preserve the human-readable intent (``NDCG@5`` -> ``NDCG_at_5``)
+# and fall back to ``_`` for any other disallowed character.
+_MLFLOW_NAME_INVALID_RE = re.compile(r"[^\w./\- :]")
+
+
+def _sanitize_mlflow_name(name: str) -> str:
+    """Convert a metric/param name into one MLflow accepts.
+
+    ``@`` is mapped to ``_at_`` so the meaning of names like ``NDCG@5`` is
+    preserved (``NDCG_at_5``); any other character outside MLflow's allowed
+    set is replaced with ``_``.
+    """
+    if not isinstance(name, str):
+        return name
+    # Map ``@`` first to preserve semantic meaning, then catch any other
+    # disallowed characters with a generic underscore replacement.
+    sanitized = name.replace("@", "_at_")
+    return _MLFLOW_NAME_INVALID_RE.sub("_", sanitized)
 
 
 class MLflowMetricLogger(MetricLogger):
@@ -54,11 +79,13 @@ class MLflowMetricLogger(MetricLogger):
 
     def log_param(self, run_id: str, key: str, value: str) -> None:
         """Log parameters to a specific run."""
-        self.client.log_param(run_id, key, value)
+        safe_key = _sanitize_mlflow_name(key)
+        self.client.log_param(run_id, safe_key, value)
 
     def log_metric(self, run_id: str, key: str, value: float, step: int = None) -> None:
         """Log a metric to a specific run."""
-        self.client.log_metric(run_id, key, value, step=step)
+        safe_key = _sanitize_mlflow_name(key)
+        self.client.log_metric(run_id, safe_key, value, step=step)
 
     def get_run_metrics(self, run_id: str) -> dict[str, list[tuple[int, float]]]:
         """

@@ -203,6 +203,21 @@ update_constants_tsx_file() {
     fi
 }
 
+update_staging_notebooks_version() {
+    local NEW_VERSION="$1"
+    print_info "Updating staging tutorial notebooks version..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        find "$PROJECT_ROOT/tests/staging/tutorial_notebooks" -type f -name "*.ipynb" -exec sed -i '' "s/rapidfireai==.*\"/rapidfireai==$NEW_VERSION # Takes 1 min\\\n\"/" {} \;
+    else
+        find "$PROJECT_ROOT/tests/staging/tutorial_notebooks" -type f -name "*.ipynb" -exec sed -i "s/rapidfireai==.*\"/rapidfireai==$NEW_VERSION # Takes 1 min\\\n\"/" {} \;
+    fi
+    if [ $? -ne 0 ]; then
+        print_error "Failed to update staging tutorial notebooks version"
+        exit 1
+    fi
+    print_success "✅ Successfully updated staging tutorial notebooks version"
+}
+
 copy_staging_tutorial_notebooks() {
     print_info "Copying staging tutorial notebooks..."
     cp -rf "$PROJECT_ROOT/tests/staging/tutorial_notebooks/." "$PROJECT_ROOT/tutorial_notebooks"
@@ -357,12 +372,13 @@ update_requirements_txt_file "$NEW_VERSION"
 
 print_success "Version updated to $NEW_VERSION"
 
+update_staging_notebooks_version "$NEW_VERSION"
 copy_staging_tutorial_notebooks
 
 if ! is_github_actions; then
     # Commit the changes
     print_info "Committing version bump..."
-    git add pyproject.toml requirements.txt rapidfireai/version.py rapidfireai/frontend/src/common/constants.tsx docs/BUILD.md README.md tutorial_notebooks
+    git add pyproject.toml requirements.txt rapidfireai/version.py rapidfireai/frontend/src/common/constants.tsx docs/BUILD.md README.md tutorial_notebooks tests/staging/tutorial_notebooks
     git commit -m "Bump version to $NEW_VERSION"
 
     # Create and push tag
