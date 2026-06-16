@@ -281,12 +281,12 @@ def install_packages(
         and evals
     ):
         print(
-            " ⚠️ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
+            "    Did not detect CUDA (nvcc and nvidia-smi unavailable).\n"
             "    Disabling CUDA usage for evaluation dependencies.\n"
             "    If you want to override this explicitly pass the CUDA version, for example:\n"
-            "        rapidfireai init --evals --cudaversion 12.4\n"
+            "        rapidfireai init --cudaversion 12.4\n"
             "    If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).\n"
-            "          If there is no GPU available, you can ignore this warning.",
+            "          If there is no GPU available, you can ignore this.",
             file=sys.stderr,
         )
         compute_capability_version = "0.0"
@@ -302,12 +302,12 @@ def install_packages(
         compute_cap = get_compute_capability()
         if compute_cap is None:
             print(
-                "⚠️ Could not detect GPU compute capability (nvidia-smi unavailable or failed).\n"
+                "   Did not detect GPU compute capability (nvidia-smi unavailable).\n"
                 "   Disabling CUDA usage for evaluation dependencies.\n"
                 "   Pass it explicitly, for example:\n"
-                "   rapidfireai init --evals --computecapabilityversion 8.0\n"
+                "   rapidfireai init --computecapabilityversion 8.0\n"
                 "   (Use your GPU's SM version, e.g. 8.9 for Ada, 9.0 for Blackwell.)\n"
-                "          If there is no GPU available, you can ignore this warning.",
+                "          If there is no GPU available, you can ignore this.",
                 file=sys.stderr,
             )
             compute_cap = 0.0
@@ -682,17 +682,17 @@ def main():
     parser = argparse.ArgumentParser(description="RapidFire AI - Start/stop/manage services", prog="rapidfireai",
     epilog="""
 Examples:
-  # Basic initialization for training
+  # Basic initialization with evaluation dependencies (default)
   rapidfireai init
-  #or
-  # Basic Initialize with evaluation dependencies
-  rapidfireai init --evals
+
+  # Initialize with training-only dependencies (skips evaluation dependencies)
+  rapidfireai init --train
 
   # Initialize with evaluation + multimodal document parsing dependencies
-  rapidfireai init --evals --multimodal
+  rapidfireai init --multimodal
 
   # Init when nvcc/nvidia-smi are unavailable (pin CUDA / compute capability)
-  rapidfireai init --evals --cudaversion 12.4 --computecapabilityversion 8.0
+  rapidfireai init --cudaversion 12.4 --computecapabilityversion 8.0
   
   # Start services
   rapidfireai start
@@ -750,7 +750,17 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     parser.add_argument("--force", "-f", action="store_true", help="Force action without confirmation")
 
-    parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
+    parser.add_argument(
+        "--evals",
+        action="store_true",
+        help="Initialize with evaluation dependencies (this is now the default)",
+    )
+
+    parser.add_argument(
+        "--train",
+        action="store_true",
+        help="Initialize with training-only dependencies (skips evaluation dependencies)",
+    )
 
     parser.add_argument(
         "--multimodal",
@@ -821,8 +831,11 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     # Handle init command separately
     if args.command == "init":
+        # Evaluation dependencies are installed by default; --train opts into a
+        # training-only install. --evals is kept for backwards compatibility.
+        evals = not args.train
         return run_init(
-            args.evals,
+            evals,
             multimodal=args.multimodal,
             cuda_version=args.cuda_version,
             compute_capability_version=args.compute_capability_version,

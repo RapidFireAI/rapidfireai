@@ -77,7 +77,7 @@ pip uninstall -y hf-xet
 
 # For Fine-tuning/Post-Training: Install specific dependencies and initialize rapidfireai
 
-rapidfireai init
+rapidfireai init --train
 rapidfireai start
 
 # It should print about 50 lines, including the following:
@@ -97,7 +97,7 @@ ssh -L 8853:localhost:8853 username@remote-machine
 
 
 # For RAG/Context Engineering Evals: Install specific dependencies and initialize rapidfireai
-rapidfireai init --evals
+rapidfireai init
 rapidfireai start
 
 # It should print about 50 lines, including the following:
