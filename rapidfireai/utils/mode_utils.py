@@ -43,18 +43,27 @@ def get_installed_mode() -> str | None:
     Returns:
         - The stripped file contents (e.g. ``"fit"`` or ``"evals"``) when the file
           exists and is non-empty.
-        - ``""`` when the file exists but is empty or whitespace-only. This is kept
-          distinct from ``None`` on purpose: ``setup/start.sh`` only defaults to the
-          evals dispatcher when ``cat`` *fails* (missing/unreadable file); a blank but
-          existing file yields an empty ``RAPIDFIRE_MODE`` and a broken dispatcher
-          path, so it must not be treated as the default.
-        - ``None`` when the file is missing or unreadable, mirroring the cases where
-          ``cat`` fails and ``start.sh`` falls back to evals.
+        - ``""`` when the file exists but is empty, whitespace-only, or not valid
+          UTF-8. These are kept distinct from ``None`` on purpose: ``setup/start.sh``
+          only defaults to the evals dispatcher when ``cat`` *fails* (missing file);
+          an existing blank/corrupt file still lets ``cat`` succeed, yielding an empty
+          or garbage ``RAPIDFIRE_MODE`` and a broken dispatcher path, so it must not be
+          treated as the default.
+        - ``None`` when the file is missing or unreadable (OS-level error), mirroring
+          the cases where ``cat`` fails and ``start.sh`` falls back to evals.
     """
     mode_file = Path(RF_HOME) / "rf_mode.txt"
     try:
         if mode_file.exists():
-            return mode_file.read_text().strip()
+            # utf-8-sig consumes a leading BOM (e.g. from a Windows editor) so a value
+            # like "﻿evals" still matches "evals" instead of failing the guard.
+            return mode_file.read_text(encoding="utf-8-sig").strip()
+    except UnicodeDecodeError:
+        # Present but not valid UTF-8 (corrupt mode file). Treat like a blank file:
+        # cat would still succeed in start.sh and build a broken dispatcher path, so
+        # return "" (present-but-invalid) to block with a remedy rather than letting a
+        # raw UnicodeDecodeError escape and bypass the mode-mismatch guidance.
+        return ""
     except OSError:
         return None
     return None
@@ -82,12 +91,13 @@ def assert_mode_matches(required: str, installed: str | None) -> None:
     """
     init_cmd = "rapidfireai init --train" if required == "fit" else "rapidfireai init"
 
-    # Empty/whitespace-only rf_mode.txt: not a missing file, so it cannot inherit the
-    # default. Tell the user the mode file is unreadable and how to recreate it.
+    # Blank/whitespace-only or corrupt (non-UTF-8) rf_mode.txt: not a missing file, so
+    # it cannot inherit the default. Tell the user the mode file is unreadable and how
+    # to recreate it.
     if installed == "":
         raise ValueError(
-            f"The installed RapidFire mode file (rf_mode.txt) is empty, but "
-            f"run_{required}() requires '{required}' mode. Re-initialize with "
+            f"The installed RapidFire mode file (rf_mode.txt) is empty or unreadable, "
+            f"but run_{required}() requires '{required}' mode. Re-initialize with "
             f"`{init_cmd}`, then restart services "
             f"(`rapidfireai stop && rapidfireai start`)."
         )

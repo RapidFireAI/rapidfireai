@@ -106,6 +106,7 @@ RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
 FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
 
 RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "evals")
+RAPIDFIRE_MODE="${RAPIDFIRE_MODE#$'\xEF\xBB\xBF'}"  # strip leading UTF-8 BOM, matches get_installed_mode()
 DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
 
 # Function to print colored output
@@ -753,6 +754,7 @@ show_status() {
     # rather than "unknown".
     mode_file="${RF_HOME}/rf_mode.txt"
     rf_mode=$(cat "$mode_file" 2>/dev/null || echo "evals")
+    rf_mode="${rf_mode#$'\xEF\xBB\xBF'}"  # strip leading UTF-8 BOM, matches get_installed_mode()
     rf_version=$(rapidfireai --version)
     print_status "${rf_version} Services Status, Mode: ${rf_mode}"
     echo "================================================"

@@ -30,6 +30,12 @@ class TestGetInstalledMode:
         (rf_home / "rf_mode.txt").write_text("  evals\n")
         assert get_installed_mode() == "evals"
 
+    @pytest.mark.parametrize("mode", ["fit", "evals"])
+    def test_strips_utf8_bom(self, rf_home, mode):
+        # A UTF-8 BOM prefix (e.g. from a Windows editor) must not break matching.
+        (rf_home / "rf_mode.txt").write_bytes(b"\xef\xbb\xbf" + mode.encode())
+        assert get_installed_mode() == mode
+
     def test_missing_file_returns_none(self, rf_home):
         assert get_installed_mode() is None
 
@@ -37,6 +43,13 @@ class TestGetInstalledMode:
         # Distinct from a missing file (None): start.sh only defaults to evals when
         # cat fails, so a present-but-blank file must not be read as "missing".
         (rf_home / "rf_mode.txt").write_text("   \n")
+        assert get_installed_mode() == ""
+
+    def test_invalid_utf8_returns_empty_string(self, rf_home):
+        # A corrupt (non-UTF-8) file must not raise UnicodeDecodeError; it is a
+        # present-but-invalid install, treated like a blank file ("") so the guard
+        # blocks with guidance instead of crashing with a raw traceback.
+        (rf_home / "rf_mode.txt").write_bytes(b"\xff\xfe\x00fit")
         assert get_installed_mode() == ""
 
 
