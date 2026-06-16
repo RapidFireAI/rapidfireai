@@ -105,7 +105,7 @@ RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
 FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
 
-RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "fit")
+RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "evals")
 DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
 
 # Function to print colored output

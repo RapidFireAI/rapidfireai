@@ -2,9 +2,9 @@
 Utilities for reading and validating the installed RapidFire mode.
 
 The installed mode ("fit" or "evals") is chosen at install time by
-``rapidfireai init`` / ``rapidfireai init --evals`` and persisted to
-``$RF_HOME/rf_mode.txt`` (see ``cli.py``). It permanently determines which
-dispatcher is started and which database it reads (see ``setup/start.sh``).
+``rapidfireai init`` (evals, the default) / ``rapidfireai init --train`` (fit) and
+persisted to ``$RF_HOME/rf_mode.txt`` (see ``cli.py``). It permanently determines
+which dispatcher is started and which database it reads (see ``setup/start.sh``).
 
 Because the dispatcher and IC Ops are bound to this mode, running an experiment
 in a different mode than the one installed produces a working-but-uncontrollable
@@ -13,17 +13,17 @@ helpers let ``run_fit()`` / ``run_evals()`` detect that mismatch and block early
 with an actionable error.
 
 When ``rf_mode.txt`` is missing or unreadable, ``setup/start.sh`` falls back to
-starting the ``"fit"`` dispatcher (``RAPIDFIRE_MODE=$(cat ... || echo "fit")``),
-so the effective installed mode in that case is ``"fit"``. The helpers below
-mirror that fallback so ``run_fit()`` is not blocked when services are already
-running in the default fit mode.
+starting the ``"evals"`` dispatcher (``RAPIDFIRE_MODE=$(cat ... || echo "evals")``),
+matching the install default, so the effective installed mode in that case is
+``"evals"``. The helpers below mirror that fallback so ``run_evals()`` is not
+blocked when services are already running in the default evals mode.
 
 That fallback hinges on ``cat`` *failing*. A file that exists but is empty or
 whitespace-only is different: ``cat`` succeeds and yields an empty
 ``RAPIDFIRE_MODE``, so ``start.sh`` builds a broken ``$RAPIDFIRE_DIR//dispatcher``
-path rather than the fit dispatcher. The helpers therefore keep a present-but-blank
+path rather than the evals dispatcher. The helpers therefore keep a present-but-blank
 file distinct from a missing one (``""`` vs ``None``) and refuse to treat it as the
-fit default, which would otherwise let the guard pass while services run a non-fit
+default, which would otherwise let the guard pass while services run a broken
 path — the exact mismatch this guard exists to prevent.
 """
 
@@ -31,8 +31,9 @@ from pathlib import Path
 
 from rapidfireai.utils.constants import RF_HOME
 
-# Mode that ``setup/start.sh`` starts when ``rf_mode.txt`` is absent.
-DEFAULT_MODE = "fit"
+# Mode that ``setup/start.sh`` starts when ``rf_mode.txt`` is absent (matches the
+# ``rapidfireai init`` install default). Keep in sync with ``setup/start.sh``.
+DEFAULT_MODE = "evals"
 
 
 def get_installed_mode() -> str | None:
@@ -44,11 +45,11 @@ def get_installed_mode() -> str | None:
           exists and is non-empty.
         - ``""`` when the file exists but is empty or whitespace-only. This is kept
           distinct from ``None`` on purpose: ``setup/start.sh`` only defaults to the
-          fit dispatcher when ``cat`` *fails* (missing/unreadable file); a blank but
+          evals dispatcher when ``cat`` *fails* (missing/unreadable file); a blank but
           existing file yields an empty ``RAPIDFIRE_MODE`` and a broken dispatcher
-          path, so it must not be treated as the fit default.
+          path, so it must not be treated as the default.
         - ``None`` when the file is missing or unreadable, mirroring the cases where
-          ``cat`` fails and ``start.sh`` falls back to fit.
+          ``cat`` fails and ``start.sh`` falls back to evals.
     """
     mode_file = Path(RF_HOME) / "rf_mode.txt"
     try:
@@ -64,9 +65,9 @@ def assert_mode_matches(required: str, installed: str | None) -> None:
     Ensure the installed mode matches the mode required by the operation.
 
     A missing mode (``installed is None``) is treated as ``DEFAULT_MODE``,
-    matching ``setup/start.sh``, which starts the fit dispatcher when
-    ``rf_mode.txt`` is absent or unreadable. This keeps ``run_fit()`` working when
-    services are already running in the default fit mode but no mode file was
+    matching ``setup/start.sh``, which starts the evals dispatcher when
+    ``rf_mode.txt`` is absent or unreadable. This keeps ``run_evals()`` working when
+    services are already running in the default evals mode but no mode file was
     written. A present-but-blank file (``installed == ""``) is *not* treated as the
     default — ``start.sh`` would build a broken dispatcher path for it — so it
     always fails the guard with a remedy.
@@ -79,10 +80,10 @@ def assert_mode_matches(required: str, installed: str | None) -> None:
         ValueError: If the effective installed mode does not equal ``required``.
             The message is actionable and tells the user how to fix the mismatch.
     """
-    init_cmd = "rapidfireai init" if required == "fit" else "rapidfireai init --evals"
+    init_cmd = "rapidfireai init --train" if required == "fit" else "rapidfireai init"
 
     # Empty/whitespace-only rf_mode.txt: not a missing file, so it cannot inherit the
-    # fit default. Tell the user the mode file is unreadable and how to recreate it.
+    # default. Tell the user the mode file is unreadable and how to recreate it.
     if installed == "":
         raise ValueError(
             f"The installed RapidFire mode file (rf_mode.txt) is empty, but "
