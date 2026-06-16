@@ -4,44 +4,50 @@ Utility functions for doctor command.
 
 import os
 import platform
-from pathlib import Path
-from rapidfireai.utils.python_info import get_python_info, get_pip_packages
+
+from rapidfireai.utils.constants import (
+    RF_DB_PATH,
+    RF_EXPERIMENT_PATH,
+    RF_HOME,
+    RF_LOG_FILENAME,
+    RF_LOG_PATH,
+    RF_MLFLOW_ENABLED,
+    RF_TENSORBOARD_ENABLED,
+    RF_TENSORBOARD_LOG_DIR,
+    RF_TRACKIO_ENABLED,
+    RF_TRAINING_LOG_FILENAME,
+    ColabConfig,
+    DispatcherConfig,
+    FrontendConfig,
+    JupyterConfig,
+    MLflowConfig,
+    RayConfig,
+)
 from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
-from rapidfireai.utils.ping import ping_server
+from rapidfireai.utils.mode_utils import DEFAULT_MODE, get_installed_mode
 from rapidfireai.utils.os_utils import (
     check_multimodal_os_packages,
     check_multimodal_python_packages,
 )
-from rapidfireai.utils.constants import (
-    JupyterConfig,
-    DispatcherConfig,
-    MLflowConfig,
-    FrontendConfig,
-    RayConfig,
-    ColabConfig,
-    RF_HOME,
-    RF_LOG_PATH,
-    RF_EXPERIMENT_PATH,
-    RF_DB_PATH,
-    RF_TENSORBOARD_LOG_DIR,
-    RF_TRAINING_LOG_FILENAME,
-    RF_MLFLOW_ENABLED,
-    RF_TENSORBOARD_ENABLED,
-    RF_TRACKIO_ENABLED,
-    RF_LOG_FILENAME,
-)
+from rapidfireai.utils.ping import ping_server
+from rapidfireai.utils.python_info import get_pip_packages, get_python_info
+
 
 def get_doctor_info(log_lines: int = 10):
     """
     Get doctor information.
     """
     status = 0
-    # Get mode from rf_mode.txt in RF_HOME
-    mode_file = Path(RF_HOME) / "rf_mode.txt"
-    if mode_file.exists():
-        mode = mode_file.read_text().strip()
+    # Get mode from rf_mode.txt in RF_HOME. A missing/unreadable file (None) means
+    # setup/start.sh falls back to the default dispatcher (see DEFAULT_MODE), so
+    # diagnose that mode — otherwise a valid default install with no mode file would
+    # skip mode-specific checks (e.g. multimodal). A present-but-blank file ("") is a
+    # broken install, so surface it as "unknown" rather than guessing.
+    installed = get_installed_mode()
+    if installed is None:
+        mode = DEFAULT_MODE
     else:
-        mode = "unknown"
+        mode = installed or "unknown"
     print(f"🩺 RapidFire AI System Diagnostics, Mode: {mode}")
     print("=" * 50)
 
@@ -164,7 +170,7 @@ def get_doctor_info(log_lines: int = 10):
         print(f"Torch Version: {major}.{minor}.{patch}")
     else:
         status = 1 if status == 0 else status
-        print("⚠️ Torch version not found") 
+        print("⚠️ Torch version not found")
     if int(torch_cuda_major) > 0:
         print(f"Torch CUDA Version: {torch_cuda_major}.{torch_cuda_minor}")
     else:
@@ -182,8 +188,9 @@ def get_doctor_info(log_lines: int = 10):
             status = 1 if status == 0 else status
             print("⚠️ Could not detect a supported OS package manager; cannot verify OS packages.")
             print(f"   Distro detected: {os_check['distro_id'] or 'unknown'}")
-            print("   Expected packages (Debian/Ubuntu names): "
-                  + ", ".join(p["canonical"] for p in os_check["packages"]))
+            print(
+                "   Expected packages (Debian/Ubuntu names): " + ", ".join(p["canonical"] for p in os_check["packages"])
+            )
         else:
             print(f"OS Package Manager: {os_check['manager']} (distro: {os_check['distro_id'] or 'unknown'})")
             any_missing = False
@@ -217,15 +224,15 @@ def get_doctor_info(log_lines: int = 10):
             print("   Reinstall with: rapidfireai init --evals --multimodal")
 
     # Check RapidFire AI ports
-    print ("\n🛜 RapidFire AI Ports:")
-    print ("-" * 30)
+    print("\n🛜 RapidFire AI Ports:")
+    print("-" * 30)
     for check_item in [
-        {"host": JupyterConfig.HOST, "port": JupyterConfig.PORT, "service": "Jupyter"}, 
-        {"host": DispatcherConfig.HOST, "port": DispatcherConfig.PORT, "service": "API(Dispatcher)"}, 
+        {"host": JupyterConfig.HOST, "port": JupyterConfig.PORT, "service": "Jupyter"},
+        {"host": DispatcherConfig.HOST, "port": DispatcherConfig.PORT, "service": "API(Dispatcher)"},
         {"host": MLflowConfig.HOST, "port": MLflowConfig.PORT, "service": "MLflow"},
         {"host": FrontendConfig.HOST, "port": FrontendConfig.PORT, "service": "Frontend"},
-        {"host": RayConfig.HOST, "port": RayConfig.PORT, "service": "Ray"}]:
-
+        {"host": RayConfig.HOST, "port": RayConfig.PORT, "service": "Ray"},
+    ]:
         for host_index, host_check in enumerate(["127.0.0.1", check_item["host"]]):
             if host_index == 0 or (host_check not in ["127.0.0.1", "0.0.0.0"]):
                 checker = ping_server(host_check, check_item["port"])
@@ -233,7 +240,7 @@ def get_doctor_info(log_lines: int = 10):
                     print(f"{check_item['service']}: is currently Listening on {host_check}:{check_item['port']}")
                 else:
                     print(f"{check_item['service']}: is NOT currently listening on {host_check}:{check_item['port']}")
-        
+
     # System Information
     print("\n💻 System Information:")
     print("-" * 30)
@@ -279,7 +286,7 @@ def get_doctor_info(log_lines: int = 10):
             print(f"\n📄{current_item}:")
             if log_lines != 0:
                 if not os.path.isdir(current_item):
-                    with open(current_item, "r", encoding="utf-8") as f:
+                    with open(current_item, encoding="utf-8") as f:
                         lines = f.readlines()
                         read_lines = lines[-log_lines:]
                         if log_lines == -1:

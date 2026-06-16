@@ -105,7 +105,9 @@ RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
 FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
 
-RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "fit")
+RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "evals")
+RAPIDFIRE_MODE="${RAPIDFIRE_MODE#$'\xEF\xBB\xBF'}"   # strip leading UTF-8 BOM
+RAPIDFIRE_MODE="${RAPIDFIRE_MODE//[$' \t\r\n']/}"    # strip surrounding whitespace/CR, matches get_installed_mode().strip()
 DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
 
 # Function to print colored output
@@ -748,13 +750,13 @@ start_frontend_if_needed() {
 
 # Function to display running services
 show_status() {
-    # Get mode from rf_mode.txt in RF_HOME
+    # Get mode from rf_mode.txt in RF_HOME. Mirror the dispatcher selection above:
+    # a missing/unreadable file falls back to the default ("evals"), so report that
+    # rather than "unknown".
     mode_file="${RF_HOME}/rf_mode.txt"
-    if [[ -f "$mode_file" ]]; then
-        rf_mode=$(cat "$mode_file")
-    else
-        rf_mode="unknown"
-    fi
+    rf_mode=$(cat "$mode_file" 2>/dev/null || echo "evals")
+    rf_mode="${rf_mode#$'\xEF\xBB\xBF'}"   # strip leading UTF-8 BOM
+    rf_mode="${rf_mode//[$' \t\r\n']/}"    # strip surrounding whitespace/CR, matches get_installed_mode().strip()
     rf_version=$(rapidfireai --version)
     print_status "${rf_version} Services Status, Mode: ${rf_mode}"
     echo "================================================"
