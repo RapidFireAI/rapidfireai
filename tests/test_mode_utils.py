@@ -33,9 +33,11 @@ class TestGetInstalledMode:
     def test_missing_file_returns_none(self, rf_home):
         assert get_installed_mode() is None
 
-    def test_empty_file_returns_none(self, rf_home):
+    def test_empty_file_returns_empty_string(self, rf_home):
+        # Distinct from a missing file (None): start.sh only defaults to fit when
+        # cat fails, so a present-but-blank file must not be read as "missing".
         (rf_home / "rf_mode.txt").write_text("   \n")
-        assert get_installed_mode() is None
+        assert get_installed_mode() == ""
 
 
 class TestAssertModeMatches:
@@ -69,6 +71,17 @@ class TestAssertModeMatches:
         msg = str(excinfo.value)
         assert "fit" in msg
         assert "rapidfireai init --evals" in msg
+
+    @pytest.mark.parametrize("required", ["fit", "evals"])
+    def test_empty_mode_blocks_with_remedy(self, required):
+        # A present-but-blank rf_mode.txt is NOT the missing-file fit default:
+        # start.sh would build a broken dispatcher path, so the guard must fail
+        # even for run_fit().
+        with pytest.raises(ValueError) as excinfo:
+            assert_mode_matches(required, "")
+        msg = str(excinfo.value)
+        assert "rf_mode.txt" in msg
+        assert "rapidfireai init" in msg
 
     def test_init_command_matches_required_mode(self):
         with pytest.raises(ValueError) as fit_err:

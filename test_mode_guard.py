@@ -39,3 +39,5 @@ check("installed=evals, run_evals (should allow)", "evals", "evals", should_pass
 check("installed=fit,   run_evals (should block)", "fit", "evals", should_pass=False)
 check("missing file,    run_fit   (should allow)", None, "fit", should_pass=True)
 check("missing file,    run_evals (should block)", None, "evals", should_pass=False)
+check("empty file,      run_fit   (should block)", "", "fit", should_pass=False)
+check("empty file,      run_evals (should block)", "", "evals", should_pass=False)
