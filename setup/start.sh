@@ -748,13 +748,11 @@ start_frontend_if_needed() {
 
 # Function to display running services
 show_status() {
-    # Get mode from rf_mode.txt in RF_HOME
+    # Get mode from rf_mode.txt in RF_HOME. Mirror the dispatcher selection above:
+    # a missing/unreadable file falls back to the default ("evals"), so report that
+    # rather than "unknown".
     mode_file="${RF_HOME}/rf_mode.txt"
-    if [[ -f "$mode_file" ]]; then
-        rf_mode=$(cat "$mode_file")
-    else
-        rf_mode="unknown"
-    fi
+    rf_mode=$(cat "$mode_file" 2>/dev/null || echo "evals")
     rf_version=$(rapidfireai --version)
     print_status "${rf_version} Services Status, Mode: ${rf_mode}"
     echo "================================================"

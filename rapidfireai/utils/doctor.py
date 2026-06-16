@@ -24,7 +24,7 @@ from rapidfireai.utils.constants import (
     RayConfig,
 )
 from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
-from rapidfireai.utils.mode_utils import get_installed_mode
+from rapidfireai.utils.mode_utils import DEFAULT_MODE, get_installed_mode
 from rapidfireai.utils.os_utils import (
     check_multimodal_os_packages,
     check_multimodal_python_packages,
@@ -38,8 +38,16 @@ def get_doctor_info(log_lines: int = 10):
     Get doctor information.
     """
     status = 0
-    # Get mode from rf_mode.txt in RF_HOME
-    mode = get_installed_mode() or "unknown"
+    # Get mode from rf_mode.txt in RF_HOME. A missing/unreadable file (None) means
+    # setup/start.sh falls back to the default dispatcher (see DEFAULT_MODE), so
+    # diagnose that mode — otherwise a valid default install with no mode file would
+    # skip mode-specific checks (e.g. multimodal). A present-but-blank file ("") is a
+    # broken install, so surface it as "unknown" rather than guessing.
+    installed = get_installed_mode()
+    if installed is None:
+        mode = DEFAULT_MODE
+    else:
+        mode = installed or "unknown"
     print(f"🩺 RapidFire AI System Diagnostics, Mode: {mode}")
     print("=" * 50)
 
