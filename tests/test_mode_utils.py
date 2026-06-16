@@ -56,13 +56,19 @@ class TestAssertModeMatches:
         # Message must guide the user to re-initialize.
         assert "rapidfireai init" in msg
 
-    @pytest.mark.parametrize("required", ["fit", "evals"])
-    def test_missing_mode_raises_with_remedy(self, required):
+    def test_missing_mode_allows_fit(self):
+        # start.sh defaults to the fit dispatcher when rf_mode.txt is absent, so
+        # run_fit() must not be blocked just because the mode file is missing.
+        assert assert_mode_matches("fit", None) is None
+
+    def test_missing_mode_blocks_evals_with_remedy(self):
+        # With no mode file, services run in the default fit mode, so run_evals()
+        # would be uncontrollable and must still be blocked.
         with pytest.raises(ValueError) as excinfo:
-            assert_mode_matches(required, None)
+            assert_mode_matches("evals", None)
         msg = str(excinfo.value)
-        assert "rf_mode.txt" in msg
-        assert "rapidfireai init" in msg
+        assert "fit" in msg
+        assert "rapidfireai init --evals" in msg
 
     def test_init_command_matches_required_mode(self):
         with pytest.raises(ValueError) as fit_err:

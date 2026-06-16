@@ -92,6 +92,16 @@ class Experiment:
         if num_gpus is not None and num_gpus < 0:
             display_pretty_error(f"Invalid number of GPUs: {num_gpus}. Must be non-negative")
 
+        # Block early if the installed mode (rf_mode.txt) conflicts with the requested mode.
+        # The conflict is knowable here, before any heavy init (ray.init, DB setup) runs;
+        # otherwise the dispatcher/IC Ops would be bound to the wrong database and silently
+        # stay disabled. Validated here rather than in run_fit()/run_evals() so the mismatch
+        # surfaces before, not after, the expensive setup below.
+        try:
+            assert_mode_matches(mode, get_installed_mode())
+        except ValueError as e:
+            display_pretty_error(str(e))
+
         # Initialize based on mode
         if mode == "fit":
             self._init_fit_mode()
@@ -400,12 +410,7 @@ class Experiment:
         if self.mode != "fit":
             raise ValueError("run_fit() is only available in 'fit' mode")
 
-        # Block if the installed mode (rf_mode.txt) conflicts with fit mode — otherwise the
-        # dispatcher/IC Ops would be bound to the wrong database and silently stay disabled.
-        try:
-            assert_mode_matches("fit", get_installed_mode())
-        except ValueError as e:
-            display_pretty_error(str(e))
+        # Installed-mode validation (rf_mode.txt) happens in __init__, before heavy setup.
 
         from rapidfireai.fit.backend.controller import Controller
 
@@ -534,12 +539,7 @@ class Experiment:
         if self.mode != "evals":
             raise ValueError("run_evals() is only available in 'evals' mode")
 
-        # Block if the installed mode (rf_mode.txt) conflicts with evals mode — otherwise the
-        # dispatcher/IC Ops would be bound to the wrong database and silently stay disabled.
-        try:
-            assert_mode_matches("evals", get_installed_mode())
-        except ValueError as e:
-            display_pretty_error(str(e))
+        # Installed-mode validation (rf_mode.txt) happens in __init__, before heavy setup.
 
         from rapidfireai.evals.utils.constants import ExperimentStatus
 

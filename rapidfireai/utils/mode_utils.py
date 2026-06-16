@@ -11,11 +11,20 @@ in a different mode than the one installed produces a working-but-uncontrollable
 experiment (the IC Ops panel checks the wrong database and stays disabled). These
 helpers let ``run_fit()`` / ``run_evals()`` detect that mismatch and block early
 with an actionable error.
+
+When ``rf_mode.txt`` is missing, ``setup/start.sh`` falls back to starting the
+``"fit"`` dispatcher (``RAPIDFIRE_MODE=$(cat ... || echo "fit")``), so the
+effective installed mode in that case is ``"fit"``. The helpers below mirror that
+fallback so ``run_fit()`` is not blocked when services are already running in the
+default fit mode.
 """
 
 from pathlib import Path
 
 from rapidfireai.utils.constants import RF_HOME
+
+# Mode that ``setup/start.sh`` starts when ``rf_mode.txt`` is absent.
+DEFAULT_MODE = "fit"
 
 
 def get_installed_mode() -> str | None:
@@ -39,30 +48,28 @@ def assert_mode_matches(required: str, installed: str | None) -> None:
     """
     Ensure the installed mode matches the mode required by the operation.
 
+    A missing mode (``installed is None``) is treated as ``DEFAULT_MODE``,
+    matching ``setup/start.sh``, which starts the fit dispatcher when
+    ``rf_mode.txt`` is absent. This keeps ``run_fit()`` working when services are
+    already running in the default fit mode but no mode file was written.
+
     Args:
         required: The mode the operation needs ("fit" or "evals").
         installed: The installed mode as returned by ``get_installed_mode()``.
 
     Raises:
-        ValueError: If ``installed`` does not equal ``required``. The message is
-            actionable and tells the user how to fix the mismatch.
+        ValueError: If the effective installed mode does not equal ``required``.
+            The message is actionable and tells the user how to fix the mismatch.
     """
-    if installed == required:
+    effective = installed if installed is not None else DEFAULT_MODE
+    if effective == required:
         return
 
     init_cmd = "rapidfireai init" if required == "fit" else "rapidfireai init --evals"
 
-    if installed is None:
-        raise ValueError(
-            f"Could not determine the installed RapidFire mode (rf_mode.txt not found). "
-            f"run_{required}() requires '{required}' mode. "
-            f"Initialize RapidFire with `{init_cmd}`, then restart services "
-            f"(`rapidfireai stop && rapidfireai start`)."
-        )
-
     raise ValueError(
-        f"RapidFire is installed in '{installed}' mode, but run_{required}() requires "
-        f"'{required}' mode. The dispatcher and IC Ops are bound to '{installed}' mode, so "
+        f"RapidFire is installed in '{effective}' mode, but run_{required}() requires "
+        f"'{required}' mode. The dispatcher and IC Ops are bound to '{effective}' mode, so "
         f"'{required}' experiments will run but won't be controllable from the dashboard. "
         f"Re-initialize with `{init_cmd}`, then restart services "
         f"(`rapidfireai stop && rapidfireai start`)."
