@@ -135,32 +135,29 @@ class QueryProcessingActor:
 
             config_hash = hashlib.md5(config_str.encode()).hexdigest()
 
+            # Two situations can leave a stale ``current_engine_config_hash``
+            # paired with a missing or torn-down ``inference_engine``:
+            #
+            #  1) A prior ``initialize_for_pipeline`` raised after the cleanup
+            #     branch ran but before ``inference_engine`` was re-created.
+            #  2) External ``cleanup()`` released the engine without resetting
+            #     the hash.
+            #
+            # If the next pipeline happens to share the same engine config (true
+            # for every API-only experiment that uses a single shared generator,
+            # such as SciFact's Gemini setup under ``num_shards > 1``), the
+            # ``hash matches`` short-circuit below would otherwise reuse a
+            # nonexistent engine and ``process_batch`` would AttributeError.
+            # Normalising to a clean ``None`` state up-front forces a rebuild.
+            if getattr(self, "inference_engine", None) is None:
+                self.current_engine_config_hash = None
+
             # Only reinitialize if the engine config has changed
             if self.current_engine_config_hash != config_hash:
                 # Clean up old engine if it exists
                 if self.inference_engine is not None:
                     self.logger.info(f"Cleaning up old inference engine (hash: {self.current_engine_config_hash[:8]})")
-                    try:
-                        self.inference_engine.cleanup()
-                    except Exception as e:
-                        self.logger.warning(f"Error during engine cleanup: {e}")
-
-                    # Force garbage collection and GPU memory release
-                    del self.inference_engine
-                    import gc
-
-                    gc.collect()
-
-                    # For CUDA, explicitly empty cache
-                    try:
-                        import torch
-
-                        if torch.cuda.is_available():
-                            torch.cuda.empty_cache()
-                            torch.cuda.synchronize()
-                            self.logger.info("GPU memory cache cleared")
-                    except ImportError:
-                        pass
+                    self._teardown_inference_engine()
 
                 self.logger.info(f"Initializing new inference engine (config hash: {config_hash[:8]})")
                 self.inference_engine = engine_class(**engine_kwargs)
@@ -436,9 +433,45 @@ class QueryProcessingActor:
                 f"Error processing batch: {error_type}: {error_message}"
             ) from None  # Don't chain to avoid serialization issues
 
+    def _teardown_inference_engine(self) -> None:
+        """Release the current inference engine, clear bookkeeping, and free GPU memory.
+
+        Always leaves ``self.inference_engine`` set to ``None`` (never deleted)
+        and ``self.current_engine_config_hash`` cleared, so that any subsequent
+        ``initialize_for_pipeline`` -- including one that re-uses the previous
+        engine's config hash -- correctly rebuilds the engine instead of
+        short-circuiting onto a freed handle.
+        """
+        if self.inference_engine is None:
+            self.current_engine_config_hash = None
+            return
+        try:
+            self.inference_engine.cleanup()
+        except Exception as e:
+            self.logger.warning(f"Error during engine cleanup: {e}")
+        # Assigning ``None`` (rather than ``del``) keeps the attribute defined
+        # so later ``is not None`` checks remain valid even if a fresh engine
+        # never gets created (e.g. exception during ``engine_class(...)``).
+        self.inference_engine = None
+        self.current_engine_config_hash = None
+
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                self.logger.info("GPU memory cache cleared")
+        except ImportError:
+            pass
+
     def cleanup(self):
-        """Clean up inference engine resources."""
-        self.inference_engine.cleanup()
+        """Clean up inference engine resources.
+
+        Safe to call multiple times and when no engine is currently loaded.
+        """
+        self._teardown_inference_engine()
 
 
 # Export for external use

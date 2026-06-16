@@ -1671,6 +1671,26 @@ class Controller:
                                                 "start_time": None,
                                             }
                                             scheduler.add_pipeline(new_pid, shards_completed=0)
+
+                                            # Replacement pipelines must inherit the
+                                            # parent's API resources. The rate limiter
+                                            # actor + max-completion-tokens maps are only
+                                            # populated for the initial wave of pipelines
+                                            # at experiment setup; without copying the
+                                            # parent's (``pipeline_id``) entries here the
+                                            # worker would build an ``APIInferenceEngine``
+                                            # with no ``rate_limiter_actor`` and fail to
+                                            # initialize (only manifests under sharding,
+                                            # where pruning + relaunch actually happens).
+                                            if pipeline_id in pipeline_to_rate_limiter:
+                                                pipeline_to_rate_limiter[new_pid] = (
+                                                    pipeline_to_rate_limiter[pipeline_id]
+                                                )
+                                            if pipeline_id in pipeline_to_max_completion_tokens:
+                                                pipeline_to_max_completion_tokens[new_pid] = (
+                                                    pipeline_to_max_completion_tokens[pipeline_id]
+                                                )
+
                                             if hasattr(shard_callback, "_remap_pending_trial"):
                                                 shard_callback._remap_pending_trial(new_pid)
 
@@ -1789,7 +1809,19 @@ class Controller:
                         f"Busy actors: {status['busy_actors']}, "
                         f"Gen: {status['current_generation']}"
                     )
-                time.sleep(0.5)
+                # Block until something new happens so a dead actor's failed
+                # futures surface here. ray.wait must be filtered to not-yet-ready
+                # futures: any already-resolved batch ref would satisfy
+                # num_returns=1 and turn this into a tight spin.
+                all_futures = []
+                for task_info in active_tasks.values():
+                    all_futures.extend(task_info["futures"])
+                if all_futures:
+                    _ready, not_ready = ray.wait(all_futures, num_returns=len(all_futures), timeout=0)
+                    if not_ready:
+                        ray.wait(not_ready, num_returns=1, timeout=0.5)
+                else:
+                    time.sleep(0.5)
                 continue
 
             # Execute schedule
@@ -1921,35 +1953,54 @@ class Controller:
 
             self.logger.debug(f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})")
 
-            futures = []
-            preprocess_fn = pipeline_config.get("preprocess_fn")
-            postprocess_fn = pipeline_config.get("postprocess_fn")
-            compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
-            accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
-            for batch in batches:
-                future = actor.process_batch.remote(
-                    batch,
-                    preprocess_fn=preprocess_fn,
-                    postprocess_fn=postprocess_fn,
-                    compute_metrics_fn=compute_metrics_fn if accumulate_metrics_fn else None,
+            # Mirror the init-failure handler: if dispatch or bookkeeping
+            # raises, free the actor via remove_pipeline so it doesn't leak
+            # busy state.
+            try:
+                futures = []
+                preprocess_fn = pipeline_config.get("preprocess_fn")
+                postprocess_fn = pipeline_config.get("postprocess_fn")
+                compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
+                accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
+                for batch in batches:
+                    future = actor.process_batch.remote(
+                        batch,
+                        preprocess_fn=preprocess_fn,
+                        postprocess_fn=postprocess_fn,
+                        compute_metrics_fn=compute_metrics_fn if accumulate_metrics_fn else None,
+                    )
+                    futures.append(future)
+
+                # Track task
+                task_start_time = time.time()
+                active_tasks[actor_id] = {
+                    "futures": futures,
+                    "pipeline_id": pipeline_id,
+                    "shard_id": shard_id,
+                    "task_id": task_id,
+                    "batch_count": len(batches),
+                    "start_time": task_start_time,
+                }
+
+                # Update task status to in-progress
+                db.set_actor_task_start_time(task_id, task_start_time)
+                db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
+                db.set_pipeline_current_shard(pipeline_id, shard_id)
+            except Exception as dispatch_err:
+                error_msg = str(dispatch_err)
+                self.logger.exception(
+                    f"Pipeline {pipeline_id} ({pipeline_name}) failed during batch "
+                    f"dispatch on actor {actor_id}: {error_msg}"
                 )
-                futures.append(future)
-
-            # Track task
-            task_start_time = time.time()
-            active_tasks[actor_id] = {
-                "futures": futures,
-                "pipeline_id": pipeline_id,
-                "shard_id": shard_id,
-                "task_id": task_id,
-                "batch_count": len(batches),
-                "start_time": task_start_time,
-            }
-
-            # Update task status to in-progress
-            db.set_actor_task_start_time(task_id, task_start_time)
-            db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
-            db.set_pipeline_current_shard(pipeline_id, shard_id)
+                db.set_actor_task_status(task_id, TaskStatus.FAILED)
+                db.set_actor_task_error(task_id, error_msg)
+                db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
+                db.set_pipeline_error(pipeline_id, error_msg)
+                active_tasks.pop(actor_id, None)
+                scheduler.remove_pipeline(pipeline_id)
+                if progress_display:
+                    progress_display.update_pipeline(pipeline_id, status="FAILED")
+                continue
 
         # Finalize Optuna shard callback with final metrics from all pipelines.
         # We must accumulate the raw per-shard metric lists into flat dicts

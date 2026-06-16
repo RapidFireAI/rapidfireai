@@ -239,6 +239,7 @@ commands.sh
 node_modules/
 package-lock.json
 rapidfireai/rapidfire_pids.txt
+converge_pids.txt
 
 # frontend build
 rapidfireai/frontend/build/

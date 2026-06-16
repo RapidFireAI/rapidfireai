@@ -528,6 +528,10 @@ def _configure_training_args(
     if training_args.get("logging_first_step", False) and completed_steps > 0:
         training_args.pop("logging_first_step")
 
+    # RapidFire manages its own save cadence (see worker.run_fit). The HF/TRL
+    # trainer never auto-saves. The RapidFire-specific "chunk" sentinel is also
+    # mapped to "no" here so it never reaches HF validation; the original value
+    # is preserved on config_leaf for the worker to read.
     training_args["save_strategy"] = "no"
     training_args["do_train"] = True
     training_args["do_eval"] = True
