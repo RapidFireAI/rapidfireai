@@ -9,14 +9,14 @@ which dispatcher is started and which database it reads (see ``setup/start.sh``)
 Because the dispatcher and IC Ops are bound to this mode, running an experiment
 in a different mode than the one installed produces a working-but-uncontrollable
 experiment (the IC Ops panel checks the wrong database and stays disabled). These
-helpers let ``run_fit()`` / ``run_evals()`` detect that mismatch and block early
-with an actionable error.
+helpers let ``Experiment.__init__`` detect that mismatch and block early with an
+actionable error.
 
 When ``rf_mode.txt`` is missing or unreadable, ``setup/start.sh`` falls back to
 starting the ``"evals"`` dispatcher (``RAPIDFIRE_MODE=$(cat ... || echo "evals")``),
 matching the install default, so the effective installed mode in that case is
-``"evals"``. The helpers below mirror that fallback so ``run_evals()`` is not
-blocked when services are already running in the default evals mode.
+``"evals"``. The helpers below mirror that fallback so a default evals experiment is
+not blocked when services are already running in the default evals mode.
 
 That fallback hinges on ``cat`` *failing*. A file that exists but is empty or
 whitespace-only is different: ``cat`` succeeds and yields an empty
@@ -75,10 +75,10 @@ def assert_mode_matches(required: str, installed: str | None) -> None:
 
     A missing mode (``installed is None``) is treated as ``DEFAULT_MODE``,
     matching ``setup/start.sh``, which starts the evals dispatcher when
-    ``rf_mode.txt`` is absent or unreadable. This keeps ``run_evals()`` working when
-    services are already running in the default evals mode but no mode file was
-    written. A present-but-blank file (``installed == ""``) is *not* treated as the
-    default — ``start.sh`` would build a broken dispatcher path for it — so it
+    ``rf_mode.txt`` is absent or unreadable. This keeps a default evals experiment
+    working when services are already running in the default evals mode but no mode
+    file was written. A present-but-blank file (``installed == ""``) is *not* treated
+    as the default — ``start.sh`` would build a broken dispatcher path for it — so it
     always fails the guard with a remedy.
 
     Args:
@@ -97,8 +97,8 @@ def assert_mode_matches(required: str, installed: str | None) -> None:
     if installed == "":
         raise ValueError(
             f"The installed RapidFire mode file (rf_mode.txt) is empty or unreadable, "
-            f"but run_{required}() requires '{required}' mode. Re-initialize with "
-            f"`{init_cmd}`, then restart services "
+            f"but this experiment is configured for '{required}' mode. Re-initialize "
+            f"with `{init_cmd}`, then restart services "
             f"(`rapidfireai stop && rapidfireai start`)."
         )
 
@@ -107,9 +107,9 @@ def assert_mode_matches(required: str, installed: str | None) -> None:
         return
 
     raise ValueError(
-        f"RapidFire is installed in '{effective}' mode, but run_{required}() requires "
-        f"'{required}' mode. The dispatcher and IC Ops are bound to '{effective}' mode, so "
-        f"'{required}' experiments will run but won't be controllable from the dashboard. "
+        f"RapidFire is installed in '{effective}' mode, but this experiment is configured "
+        f"for '{required}' mode. The dispatcher and IC Ops are bound to '{effective}' mode, "
+        f"so '{required}' experiments will run but won't be controllable from the dashboard. "
         f"Re-initialize with `{init_cmd}`, then restart services "
         f"(`rapidfireai stop && rapidfireai start`)."
     )

@@ -61,7 +61,7 @@ class Experiment:
     def __init__(
         self,
         experiment_name: str,
-        mode: str = "fit",
+        mode: str = "evals",
         experiment_path: str = RF_EXPERIMENT_PATH,
         num_cpus: int = None,
         num_gpus: int = None,
@@ -71,7 +71,8 @@ class Experiment:
 
         Args:
             experiment_name: Name of the experiment
-            mode: Either "fit" or "evals"
+            mode: Either "fit" or "evals". Defaults to "evals", matching the
+                ``rapidfireai init`` install default ("fit" is the ``--train`` opt-in).
             experiment_path: Path to store experiment artifacts (default: $RF_HOME/rapidfire_experiments)
 
         Raises:
