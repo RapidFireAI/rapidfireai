@@ -9,6 +9,8 @@ import logging
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse, urljoin
 import requests
+from requests.exceptions import ChunkedEncodingError, ConnectionError as RequestsConnectionError
+from urllib3.exceptions import ProtocolError
 from flask import Flask, request, Response, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 from rapidfireai.utils.constants import DispatcherConfig, MLflowConfig
@@ -197,19 +199,55 @@ class ProxyMiddleware:
                 stream=True,
                 timeout=30
             )
-            
-            # Create response
+
+            # Wrap iter_content in a generator that absorbs upstream connection
+            # failures (e.g. backend worker SIGSEGV / restart mid-stream). Without
+            # this, werkzeug propagates ChunkedEncodingError / ProtocolError up to
+            # gunicorn which logs a full traceback as "Socket error processing
+            # request." for every transient hiccup.
+            def _safe_iter(upstream, chunk_size=8192):
+                try:
+                    for chunk in upstream.iter_content(chunk_size=chunk_size):
+                        if chunk:
+                            yield chunk
+                except (ChunkedEncodingError, ProtocolError, RequestsConnectionError) as stream_err:
+                    logger.warning(
+                        "Upstream connection broken while proxying %s -> %s: %s",
+                        path, target_url, stream_err,
+                    )
+                    return
+                finally:
+                    try:
+                        upstream.close()
+                    except Exception:
+                        pass
+
+            # Strip hop-by-hop headers that may confuse downstream chunked
+            # transfer when we've already re-chunked the body.
+            hop_by_hop = {
+                "content-encoding", "content-length", "transfer-encoding",
+                "connection", "keep-alive", "proxy-authenticate",
+                "proxy-authorization", "te", "trailers", "upgrade",
+            }
+            safe_headers = [
+                (k, v) for k, v in response.headers.items()
+                if k.lower() not in hop_by_hop
+            ]
+
             proxy_response = Response(
-                response.iter_content(chunk_size=8192),
+                _safe_iter(response),
                 status=response.status_code,
-                headers=dict(response.headers)
+                headers=safe_headers,
             )
-            
+
             return proxy_response
             
+        except (ChunkedEncodingError, ProtocolError, RequestsConnectionError) as e:
+            logger.warning(f'Upstream connection error while proxying {path}: {e}')
+            return Response('Bad Gateway', status=502)
         except requests.exceptions.RequestException as e:
             logger.error(f'Proxy Error: {e}')
-            return Response('Proxy Error', status=500)
+            return Response('Proxy Error', status=502)
         except Exception as e:
             logger.error(f'Unexpected error in proxy: {e}')
             return Response('Internal Server Error', status=500)

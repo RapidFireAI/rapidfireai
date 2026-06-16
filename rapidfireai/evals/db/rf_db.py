@@ -553,7 +553,7 @@ class RFDatabase:
         )
         return self.db.cursor.lastrowid
 
-    def set_pipeline_progress(self, pipeline_id: int) -> dict[str, Any] | None:
+    def set_pipeline_progress(self, pipeline_id: int, include_decoded_config: bool = True) -> dict[str, Any] | None:
         """
         Get pipeline by ID (legacy method name - actually gets pipeline, not sets progress).
 
@@ -573,8 +573,15 @@ class RFDatabase:
         result = self.db.execute(query, (pipeline_id,), fetch=True)
         if result:
             row = result[0]
-            # Decode the pipeline config from the database (use pipeline_config column)
-            decoded_config = decode_db_payload(row[3]) if row[3] else None
+            # Decoding the pipeline_config blob via dill.loads is expensive and
+            # has SIGSEGV'd workers in the past (large FAISS / embedder objects).
+            # Only do it when the caller explicitly needs the live Python object.
+            decoded_config = None
+            if include_decoded_config and row[3]:
+                try:
+                    decoded_config = decode_db_payload(row[3])
+                except Exception:
+                    decoded_config = None
             # Parse JSON config for display/analytics
             import json
 
@@ -595,7 +602,7 @@ class RFDatabase:
             }
         return None
 
-    def get_pipeline_by_metric_run_id(self, metric_run_id: str) -> dict[str, Any] | None:
+    def get_pipeline_by_metric_run_id(self, metric_run_id: str, include_decoded_config: bool = True) -> dict[str, Any] | None:
         """
         Get pipeline by its metric_run_id (MLflow/Trackio run UUID).
 
@@ -615,7 +622,12 @@ class RFDatabase:
         result = self.db.execute(query, params=(metric_run_id,), fetch=True)
         if result and len(result) > 0:
             row = result[0]
-            decoded_config = decode_db_payload(row[3]) if row[3] else None
+            decoded_config = None
+            if include_decoded_config and row[3]:
+                try:
+                    decoded_config = decode_db_payload(row[3])
+                except Exception:
+                    decoded_config = None
             json_config = json.loads(row[4]) if row[4] else None
             flattened_config = json.loads(row[5]) if row[5] else {}
             return {
@@ -635,12 +647,16 @@ class RFDatabase:
             }
         return None
 
-    def get_pipeline(self, pipeline_id: int | str) -> dict[str, Any] | None:
+    def get_pipeline(self, pipeline_id: int | str, include_decoded_config: bool = True) -> dict[str, Any] | None:
         """
         Get a single pipeline by ID.
 
         Args:
             pipeline_id: ID of the pipeline to retrieve
+            include_decoded_config: If True (default), dill-decode the pipeline_config
+                column. HTTP-facing callers that only need JSON / status / metadata
+                should pass False to avoid the cost (and SIGSEGV risk) of deserialising
+                large objects such as FAISS indices or HuggingFace embedders.
 
         Returns:
             Pipeline dictionary, or None if not found
@@ -655,15 +671,19 @@ class RFDatabase:
         pipeline = None
         if isinstance(pipeline_id, str):
             # Try as MLflow run ID (UUID string)
-            pipeline = self.get_pipeline_by_metric_run_id(pipeline_id)
+            pipeline = self.get_pipeline_by_metric_run_id(pipeline_id, include_decoded_config=include_decoded_config)
             # Fallback: try parsing as int
             if pipeline:
                 return pipeline
         result = self.db.execute(query, params=(pipeline_id,), fetch=True)
         if result and len(result) > 0:
             row = result[0]
-            # Decode the pipeline config from the database (use pipeline_config column)
-            decoded_config = decode_db_payload(row[3]) if row[3] else None
+            decoded_config = None
+            if include_decoded_config and row[3]:
+                try:
+                    decoded_config = decode_db_payload(row[3])
+                except Exception:
+                    decoded_config = None
             # Parse JSON config for display/analytics
 
             json_config = json.loads(row[4]) if row[4] else None
@@ -739,12 +759,27 @@ class RFDatabase:
             }
         return None
 
-    def get_all_pipelines(self) -> list[dict[str, Any]]:
+    def get_all_pipelines(self, include_decoded_config: bool = False) -> list[dict[str, Any]]:
         """
         Get all pipelines, ordered by pipeline ID.
 
+        Args:
+            include_decoded_config: If True, dill-decode the binary ``pipeline_config``
+                blob into a live Python object (RFLangChainRagSpec with FAISS handle,
+                HuggingFace embedder, cross-encoder reranker, ...). This is what the
+                Controller needs internally when actually executing a pipeline, but
+                it is expensive AND has caused SIGSEGVs of the dispatcher gunicorn
+                worker when the polling endpoints (`get_all_runs` / `get_all_pipelines`,
+                hit every few seconds by the Converge autopilot loop) re-hydrated ~25
+                FAISS-bearing blobs per poll. The polling endpoints only ever read the
+                JSON form (``pipeline_config_json`` + ``flattened_config``), so the
+                default is False; pass True only from in-process callers that genuinely
+                need the live Python object.
+
         Returns:
-            List of pipeline dictionaries (ordered by pipeline_id DESC)
+            List of pipeline dictionaries (ordered by pipeline_id DESC). The
+            ``pipeline_config`` key is the decoded Python object when
+            ``include_decoded_config=True``, else None.
         """
         query = """
         SELECT pipeline_id, context_id, pipeline_type,
@@ -759,9 +794,11 @@ class RFDatabase:
             import json
 
             for row in result:
-                # Decode the pipeline config from the database (use pipeline_config column)
+                # Only dill.loads() the binary blob when the caller explicitly asks
+                # for it -- decoding live FAISS / embedder / reranker handles on every
+                # autopilot poll periodically SIGSEGV'd the dispatcher worker.
                 decoded_config = None
-                if row[3]:
+                if include_decoded_config and row[3]:
                     try:
                         decoded_config = decode_db_payload(row[3])
                     except Exception:

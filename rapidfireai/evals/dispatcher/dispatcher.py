@@ -99,16 +99,21 @@ class Dispatcher:
         Returns:
             Run-formatted data for frontend consumption
         """
-        status = pipeline.get("status", "")
+        # Use ``or`` (not ``.get(..., default)``) for string-typed fields because
+        # SQLite NULL columns come back as Python ``None`` -- a default of ``""``
+        # is only applied when the *key* is missing, not when the value is None.
+        # Without this, ``status.lower()`` on a NULL row raised AttributeError
+        # which 500'd the whole autopilot data-fetch loop.
+        status = pipeline.get("status") or ""
         return {
             "run_id": pipeline.get("pipeline_id"),
             "status": self.STATUS_MAP.get(status.lower(), status),
             "metric_run_id": pipeline.get("metric_run_id"),
-            "config": pipeline.get("pipeline_config_json", {}),
-            "flattened_config": pipeline.get("flattened_config", {}),
-            "num_chunks_visited": pipeline.get("shards_completed", 0),
-            "total_samples_processed": pipeline.get("total_samples_processed", 0),
-            "error": pipeline.get("error", ""),
+            "config": pipeline.get("pipeline_config_json") or {},
+            "flattened_config": pipeline.get("flattened_config") or {},
+            "num_chunks_visited": pipeline.get("shards_completed") or 0,
+            "total_samples_processed": pipeline.get("total_samples_processed") or 0,
+            "error": pipeline.get("error") or "",
         }
 
     def register_routes(self) -> None:
@@ -273,7 +278,7 @@ class Dispatcher:
                 return jsonify({"error": "pipeline_id is required"}), 400
 
             # Validate pipeline exists
-            pipeline = self.db.get_pipeline(pipeline_id)
+            pipeline = self.db.get_pipeline(pipeline_id, include_decoded_config=False)
             if not pipeline:
                 return jsonify({"error": f"Pipeline {pipeline_id} not found"}), 404
 
@@ -314,7 +319,7 @@ class Dispatcher:
                 return jsonify({"error": "pipeline_id is required"}), 400
 
             # Validate pipeline exists
-            pipeline = self.db.get_pipeline(pipeline_id)
+            pipeline = self.db.get_pipeline(pipeline_id, include_decoded_config=False)
             if not pipeline:
                 return jsonify({"error": f"Pipeline {pipeline_id} not found"}), 404
 
@@ -355,7 +360,7 @@ class Dispatcher:
                 return jsonify({"error": "pipeline_id is required"}), 400
 
             # Validate pipeline exists
-            pipeline = self.db.get_pipeline(pipeline_id)
+            pipeline = self.db.get_pipeline(pipeline_id, include_decoded_config=False)
             if not pipeline:
                 return jsonify({"error": f"Pipeline {pipeline_id} not found"}), 404
 
@@ -412,7 +417,7 @@ class Dispatcher:
                 return jsonify({"error": "config_json is required"}), 400
 
             # Validate parent pipeline exists
-            parent_pipeline = self.db.get_pipeline(parent_pipeline_id)
+            parent_pipeline = self.db.get_pipeline(parent_pipeline_id, include_decoded_config=False)
             if not parent_pipeline:
                 return jsonify({"error": f"Parent pipeline {parent_pipeline_id} not found"}), 404
 
@@ -558,7 +563,11 @@ class Dispatcher:
             return jsonify({}), 200
 
         try:
-            pipelines = self.db.get_all_pipelines()
+            # include_decoded_config=False -- the HTTP layer only needs the JSON
+            # form of the config; dill-decoding the binary blob (which contains
+            # live FAISS / embedder / reranker handles) on every autopilot poll
+            # has historically SIGSEGV'd this worker.
+            pipelines = self.db.get_all_pipelines(include_decoded_config=False)
             return jsonify(pipelines), 200
 
         except Exception as e:
@@ -589,7 +598,10 @@ class Dispatcher:
             if pipeline_id is None:
                 return jsonify({"error": "pipeline_id is required"}), 400
 
-            pipeline = self.db.get_pipeline(pipeline_id)
+            # Skip dill decode -- the response is JSON-serialised, the live
+            # Python object would not survive jsonify anyway and decoding it
+            # has SIGSEGV'd workers in the past.
+            pipeline = self.db.get_pipeline(pipeline_id, include_decoded_config=False)
             if not pipeline:
                 return jsonify({"error": f"Pipeline {pipeline_id} not found"}), 404
 
@@ -616,8 +628,25 @@ class Dispatcher:
             return jsonify({}), 200
 
         try:
-            pipelines = self.db.get_all_pipelines()
-            runs = [self._transform_pipeline_to_run(p) for p in pipelines]
+            # include_decoded_config=False -- see ``get_all_pipelines`` above.
+            pipelines = self.db.get_all_pipelines(include_decoded_config=False)
+            # Recover per-row instead of failing the whole poll on one bad row:
+            # the autopilot polls every few seconds, so a single transient None
+            # column or unexpected value used to 500 every subsequent poll until
+            # the bad row aged out. Now we skip just the bad row.
+            runs = []
+            for p in pipelines:
+                try:
+                    runs.append(self._transform_pipeline_to_run(p))
+                except Exception:
+                    # transform failed for this row; log + skip so the rest of
+                    # the dataset is still usable by the dashboard / autopilot.
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "transform failed for pipeline_id=%s; skipping row",
+                        p.get("pipeline_id") if isinstance(p, dict) else "?",
+                        exc_info=True,
+                    )
             return jsonify(runs), 200
 
         except Exception as e:
@@ -649,7 +678,7 @@ class Dispatcher:
 
 
             # Validate pipeline exists
-            pipeline = self.db.get_pipeline(run_id)
+            pipeline = self.db.get_pipeline(run_id, include_decoded_config=False)
             if not pipeline:
                 return jsonify({"error": f"Run {run_id} not found"}), 400
 
@@ -666,7 +695,7 @@ class Dispatcher:
             task = ICOperation.STOP
 
             # get pipeline from db
-            pipeline = self.db.get_pipeline(run_id)
+            pipeline = self.db.get_pipeline(run_id, include_decoded_config=False)
 
             # create ic ops task
             _ = self.db.create_ic_operation(
@@ -691,7 +720,7 @@ class Dispatcher:
             task = ICOperation.RESUME
 
             # get pipeline from db
-            pipeline = self.db.get_pipeline(run_id)
+            pipeline = self.db.get_pipeline(run_id, include_decoded_config=False)
 
             # set resume run task
             _ = self.db.create_ic_operation(
@@ -716,7 +745,7 @@ class Dispatcher:
             task = ICOperation.DELETE
 
             # get pipeline from db
-            pipeline = self.db.get_pipeline(run_id)
+            pipeline = self.db.get_pipeline(run_id, include_decoded_config=False)
 
             # set delete run task
             _ = self.db.create_ic_operation(
@@ -763,7 +792,7 @@ class Dispatcher:
             warm_start = data.get("warm_start", False)
 
             # Validate parent pipeline exists
-            parent_pipeline = self.db.get_pipeline(run_id)
+            parent_pipeline = self.db.get_pipeline(run_id, include_decoded_config=False)
             if not parent_pipeline:
                 return jsonify({"error": f"Run {run_id} not found"}), 404
 
@@ -771,11 +800,21 @@ class Dispatcher:
             if not config:
                 config = parent_pipeline.get("pipeline_config_json", {})
 
-            # Prepare request data for IC operation
+            # Prepare request data for IC operation.
+            # ``source`` distinguishes LLM-driven clones (autopilot's
+            # ``clone_modify`` action and the chat agent's ``clone_run``
+            # tool, both of which funnel through this endpoint) from the
+            # human-driven UI "Clone Run" button (``/clone-pipeline``).
+            # The IC handler uses this to apply config-deduplication only
+            # to LLM-driven clones, where the proposer can accidentally
+            # re-launch an existing config; humans clicking "Clone Run"
+            # may legitimately want a duplicate (e.g. to measure
+            # generator non-determinism), so we don't block them.
             request_data = {
                 "parent_pipeline_id": run_id,
                 "config_json": config,
                 "warm_start": warm_start,  # Passed through for potential future use
+                "source": "autopilot",
             }
 
             # Create IC operation

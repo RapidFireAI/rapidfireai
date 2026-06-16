@@ -36,14 +36,57 @@ except (PermissionError, OSError) as e:
     raise
 
 class DispatcherConfig:
-    """Class to manage the dispatcher configuration"""
+    """Class to manage the dispatcher configuration.
+
+    Network:
+        HOST / PORT / URL          - bind address for the gunicorn server
+
+    Gunicorn tuning (read by `evals/dispatcher/gunicorn.conf.py` and
+    `fit/dispatcher/gunicorn.conf.py`):
+        WORKERS                    - number of worker processes. Default 1
+                                     keeps the SQLite footprint minimal
+                                     (single-user / Colab-style setup).
+        WORKER_CLASS               - gunicorn worker type. `gthread` is the
+                                     default because polling clients hold
+                                     long-lived keep-alive TCP connections;
+                                     the default `sync` worker blocks inside
+                                     `sock.recv()` and gets SIGKILL'd by the
+                                     master with WORKER TIMEOUT / "no URI
+                                     read" errors.
+        THREADS                    - threads per worker (only meaningful for
+                                     `gthread` / async worker classes).
+        TIMEOUT                    - worker heartbeat timeout in seconds.
+                                     Bumped above gunicorn's 30s default to
+                                     absorb the first-request SQLite
+                                     migrations on a cold start.
+        GRACEFUL_TIMEOUT           - seconds the master waits for a worker
+                                     to finish in-flight requests on
+                                     shutdown / reload.
+        KEEPALIVE                  - seconds an idle keep-alive connection
+                                     can stay open. Lower than gunicorn's
+                                     2s default would be too aggressive;
+                                     higher than ~10s lets a misbehaving
+                                     client tie up a thread for too long.
+    """
 
     HOST: str = os.getenv("RF_API_HOST", "127.0.0.1")
     PORT: int = int(os.getenv("RF_API_PORT", "8851"))
     URL: str = f"http://{HOST}:{PORT}"
 
+    WORKERS: int = int(os.getenv("RF_API_WORKERS", "1"))
+    WORKER_CLASS: str = os.getenv("RF_API_WORKER_CLASS", "gthread")
+    THREADS: int = int(os.getenv("RF_API_THREADS", "4"))
+    TIMEOUT: int = int(os.getenv("RF_API_TIMEOUT", "120"))
+    GRACEFUL_TIMEOUT: int = int(os.getenv("RF_API_GRACEFUL_TIMEOUT", "30"))
+    KEEPALIVE: int = int(os.getenv("RF_API_KEEPALIVE", "5"))
+
     def __str__(self):
-        return f"DispatcherConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL})"
+        return (
+            f"DispatcherConfig(HOST={self.HOST}, PORT={self.PORT}, URL={self.URL}, "
+            f"WORKERS={self.WORKERS}, WORKER_CLASS={self.WORKER_CLASS}, "
+            f"THREADS={self.THREADS}, TIMEOUT={self.TIMEOUT}, "
+            f"GRACEFUL_TIMEOUT={self.GRACEFUL_TIMEOUT}, KEEPALIVE={self.KEEPALIVE})"
+        )
 
 # Frontend Constants
 class FrontendConfig:
