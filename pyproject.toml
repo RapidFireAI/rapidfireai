@@ -66,7 +66,7 @@ dependencies = [
     "fsspec<=2025.10.0",
     "numpy<2.1",
     "huggingface-hub<1.0.0",
-    "pyarrow==24.0.0",
+    "pyarrow>=18.1.0",
     "datasets==3.6.0",
 ]
 

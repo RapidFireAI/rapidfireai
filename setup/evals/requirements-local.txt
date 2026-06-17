@@ -38,7 +38,7 @@ unstructured>=0.18.15
 # Other
 requests==2.32.5
 datasets>=3.6.0
-pyarrow>=24.0.0
+pyarrow>=18.1.0
 jupyter
 grpcio
 
