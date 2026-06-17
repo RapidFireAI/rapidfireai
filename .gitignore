@@ -242,7 +242,7 @@ rapidfireai/rapidfire_pids.txt
 converge_pids.txt
 
 # frontend build
-rapidfireai/frontend/build/
+#rapidfireai/frontend/build/
 
 # misc files
 rapidfire_pids.txt

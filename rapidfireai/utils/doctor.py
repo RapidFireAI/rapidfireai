@@ -85,6 +85,7 @@ def get_doctor_info(log_lines: int = 10):
             "ray",
             "sentence-transformers",
             "openai",
+            "huggingface-hub",
             "tiktoken",
             "langchain-core",
             "langchain-community",
@@ -114,9 +115,12 @@ def get_doctor_info(log_lines: int = 10):
             "torchaudio",
             "scipy",
             "datasets",
+            "pyarrow",
+            "fsspec",
             "evaluate",
             "rouge-score",
             "sentencepiece",
+            "dill",
         ]
         lines = pip_output.split("\n")
         found_packages = []
