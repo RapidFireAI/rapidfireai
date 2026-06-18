@@ -94,6 +94,31 @@ class Controller:
         self.metric_logger.get_experiment(self.experiment_name)
         self.logger.debug("Controller initialized")
 
+    def _finalize_mlflow_run(self, run_id: int, mlflow_status: str) -> None:
+        """Terminate the MLflow run associated with ``run_id`` using ``mlflow_status``.
+
+        Best-effort: any failure is logged but never propagated. ``mlflow_status``
+        must be one of MLflow's ``RunStatus`` strings (``"FINISHED"``, ``"FAILED"``,
+        ``"KILLED"``). See ``DISPATCHER_TO_MLFLOW_STATUS`` in
+        ``rapidfireai.utils.metric_mlflow_manager`` for the dispatcher -> MLflow
+        mapping used here.
+        """
+        if not self.metric_logger:
+            return
+        try:
+            run = self.db.get_run(run_id)
+            metric_run_id = run.get("metric_run_id") if run else None
+            if not metric_run_id:
+                return
+            self.metric_logger.end_run(metric_run_id, status=mlflow_status)
+            self.logger.info(
+                f"Marked MLflow run {metric_run_id} as {mlflow_status} for run {run_id}"
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to terminate MLflow run for run {run_id} (status={mlflow_status}): {e}"
+            )
+
     def _create_models(
         self,
         param_config: AutoMLAlgorithm | dict[str, Any],
@@ -211,7 +236,10 @@ class Controller:
                 print(msg)
                 if metric_run_id:
                     try:
-                        self.metric_logger.end_run(metric_run_id)
+                        # The tracking run never had a successful start, so
+                        # record it as FAILED rather than letting MLflow's
+                        # default FINISHED state mislead the dashboard.
+                        self.metric_logger.end_run(metric_run_id, status="FAILED")
                     except Exception:
                         pass
                 self.logger.error(msg, exc_info=True)
@@ -285,6 +313,9 @@ class Controller:
                     status=RunStatus.STOPPED,
                     ended_by=RunEndedBy.INTERACTIVE_CONTROL,
                 )
+                # Mirror dispatcher STOPPED into MLflow as KILLED so the
+                # dashboard text agrees with the user-facing CLI table.
+                self._finalize_mlflow_run(run_id, "KILLED")
                 self.db.set_ic_ops_task_status(
                     run_state["task_id"], TaskStatus.COMPLETED
                 )
@@ -779,6 +810,9 @@ class Controller:
                                     status=RunStatus.STOPPED,
                                     ended_by=RunEndedBy.OPTUNA_PRUNED,
                                 )
+                                # Optuna prune -> dispatcher STOPPED -> MLflow KILLED
+                                # (intentional programmatic termination).
+                                self._finalize_mlflow_run(run_id, "KILLED")
                                 self._clear_run_from_shm(run_id)
                                 self.logger.info(f"Optuna pruned run {run_id} after chunk {chunk_id}")
                                 if decision.replacement_config:
@@ -808,6 +842,11 @@ class Controller:
                             status=RunStatus.COMPLETED,
                             ended_by=RunEndedBy.EPOCH_COMPLETED,
                         )
+                        # Clean completion -> dispatcher COMPLETED -> MLflow FINISHED.
+                        # This is fit-mode's only successful exit; previously the run
+                        # was left RUNNING on the server until something else (e.g.
+                        # experiment_utils.end_experiment) flushed it.
+                        self._finalize_mlflow_run(run_id, "FINISHED")
                         self.logger.info(
                             f"Run {run_id} has completed all its epochs - "
                             f"steps {run_details['completed_steps']}/{run_details['total_steps']}"

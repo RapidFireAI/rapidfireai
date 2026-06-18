@@ -4,11 +4,54 @@ import os
 import re
 import mlflow
 from mlflow.tracking import MlflowClient
-from typing import Any
+from typing import Any, Optional
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.utils.ping import ping_server
 from rapidfireai.utils.constants import MLflowConfig
 from rapidfireai.evals.utils.logger import RFLogger
+
+
+# Dispatcher pipeline/run status -> MLflow RunStatus mapping.
+#
+# MLflow's RunInfo.status is a fixed enum (RUNNING, SCHEDULED, FINISHED,
+# FAILED, KILLED). We cannot store the dispatcher's vocabulary (COMPLETED,
+# STOPPED, ...) verbatim because the MLflow server validates submissions
+# against its own enum. We pick the closest MLflow value here and the
+# forked frontend (RunViewStatusBox.tsx) relabels them back to the
+# dispatcher's words so the dashboard text matches the notebook table.
+#
+# Both fit-mode (rapidfireai/fit/utils/constants.py::RunStatus) and
+# evals-mode (rapidfireai/evals/utils/constants.py::PipelineStatus) use
+# the same lowercase string values, so a single mapping covers both.
+#
+#   COMPLETED -> FINISHED  (clean success)
+#   STOPPED   -> KILLED    (covers user IC-stop + Optuna prune)
+#   FAILED    -> FAILED    (runtime / init / dispatch errors)
+#   DELETED   -> N/A       (handled by delete_run, never via end_run)
+DISPATCHER_TO_MLFLOW_STATUS: dict[str, str] = {
+    "completed": "FINISHED",
+    "stopped": "KILLED",
+    "failed": "FAILED",
+}
+
+
+def dispatcher_status_to_mlflow(dispatcher_status: Any) -> Optional[str]:
+    """Convert a dispatcher status (enum or string) to its MLflow RunStatus.
+
+    Accepts either a ``PipelineStatus``/``RunStatus`` enum value or a raw
+    string. Returns ``None`` when the status has no MLflow counterpart
+    (e.g. ``DELETED``, ``NEW``, ``ONGOING``) so callers can decide to skip
+    the MLflow termination.
+    """
+    if dispatcher_status is None:
+        return None
+    if hasattr(dispatcher_status, "value"):
+        key = dispatcher_status.value
+    else:
+        key = dispatcher_status
+    if not isinstance(key, str):
+        return None
+    return DISPATCHER_TO_MLFLOW_STATUS.get(key.lower())
 
 
 # MLflow only allows alphanumerics, underscores (_), dashes (-), periods (.),
@@ -110,26 +153,60 @@ class MLflowMetricLogger(MetricLogger):
             self.logger.error(f"Error getting metrics for run {run_id}: {e}")
             return {}
 
-    def end_run(self, run_id: str) -> None:
-        """End a specific run."""
+    def end_run(self, run_id: str, status: Optional[str] = None) -> None:
+        """End a specific run.
+
+        Args:
+            run_id: MLflow run identifier.
+            status: Optional MLflow ``RunStatus`` string (``"FINISHED"``,
+                ``"FAILED"``, ``"KILLED"``). When ``None``, MLflow's server
+                defaults to ``FINISHED``. Use :func:`dispatcher_status_to_mlflow`
+                to derive this from a dispatcher pipeline / run status.
+
+        See the ``DISPATCHER_TO_MLFLOW_STATUS`` map at the top of this module
+        for the dispatcher -> MLflow status mapping used by callers.
+        """
         # Check if run exists before terminating
         run = self.client.get_run(run_id)
         if run is not None:
-            # First terminate the run on the server
-            self.client.set_terminated(run_id)
+            # First terminate the run on the server. set_terminated treats
+            # status=None as "use server default (FINISHED)", which preserves
+            # existing behaviour for callers that haven't been updated.
+            if status is not None:
+                self.client.set_terminated(run_id, status=status)
+            else:
+                self.client.set_terminated(run_id)
 
-            # Then clear the local MLflow context if this is the active run
+            # Then clear the local MLflow context if this is the active run.
+            # We pass the same status to mlflow.end_run() so the fluent
+            # API doesn't POST another SetTerminated(FINISHED) that would
+            # clobber our explicit terminal state.
             try:
                 current_run = mlflow.active_run()
                 # Make sure we end the run on the correct worker
                 if current_run and current_run.info.run_id == run_id:
-                    mlflow.end_run()
+                    if status is not None:
+                        mlflow.end_run(status=status)
+                    else:
+                        mlflow.end_run()
                 else:
                     self.logger.warning(f"Run {run_id} is not the active run, no local context to clear")
             except Exception as e:
                 self.logger.error(f"Error clearing local MLflow context: {e}")
         else:
             self.logger.warning(f"MLflow run {run_id} not found, cannot terminate")
+
+    def set_tag(self, run_id: str, key: str, value: str) -> None:
+        """Set a (mutable) tag on the MLflow run.
+
+        Used for evolving per-run state (e.g. ``rapidfire.progress.current``)
+        that MLflow ``params`` cannot represent because params are
+        immutable.
+        """
+        try:
+            self.client.set_tag(run_id, key, str(value))
+        except Exception as e:
+            self.logger.warning(f"Failed to set MLflow tag {key}={value} on run {run_id}: {e}")
 
     def delete_run(self, run_id: str) -> None:
         """Delete a specific run."""
@@ -141,21 +218,33 @@ class MLflowMetricLogger(MetricLogger):
             raise ValueError(f"Run '{run_id}' not found")
 
     def clear_context(self) -> None:
-        """Clear the MLflow context by ending any active run."""
+        """Clear the MLflow context by ending any active run.
+
+        Idempotent w.r.t. server-side terminal status: if the active run is
+        already KILLED / FAILED / FINISHED on the server, we pass that same
+        status to ``mlflow.end_run()`` so the fluent API does not POST
+        another ``SetTerminated(FINISHED)`` that clobbers the explicit
+        terminal state set by the controller / worker / IC handler.
+        """
         try:
             current_run = mlflow.active_run()
             if current_run:
                 run_id = current_run.info.run_id
 
-                # Try to end the run properly using the client first
+                existing_status = None
                 try:
-                    self.client.end_run(run_id)
+                    existing_status = self.client.get_run(run_id).info.status
                 except Exception:
-                    # Fallback to global mlflow.end_run()
-                    mlflow.end_run()
-                    self.logger.info(f"Run {run_id} ended using global mlflow.end_run")
+                    pass
 
-                self.logger.info("MLflow context cleared successfully")
+                if existing_status in ("KILLED", "FAILED", "FINISHED"):
+                    mlflow.end_run(status=existing_status)
+                else:
+                    mlflow.end_run()
+
+                self.logger.info(
+                    f"MLflow context cleared for run {run_id} (status={existing_status or 'FINISHED'})"
+                )
             else:
                 self.logger.info("No active MLflow run to clear")
         except Exception as e:

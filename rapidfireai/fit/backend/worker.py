@@ -693,6 +693,23 @@ class Worker:
                             status=RunStatus.FAILED,
                             error=str(e) + traceback.format_exc(),
                         )
+                        # Mirror the dispatcher FAILED state into MLflow so the
+                        # dashboard agrees with the user-facing CLI table.
+                        # Best-effort: do not let MLflow trouble propagate.
+                        try:
+                            run_details = self.db.get_run(run_id)
+                            metric_run_id = (
+                                run_details.get("metric_run_id") if run_details else None
+                            )
+                            if self.metric_logger and metric_run_id:
+                                self.metric_logger.end_run(metric_run_id, status="FAILED")
+                                self.logger.info(
+                                    f"Marked MLflow run {metric_run_id} as FAILED for run {run_id}"
+                                )
+                        except Exception as mlflow_err:
+                            self.logger.warning(
+                                f"Failed to terminate MLflow run for failed run {run_id}: {mlflow_err}"
+                            )
                         self.db.set_worker_task_status(
                             self.worker_id, TaskStatus.FAILED
                         )
