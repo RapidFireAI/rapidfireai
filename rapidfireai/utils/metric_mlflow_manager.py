@@ -78,6 +78,64 @@ def _sanitize_mlflow_name(name: str) -> str:
     return _MLFLOW_NAME_INVALID_RE.sub("_", sanitized)
 
 
+def clear_local_mlflow_active_run_stack(logger: Any = None) -> None:
+    """Pop the current process's MLflow fluent active-run stack WITHOUT
+    posting a server-side ``SetTerminated``.
+
+    ``mlflow.end_run()`` (or ``mlflow.end_run(status=None)``) defaults to
+    ``FINISHED`` and fires ``SetTerminated(FINISHED)`` on the tracking
+    server. That's the right thing to do for a run we know is healthy and
+    we are intentionally finishing -- but it is the *wrong* thing to do
+    when we can't determine the server-side status (e.g. the
+    ``MlflowClient.get_run`` lookup raised). In that case the run may
+    already be in a terminal state (``KILLED`` from IC stop, ``FAILED``
+    from a worker / controller error) that the fluent default would
+    silently clobber, leaving the dashboard with a misleading
+    ``COMPLETED`` cell.
+
+    The work here mirrors ``mlflow.end_run`` minus the ``set_terminated``
+    call: pop the fluent stack so the next ``mlflow.start_run(...)`` in
+    this process succeeds, and tear down the per-run system-metrics
+    monitor MLflow may have started (otherwise it leaks).
+
+    Best-effort: MLflow's private fluent symbols (``_active_run_stack``,
+    ``_last_active_run_id``, ``run_id_to_system_metrics_monitor``) can
+    shift between MLflow versions. If any of them are missing or change
+    shape, we log and fall back to no-op rather than raise -- the next
+    ``mlflow.start_run()`` will surface a clearer error than we could
+    synthesise here, and we would rather expose that than risk marking
+    the previous run as ``FINISHED``.
+
+    ``logger`` is optional; when ``None`` we silently swallow internal
+    errors (callers that want diagnostics should pass one in).
+    """
+    try:
+        from mlflow.tracking import fluent
+        from mlflow.environment_variables import MLFLOW_RUN_ID
+
+        active_stack = fluent._active_run_stack.get()
+        if active_stack:
+            MLFLOW_RUN_ID.unset()
+            run = active_stack.pop()
+            fluent._last_active_run_id.set(run.info.run_id)
+            monitor = fluent.run_id_to_system_metrics_monitor.pop(
+                run.info.run_id, None
+            )
+            if monitor is not None:
+                try:
+                    monitor.finish()
+                except Exception:
+                    pass
+    except Exception as e:  # pragma: no cover - defensive against MLflow internals churn
+        if logger is not None:
+            try:
+                logger.warning(
+                    f"Could not clear local MLflow active-run stack: {e}"
+                )
+            except Exception:
+                pass
+
+
 class MLflowMetricLogger(MetricLogger):
     def __init__(self, tracking_uri: str, logger: RFLogger = None, init_kwargs: dict[str, Any] = None):
         """
@@ -266,6 +324,15 @@ class MLflowMetricLogger(MetricLogger):
         status to ``mlflow.end_run()`` so the fluent API does not POST
         another ``SetTerminated(FINISHED)`` that clobbers the explicit
         terminal state set by the controller / worker / IC handler.
+
+        When the server-side status lookup itself fails (network blip,
+        transient MLflow outage, etc.) we deliberately *do not* call
+        ``mlflow.end_run()`` -- that would default to ``FINISHED`` and
+        clobber any prior ``KILLED`` / ``FAILED`` state we couldn't read.
+        Instead, we clear only the local fluent active-run stack via
+        :func:`clear_local_mlflow_active_run_stack`, leaving the server's
+        view of the run untouched. The next ``mlflow.start_run(...)`` in
+        this process will still succeed.
         """
         try:
             current_run = mlflow.active_run()
@@ -273,18 +340,31 @@ class MLflowMetricLogger(MetricLogger):
                 run_id = current_run.info.run_id
 
                 existing_status = None
+                get_run_failed = False
                 try:
                     existing_status = self.client.get_run(run_id).info.status
-                except Exception:
-                    pass
+                except Exception as get_err:
+                    get_run_failed = True
+                    self.logger.warning(
+                        f"Could not fetch server-side status for MLflow run "
+                        f"{run_id} while clearing context: {get_err}. "
+                        f"Falling back to local-only stack clear to preserve "
+                        f"any prior terminal status."
+                    )
 
                 if existing_status in ("KILLED", "FAILED", "FINISHED"):
                     mlflow.end_run(status=existing_status)
+                elif get_run_failed:
+                    clear_local_mlflow_active_run_stack(self.logger)
                 else:
+                    # Server says the run is genuinely RUNNING / SCHEDULED;
+                    # default end_run() (-> FINISHED) is the correct
+                    # terminal state for an explicitly-cleared context.
                     mlflow.end_run()
 
                 self.logger.info(
-                    f"MLflow context cleared for run {run_id} (status={existing_status or 'FINISHED'})"
+                    f"MLflow context cleared for run {run_id} "
+                    f"(status={existing_status or ('UNKNOWN' if get_run_failed else 'FINISHED')})"
                 )
             else:
                 self.logger.info("No active MLflow run to clear")
