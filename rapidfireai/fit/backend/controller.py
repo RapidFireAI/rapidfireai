@@ -119,6 +119,37 @@ class Controller:
                 f"Failed to terminate MLflow run for run {run_id} (status={mlflow_status}): {e}"
             )
 
+    def _restart_mlflow_run(self, run_id: int) -> None:
+        """Flip the MLflow run associated with ``run_id`` back to ``RUNNING``.
+
+        Counterpart of :meth:`_finalize_mlflow_run`: the IC stop path
+        terminates the MLflow run with ``KILLED`` so the dashboard mirrors
+        the notebook table; resuming must put the run back into
+        ``RUNNING`` so the dashboard stops showing ``STOPPED`` for a run
+        that is once again training. Without this call, the resumed run
+        would render as ``STOPPED`` on the dashboard for the rest of its
+        lifetime (until clean completion / failure / re-stop fires
+        another ``end_run``).
+
+        Best-effort: any failure is logged but never propagated -- a
+        stale dashboard cell must not abort training.
+        """
+        if not self.metric_logger:
+            return
+        try:
+            run = self.db.get_run(run_id)
+            metric_run_id = run.get("metric_run_id") if run else None
+            if not metric_run_id:
+                return
+            self.metric_logger.restart_run(metric_run_id)
+            self.logger.info(
+                f"Restarted MLflow run {metric_run_id} (status -> RUNNING) for run {run_id}"
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to restart MLflow run for run {run_id}: {e}"
+            )
+
     def _set_progress_tags(
         self,
         metric_run_id: str | None,
@@ -392,6 +423,11 @@ class Controller:
                     status=RunStatus.ONGOING,
                     ended_by="",
                 )
+                # Counterpart of the STOPPED branch's end_run(KILLED) call
+                # above: flip the MLflow run back to RUNNING so the
+                # dashboard agrees with the notebook table (ONGOING)
+                # instead of remaining stuck at STOPPED.
+                self._restart_mlflow_run(run_id)
                 self.db.set_ic_ops_task_status(
                     run_state["task_id"], TaskStatus.COMPLETED
                 )

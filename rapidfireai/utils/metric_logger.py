@@ -133,6 +133,22 @@ class MetricLogger(ABC):
         """
         return None
 
+    def restart_run(self, run_id: str) -> None:
+        """Flip a previously-terminated run back to ``RUNNING``.
+
+        Used by IC "resume" handlers: stopping a run terminates the
+        corresponding MLflow run with ``KILLED`` so the dashboard mirrors
+        the notebook table, but a subsequent resume must put that same
+        run back into ``RUNNING`` -- otherwise the dashboard stays at
+        ``STOPPED`` while the notebook (and the actual training loop)
+        progresses through new chunks/shards.
+
+        The default implementation is a no-op so backends without a
+        meaningful "status" concept (TensorBoard, Trackio) don't need to
+        implement it. MLflow overrides this with an ``UpdateRun`` call.
+        """
+        return None
+
 class MetricLoggerType(Enum):
     """Enum for MetricLogger types."""
     MLFLOW = "mlflow"

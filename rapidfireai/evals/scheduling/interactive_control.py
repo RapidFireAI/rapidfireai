@@ -208,6 +208,22 @@ class InteractiveControlHandler:
         # Update database status
         db.set_pipeline_status(pipeline_id, PipelineStatus.ONGOING)
 
+        # Counterpart of _handle_stop's end_run(KILLED): flip the MLflow run
+        # back to RUNNING so the dashboard stops showing STOPPED for a
+        # pipeline that is once again active. Mirrors the try/except pattern
+        # used elsewhere -- MLflow trouble must not fail the IC op.
+        metric_run_id = pipeline.get("metric_run_id") if pipeline else None
+        if self.metric_manager and metric_run_id:
+            try:
+                self.metric_manager.restart_run(metric_run_id)
+                self.logger.info(
+                    f"Restarted MLflow run {metric_run_id} (status -> RUNNING) for resumed pipeline {pipeline_id}"
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to restart MLflow run for resumed pipeline {pipeline_id}: {e}"
+                )
+
         # Update display
         if progress_display:
             progress_display.update_pipeline(pipeline_id, status="ONGOING")

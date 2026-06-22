@@ -176,6 +176,24 @@ class RFMetricLogger(MetricLogger):
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support log_metric")
 
+    def restart_run(self, run_id: str) -> None:
+        """Flip a previously-terminated run back to RUNNING on every
+        backend that supports it.
+
+        See :meth:`MetricLogger.restart_run` for the IC-resume use case.
+        Only the MLflow backend has a meaningful status field today; the
+        other backends inherit the no-op default. We forward the canonical
+        ``run_id`` to MLflow and the human-readable run name to the
+        others, mirroring the routing used by :meth:`end_run` /
+        :meth:`set_tag`.
+        """
+        run_name = self._get_run_name(run_id)
+        for metric_logger in self.metric_loggers.values():
+            if metric_logger.type == MetricLoggerType.MLFLOW:
+                metric_logger.restart_run(run_id)
+            else:
+                metric_logger.restart_run(run_name)
+
     def set_tag(self, run_id: str, key: str, value: str) -> None:
         """Set a tag on each backend that supports it.
 

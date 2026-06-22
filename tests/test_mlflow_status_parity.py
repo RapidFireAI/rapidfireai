@@ -539,3 +539,262 @@ def test_rf_metric_logger_fanouts_set_tag():
     # (matches the pattern in log_metric/log_param).
     mlflow_backend.set_tag.assert_called_once_with("real-id", "rapidfire.progress.current", "2")
     tensorboard_backend.set_tag.assert_called_once_with("run-name-42", "rapidfire.progress.current", "2")
+
+
+# --------------------------------------------------------------------------- #
+# restart_run: counterpart of end_run(KILLED) used by the IC resume handler.
+#
+# Stopping a run terminates its MLflow run with KILLED so the dashboard
+# matches the notebook table; resuming must flip the MLflow run back to
+# RUNNING -- otherwise the dashboard would forever show STOPPED for a
+# pipeline / fit-run that is again training. These tests pin the full
+# stack: per-backend, RFMetricLogger fan-out, evals IC handler, and fit
+# controller helper.
+# --------------------------------------------------------------------------- #
+
+
+def test_mlflow_metric_logger_restart_run_calls_update_run():
+    """``restart_run`` must POST UpdateRun(status='RUNNING') -- not set_terminated.
+
+    We use ``update_run`` (rather than ``set_terminated('RUNNING')``)
+    because the latter is semantically about terminal states even though
+    MLflow happens to accept RUNNING; the former is the explicit,
+    future-proof way to flip status.
+    """
+    logger = _build_mlflow_logger()
+    logger.client.get_run.return_value = MagicMock()  # run exists
+
+    logger.restart_run("fake-run-id")
+
+    logger.client.update_run.assert_called_once_with("fake-run-id", status="RUNNING")
+    # restart must NOT call set_terminated -- that's the kill path.
+    logger.client.set_terminated.assert_not_called()
+
+
+def test_mlflow_metric_logger_restart_run_missing_run_is_noop():
+    """Restarting a run that no longer exists should warn but not raise."""
+    logger = _build_mlflow_logger()
+    logger.client.get_run.return_value = None
+
+    logger.restart_run("missing-run-id")
+
+    logger.client.update_run.assert_not_called()
+
+
+def test_mlflow_metric_logger_restart_run_swallows_update_errors():
+    """``update_run`` failures must not propagate -- a stale dashboard cell
+    must never abort the IC op."""
+    logger = _build_mlflow_logger()
+    logger.client.get_run.return_value = MagicMock()
+    logger.client.update_run.side_effect = RuntimeError("server down")
+
+    logger.restart_run("fake-run-id")  # must not raise
+
+    logger.client.update_run.assert_called_once_with("fake-run-id", status="RUNNING")
+
+
+def test_metric_logger_default_restart_run_is_noop():
+    """Backends without a status concept (TB, Trackio) inherit a no-op default."""
+    from rapidfireai.utils.metric_logger import MetricLogger
+
+    class _Stub(MetricLogger):
+        def create_experiment(self, experiment_name):
+            return ""
+
+        def get_experiment(self, experiment_name):
+            return ""
+
+        def create_run(self, run_name):
+            return ""
+
+        def log_param(self, run_id, key, value):
+            return None
+
+        def log_metric(self, run_id, key, value, step=None):
+            return None
+
+        def get_run_metrics(self, run_id):
+            return {}
+
+        def end_run(self, run_id, status=None):
+            return None
+
+        def delete_run(self, run_id):
+            return None
+
+        def clear_context(self):
+            return None
+
+    _Stub().restart_run("run")  # must not raise
+
+
+def test_rf_metric_logger_fanouts_restart_run():
+    """RFMetricLogger.restart_run fans out: MLflow gets canonical id,
+    other backends get the human-readable run name (mirrors set_tag /
+    end_run routing)."""
+    from rapidfireai.utils.metric_logger import MetricLoggerType
+    from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+
+    mlflow_backend = MagicMock()
+    mlflow_backend.type = MetricLoggerType.MLFLOW
+    tensorboard_backend = MagicMock()
+    tensorboard_backend.type = MetricLoggerType.TENSORBOARD
+
+    rf = object.__new__(RFMetricLogger)
+    rf.metric_loggers = {
+        "mlflow": mlflow_backend,
+        "tensorboard": tensorboard_backend,
+    }
+    rf.logger = MagicMock()
+    rf._get_run_name = MagicMock(return_value="run-name-42")
+
+    rf.restart_run("real-id")
+
+    mlflow_backend.restart_run.assert_called_once_with("real-id")
+    tensorboard_backend.restart_run.assert_called_once_with("run-name-42")
+
+
+# --------------------------------------------------------------------------- #
+# Evals IC resume calls restart_run after re-adding to scheduler / DB.
+# --------------------------------------------------------------------------- #
+
+
+@requires_ray
+class TestEvalsInteractiveControlResume:
+    def _build_handler(self, metric_manager=None):
+        from rapidfireai.evals.scheduling.interactive_control import (
+            InteractiveControlHandler,
+        )
+
+        handler = object.__new__(InteractiveControlHandler)
+        handler.metric_manager = metric_manager
+        handler.logger = MagicMock()
+        handler.ic_logger = MagicMock()
+        handler._context_cache = {}
+        return handler
+
+    def _build_stopped_db(self, metric_run_id="resume-rid"):
+        from rapidfireai.evals.utils.constants import PipelineStatus
+
+        db = MagicMock()
+        db.get_pipeline.return_value = {
+            "shards_completed": 4,
+            "status": PipelineStatus.STOPPED.value,
+            "metric_run_id": metric_run_id,
+        }
+        return db
+
+    def test_handle_resume_restarts_mlflow_run(self):
+        mm = MagicMock()
+        handler = self._build_handler(metric_manager=mm)
+        scheduler = MagicMock()
+        db = self._build_stopped_db()
+
+        handler._handle_resume(
+            pipeline_id=12,
+            scheduler=scheduler,
+            db=db,
+            num_shards=10,
+            progress_display=None,
+        )
+
+        # Restarted with the canonical metric_run_id; no other end_run/set_terminated.
+        mm.restart_run.assert_called_once_with("resume-rid")
+        mm.end_run.assert_not_called()
+
+    def test_handle_resume_swallows_mlflow_errors(self):
+        """A flaky MLflow restart must not break the IC resume op --
+        the DB state change and scheduler re-add are what matter most."""
+        from rapidfireai.evals.utils.constants import PipelineStatus
+
+        mm = MagicMock()
+        mm.restart_run.side_effect = RuntimeError("server down")
+        handler = self._build_handler(metric_manager=mm)
+        scheduler = MagicMock()
+        db = self._build_stopped_db()
+
+        # Must not raise.
+        handler._handle_resume(
+            pipeline_id=12,
+            scheduler=scheduler,
+            db=db,
+            num_shards=10,
+            progress_display=None,
+        )
+
+        # The IC op still finished its core work even though MLflow blew up.
+        scheduler.add_pipeline.assert_called_once_with(12, 4)
+        db.set_pipeline_status.assert_called_once_with(12, PipelineStatus.ONGOING)
+
+    def test_handle_resume_no_metric_manager_is_noop(self):
+        """Without an MLflow manager (e.g. MLflow disabled) resume must
+        still succeed -- restart_run is gated on metric_manager."""
+        handler = self._build_handler(metric_manager=None)
+        scheduler = MagicMock()
+        db = self._build_stopped_db()
+
+        handler._handle_resume(
+            pipeline_id=12,
+            scheduler=scheduler,
+            db=db,
+            num_shards=10,
+            progress_display=None,
+        )
+
+        scheduler.add_pipeline.assert_called_once_with(12, 4)
+
+
+# --------------------------------------------------------------------------- #
+# Fit controller _restart_mlflow_run helper.
+#
+# Mirrors TestFitControllerFinalize -- same shape (bind unbound helper
+# onto a minimal stand-in, exercise the three paths: happy / noop /
+# swallow-errors). This is the fit-mode counterpart of the evals IC
+# resume test above.
+# --------------------------------------------------------------------------- #
+
+
+@requires_torch
+class TestFitControllerRestart:
+    def _bind(self, metric_logger, db):
+        from rapidfireai.fit.backend.controller import Controller
+
+        ctrl = _FitControllerLike(metric_logger, db, logger=MagicMock())
+        return Controller._restart_mlflow_run.__get__(ctrl, _FitControllerLike)
+
+    def test_restart_calls_metric_logger_restart_run(self):
+        ml = MagicMock()
+        db = MagicMock()
+        db.get_run.return_value = {"metric_run_id": "fit-rid"}
+        restart = self._bind(ml, db)
+
+        restart(run_id=42)
+        ml.restart_run.assert_called_once_with("fit-rid")
+        # restart must NOT terminate the run -- that's the kill path.
+        ml.end_run.assert_not_called()
+
+    def test_restart_no_metric_logger_is_noop(self):
+        """No metric_logger -> short-circuit before touching the DB."""
+        db = MagicMock()
+        db.get_run.return_value = {"metric_run_id": "fit-rid"}
+        restart = self._bind(None, db)
+        restart(run_id=42)
+        db.get_run.assert_not_called()
+
+    def test_restart_no_metric_run_id_is_noop(self):
+        ml = MagicMock()
+        db = MagicMock()
+        db.get_run.return_value = {"metric_run_id": None}
+        restart = self._bind(ml, db)
+        restart(run_id=42)
+        ml.restart_run.assert_not_called()
+
+    def test_restart_swallows_mlflow_errors(self):
+        ml = MagicMock()
+        ml.restart_run.side_effect = RuntimeError("server down")
+        db = MagicMock()
+        db.get_run.return_value = {"metric_run_id": "fit-rid"}
+        restart = self._bind(ml, db)
+
+        restart(run_id=42)  # must not raise
+        ml.restart_run.assert_called_once()

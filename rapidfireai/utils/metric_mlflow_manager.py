@@ -196,6 +196,47 @@ class MLflowMetricLogger(MetricLogger):
         else:
             self.logger.warning(f"MLflow run {run_id} not found, cannot terminate")
 
+    def restart_run(self, run_id: str) -> None:
+        """Flip an MLflow run that was previously terminated back to ``RUNNING``.
+
+        Counterpart of :meth:`end_run`. The IC stop handler terminates
+        the run with ``KILLED`` so the dashboard mirrors the notebook
+        table; the IC resume handler calls this to put the run back to
+        ``RUNNING`` so the dashboard stops showing ``STOPPED`` for a
+        pipeline / fit-run that is actually progressing again.
+
+        We deliberately use ``MlflowClient.update_run`` rather than
+        ``set_terminated`` here: ``set_terminated`` is semantically about
+        terminal states (its docstring says "Set a run's status to
+        terminated" even though MLflow happens to also accept ``RUNNING``
+        / ``SCHEDULED``). ``update_run`` is the explicit, future-proof
+        way to flip status in either direction.
+
+        Best-effort: any backend error is logged and swallowed because a
+        stale dashboard state must not fail the IC operation.
+        """
+        try:
+            run = self.client.get_run(run_id)
+        except Exception as e:
+            self.logger.warning(
+                f"Cannot restart MLflow run {run_id}: get_run failed ({e})"
+            )
+            return
+        if run is None:
+            self.logger.warning(
+                f"MLflow run {run_id} not found, cannot restart"
+            )
+            return
+        try:
+            self.client.update_run(run_id, status="RUNNING")
+            self.logger.info(
+                f"Restarted MLflow run {run_id} (status -> RUNNING)"
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to restart MLflow run {run_id}: {e}"
+            )
+
     def set_tag(self, run_id: str, key: str, value: str) -> None:
         """Set a (mutable) tag on the MLflow run.
 
