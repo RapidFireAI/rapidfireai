@@ -119,6 +119,43 @@ class Controller:
                 f"Failed to terminate MLflow run for run {run_id} (status={mlflow_status}): {e}"
             )
 
+    def _set_progress_tags(
+        self,
+        metric_run_id: str | None,
+        *,
+        current: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        """Mirror chunk progress to MLflow tags so the dashboard's Shards
+        column can render ``current/total`` for fit-mode runs.
+
+        We use tags (not params) because ``current`` is mutable across
+        chunks, and tags are MLflow's only mutable per-run key/value
+        primitive. The frontend reads ``rapidfire.progress.current`` and
+        ``rapidfire.progress.total`` (see
+        ``RunShardsCellRenderer.tsx``). This mirrors the seeding/update
+        pattern used by the evals controller -- keep the two in sync.
+
+        Any backend errors are logged but never propagated: a stale
+        Shards cell must not take down training.
+        """
+        if not self.metric_logger or not metric_run_id:
+            return
+        try:
+            if total is not None:
+                self.metric_logger.set_tag(
+                    metric_run_id, "rapidfire.progress.total", str(total)
+                )
+            if current is not None:
+                self.metric_logger.set_tag(
+                    metric_run_id, "rapidfire.progress.current", str(current)
+                )
+        except Exception as e:
+            self.logger.warning(
+                f"Could not set rapidfire.progress tags on MLflow run "
+                f"{metric_run_id}: {e}"
+            )
+
     def _create_models(
         self,
         param_config: AutoMLAlgorithm | dict[str, Any],
@@ -222,6 +259,15 @@ class Controller:
                     self.metric_logger.log_param(
                         metric_run_id, "parent-run", str(cloned_from)
                     )
+                # Seed the Shards-column tags so the dashboard renders
+                # ``0/num_chunks`` immediately on run creation, instead
+                # of waiting for the first chunk to complete. The fit
+                # scheduler tracks chunks per epoch (it calls
+                # ``reset_run`` at epoch boundaries), so ``total`` is
+                # ``num_chunks`` -- not ``num_chunks * num_epochs``.
+                self._set_progress_tags(
+                    metric_run_id, current=0, total=num_chunks
+                )
                 self.logger.debug(
                     f"Populated MetricLogger with model config info for run {run_id}."
                 )
@@ -778,6 +824,16 @@ class Controller:
                         num_epochs_completed=num_epochs_completed,
                     )
 
+                    # Advance the Shards-column tag for this run. ``total``
+                    # is already seeded in ``_create_models`` and never
+                    # changes for fit runs, so we only update ``current``.
+                    # Epoch rollover is handled below (after
+                    # ``scheduler.reset_run``) by resetting current to 0.
+                    self._set_progress_tags(
+                        run_details.get("metric_run_id"),
+                        current=new_chunks_visited,
+                    )
+
                     # Update progress
                     progress_percentage = (
                         (
@@ -860,6 +916,14 @@ class Controller:
                         self.db.set_run_details(
                             run_id=run_id, num_chunks_visited_curr_epoch=0
                         )
+                        # The scheduler tracks chunks per-epoch, so reset
+                        # the Shards tag to ``0/num_chunks`` for the new
+                        # epoch. Without this the cell would be stuck at
+                        # ``num_chunks/num_chunks`` for the rest of the
+                        # run, hiding the rollover from users.
+                        self._set_progress_tags(
+                            run_details.get("metric_run_id"), current=0
+                        )
                         self.logger.info(
                             f"Run {run_id} has completed epoch ({new_chunks_visited}/{num_chunks} chunks)"
                         )
@@ -915,6 +979,16 @@ class Controller:
                             "num_chunks_visited_curr_epoch"
                         ]
                         scheduler.add_run(run_info, chunks_visited)
+                        # Re-seed Shards-column tags when an IC Op
+                        # resumes or revives a run. ``_create_models``
+                        # only fires for brand-new run IDs; without
+                        # this, resumed runs would render ``-`` until
+                        # their next chunk completes.
+                        self._set_progress_tags(
+                            run_details.get("metric_run_id"),
+                            current=chunks_visited,
+                            total=num_chunks,
+                        )
                         self.logger.debug(
                             f"Added run {run_id} to scheduler with {chunks_visited} chunks visited"
                         )
