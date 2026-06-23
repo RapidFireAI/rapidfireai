@@ -1030,8 +1030,21 @@ class Controller:
                 ordered_metrics,
             )
 
-            # Update pipeline status
-            db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
+            # Preserve terminal non-COMPLETED states. STOPPED pipelines
+            # (IC stop or Optuna prune) have already had their dispatcher
+            # status set to STOPPED and their MLflow run terminated with
+            # KILLED by the originating handler. Phase 8 still needs to
+            # publish their partial final metrics to ``final_results`` /
+            # the dashboard, but it must NOT flip the dispatcher status
+            # to COMPLETED or the MLflow status from KILLED -> FINISHED
+            # -- doing so would undo the dispatcher <-> MLflow parity fix
+            # and make stopped/pruned pipelines look like clean finishes.
+            # FAILED and DELETED are already filtered out at the top of
+            # the loop, so the only terminal non-COMPLETED state that
+            # reaches us here is STOPPED.
+            was_stopped = pipeline_status == PipelineStatus.STOPPED.value
+            if not was_stopped:
+                db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
             if progress_display:
                 # Update display with final metrics to ensure all metrics are shown.
                 # Exclude config/info keys — they are already shown in the metadata columns
@@ -1054,7 +1067,7 @@ class Controller:
 
                 progress_display.update_pipeline(
                     pipeline_id,
-                    status="COMPLETED",
+                    status="STOPPED" if was_stopped else "COMPLETED",
                     metrics=display_metrics
                 )
 
@@ -1096,13 +1109,27 @@ class Controller:
                                 except Exception as e:
                                     self.logger.warning(f"Could not log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
-                        try:
-                            # COMPLETED dispatcher status -> MLflow FINISHED.
-                            # Explicit for clarity; matches the dispatcher ->
-                            # MLflow mapping in metric_mlflow_manager.
-                            self.metric_manager.end_run(metric_run_id, status="FINISHED")
-                        except Exception as e:
-                            self.logger.debug(f"Failed to end MetricLogger run {metric_run_id}: {e}")
+                        if was_stopped:
+                            # The MLflow run was already terminated as KILLED
+                            # by _finalize_mlflow_run() at the IC-stop /
+                            # Optuna-prune site. Calling end_run(FINISHED)
+                            # here would POST a SetTerminated(FINISHED) that
+                            # flips KILLED -> FINISHED on the server,
+                            # undoing the dispatcher <-> MLflow parity fix.
+                            # The partial final metrics logged just above
+                            # still land on the existing KILLED run.
+                            self.logger.debug(
+                                f"Skipping end_run for stopped pipeline {pipeline_id}: "
+                                f"MLflow run {metric_run_id} is already terminal (KILLED)."
+                            )
+                        else:
+                            try:
+                                # COMPLETED dispatcher status -> MLflow FINISHED.
+                                # Explicit for clarity; matches the dispatcher ->
+                                # MLflow mapping in metric_mlflow_manager.
+                                self.metric_manager.end_run(metric_run_id, status="FINISHED")
+                            except Exception as e:
+                                self.logger.debug(f"Failed to end MetricLogger run {metric_run_id}: {e}")
                 except Exception as e:
                     self.logger.debug(f"Failed to log final metrics to MetricLogger for pipeline {pipeline_id}: {e}")
 
