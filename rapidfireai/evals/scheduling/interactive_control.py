@@ -156,6 +156,21 @@ class InteractiveControlHandler:
         # Update database status
         db.set_pipeline_status(pipeline_id, PipelineStatus.STOPPED)
 
+        # Terminate the MLflow run with KILLED so the dashboard matches the
+        # notebook table (which now shows STOPPED). Mirrors _handle_delete's
+        # try/except pattern: MLflow trouble must not fail the IC op.
+        if self.metric_manager:
+            try:
+                pipeline = db.get_pipeline(pipeline_id)
+                metric_run_id = pipeline.get("metric_run_id") if pipeline else None
+                if metric_run_id:
+                    self.metric_manager.end_run(metric_run_id, status="KILLED")
+                    self.logger.info(
+                        f"Marked MLflow run {metric_run_id} as KILLED for stopped pipeline {pipeline_id}"
+                    )
+            except Exception as e:
+                self.logger.warning(f"Failed to end MLflow run for stopped pipeline {pipeline_id}: {e}")
+
         # Update display
         if progress_display:
             progress_display.update_pipeline(pipeline_id, status="STOPPED")
@@ -192,6 +207,22 @@ class InteractiveControlHandler:
 
         # Update database status
         db.set_pipeline_status(pipeline_id, PipelineStatus.ONGOING)
+
+        # Counterpart of _handle_stop's end_run(KILLED): flip the MLflow run
+        # back to RUNNING so the dashboard stops showing STOPPED for a
+        # pipeline that is once again active. Mirrors the try/except pattern
+        # used elsewhere -- MLflow trouble must not fail the IC op.
+        metric_run_id = pipeline.get("metric_run_id") if pipeline else None
+        if self.metric_manager and metric_run_id:
+            try:
+                self.metric_manager.restart_run(metric_run_id)
+                self.logger.info(
+                    f"Restarted MLflow run {metric_run_id} (status -> RUNNING) for resumed pipeline {pipeline_id}"
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to restart MLflow run for resumed pipeline {pipeline_id}: {e}"
+                )
 
         # Update display
         if progress_display:
@@ -604,6 +635,30 @@ class InteractiveControlHandler:
                 if hasattr(model_config, "sampling_params") and model_config.sampling_params:
                     sampling_str = json.dumps(model_config.sampling_params) if isinstance(model_config.sampling_params, dict) else str(model_config.sampling_params)
                     self.metric_manager.log_param(metric_run_id, "sampling_params", sampling_str)
+
+                # Seed shard-progress tags so the dashboard's Shards
+                # column renders "0/N" -> "k/N" -> "N/N" for this clone.
+                # Clones always start fresh at shard 0 (see the
+                # ``scheduler.add_pipeline(..., shards_completed=0)``
+                # call later in this method); the per-shard bump that
+                # advances ``rapidfire.progress.current`` lives in the
+                # controller loop (``controller.py``: after
+                # ``db.set_pipeline_progress``). Without this seeding,
+                # cloned runs would render "-" in the Shards column even
+                # though they're advancing -- the column renderer
+                # requires *both* tags to be present.
+                try:
+                    self.metric_manager.set_tag(
+                        metric_run_id, "rapidfire.progress.total", str(num_shards)
+                    )
+                    self.metric_manager.set_tag(
+                        metric_run_id, "rapidfire.progress.current", "0"
+                    )
+                except Exception as tag_err:
+                    self.logger.warning(
+                        f"Failed to seed progress tags for cloned pipeline "
+                        f"{new_pipeline_id}: {tag_err}"
+                    )
 
                 self.logger.info(f"Created metric run {metric_run_id} for cloned pipeline {new_pipeline_id}")
             except Exception as e:

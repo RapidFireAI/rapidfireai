@@ -85,6 +85,30 @@ class QueryProcessingActor:
         self.current_engine_config_hash = None  # Track currently loaded model
         self.metric_run_id = None  # MLflow run ID for trace association
 
+    def _clear_local_mlflow_active_run(self) -> None:
+        """Pop this actor's MLflow active-run stack WITHOUT terminating on the server.
+
+        ``mlflow.end_run()`` fires ``SetTerminated(FINISHED)`` on the server,
+        which would mark a pipeline as COMPLETED on the dashboard even though
+        the pipeline may still have shards in flight on other actors (or
+        scheduled for this actor's later requests). The controller owns the
+        terminal-state decision and calls ``metric_manager.end_run(..., status=...)``
+        when the pipeline is truly done / failed / stopped.
+
+        Here we only need to clear the *local* per-actor active-run stack
+        so the subsequent ``mlflow.start_run(run_id=...)`` for the new
+        pipeline can succeed. Delegates to the shared
+        :func:`rapidfireai.utils.metric_mlflow_manager.clear_local_mlflow_active_run_stack`
+        helper so this code path stays in sync with the ``create_experiment``
+        / ``end_experiment`` / ``clear_context`` fallbacks that use the
+        same trick to avoid the FINISHED-clobber bug.
+        """
+        from rapidfireai.utils.metric_mlflow_manager import (
+            clear_local_mlflow_active_run_stack,
+        )
+
+        clear_local_mlflow_active_run_stack(self.logger)
+
     def initialize_for_pipeline(
         self,
         engine_class: type[InferenceEngine],
@@ -305,19 +329,50 @@ class QueryProcessingActor:
                 self.prompt_manager.pipeline_id = pipeline_id
                 self.prompt_manager.model_name = model_name
 
-            # End any previously active MLflow run on this actor (happens when reused for a second pipeline).
-            # This marks the previous run as FINISHED on the server, but that's fine:
-            # the controller uses MlflowClient (not the fluent API) for final metric logging,
-            # which works on terminated runs, and its own end_run() is idempotent.
-            if self.metric_run_id and is_mlflow_enabled():
-                mlflow.end_run()
+            # Handle the actor's MLflow active-run context across pipeline
+            # transitions. Three cases:
+            #
+            # 1. Same pipeline, next shard (metric_run_id unchanged): leave
+            #    everything alone -- the active run is already open on this
+            #    actor and stays open until the controller (which is the
+            #    single authority on pipeline completion) explicitly ends it.
+            #
+            # 2. Switching to a different pipeline while the previous one is
+            #    still RUNNING on the server: we MUST NOT call
+            #    mlflow.end_run(), because that fires SetTerminated(FINISHED)
+            #    on the server and the previous pipeline may still have
+            #    shards in flight on other actors -- the dashboard would
+            #    flicker COMPLETED while the notebook still shows ONGOING.
+            #    Instead, clear only this actor's local active-run stack so
+            #    mlflow.start_run() below can take the new run, and leave
+            #    the server status untouched. The controller is responsible
+            #    for setting the terminal status when (and only when) the
+            #    pipeline has truly finished, failed, or been stopped.
+            #
+            # 3. Switching to a different pipeline whose previous run is
+            #    already terminal on the server (KILLED / FAILED / FINISHED
+            #    -- e.g. user IC-stop or controller-side error handler ran
+            #    while this actor was busy): the server state is correct;
+            #    we just need to clear local context and move on.
+            same_pipeline_next_shard = (
+                self.metric_run_id is not None and self.metric_run_id == metric_run_id
+            )
+            if self.metric_run_id and is_mlflow_enabled() and not same_pipeline_next_shard:
+                self._clear_local_mlflow_active_run()
 
             # Set the active MLflow run so traces are associated with this pipeline's run.
             # metric_run_id is a real MLflow UUID only when MLflow is enabled; when disabled
             # RFMetricLogger falls back to a plain run-name string which mlflow.start_run()
             # cannot accept, so the call must also be gated on is_mlflow_enabled().
+            # When this is the same pipeline continuing across shards, the active
+            # MLflow run is already open on this actor; calling start_run again
+            # would raise "Run with UUID ... is already active" -- skip in that case.
             self.metric_run_id = metric_run_id
-            if self.metric_run_id and is_mlflow_enabled():
+            if (
+                self.metric_run_id
+                and is_mlflow_enabled()
+                and not same_pipeline_next_shard
+            ):
                 mlflow.start_run(run_id=self.metric_run_id)
 
         except Exception as e:

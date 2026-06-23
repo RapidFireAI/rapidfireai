@@ -175,6 +175,39 @@ class RFMetricLogger(MetricLogger):
                     metric_logger.log_metric(run_name, key, value, step=step)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support log_metric")
+
+    def restart_run(self, run_id: str) -> None:
+        """Flip a previously-terminated run back to RUNNING on every
+        backend that supports it.
+
+        See :meth:`MetricLogger.restart_run` for the IC-resume use case.
+        Only the MLflow backend has a meaningful status field today; the
+        other backends inherit the no-op default. We forward the canonical
+        ``run_id`` to MLflow and the human-readable run name to the
+        others, mirroring the routing used by :meth:`end_run` /
+        :meth:`set_tag`.
+        """
+        run_name = self._get_run_name(run_id)
+        for metric_logger in self.metric_loggers.values():
+            if metric_logger.type == MetricLoggerType.MLFLOW:
+                metric_logger.restart_run(run_id)
+            else:
+                metric_logger.restart_run(run_name)
+
+    def set_tag(self, run_id: str, key: str, value: str) -> None:
+        """Set a tag on each backend that supports it.
+
+        Tags are mutable and used for evolving per-run state (e.g. shard
+        progress). Backends without a native tag concept (TB, Trackio)
+        fall back to the no-op default implemented in
+        :class:`MetricLogger`.
+        """
+        run_name = self._get_run_name(run_id)
+        for metric_logger in self.metric_loggers.values():
+            if metric_logger.type == MetricLoggerType.MLFLOW:
+                metric_logger.set_tag(run_id, key, value)
+            else:
+                metric_logger.set_tag(run_name, key, value)
     
     def get_run_metrics(self, run_id: str) -> dict:
         """Get metrics from MetricLogger."""
@@ -183,16 +216,22 @@ class RFMetricLogger(MetricLogger):
                 return metric_logger.get_run_metrics(run_id)
         return {}
 
-    def end_run(self, run_id: str) -> None:
-        """End run in MetricLogger."""
+    def end_run(self, run_id: str, status: Optional[str] = None) -> None:
+        """End run in MetricLogger.
+
+        ``status`` is forwarded to each backend so MLflow records the terminal
+        state correctly; other backends ignore it but accept it for signature
+        parity. See :data:`DISPATCHER_TO_MLFLOW_STATUS` in
+        ``metric_mlflow_manager`` for the dispatcher -> MLflow mapping.
+        """
         run_name = self._get_run_name(run_id)
         for metric_logger_name, metric_logger in self.metric_loggers.items():
-            self.logger.info(f"Ending run: {run_id}, {run_name} in {metric_logger_name}")
+            self.logger.info(f"Ending run: {run_id}, {run_name} in {metric_logger_name} (status={status})")
             if hasattr(metric_logger, "end_run"):
                 if metric_logger.type == MetricLoggerType.MLFLOW:
-                    metric_logger.end_run(run_id)
+                    metric_logger.end_run(run_id, status=status)
                 else:
-                    metric_logger.end_run(run_name)
+                    metric_logger.end_run(run_name, status=status)
             else:
                 raise ValueError(f"metric_logger for {metric_logger_name} does not support end_run")
 

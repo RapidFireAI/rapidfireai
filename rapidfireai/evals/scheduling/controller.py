@@ -119,6 +119,30 @@ class Controller:
 
         return sanitized
 
+    def _finalize_mlflow_run(self, db: RFDatabase, pipeline_id: int, mlflow_status: str) -> None:
+        """Terminate the MLflow run for ``pipeline_id`` with the given MLflow status.
+
+        Best-effort: MLflow failures are logged but never propagated. ``mlflow_status``
+        must be one of MLflow's ``RunStatus`` strings (``"FINISHED"``, ``"FAILED"``,
+        ``"KILLED"``). See :data:`DISPATCHER_TO_MLFLOW_STATUS` in
+        ``metric_mlflow_manager`` for the dispatcher -> MLflow mapping used here.
+        """
+        if not self.metric_manager:
+            return
+        try:
+            pipeline = db.get_pipeline(pipeline_id)
+            metric_run_id = pipeline.get("metric_run_id") if pipeline else None
+            if not metric_run_id:
+                return
+            self.metric_manager.end_run(metric_run_id, status=mlflow_status)
+            self.logger.info(
+                f"Marked MLflow run {metric_run_id} as {mlflow_status} for pipeline {pipeline_id}"
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to terminate MLflow run for pipeline {pipeline_id} (status={mlflow_status}): {e}"
+            )
+
     def _log_pipeline_params(
         self,
         pipeline_config: dict,
@@ -1006,8 +1030,21 @@ class Controller:
                 ordered_metrics,
             )
 
-            # Update pipeline status
-            db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
+            # Preserve terminal non-COMPLETED states. STOPPED pipelines
+            # (IC stop or Optuna prune) have already had their dispatcher
+            # status set to STOPPED and their MLflow run terminated with
+            # KILLED by the originating handler. Phase 8 still needs to
+            # publish their partial final metrics to ``final_results`` /
+            # the dashboard, but it must NOT flip the dispatcher status
+            # to COMPLETED or the MLflow status from KILLED -> FINISHED
+            # -- doing so would undo the dispatcher <-> MLflow parity fix
+            # and make stopped/pruned pipelines look like clean finishes.
+            # FAILED and DELETED are already filtered out at the top of
+            # the loop, so the only terminal non-COMPLETED state that
+            # reaches us here is STOPPED.
+            was_stopped = pipeline_status == PipelineStatus.STOPPED.value
+            if not was_stopped:
+                db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
             if progress_display:
                 # Update display with final metrics to ensure all metrics are shown.
                 # Exclude config/info keys — they are already shown in the metadata columns
@@ -1030,7 +1067,7 @@ class Controller:
 
                 progress_display.update_pipeline(
                     pipeline_id,
-                    status="COMPLETED",
+                    status="STOPPED" if was_stopped else "COMPLETED",
                     metrics=display_metrics
                 )
 
@@ -1072,10 +1109,27 @@ class Controller:
                                 except Exception as e:
                                     self.logger.warning(f"Could not log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
-                        try:
-                            self.metric_manager.end_run(metric_run_id)
-                        except Exception as e:
-                            self.logger.debug(f"Failed to end MetricLogger run {metric_run_id}: {e}")
+                        if was_stopped:
+                            # The MLflow run was already terminated as KILLED
+                            # by _finalize_mlflow_run() at the IC-stop /
+                            # Optuna-prune site. Calling end_run(FINISHED)
+                            # here would POST a SetTerminated(FINISHED) that
+                            # flips KILLED -> FINISHED on the server,
+                            # undoing the dispatcher <-> MLflow parity fix.
+                            # The partial final metrics logged just above
+                            # still land on the existing KILLED run.
+                            self.logger.debug(
+                                f"Skipping end_run for stopped pipeline {pipeline_id}: "
+                                f"MLflow run {metric_run_id} is already terminal (KILLED)."
+                            )
+                        else:
+                            try:
+                                # COMPLETED dispatcher status -> MLflow FINISHED.
+                                # Explicit for clarity; matches the dispatcher ->
+                                # MLflow mapping in metric_mlflow_manager.
+                                self.metric_manager.end_run(metric_run_id, status="FINISHED")
+                            except Exception as e:
+                                self.logger.debug(f"Failed to end MetricLogger run {metric_run_id}: {e}")
                 except Exception as e:
                     self.logger.debug(f"Failed to log final metrics to MetricLogger for pipeline {pipeline_id}: {e}")
 
@@ -1239,6 +1293,45 @@ class Controller:
 
         # PHASE 5: Register pipelines in database
         pipeline_ids, pipeline_id_to_config = self._register_pipelines(config_leaves, db)
+
+        # Publish shard-progress totals to MLflow so the dashboard's Shards
+        # column can render "x/N". We use tags (not params) because the
+        # paired "current" value is mutable and tags are MLflow's only
+        # mutable per-run key/value primitive. The frontend reads both:
+        # rapidfire.progress.current / rapidfire.progress.total.
+        #
+        # We use the lightweight ``get_pipeline_by_id_lite`` path
+        # (``include_decoded_config=False``) to avoid dill-decoding large
+        # FAISS/embedder objects -- decoding here would add seconds per
+        # pipeline and risk SIGSEGVs (see the docstring on
+        # ``RFDatabase.get_pipeline``).
+        if self.metric_manager:
+            seeded = 0
+            for pipeline_id in pipeline_ids:
+                pipeline = db.get_pipeline(pipeline_id, include_decoded_config=False)
+                metric_run_id = pipeline.get("metric_run_id") if pipeline else None
+                if not metric_run_id:
+                    continue
+                try:
+                    self.metric_manager.set_tag(
+                        metric_run_id, "rapidfire.progress.total", str(num_shards)
+                    )
+                    self.metric_manager.set_tag(
+                        metric_run_id, "rapidfire.progress.current", "0"
+                    )
+                    seeded += 1
+                except Exception as e:
+                    # Promoted from debug to warning -- this used to silently
+                    # swallow failures, which made it hard to diagnose why
+                    # the Shards column rendered "-" on the dashboard.
+                    self.logger.warning(
+                        f"Could not set initial progress tags for pipeline "
+                        f"{pipeline_id} (run {metric_run_id}): {e}"
+                    )
+            self.logger.info(
+                f"Seeded rapidfire.progress tags on {seeded}/{len(pipeline_ids)} "
+                f"MLflow runs (total={num_shards})"
+            )
 
         # Bind Optuna trials to the newly created DB pipeline IDs
         if shard_callback is not None and hasattr(config_group, "bind_initial_trials"):
@@ -1505,6 +1598,32 @@ class Controller:
                         samples_processed = shards_completed * len(shards[0])  # Approximate
                         db.set_pipeline_progress(pipeline_id, shard_id + 1, shards_completed, samples_processed)
 
+                        # Mirror the dispatcher's shards_completed into an MLflow
+                        # tag so the dashboard's Shards column updates live.
+                        # Tag (not metric) because the frontend reads a single
+                        # current value, not a time series.
+                        # ``include_decoded_config=False`` keeps this off the
+                        # hot per-shard path (see seeding block above for the
+                        # same caveat).
+                        if self.metric_manager:
+                            try:
+                                pipeline_row = db.get_pipeline(
+                                    pipeline_id, include_decoded_config=False
+                                )
+                                metric_run_id = (
+                                    pipeline_row.get("metric_run_id") if pipeline_row else None
+                                )
+                                if metric_run_id:
+                                    self.metric_manager.set_tag(
+                                        metric_run_id,
+                                        "rapidfire.progress.current",
+                                        str(shards_completed),
+                                    )
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Could not update progress tag for pipeline {pipeline_id}: {e}"
+                                )
+
                         # Check if pipeline completed all shards
                         if shards_completed >= num_shards:
                             # Mark as completed (metrics will be finalized in Phase 8)
@@ -1636,6 +1755,10 @@ class Controller:
                                     db.set_pipeline_status(pipeline_id, PipelineStatus.STOPPED)
                                     progress_display.update_pipeline(pipeline_id, status="STOPPED")
                                     scheduler.remove_pipeline(pipeline_id)
+                                    # Optuna prune maps to MLflow KILLED -- same as
+                                    # user IC-stop. Both are intentional terminations
+                                    # rather than failures or clean finishes.
+                                    self._finalize_mlflow_run(db, pipeline_id, "KILLED")
                                     self.logger.info(
                                         f"Optuna pruned pipeline {pipeline_id} after shard {shard_id}"
                                     )
@@ -1655,6 +1778,40 @@ class Controller:
                                         new_ids, new_map = self._register_pipelines(
                                             [shard_decision.replacement_config], db
                                         )
+                                        # Seed shards-progress tags on the
+                                        # replacement runs too, mirroring the
+                                        # initial-registration path above.
+                                        # Without this the Shards column on
+                                        # the dashboard would read "-" for
+                                        # any Optuna-spawned replacement.
+                                        if self.metric_manager:
+                                            for new_pid in new_ids:
+                                                repl_row = db.get_pipeline(
+                                                    new_pid, include_decoded_config=False
+                                                )
+                                                repl_run = (
+                                                    repl_row.get("metric_run_id")
+                                                    if repl_row
+                                                    else None
+                                                )
+                                                if not repl_run:
+                                                    continue
+                                                try:
+                                                    self.metric_manager.set_tag(
+                                                        repl_run,
+                                                        "rapidfire.progress.total",
+                                                        str(num_shards),
+                                                    )
+                                                    self.metric_manager.set_tag(
+                                                        repl_run,
+                                                        "rapidfire.progress.current",
+                                                        "0",
+                                                    )
+                                                except Exception as e:
+                                                    self.logger.warning(
+                                                        f"Could not seed progress tags for "
+                                                        f"replacement pipeline {new_pid}: {e}"
+                                                    )
                                         for new_pid in new_ids:
                                             pipeline_id_to_config[new_pid] = new_map[new_pid]
                                             pipeline_ids.append(new_pid)
@@ -1728,6 +1885,10 @@ class Controller:
                         db.set_actor_task_error(task_id, error_msg)
                         db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
                         db.set_pipeline_error(pipeline_id, error_msg)
+
+                        # Mirror the dispatcher FAILED state into MLflow so the
+                        # dashboard stops showing this run as RUNNING.
+                        self._finalize_mlflow_run(db, pipeline_id, "FAILED")
 
                         # Display error in notebook (but don't halt the experiment)
                         pipeline_config = pipeline_id_to_config.get(pipeline_id)
@@ -1946,6 +2107,7 @@ class Controller:
                 db.set_actor_task_error(task_id, error_msg)
                 db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
                 db.set_pipeline_error(pipeline_id, error_msg)
+                self._finalize_mlflow_run(db, pipeline_id, "FAILED")
                 scheduler.remove_pipeline(pipeline_id)
                 if progress_display:
                     progress_display.update_pipeline(pipeline_id, status="FAILED")
@@ -1996,6 +2158,7 @@ class Controller:
                 db.set_actor_task_error(task_id, error_msg)
                 db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
                 db.set_pipeline_error(pipeline_id, error_msg)
+                self._finalize_mlflow_run(db, pipeline_id, "FAILED")
                 active_tasks.pop(actor_id, None)
                 scheduler.remove_pipeline(pipeline_id)
                 if progress_display:

@@ -4,7 +4,7 @@ import time
 import trackio
 import io
 from contextlib import redirect_stdout
-from typing import Any
+from typing import Any, Optional
 from rapidfireai.utils.metric_logger import MetricLogger, MetricLoggerType
 from rapidfireai.evals.utils.logger import RFLogger
 import warnings
@@ -139,10 +139,18 @@ class TrackioMetricLogger(MetricLogger):
         # Metrics are stored locally and can be viewed via trackio.show()
         return {}
 
-    def end_run(self, run_id: str) -> None:
-        """End a specific run."""
+    def end_run(self, run_id: str, status: Optional[str] = None) -> None:
+        """End a specific run.
+
+        ``status`` is accepted for signature parity with MetricLogger.
+        Trackio's ``finish()`` has no terminal-state concept, so the value
+        is logged but otherwise ignored.
+        """
         try:
-            self.logger.info(f"Ending Trackio run: {run_id}")
+            if status is not None:
+                self.logger.info(f"Ending Trackio run: {run_id} (status={status})")
+            else:
+                self.logger.info(f"Ending Trackio run: {run_id}")
             self._capture_trackio_output(self.active_runs[run_id].finish)
             # Allow background thread to complete sending data before program exit
             time.sleep(0.5)

@@ -86,15 +86,53 @@ class ExperimentUtils:
         # disable warnings from notebook
         self._disable_ml_warnings_display()
 
-        # Clear any existing MLflow context before starting new experiment
-        # Only if using MLflow backend
+        # Clear any existing MLflow context before starting new experiment.
+        # Only if using MLflow backend. We must NOT clobber a terminal status
+        # the controller / worker / IC handler may have already set (KILLED,
+        # FAILED). Fetch the server-side status first; if the run is already
+        # terminal, pass that same status to mlflow.end_run() so the fluent
+        # API's SetTerminated call is idempotent. Otherwise fall back to the
+        # default (FINISHED) for genuinely RUNNING leftovers.
+        #
+        # If the server-side lookup itself fails (network blip / transient
+        # MLflow outage) we must not fall back to mlflow.end_run() either:
+        # its default status is FINISHED, which would clobber any prior
+        # KILLED / FAILED state we couldn't read. In that case we clear
+        # only the local fluent active-run stack so the new experiment
+        # can claim the slot without making any server-side termination
+        # call.
         if RF_MLFLOW_ENABLED=="true":
             import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
+            from mlflow.tracking import MlflowClient
+            from rapidfireai.utils.metric_mlflow_manager import (
+                clear_local_mlflow_active_run_stack,
+            )
 
             try:
-                if mlflow.active_run():
+                active = mlflow.active_run()
+                if active:
                     print("Clearing existing MLflow context before starting new experiment")
-                    mlflow.end_run()
+                    existing_status = None
+                    get_run_failed = False
+                    try:
+                        existing_status = (
+                            MlflowClient(MLflowConfig.URL)
+                            .get_run(active.info.run_id)
+                            .info.status
+                        )
+                    except Exception as get_err:
+                        get_run_failed = True
+                        print(
+                            f"Could not fetch server-side status for MLflow run "
+                            f"{active.info.run_id}: {get_err}. Clearing local "
+                            f"fluent stack only to preserve any prior terminal status."
+                        )
+                    if existing_status in ("KILLED", "FAILED", "FINISHED"):
+                        mlflow.end_run(status=existing_status)
+                    elif get_run_failed:
+                        clear_local_mlflow_active_run_stack()
+                    else:
+                        mlflow.end_run()
             except Exception as e:
                 print(f"Error clearing existing MLflow context: {e}")
 
@@ -214,14 +252,44 @@ class ExperimentUtils:
         self.db.set_experiment_status(current_experiment["experiment_id"], ExperimentStatus.COMPLETED)
         self.db.reset_all_tables()
 
-        # Clear MLflow context only if using MLflow backend
+        # Clear MLflow context only if using MLflow backend. Same idempotent
+        # pattern as create_experiment: preserve any terminal status the
+        # controller / worker / IC handler already set on the active run.
+        # When the server-side lookup fails we clear only the local fluent
+        # stack -- never fall through to mlflow.end_run()'s FINISHED
+        # default, which would clobber any prior KILLED / FAILED state.
         if RF_MLFLOW_ENABLED=="true":
             import mlflow  # Lazy import to avoid connection attempts in tensorboard-only mode
+            from mlflow.tracking import MlflowClient
+            from rapidfireai.utils.metric_mlflow_manager import (
+                clear_local_mlflow_active_run_stack,
+            )
 
             try:
-                if mlflow.active_run():
+                active = mlflow.active_run()
+                if active:
                     print("Ending active MLflow run before ending experiment")
-                    mlflow.end_run()
+                    existing_status = None
+                    get_run_failed = False
+                    try:
+                        existing_status = (
+                            MlflowClient(MLflowConfig.URL)
+                            .get_run(active.info.run_id)
+                            .info.status
+                        )
+                    except Exception as get_err:
+                        get_run_failed = True
+                        print(
+                            f"Could not fetch server-side status for MLflow run "
+                            f"{active.info.run_id}: {get_err}. Clearing local "
+                            f"fluent stack only to preserve any prior terminal status."
+                        )
+                    if existing_status in ("KILLED", "FAILED", "FINISHED"):
+                        mlflow.end_run(status=existing_status)
+                    elif get_run_failed:
+                        clear_local_mlflow_active_run_stack()
+                    else:
+                        mlflow.end_run()
 
                 # Also clear context through RFMetricLogger if available
                 try:

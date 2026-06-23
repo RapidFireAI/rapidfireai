@@ -94,6 +94,99 @@ class Controller:
         self.metric_logger.get_experiment(self.experiment_name)
         self.logger.debug("Controller initialized")
 
+    def _finalize_mlflow_run(self, run_id: int, mlflow_status: str) -> None:
+        """Terminate the MLflow run associated with ``run_id`` using ``mlflow_status``.
+
+        Best-effort: any failure is logged but never propagated. ``mlflow_status``
+        must be one of MLflow's ``RunStatus`` strings (``"FINISHED"``, ``"FAILED"``,
+        ``"KILLED"``). See ``DISPATCHER_TO_MLFLOW_STATUS`` in
+        ``rapidfireai.utils.metric_mlflow_manager`` for the dispatcher -> MLflow
+        mapping used here.
+        """
+        if not self.metric_logger:
+            return
+        try:
+            run = self.db.get_run(run_id)
+            metric_run_id = run.get("metric_run_id") if run else None
+            if not metric_run_id:
+                return
+            self.metric_logger.end_run(metric_run_id, status=mlflow_status)
+            self.logger.info(
+                f"Marked MLflow run {metric_run_id} as {mlflow_status} for run {run_id}"
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to terminate MLflow run for run {run_id} (status={mlflow_status}): {e}"
+            )
+
+    def _restart_mlflow_run(self, run_id: int) -> None:
+        """Flip the MLflow run associated with ``run_id`` back to ``RUNNING``.
+
+        Counterpart of :meth:`_finalize_mlflow_run`: the IC stop path
+        terminates the MLflow run with ``KILLED`` so the dashboard mirrors
+        the notebook table; resuming must put the run back into
+        ``RUNNING`` so the dashboard stops showing ``STOPPED`` for a run
+        that is once again training. Without this call, the resumed run
+        would render as ``STOPPED`` on the dashboard for the rest of its
+        lifetime (until clean completion / failure / re-stop fires
+        another ``end_run``).
+
+        Best-effort: any failure is logged but never propagated -- a
+        stale dashboard cell must not abort training.
+        """
+        if not self.metric_logger:
+            return
+        try:
+            run = self.db.get_run(run_id)
+            metric_run_id = run.get("metric_run_id") if run else None
+            if not metric_run_id:
+                return
+            self.metric_logger.restart_run(metric_run_id)
+            self.logger.info(
+                f"Restarted MLflow run {metric_run_id} (status -> RUNNING) for run {run_id}"
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to restart MLflow run for run {run_id}: {e}"
+            )
+
+    def _set_progress_tags(
+        self,
+        metric_run_id: str | None,
+        *,
+        current: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        """Mirror chunk progress to MLflow tags so the dashboard's Shards
+        column can render ``current/total`` for fit-mode runs.
+
+        We use tags (not params) because ``current`` is mutable across
+        chunks, and tags are MLflow's only mutable per-run key/value
+        primitive. The frontend reads ``rapidfire.progress.current`` and
+        ``rapidfire.progress.total`` (see
+        ``RunShardsCellRenderer.tsx``). This mirrors the seeding/update
+        pattern used by the evals controller -- keep the two in sync.
+
+        Any backend errors are logged but never propagated: a stale
+        Shards cell must not take down training.
+        """
+        if not self.metric_logger or not metric_run_id:
+            return
+        try:
+            if total is not None:
+                self.metric_logger.set_tag(
+                    metric_run_id, "rapidfire.progress.total", str(total)
+                )
+            if current is not None:
+                self.metric_logger.set_tag(
+                    metric_run_id, "rapidfire.progress.current", str(current)
+                )
+        except Exception as e:
+            self.logger.warning(
+                f"Could not set rapidfire.progress tags on MLflow run "
+                f"{metric_run_id}: {e}"
+            )
+
     def _create_models(
         self,
         param_config: AutoMLAlgorithm | dict[str, Any],
@@ -197,6 +290,15 @@ class Controller:
                     self.metric_logger.log_param(
                         metric_run_id, "parent-run", str(cloned_from)
                     )
+                # Seed the Shards-column tags so the dashboard renders
+                # ``0/num_chunks`` immediately on run creation, instead
+                # of waiting for the first chunk to complete. The fit
+                # scheduler tracks chunks per epoch (it calls
+                # ``reset_run`` at epoch boundaries), so ``total`` is
+                # ``num_chunks`` -- not ``num_chunks * num_epochs``.
+                self._set_progress_tags(
+                    metric_run_id, current=0, total=num_chunks
+                )
                 self.logger.debug(
                     f"Populated MetricLogger with model config info for run {run_id}."
                 )
@@ -211,7 +313,10 @@ class Controller:
                 print(msg)
                 if metric_run_id:
                     try:
-                        self.metric_logger.end_run(metric_run_id)
+                        # The tracking run never had a successful start, so
+                        # record it as FAILED rather than letting MLflow's
+                        # default FINISHED state mislead the dashboard.
+                        self.metric_logger.end_run(metric_run_id, status="FAILED")
                     except Exception:
                         pass
                 self.logger.error(msg, exc_info=True)
@@ -285,6 +390,9 @@ class Controller:
                     status=RunStatus.STOPPED,
                     ended_by=RunEndedBy.INTERACTIVE_CONTROL,
                 )
+                # Mirror dispatcher STOPPED into MLflow as KILLED so the
+                # dashboard text agrees with the user-facing CLI table.
+                self._finalize_mlflow_run(run_id, "KILLED")
                 self.db.set_ic_ops_task_status(
                     run_state["task_id"], TaskStatus.COMPLETED
                 )
@@ -315,6 +423,11 @@ class Controller:
                     status=RunStatus.ONGOING,
                     ended_by="",
                 )
+                # Counterpart of the STOPPED branch's end_run(KILLED) call
+                # above: flip the MLflow run back to RUNNING so the
+                # dashboard agrees with the notebook table (ONGOING)
+                # instead of remaining stuck at STOPPED.
+                self._restart_mlflow_run(run_id)
                 self.db.set_ic_ops_task_status(
                     run_state["task_id"], TaskStatus.COMPLETED
                 )
@@ -747,6 +860,16 @@ class Controller:
                         num_epochs_completed=num_epochs_completed,
                     )
 
+                    # Advance the Shards-column tag for this run. ``total``
+                    # is already seeded in ``_create_models`` and never
+                    # changes for fit runs, so we only update ``current``.
+                    # Epoch rollover is handled below (after
+                    # ``scheduler.reset_run``) by resetting current to 0.
+                    self._set_progress_tags(
+                        run_details.get("metric_run_id"),
+                        current=new_chunks_visited,
+                    )
+
                     # Update progress
                     progress_percentage = (
                         (
@@ -779,6 +902,9 @@ class Controller:
                                     status=RunStatus.STOPPED,
                                     ended_by=RunEndedBy.OPTUNA_PRUNED,
                                 )
+                                # Optuna prune -> dispatcher STOPPED -> MLflow KILLED
+                                # (intentional programmatic termination).
+                                self._finalize_mlflow_run(run_id, "KILLED")
                                 self._clear_run_from_shm(run_id)
                                 self.logger.info(f"Optuna pruned run {run_id} after chunk {chunk_id}")
                                 if decision.replacement_config:
@@ -808,6 +934,11 @@ class Controller:
                             status=RunStatus.COMPLETED,
                             ended_by=RunEndedBy.EPOCH_COMPLETED,
                         )
+                        # Clean completion -> dispatcher COMPLETED -> MLflow FINISHED.
+                        # This is fit-mode's only successful exit; previously the run
+                        # was left RUNNING on the server until something else (e.g.
+                        # experiment_utils.end_experiment) flushed it.
+                        self._finalize_mlflow_run(run_id, "FINISHED")
                         self.logger.info(
                             f"Run {run_id} has completed all its epochs - "
                             f"steps {run_details['completed_steps']}/{run_details['total_steps']}"
@@ -820,6 +951,14 @@ class Controller:
                         scheduler.reset_run(run_id)
                         self.db.set_run_details(
                             run_id=run_id, num_chunks_visited_curr_epoch=0
+                        )
+                        # The scheduler tracks chunks per-epoch, so reset
+                        # the Shards tag to ``0/num_chunks`` for the new
+                        # epoch. Without this the cell would be stuck at
+                        # ``num_chunks/num_chunks`` for the rest of the
+                        # run, hiding the rollover from users.
+                        self._set_progress_tags(
+                            run_details.get("metric_run_id"), current=0
                         )
                         self.logger.info(
                             f"Run {run_id} has completed epoch ({new_chunks_visited}/{num_chunks} chunks)"
@@ -876,6 +1015,16 @@ class Controller:
                             "num_chunks_visited_curr_epoch"
                         ]
                         scheduler.add_run(run_info, chunks_visited)
+                        # Re-seed Shards-column tags when an IC Op
+                        # resumes or revives a run. ``_create_models``
+                        # only fires for brand-new run IDs; without
+                        # this, resumed runs would render ``-`` until
+                        # their next chunk completes.
+                        self._set_progress_tags(
+                            run_details.get("metric_run_id"),
+                            current=chunks_visited,
+                            total=num_chunks,
+                        )
                         self.logger.debug(
                             f"Added run {run_id} to scheduler with {chunks_visited} chunks visited"
                         )

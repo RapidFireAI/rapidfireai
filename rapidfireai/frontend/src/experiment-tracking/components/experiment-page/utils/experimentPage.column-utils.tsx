@@ -34,6 +34,8 @@ import {
 } from '../components/runs/cells/RowActionsCellRenderer';
 import { RowActionsHeaderCellRenderer } from '../components/runs/cells/RowActionsHeaderCellRenderer';
 import { RunNameCellRenderer } from '../components/runs/cells/RunNameCellRenderer';
+import { RunShardsCellRenderer } from '../components/runs/cells/RunShardsCellRenderer';
+import { RunStatusCellRenderer } from '../components/runs/cells/RunStatusCellRenderer';
 import { LoadMoreRowRenderer } from '../components/runs/cells/LoadMoreRowRenderer';
 import {
   DatasetsCellRenderer,
@@ -113,6 +115,8 @@ export const getFrameworkComponents = () => ({
   RowActionsCellRenderer,
   RowActionsHeaderCellRenderer,
   RunNameCellRenderer,
+  RunStatusCellRenderer,
+  RunShardsCellRenderer,
   DatasetsCellRenderer,
   InteractiveControllerCellRenderer,
   AggregateMetricValueCell,
@@ -329,6 +333,41 @@ export const useRunsColumnDefinitions = ({
       flex: isRunColumnDynamicSized ? 1 : undefined,
       resizable: !isComparingRuns,
       suppressKeyboardEvent: defaultKeyboardNavigationSuppressor,
+    });
+
+    // Status column -- placed immediately after Run Name so the user can
+    // see each run's lifecycle state (COMPLETED / STOPPED / ONGOING / NEW
+    // / FAILED, after relabel) at the same glance as the run name. Sourced
+    // from the row's runStatus field (set in experimentPage.row-utils from
+    // runInfo.status). Pinned left so it stays adjacent to the run name
+    // when the user scrolls horizontally through parameter/metric columns.
+    // The cell renderer also handles the dispatcher vocabulary relabel; see
+    // RunStatusCellRenderer.tsx.
+    columns.push({
+      headerName: ATTRIBUTE_COLUMN_LABELS.STATUS,
+      colId: makeCanonicalSortKey(COLUMN_TYPES.ATTRIBUTES, ATTRIBUTE_COLUMN_LABELS.STATUS),
+      headerTooltip: ATTRIBUTE_COLUMN_LABELS.STATUS,
+      pinned: usingCompactViewport ? undefined : 'left',
+      field: 'runStatus',
+      cellRenderer: 'RunStatusCellRenderer',
+      sortable: false,
+      resizable: true,
+      initialWidth: 130,
+    });
+
+    // Shards column -- shows shard progress (e.g. "2/4") read from
+    // MLflow tags rapidfire.progress.current / rapidfire.progress.total
+    // (emitted by the evals controller). Pinned left so it stays in the
+    // visual cluster Run Name -> Status -> Shards -> Created.
+    columns.push({
+      headerName: ATTRIBUTE_COLUMN_LABELS.SHARDS,
+      colId: makeCanonicalSortKey(COLUMN_TYPES.ATTRIBUTES, ATTRIBUTE_COLUMN_LABELS.SHARDS),
+      headerTooltip: ATTRIBUTE_COLUMN_LABELS.SHARDS,
+      pinned: usingCompactViewport ? undefined : 'left',
+      cellRenderer: 'RunShardsCellRenderer',
+      sortable: false,
+      resizable: true,
+      initialWidth: 90,
     });
 
     // If we are only comparing runs, that's it - we cut off the list after the run name column.
