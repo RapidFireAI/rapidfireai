@@ -369,6 +369,226 @@ def test_idempotent_end_run_preserves_terminal_state(server_status, expected):
 
 
 # --------------------------------------------------------------------------- #
+# Regression: when the server-side MlflowClient.get_run lookup itself fails
+# (network blip, transient MLflow outage), the idempotency block must NOT
+# fall through to mlflow.end_run() -- that defaults to FINISHED and would
+# clobber any prior KILLED / FAILED state set by the controller / worker /
+# IC handler. Instead it must clear only the local fluent active-run
+# stack via clear_local_mlflow_active_run_stack.
+#
+# Exercised in three places:
+#   1. The shared helper itself (no SetTerminated, pops the stack).
+#   2. MLflowMetricLogger.clear_context (real code path).
+#   3. The inlined experiment_utils create / end logic (replicated, same
+#      structure as _idempotent_end_run above).
+# --------------------------------------------------------------------------- #
+
+
+def test_clear_local_active_run_stack_pops_without_set_terminated():
+    """The shared helper must pop the fluent stack but never POST a status."""
+    from rapidfireai.utils.metric_mlflow_manager import (
+        clear_local_mlflow_active_run_stack,
+    )
+
+    fake_run = MagicMock()
+    fake_run.info.run_id = "popme"
+
+    fake_stack = MagicMock()
+    fake_stack.__bool__ = lambda self: True
+    fake_stack.pop = MagicMock(return_value=fake_run)
+
+    fake_monitor = MagicMock()
+    fake_monitors = {"popme": fake_monitor}
+
+    fake_last_active = MagicMock()
+    fake_run_id_env = MagicMock()
+
+    # Patch the private MLflow fluent symbols the helper reaches into.
+    import mlflow.tracking.fluent as fluent_mod
+    import mlflow.environment_variables as env_mod
+
+    with patch.object(fluent_mod, "_active_run_stack", MagicMock(get=lambda: fake_stack)), \
+         patch.object(fluent_mod, "_last_active_run_id", fake_last_active), \
+         patch.object(fluent_mod, "run_id_to_system_metrics_monitor", fake_monitors), \
+         patch.object(env_mod, "MLFLOW_RUN_ID", fake_run_id_env):
+        clear_local_mlflow_active_run_stack(logger=MagicMock())
+
+    # Stack was popped, env unset, last-active updated, monitor finished.
+    fake_stack.pop.assert_called_once()
+    fake_run_id_env.unset.assert_called_once()
+    fake_last_active.set.assert_called_once_with("popme")
+    fake_monitor.finish.assert_called_once()
+
+
+def test_clear_local_active_run_stack_swallows_internal_errors():
+    """If MLflow's private symbols shift / are missing, helper must not raise."""
+    from rapidfireai.utils.metric_mlflow_manager import (
+        clear_local_mlflow_active_run_stack,
+    )
+
+    import mlflow.tracking.fluent as fluent_mod
+
+    # Make ``_active_run_stack.get()`` blow up.
+    broken = MagicMock()
+    broken.get.side_effect = AttributeError("schema changed")
+
+    with patch.object(fluent_mod, "_active_run_stack", broken):
+        # Must not raise even when MLflow internals misbehave.
+        clear_local_mlflow_active_run_stack(logger=MagicMock())
+
+
+def test_clear_context_get_run_failure_does_not_clobber():
+    """When ``client.get_run`` raises, clear_context must NOT call
+    ``mlflow.end_run()`` -- the default FINISHED would clobber any
+    prior KILLED / FAILED status we couldn't read off the server.
+    It must instead delegate to the local-only stack-clear helper.
+    """
+    from rapidfireai.utils import metric_mlflow_manager as mm_mod
+    from rapidfireai.utils.metric_mlflow_manager import mlflow as mlflow_mod
+
+    logger = _build_mlflow_logger()
+    # Server lookup raises -- the bug scenario.
+    logger.client.get_run.side_effect = RuntimeError("server down")
+
+    active = MagicMock()
+    active.info.run_id = "blew-up-rid"
+
+    with patch.object(mlflow_mod, "active_run", return_value=active), \
+         patch.object(mlflow_mod, "end_run") as mock_end_run, \
+         patch.object(
+             mm_mod, "clear_local_mlflow_active_run_stack"
+         ) as mock_local_clear:
+        logger.clear_context()
+
+    # Critical invariant: no fluent end_run call, hence no server-side
+    # SetTerminated(FINISHED) that could clobber a prior terminal state.
+    mock_end_run.assert_not_called()
+    # Local fluent stack was cleared instead, with the logger forwarded
+    # so any internal warnings show up in the right log stream.
+    mock_local_clear.assert_called_once_with(logger.logger)
+
+
+@pytest.mark.parametrize("server_status", ["KILLED", "FAILED", "FINISHED"])
+def test_clear_context_terminal_status_still_uses_mlflow_end_run(server_status):
+    """Sanity check: when get_run succeeds and the server reports a
+    terminal state, clear_context still passes that exact status through
+    to mlflow.end_run() so set_terminated stays idempotent. (Guards the
+    refactor from accidentally routing happy-path terminal cases through
+    the local-only helper.)"""
+    from rapidfireai.utils import metric_mlflow_manager as mm_mod
+    from rapidfireai.utils.metric_mlflow_manager import mlflow as mlflow_mod
+
+    logger = _build_mlflow_logger()
+    logger.client.get_run.return_value.info.status = server_status
+
+    active = MagicMock()
+    active.info.run_id = "fine-rid"
+
+    with patch.object(mlflow_mod, "active_run", return_value=active), \
+         patch.object(mlflow_mod, "end_run") as mock_end_run, \
+         patch.object(
+             mm_mod, "clear_local_mlflow_active_run_stack"
+         ) as mock_local_clear:
+        logger.clear_context()
+
+    mock_end_run.assert_called_once_with(status=server_status)
+    mock_local_clear.assert_not_called()
+
+
+def test_clear_context_running_status_uses_default_end_run():
+    """Sanity check: when the server says the run is genuinely RUNNING,
+    clear_context defaults to mlflow.end_run() (FINISHED) -- that is
+    the correct terminal state for an explicitly-cleared healthy
+    context, and we must not regress that behaviour."""
+    from rapidfireai.utils import metric_mlflow_manager as mm_mod
+    from rapidfireai.utils.metric_mlflow_manager import mlflow as mlflow_mod
+
+    logger = _build_mlflow_logger()
+    logger.client.get_run.return_value.info.status = "RUNNING"
+
+    active = MagicMock()
+    active.info.run_id = "running-rid"
+
+    with patch.object(mlflow_mod, "active_run", return_value=active), \
+         patch.object(mlflow_mod, "end_run") as mock_end_run, \
+         patch.object(
+             mm_mod, "clear_local_mlflow_active_run_stack"
+         ) as mock_local_clear:
+        logger.clear_context()
+
+    mock_end_run.assert_called_once_with()
+    mock_local_clear.assert_not_called()
+
+
+def _idempotent_end_run_v2(metric_run_id, get_run_behavior):
+    """Updated mirror of the experiment_utils + clear_context block that
+    includes the get_run-failure branch the original ``_idempotent_end_run``
+    was missing. ``get_run_behavior`` is either a status string (the
+    server returned it) or the sentinel ``"<raise>"`` (server lookup blew
+    up). Returns a tuple ``(end_run_arg, local_clear_called)``:
+
+      end_run_arg:        the status= kwarg passed to mlflow.end_run, or
+                          ``"<no-arg>"`` for a status-less call, or
+                          ``None`` if mlflow.end_run was never called.
+      local_clear_called: True iff the local-only stack clear ran.
+    """
+    captured = {"end_run_arg": None, "local_clear_called": False}
+
+    def fake_end_run(status=None):
+        captured["end_run_arg"] = status if status is not None else "<no-arg>"
+
+    def fake_local_clear(*_args, **_kwargs):
+        captured["local_clear_called"] = True
+
+    mock_client = MagicMock()
+    if get_run_behavior == "<raise>":
+        mock_client.get_run.side_effect = RuntimeError("server down")
+    else:
+        mock_client.get_run.return_value.info.status = get_run_behavior
+
+    fake_mlflow = MagicMock()
+    fake_mlflow.end_run.side_effect = fake_end_run
+
+    if metric_run_id:
+        existing_status = None
+        get_run_failed = False
+        try:
+            existing_status = mock_client.get_run(metric_run_id).info.status
+        except Exception:
+            get_run_failed = True
+        if existing_status in ("KILLED", "FAILED", "FINISHED"):
+            fake_mlflow.end_run(status=existing_status)
+        elif get_run_failed:
+            fake_local_clear()
+        else:
+            fake_mlflow.end_run()
+    return captured["end_run_arg"], captured["local_clear_called"]
+
+
+@pytest.mark.parametrize(
+    "get_run_behavior,expected_end_arg,expected_local_clear",
+    [
+        ("KILLED", "KILLED", False),
+        ("FAILED", "FAILED", False),
+        ("FINISHED", "FINISHED", False),
+        ("RUNNING", "<no-arg>", False),
+        ("SCHEDULED", "<no-arg>", False),
+        # The regression we are pinning: get_run blew up -> no end_run,
+        # local-only clear instead. Previously this would have routed
+        # through ``else: mlflow.end_run()`` (server default FINISHED)
+        # and clobbered the prior terminal status.
+        ("<raise>", None, True),
+    ],
+)
+def test_experiment_utils_idempotent_block_handles_get_run_failure(
+    get_run_behavior, expected_end_arg, expected_local_clear
+):
+    end_arg, local_clear = _idempotent_end_run_v2("some-id", get_run_behavior)
+    assert end_arg == expected_end_arg
+    assert local_clear is expected_local_clear
+
+
+# --------------------------------------------------------------------------- #
 # Evals actor must NOT end+restart MLflow runs between shards of the same
 # pipeline (the run should stay RUNNING continuously across shards).
 # This guards against the FINISHED -> RUNNING flicker bug.

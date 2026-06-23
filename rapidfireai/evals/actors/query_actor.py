@@ -97,38 +97,17 @@ class QueryProcessingActor:
 
         Here we only need to clear the *local* per-actor active-run stack
         so the subsequent ``mlflow.start_run(run_id=...)`` for the new
-        pipeline can succeed. The work mirrors ``mlflow.end_run`` minus the
-        ``set_terminated`` call.
+        pipeline can succeed. Delegates to the shared
+        :func:`rapidfireai.utils.metric_mlflow_manager.clear_local_mlflow_active_run_stack`
+        helper so this code path stays in sync with the ``create_experiment``
+        / ``end_experiment`` / ``clear_context`` fallbacks that use the
+        same trick to avoid the FINISHED-clobber bug.
         """
-        try:
-            from mlflow.tracking import fluent
-            from mlflow.environment_variables import MLFLOW_RUN_ID
+        from rapidfireai.utils.metric_mlflow_manager import (
+            clear_local_mlflow_active_run_stack,
+        )
 
-            active_stack = fluent._active_run_stack.get()
-            if active_stack:
-                MLFLOW_RUN_ID.unset()
-                run = active_stack.pop()
-                fluent._last_active_run_id.set(run.info.run_id)
-                # Tear down the per-run system-metrics monitor if mlflow
-                # started one; otherwise it would leak.
-                monitor = fluent.run_id_to_system_metrics_monitor.pop(
-                    run.info.run_id, None
-                )
-                if monitor is not None:
-                    try:
-                        monitor.finish()
-                    except Exception:
-                        pass
-        except Exception as e:
-            # Fluent-API internals can shift between MLflow versions. If
-            # the private symbols ever change, fall back to no-op: the next
-            # mlflow.start_run() will raise a clearer error than we could
-            # synthesize here, and we'd rather surface that than risk
-            # accidentally marking the previous run as FINISHED.
-            self.logger.warning(
-                f"Could not clear local MLflow active-run stack for run "
-                f"{self.metric_run_id}: {e}"
-            )
+        clear_local_mlflow_active_run_stack(self.logger)
 
     def initialize_for_pipeline(
         self,
