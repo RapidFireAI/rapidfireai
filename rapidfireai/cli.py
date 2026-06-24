@@ -489,9 +489,9 @@ def install_packages(
             packages.append({"package": "cupy-cuda13x==14.0.1", "extra_args": ["--upgrade"]})
         packages.append({"package": "numpy==2.0.1", "extra_args": ["--upgrade"]})
 
-    # if ColabConfig.ON_COLAB:
-    #     packages.append({"package": "cupy-cuda12x==14.0.1", "extra_args": ["--upgrade"]})
-    #     packages.append({"package": "numpy==2.0.1", "extra_args": ["--upgrade"]})
+    if not evals:
+        if ColabConfig.ON_COLAB:
+            packages.append({"package": "numpy==2.0.1", "extra_args": ["--upgrade"]})
 
     for package_info in packages:
         try:
