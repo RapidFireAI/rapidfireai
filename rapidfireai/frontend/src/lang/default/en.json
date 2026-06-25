@@ -1076,7 +1076,7 @@
     "description": "Tag assignment modal > Title of the add tags modal"
   },
   "AM8DuO": {
-    "defaultMessage": "Failed",
+    "defaultMessage": "FAILED",
     "description": "Run page > Overview > Run status cell > Value for failed state"
   },
   "AOoWxS": {
@@ -1108,7 +1108,7 @@
     "description": "Label name for the created time under details tab on the model view page"
   },
   "AupQl+": {
-    "defaultMessage": "Killed",
+    "defaultMessage": "STOPPED",
     "description": "Run page > Overview > Run status cell > Value for killed state"
   },
   "AxdKIr": {
@@ -2244,7 +2244,7 @@
     "description": "Models table > no models present yet"
   },
   "On3g1B": {
-    "defaultMessage": "Running",
+    "defaultMessage": "ONGOING",
     "description": "Run page > Overview > Run status cell > Value for running state"
   },
   "OzyPl3": {
@@ -2887,7 +2887,7 @@
     "description": "Empty state title displayed when all models are filtered out in the logged models list page"
   },
   "X8OaXU": {
-    "defaultMessage": "Scheduled",
+    "defaultMessage": "NEW",
     "description": "Run page > Overview > Run status cell > Value for scheduled state"
   },
   "XBtNVo": {
@@ -5050,7 +5050,7 @@
     "description": "Run page > Overview > Description section > Section title"
   },
   "ujm55z": {
-    "defaultMessage": "Finished",
+    "defaultMessage": "COMPLETED",
     "description": "Run page > Overview > Run status cell > Value for finished state"
   },
   "umeTwG": {

@@ -202,6 +202,7 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
@@ -238,6 +239,7 @@ commands.sh
 node_modules/
 package-lock.json
 rapidfireai/rapidfire_pids.txt
+converge_pids.txt
 
 # frontend build
 rapidfireai/frontend/build/
@@ -245,3 +247,10 @@ rapidfireai/frontend/build/
 # misc files
 rapidfire_pids.txt
 rf_mode.txt
+
+# document pdfs for mmdocir
+*/rag-contexteng/datasets/mmdocir/
+*/*/rag-contexteng/datasets/mmdocir/
+
+# MLFlow Artifacts
+mlartifacts/

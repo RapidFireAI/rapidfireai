@@ -14,6 +14,8 @@ export const ATTRIBUTE_COLUMN_LABELS = {
   DURATION: 'Duration',
   USER: 'User',
   RUN_NAME: 'Run Name',
+  STATUS: 'Status',
+  SHARDS: 'Shards',
   SOURCE: 'Source',
   VERSION: 'Version',
   MODELS: 'Models',

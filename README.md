@@ -74,7 +74,7 @@ pip install rapidfireai
 
 rapidfireai --version
 # Verify it prints the following:
-# RapidFire AI 0.15.2
+# RapidFire AI 0.16.1
 
 # Replace YOUR_TOKEN with your actual Hugging Face token
 # https://huggingface.co/docs/hub/en/security-tokens
@@ -88,7 +88,7 @@ pip uninstall -y hf-xet
 
 # For Fine-tuning/Post-Training: Install specific dependencies and initialize rapidfireai
 
-rapidfireai init
+rapidfireai init --train
 rapidfireai start
 
 # It should print about 50 lines, including the following:
@@ -108,7 +108,7 @@ ssh -L 8853:localhost:8853 username@remote-machine
 
 
 # For RAG/Context Engineering Evals: Install specific dependencies and initialize rapidfireai
-rapidfireai init --evals
+rapidfireai init
 rapidfireai start
 
 # It should print about 50 lines, including the following:

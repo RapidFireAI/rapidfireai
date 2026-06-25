@@ -105,7 +105,9 @@ RAPIDFIRE_FIT_DIR="$RAPIDFIRE_DIR/fit"
 RAPIDFIRE_EVALS_DIR="$RAPIDFIRE_DIR/evals"
 FRONTEND_DIR="$RAPIDFIRE_DIR/frontend"
 
-RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "fit")
+RAPIDFIRE_MODE=$(cat $RF_HOME/rf_mode.txt 2>/dev/null || echo "evals")
+RAPIDFIRE_MODE="${RAPIDFIRE_MODE#$'\xEF\xBB\xBF'}"   # strip leading UTF-8 BOM
+RAPIDFIRE_MODE="${RAPIDFIRE_MODE//[$' \t\r\n']/}"    # strip surrounding whitespace/CR, matches get_installed_mode().strip()
 DISPATCHER_DIR="$RAPIDFIRE_DIR/$RAPIDFIRE_MODE/dispatcher"
 
 # Function to print colored output
@@ -190,8 +192,21 @@ cleanup() {
         exit 0
     fi
 
+    # NOTE: We intentionally do NOT run `ray stop --force` or broad
+    # `pkill -f "raylet|plasma_store|gcs_server|ray::"` here. Those commands
+    # would terminate every Ray process owned by the current user on this
+    # host -- including Ray clusters or workers started outside RapidFire AI
+    # (e.g. another notebook, another project, or another user on a shared
+    # box). Ray is only ever started from inside the user's experiment
+    # process (`ray.init()` in `rapidfireai/experiment.py`, evals mode), and
+    # that same process is responsible for tearing it down via
+    # `Experiment.end_experiment()` -> `ray.shutdown()`. The only Ray-related
+    # cleanup that is safe to do from here is freeing the RapidFire-
+    # configured Ray dashboard port (RF_RAY_PORT), which the port-kill loop
+    # below handles.
+
     # Kill processes by port (more reliable for MLflow)
-    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT $RF_JUPYTER_PORT; do
+    for port in $RF_MLFLOW_PORT $RF_FRONTEND_PORT $RF_API_PORT $RF_JUPYTER_PORT $RF_RAY_PORT; do
         local pids=$(lsof -ti :$port 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
             print_status "Killing processes on port $port"
@@ -233,6 +248,10 @@ cleanup() {
         # Stop Converge if it was running
         pkill -f "converge start" 2>/dev/null || true
         pkill -f "uvicorn.*main:app" 2>/dev/null || true
+        # Deliberately no broad `pkill -f "raylet|plasma_store|gcs_server|ray::"`
+        # here -- see the note in the Ray cleanup section above. Those patterns
+        # would reap Ray processes belonging to other projects or other users
+        # on the same machine, not just RapidFire's own experiment.
     fi
 
     print_success "All services stopped"
@@ -379,6 +398,14 @@ start_mlflow() {
 
     # Start MLflow server in background with logging
     print_status "MLflow logs will be written to: $RF_LOG_PATH/mlflow.log"
+
+    # Set tracking URI so the gateway's internal tracing sends traces via HTTP
+    # rather than trying to use the SQLite backend-store URI directly.
+    if [[ "$RF_MLFLOW_HOST" == "0.0.0.0" ]]; then
+        export MLFLOW_TRACKING_URI="http://localhost:$RF_MLFLOW_PORT"
+    else
+        export MLFLOW_TRACKING_URI="http://$RF_MLFLOW_HOST:$RF_MLFLOW_PORT"
+    fi
 
     # Use setsid on Linux, nohup on macOS
     if command -v setsid &> /dev/null; then
@@ -723,13 +750,13 @@ start_frontend_if_needed() {
 
 # Function to display running services
 show_status() {
-    # Get mode from rf_mode.txt in RF_HOME
+    # Get mode from rf_mode.txt in RF_HOME. Mirror the dispatcher selection above:
+    # a missing/unreadable file falls back to the default ("evals"), so report that
+    # rather than "unknown".
     mode_file="${RF_HOME}/rf_mode.txt"
-    if [[ -f "$mode_file" ]]; then
-        rf_mode=$(cat "$mode_file")
-    else
-        rf_mode="unknown"
-    fi
+    rf_mode=$(cat "$mode_file" 2>/dev/null || echo "evals")
+    rf_mode="${rf_mode#$'\xEF\xBB\xBF'}"   # strip leading UTF-8 BOM
+    rf_mode="${rf_mode//[$' \t\r\n']/}"    # strip surrounding whitespace/CR, matches get_installed_mode().strip()
     rf_version=$(rapidfireai --version)
     print_status "${rf_version} Services Status, Mode: ${rf_mode}"
     echo "================================================"

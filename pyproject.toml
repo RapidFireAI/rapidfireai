@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rapidfireai"
-version = "0.15.2"
+version = "0.16.1"
 authors = [
     {name = "RapidFire AI Inc.", email = "support@rapidfire.ai"},
 ]
@@ -66,9 +66,14 @@ dependencies = [
     "fsspec<=2025.10.0",
     "numpy<2.1",
     "huggingface-hub<1.0.0",
+    "pyarrow>=18.1.0",
+    "datasets==3.6.0",
 ]
 
 [project.optional-dependencies]
+optuna = [
+    "optuna>=4.0.0",
+]
 # TODO: update these dependencies to the correct versions
 colab_evals = [
     # Core ML/AI Framework

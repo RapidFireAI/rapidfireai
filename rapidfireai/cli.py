@@ -20,7 +20,6 @@ from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabCo
 from rapidfireai.utils.doctor import get_doctor_info
 from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME
 from rapidfireai.utils.gpu_info import get_compute_capability
-
 from .version import __version__
 
 RF_CONVERGE_MODE = os.getenv("RF_CONVERGE_MODE", "all")
@@ -162,6 +161,89 @@ def parse_compute_capability_string(cap: str) -> float | None:
     return major + minor / 10.0
 
 
+def install_multimodal_system_packages() -> int:
+    """Ensure OS packages needed for multimodal document parsing are installed.
+
+    Checks for ``libmagic1``, ``poppler-utils``, ``tesseract-ocr``, ``libxml2``,
+    ``libxslt1-dev``, ``wget`` and ``unrar`` (mapped to the equivalent package
+    names on non-Debian distros / macOS). Missing packages are installed via
+    ``sudo`` and the detected package manager. On failure or when no supported
+    package manager is detected, a warning is printed and the function returns
+    non-zero without raising so the rest of init can continue.
+    """
+    from rapidfireai.utils.os_utils import (
+        MULTIMODAL_OS_PACKAGES,
+        build_install_cmd,
+        check_multimodal_os_packages,
+    )
+
+    result = check_multimodal_os_packages()
+    manager = result["manager"]
+    if manager is None:
+        print("⚠️ Could not detect a supported OS package manager for multimodal dependencies.")
+        print("   Please install the following packages manually using sudo or the equivalent")
+        print(f"   for your operating system: {', '.join(MULTIMODAL_OS_PACKAGES.keys())}")
+        return 1
+
+    missing = result["missing"]
+    if not missing:
+        print(f"✅ All multimodal system dependencies already installed (via {manager})")
+        return 0
+
+    print(f"📦 Installing missing multimodal system dependencies via {manager}: {', '.join(missing)}")
+
+    if manager == "apt":
+        # Refresh the package index so package names like ``libxslt1-dev`` resolve.
+        try:
+            subprocess.run(["sudo", "apt-get", "update"], check=False)
+        except FileNotFoundError:
+            pass
+
+    cmd = build_install_cmd(manager, missing)
+    if cmd is None:
+        print(f"⚠️ No install command available for package manager '{manager}'.")
+        print(f"   Please install these packages manually: {', '.join(missing)}")
+        return 1
+
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Failed to install multimodal system dependencies (exit code {e.returncode}).")
+        print("   Please install them manually with sudo or the equivalent for your OS:")
+        print(f"   $ {' '.join(cmd)}")
+        return 1
+    except FileNotFoundError as e:
+        print(f"⚠️ Could not run installer ({e}).")
+        print("   Please install these packages manually with sudo or the equivalent for your OS:")
+        print(f"     {', '.join(missing)}")
+        return 1
+
+    print("✅ Successfully installed multimodal system dependencies")
+    return 0
+
+
+def install_multimodal_python_packages() -> int:
+    """Install the Python packages required for multimodal document parsing."""
+    packages = ["unstructured[all-docs]", "nltk"]
+    print("📦 Installing multimodal Python packages...")
+    for pkg in packages:
+        cmd = [sys.executable, "-m", "uv", "pip", "install", "--upgrade", pkg]
+        print(f"   Installing {pkg}...")
+        try:
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            print(f"✅ Successfully installed {pkg}")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to install {pkg}")
+            print(f"   Error: {e}")
+            if e.stdout:
+                print(f"   Standard output: {e.stdout}")
+            if e.stderr:
+                print(f"   Standard error: {e.stderr}")
+            print(f"   You may need to install {pkg} manually")
+            return 1
+    return 0
+
+
 def install_packages(
     evals: bool = False,
     init_packages: list[str] | None = None,
@@ -199,15 +281,38 @@ def install_packages(
         and evals
     ):
         print(
-            " ⚠️ Could not detect CUDA (nvcc and nvidia-smi unavailable or failed).\n"
+            "    Did not detect CUDA (nvcc and nvidia-smi unavailable).\n"
             "    Disabling CUDA usage for evaluation dependencies.\n"
-            "    If you want to override this expelicitly pass the CUDA version, for example:\n"
-            "        rapidfireai init --evals --cudaversion 12.4\n"
+            "    If you want to override this explicitly pass the CUDA version, for example:\n"
+            "        rapidfireai init --cudaversion 12.4\n"
             "    If nvidia-smi is unavailable, also pass --computecapabilityversion (see --help).\n"
-            "          If there is no GPU available, you can ignore this warning.",
+            "          If there is no GPU available, you can ignore this.",
             file=sys.stderr,
         )
-
+        compute_capability_version = "0.0"
+    if compute_capability_version is not None:
+        compute_cap = parse_compute_capability_string(compute_capability_version)
+        if compute_cap is None:
+            print(
+                "❌ Invalid --computecapabilityversion: use major.minor (e.g. 8.0 or 8.6).",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        compute_cap = get_compute_capability()
+        if compute_cap is None:
+            print(
+                "   Did not detect GPU compute capability (nvidia-smi unavailable).\n"
+                "   Disabling CUDA usage for evaluation dependencies.\n"
+                "   Pass it explicitly, for example:\n"
+                "   rapidfireai init --computecapabilityversion 8.0\n"
+                "   (Use your GPU's SM version, e.g. 8.9 for Ada, 9.0 for Blackwell.)\n"
+                "          If there is no GPU available, you can ignore this.",
+                file=sys.stderr,
+            )
+            compute_cap = 0.0
+            cuda_major = 0
+            cuda_minor = 0
     python_info = get_python_info()
     site_packages = python_info["site_packages"]
     setup_directory = None
@@ -255,7 +360,13 @@ def install_packages(
     torchaudio_version = "2.5.1"
     torch_cuda = "cu121"
     flash_cuda = "cu121"
-    if cuda_major==12:
+    if cuda_major==0:
+        torch_version = "2.8.0"
+        torchvision_version = "0.23.0"
+        torchaudio_version = "2.8.0"
+        torch_cuda = "cpu"
+
+    elif cuda_major==12:
         if cuda_minor>=9:
             # Supports Torch 2.8.0
             torch_version = "2.8.0"
@@ -323,6 +434,17 @@ def install_packages(
 
     
     ## TODO: re-enable for fit once trl has fix
+    if not ColabConfig.ON_COLAB and cuda_major==0:
+        print(f"\n🎯 Using CPU")
+        packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade"]})
+        packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade"]})
+        packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade"]})
+    
+    if cuda_major >= 12:
+        packages.append({"package": f"faiss-gpu-cu12", "extra_args": ["--upgrade"]})
+    else:
+        packages.append({"package": f"faiss-cpu", "extra_args": ["--upgrade"]})
+
     if not ColabConfig.ON_COLAB and cuda_major >= 12:
         if cuda_from_user:
             print(f"\n🎯 Using CUDA {cuda_major}.{cuda_minor} (from --cudaversion), using {torch_cuda}")
@@ -343,25 +465,7 @@ def install_packages(
             packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
-            if compute_capability_version is not None:
-                compute_cap = parse_compute_capability_string(compute_capability_version)
-                if compute_cap is None:
-                    print(
-                        "❌ Invalid --computecapabilityversion: use major.minor (e.g. 8.0 or 8.6).",
-                        file=sys.stderr,
-                    )
-                    return 1
-            else:
-                compute_cap = get_compute_capability()
-                if compute_cap is None:
-                    print(
-                        "❌ Could not detect GPU compute capability (nvidia-smi unavailable or failed).\n"
-                        "   Pass it explicitly, for example:\n"
-                        "   rapidfireai init --evals --computecapabilityversion 8.0\n"
-                        "   (Use your GPU's SM version, e.g. 8.9 for Ada, 9.0 for Blackwell.)",
-                        file=sys.stderr,
-                    )
-                    return 1
+
             if compute_cap is not None and compute_cap >= 8.0:
                 packages.append({"package": "flash-attn>=2.8.3", "extra_args": ["--upgrade", "--no-build-isolation"]})
                 # Re-install torch, torchvision, and torchaudio to ensure compatibility as flash-attn requires an old version of torch but will upgrade torch to an incompatible version
@@ -373,6 +477,21 @@ def install_packages(
             # packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
 
         packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
+    
+    if evals:
+        # Temporarily pin cupy-cuda12x to 14.0.1 on all platforms to avoid issues
+        #  with cupy-cuda12x 14.1.0
+        # https://github.com/cupy/cupy/pull/9965
+        # This also requres numpy to be less than 2.3
+        if cuda_major==12:
+            packages.append({"package": "cupy-cuda12x==14.0.1", "extra_args": ["--upgrade"]})
+        elif cuda_major==13:
+            packages.append({"package": "cupy-cuda13x==14.0.1", "extra_args": ["--upgrade"]})
+        packages.append({"package": "numpy==2.0.1", "extra_args": ["--upgrade"]})
+
+    if not evals:
+        if ColabConfig.ON_COLAB:
+            packages.append({"package": "numpy==2.0.1", "extra_args": ["--upgrade"]})
 
     for package_info in packages:
         try:
@@ -413,12 +532,26 @@ def copy_tutorial_notebooks():
 
 def run_init(
     evals: bool = False,
+    multimodal: bool = False,
     cuda_version: str | None = None,
     compute_capability_version: str | None = None,
 ):
     """Run the init command to initialize the project."""
     print("🔧 Initializing RapidFire AI project...")
     print("-" * 30)
+
+    if multimodal and not evals:
+        print("⚠️ --multimodal requires --evals; ignoring --multimodal.")
+        multimodal = False
+
+    if multimodal:
+        print("Setting up multimodal document parsing dependencies...")
+        # System-package install failures are non-fatal: warnings are printed
+        # so the user can install manually, but init continues.
+        install_multimodal_system_packages()
+        if install_multimodal_python_packages() != 0:
+            return 1
+
     print("Initializing project...")
     if (
         install_packages(
@@ -549,14 +682,17 @@ def main():
     parser = argparse.ArgumentParser(description="RapidFire AI - Start/stop/manage services", prog="rapidfireai",
     epilog="""
 Examples:
-  # Basic initialization for training
+  # Basic initialization with evaluation dependencies (default)
   rapidfireai init
-  #or
-  # Basic Initialize with evaluation dependencies
-  rapidfireai init --evals
+
+  # Initialize with training-only dependencies (skips evaluation dependencies)
+  rapidfireai init --train
+
+  # Initialize with evaluation + multimodal document parsing dependencies
+  rapidfireai init --multimodal
 
   # Init when nvcc/nvidia-smi are unavailable (pin CUDA / compute capability)
-  rapidfireai init --evals --cudaversion 12.4 --computecapabilityversion 8.0
+  rapidfireai init --cudaversion 12.4 --computecapabilityversion 8.0
   
   # Start services
   rapidfireai start
@@ -614,7 +750,25 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     parser.add_argument("--force", "-f", action="store_true", help="Force action without confirmation")
 
-    parser.add_argument("--evals", action="store_true", help="Initialize with evaluation dependencies")
+    parser.add_argument(
+        "--evals",
+        action="store_true",
+        help="Initialize with evaluation dependencies (this is now the default)",
+    )
+
+    parser.add_argument(
+        "--train",
+        action="store_true",
+        help="Initialize with training-only dependencies (skips evaluation dependencies)",
+    )
+
+    parser.add_argument(
+        "--multimodal",
+        action="store_true",
+        help="(Only with --evals) Install OS dependencies (libmagic1, poppler-utils, tesseract-ocr, "
+             "libxml2, libxslt1-dev, wget, unrar) and Python packages (unstructured[all-docs], nltk) "
+             "needed for multimodal document parsing.",
+    )
 
     parser.add_argument(
         "--cudaversion",
@@ -677,8 +831,12 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
 
     # Handle init command separately
     if args.command == "init":
+        # Evaluation dependencies are installed by default; --train opts into a
+        # training-only install. --evals is kept for backwards compatibility.
+        evals = not args.train
         return run_init(
-            args.evals,
+            evals,
+            multimodal=args.multimodal,
             cuda_version=args.cuda_version,
             compute_capability_version=args.compute_capability_version,
         )

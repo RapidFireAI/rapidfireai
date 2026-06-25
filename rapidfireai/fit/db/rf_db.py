@@ -120,10 +120,41 @@ class RfDb:
             commit=True,
         )
 
-        # mark ongoing and new Runs as failed
-        all_runs = self.get_runs_by_status([RunStatus.ONGOING, RunStatus.NEW]).keys()
+        # mark ongoing and new Runs as failed, and terminate the matching
+        # MLflow runs with FAILED so the dashboard reflects the recovered
+        # state (otherwise stranded runs would remain RUNNING in MLflow
+        # forever). RFMetricLogger is imported lazily to avoid a circular
+        # import on module load.
+        all_runs_dict = self.get_runs_by_status([RunStatus.ONGOING, RunStatus.NEW])
+        all_runs = all_runs_dict.keys()
+        metric_logger = None
+        if all_runs:
+            try:
+                from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
+
+                running_exp = None
+                try:
+                    running_exp = self.get_running_experiment()
+                except Exception:
+                    running_exp = None
+                if running_exp:
+                    metric_logger = RFMetricLogger(
+                        RFMetricLogger.get_default_metric_loggers(
+                            experiment_name=running_exp["experiment_name"]
+                        )
+                    )
+            except Exception:
+                metric_logger = None
         for run_id in all_runs:
             self.set_run_status(run_id, RunStatus.FAILED)
+            if metric_logger is not None:
+                metric_run_id = all_runs_dict[run_id].get("metric_run_id")
+                if metric_run_id:
+                    try:
+                        metric_logger.end_run(metric_run_id, status="FAILED")
+                    except Exception:
+                        # Best-effort: stranded-run recovery must not fail.
+                        pass
 
         # reset all interactive control tasks
         all_ic_ops_tasks = self.get_scheduled_ic_ops_tasks()

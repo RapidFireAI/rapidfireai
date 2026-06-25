@@ -34,8 +34,6 @@ langchain-openai
 langchain-huggingface
 langchain-google-genai>=4.2.1
 
-# Vector Search
-faiss-gpu-cu12==1.13.0
 
 # Statistical Analysis
 scipy>=1.16.1
@@ -57,7 +55,7 @@ tensorboard>=2.11.0
 psutil==7.0.0
 tqdm==4.67.1
 typing-extensions>=4.0.0
-peft>=0.17.0
+peft>=0.17.0,<0.19.0
 trl==0.21.0
 bitsandbytes>=0.47.0
 nltk>=3.9.1

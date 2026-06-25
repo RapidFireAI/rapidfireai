@@ -14,6 +14,145 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Security in case of vulnerabilities.
 
 
+## [v0.16.1]
+
+### Additions
+- `rapidfireai/utils/mode_utils.py`: `get_installed_mode()` and `assert_mode_matches()` helpers for validating the installed RapidFire mode (`$RF_HOME/rf_mode.txt`).
+- New RF_API_WORKERS / RF_API_WORKER_CLASS / RF_API_THREADS / RF_API_TIMEOUT / RF_API_GRACEFUL_TIMEOUT / RF_API_KEEPALIVE env vars on DispatcherConfig to tune the dispatcher gunicorn server.
+- New include_decoded_config flag on RFDatabase.get_pipeline* / get_all_pipelines so HTTP callers can skip the expensive (and SIGSEGV-prone) dill decode of FAISS / embedder blobs.
+- Autopilot/chat-agent clone path now stamps requests with source: "autopilot" and refuses to launch a clone whose effective config duplicates an existing run.
+- Per-step intermediate checkpoint folders (`checkpoint-<step>`) for `save_strategy="chunk"`, preserving one snapshot per chunk.
+- Configurable eval generation via `generation_config`: `max_input_length`, `add_generation_prompt`, and `truncation_side`.
+- New `Status` column on the experiment runs table (pinned left after Run Name) showing dispatcher-vocabulary lifecycle state with per-state color.
+- New `Shards` column showing live shard / chunk progress (`current/total`) for both evals (per-shard) and fit (per-chunk-per-epoch) runs.
+- New mutable MLflow tags `rapidfire.progress.current` and `rapidfire.progress.total` emitted by both the fit and evals controllers; `MetricLogger.set_tag()` API across all backends.
+- Stranded-run recovery (`rf_db.py` `reset_all_tables` path) now also terminates orphaned MLflow runs as `FAILED`.
+- New unit-test suite `tests/test_mlflow_status_parity.py` covering every status-parity transition, idempotency path, and the new helpers.
+
+### Changes
+- Experiment now validates that the installed mode matches the requested mode at initialization — before Ray/DB setup — blocking early with a clear, actionable error on a mismatch instead of silently producing a dead IC Ops panel.
+- `doctor` reads the installed mode via `get_installed_mode()` (single source of truth).
+- Dispatcher gunicorn defaults switched from sync worker to gthread (4 threads, 120 s timeout, 5 s keepalive) for both evals/ and fit/ dispatchers to survive long-lived polling connections.
+- HTTP polling endpoints (/get-all-pipelines, /get-all-runs, /get-pipeline, IC validate calls) no longer dill-decode the pipeline_config blob; get_all_runs recovers per-row instead of failing the whole poll.
+- Frontend proxy strips hop-by-hop headers, returns 502 for upstream failures, and absorbs ChunkedEncodingError / ProtocolError mid-stream instead of logging tracebacks.
+- Eval generation now left-pads and forwards an explicit `attention_mask`; input truncation length is derived from the tokenizer/model instead of a fixed 512 tokens.
+- Worker reads the user's `save_strategy` as the single source of truth; training args use a shallow copy so the `"chunk"` sentinel is preserved on `config_leaf`.
+- Changed default behavior for `rapidfireai init` to be `--evals`, to do training use `rapidfireai init --train`
+- Pin datasets==3.6.0 and pyarrow>=18.1.0
+- Remove output from rag-fiqa notebook
+- Dashboard relabels MLflow's native enum to the dispatcher's vocabulary across the experiment runs table and the run detail page: `Finished` → `COMPLETED`, `Killed` → `STOPPED`, `Running` → `ONGOING`, `Scheduled` → `NEW`.
+- `KILLED` (dispatcher `STOPPED`) now renders with a `StopCircleIcon` in warning amber instead of the red error icon used for `FAILED` — an intentional halt is no longer visually conflated with a failure.
+- `DateCellRenderer` no longer prefixes the timestamp with the run-status icon (the new `Status` column owns that signal).
+- `experiment_utils.create_experiment` / `end_experiment` and `MLflowMetricLogger.clear_context()` now read the active run's server-side status before calling `mlflow.end_run()` so a terminal state already set by the controller / worker / IC handler is preserved instead of being overwritten with `FINISHED`.
+- RunFit Notebooks updated with param mode='fit'
+
+### Fixes
+- A missing `rf_mode.txt` no longer blocks `run_fit()`; it now defaults to fit mode, matching the dispatcher startup default (`run_evals()` remains correctly blocked in that case).
+- Fixes dispatcher worker WORKER TIMEOUT / "no URI read" SIGKILLs caused by the sync worker blocking on keep-alive sockets.
+- Fixes dispatcher worker SIGSEGVs when the autopilot polling loop re-hydrated ~25 FAISS-bearing pipeline blobs per poll.
+- Fixes Converge autopilot launching byte-identical duplicate clones and silently dropping cloned runs because their flattened_config was empty.
+- Fixes AttributeError in _transform_pipeline_to_run when SQLite returned NULL for string columns (.get(key, "") doesn't apply the default to None values).
+- Optuna label building no longer crashes on `dict`/`None` categorical knob choices (#268).
+- Optuna leaf configs now carry the `pipeline` key so the controller can launch them (#268).
+- Query actor reuses its inference engine only when it actually exists, fixing `AttributeError` under sharding (#268).
+- Replacement (relaunched) pipelines now inherit the parent's rate limiter and max-completion-tokens, fixing inference-engine init failures (#268).
+- Fixed intermediate checkpoints overwriting each other every chunk save.
+- Fixed `save_strategy="chunk"` being lost/mutated before the worker's save step.
+- Fixed corrupted batched eval generation when `pad_token_id == eos_token_id` (missing attention mask + right padding).
+- Fixed missing `add_generation_prompt` in eval chat templating, which degraded eval quality for instruction-tuned models.
+- Dashboard MLflow status now matches the dispatcher status shown in the notebook progress table across all terminal transitions in both `run_fit()` and `run_evals()`: clean completion, IC-stop, Optuna prune, worker exception, runtime / init / dispatch failure, create-run failure, and stranded-run recovery after a crash.
+- Reused query actors no longer mark a still-running pipeline as `FINISHED` on the MLflow server when switching to the next pipeline.
+- Orphaned `ONGOING` / `NEW` runs left over from a crashed experiment no longer remain stuck as `RUNNING` in MLflow after recovery.
+- Cloned pipelines (IC clone) and Optuna replacement runs now render shard progress in the `Shards` column instead of `-`.
+- Failed run-creation paths now record the MLflow run as `FAILED` instead of letting it default to `FINISHED`.
+- Downgrade `numpy` to 2.0.1 on Colab for SFT notebook issue with datasets
+
+
+## [v0.16.0]
+
+### Additions
+- Pinecone `source_tag` was added for integration analytics
+- Conditional MLFlow tracing: MLFlow logging can now be toggled through `RF_MLFLOW_ENABLED` environment variable. Accepts true or false
+- MLFlow traces now show on RapidFire AI dashboard
+- Google Gemini API support through `RFGeminiAPIModelConfig` (mirrors `RFOpenAIAPIModelConfig` interface)
+- Dedicated `GoogleGeminiRateLimiter` with character-based token approximation
+- `gemini_config` key support in `RFGridSearch` and `RFRandomSearch` configs
+- Separate per-backend `RateLimiterActor` instances so OpenAI and Gemini pipelines can coexist in the same experiment
+- MLFlow tracing for gemini generations
+- Pretty error display for `Experiment` creation and `run_evals()`
+- Added `num_gpus` and `num_cpus` parameters to `Experiment()` initialization
+- Option to disable starting frontend
+- Add flags to specify NVIDIA CUDA and Compute Capability versions
+- Mirroring colab tutorial notebooks under tests/staging for build process
+- Additional notebooks placed under tests/notebooks for testing features, not to be used for tutorials
+- Add option to specify or disable CUDA, change error for no CUDA to just a warning
+- **MLflow AI Gateway integration**: new `RFAPIModelConfig` works with any provider (OpenAI, Gemini, Anthropic, Azure, Triton) through an OpenAI-compatible gateway; `MLflowGatewayClient` idempotently provisions secrets, models, and endpoints.
+- **AI Gateway dashboard** in the frontend — Endpoints, API Keys, Usage charts, Try-It playground, plus a GenAI Experiment Overview page with assessment/tool-call/trace cost-latency-token charts (sidebar gains an "AI Gateway" tab; replaces "Prompts").
+- **Anthropic provider support** via `anthropic>=0.96.0` and a new `AnthropicRateLimiter` built on a fine-grained sliding-window limiter with separate ITPM/OTPM limits.
+- New `rf-tutorial-scifact-generators.ipynb` and updated colab/GCE notebooks demonstrating unified `RFAPIModelConfig` across providers.
+- Frontend proxy forwards `/gateway` requests to the MLflow target.
+- Multimodal RAG: `LangChainRagSpec.multimodal_processor` runs per-modality text/image/table summarizers over `UnstructuredBaseLoader` chunks.
+- `LangChainRagSpec.artifact_storage_cfg` and new `CloudStorage` (S3 / GCS) for offloading large image and table HTML artifacts out of vector-store metadata.
+- `LangChainRagSpec.document_loader` accepts a list of loaders (with `None` entries skipped).
+- New tutorial: `rf-tutorial-MMDocIR.ipynb` (multimodal RAG)
+- New `LocalStorage` class in `rapidfireai.evals.utils.storage_utils` mirroring `CloudStorage`'s `put_*` / `get_*` / `read_bytes` interface; writes under `{bucket}/{prefix}/{type}/{rf_doc_id}/document` and returns absolute filesystem paths.
+- `artifact_storage_cfg` accepts `False` to explicitly disable offloading (drops `*_source` from metadata after summarization).
+
+### Changes
+- Ray resource allocation overhaul. Resources are spared for other processes to avoid overloading the node.
+- `num_actors`, `gpus_per_actor`, `cpus_per_actor` are auto calculated using available resources but can be overridden by user. 
+- Infeasible user overrides are scaled down to the closest feasible hardware allocation
+-  deprecated methods removed
+- `num_actors` removed from tutorial notebooks
+- `RateLimiterActor` now accepts a `backend` parameter (`"openai"` | `"gemini"`) to select the appropriate rate limiter
+- `pipeline_type` in the database is now derived from the pipeline object (`"vllm"` / `"openai"` / `"gemini"`) instead of being hardcoded
+- IC Ops clone now selects the rate limiter by matching the cloned pipeline's backend type
+- `sampling_params_to_dict()` on API model configs now uses a blocklist (exclude `"model"`) instead of a hardcoded key whitelist, making it forward-compatible with new API parameters
+- default limit_safety_ratio for rate limiters changed from 0.90 to 0.95
+-`set_aside` logic now reserves ~10% of CPUs by default for OS and other processes
+- If using Converge, sets RF_MLFLOW_ENABLED and RF_TENSORBOARD_ENABLED to true
+- Handle SIGTERM event on parent process of `rapidfireai start` to kill child processes (start.sh, and each sub-python process).  Fixes #217 
+- Change default HOST for most variables to be 0.0.0.0 instead of 127.0.0.1
+- Update URL displayed for frontend to be `localhost` if RF_FRONTEND_HOST is set to 0.0.0.0.  Fixes #230
+- Unified `OpenAIInferenceEngine` + `GoogleGeminiInferenceEngine` into a single `APIInferenceEngine` that talks to the gateway via `AsyncOpenAI`.
+- `RFGridSearch`/`RFRandomSearch`: pipeline key `openai_config`/`gemini_config` → `api_config`; reinstantiated configs get `verbose=False` to suppress duplicate gateway-provisioning logs.
+- Rate limiter API: `estimate_total_tokens()` → `count_prompt_tokens()`; `update_actual_usage()` takes input/output tokens separately; one actor per provider with an OpenAI/tiktoken fallback for unknown providers.
+- Dispatcher pipeline-clone payload uses `pipeline_type: "api"` (with required `endpoint_config`) instead of separate `"openai"`/`"gemini"` types; serialization emits a single `"api"` branch and strips `api_key` from `endpoint_config`.
+- Bumped `mlflow` to `>=3.11.1` (`mlflow[genai]` in core) across `pyproject.toml` and all `setup/*/requirements*.txt`.
+- Output ports using tcp:// to allow auto port forwarding of VS Code/Cursor
+- If no GPU or Nvidia GPU changes error to a warning and disable GPU tasks
+- Support install and init on a non-Nvidia GPU machine
+- Installs faiss-cpu on a non-Nvidia machine
+- `LangChainRagSpec.artifact_storage_cfg=None` now defaults to local-disk offload under `$RF_HOME/artifacts` instead of being a silent no-op.
+- Added `"local"` to the accepted `backend` values alongside `"s3"` and `"gcs"`.
+- MMDocIR tutorial notebook updated to use the new local-disk default with cloud / opt-out alternatives shown inline.
+- Adds a `--multimodal` flag to `rapidfireai init --evals` to check if required OS packages are installed, and will then install the needed Python packages
+
+### Fixes
+- Dispatcher running out file descriptors error fixed
+- get_runs now checks for Textsplitter encoding
+- init script now works on cpu-only machines. NVML error fixed.
+- Missing pipeline_id and model_name attributes added to traces in prompt manager
+- RFLogger file handling bug fixed
+- On startup show correct log information depending on frontend source
+- Update readme with correct default ports
+- Addresses issue #220 by flushing jupyter output
+- HTTP 500 on `/dispatcher/get-all-runs` (and `/dispatcher/get-all-pipelines`)
+- Fix issue where RF_FRONTEND_HOST was never actually used
+- Decoupled `RFvLLMModelConfig` and `RFAPIModelConfig` so each is gated only by its own optional deps.
+- Optional-dep placeholders in `rapidfireai.automl` are now sentinel **classes** via `_make_unavailable_class` instead of `None`, so `isinstance(x, RFLoraConfig)` etc. no longer raises `TypeError: isinstance() arg 2 must be a type`.
+- Colab `torchcodec` ABI mismatch: pinned `torchcodec<=0.7.0` in `setup/evals/requirements-colab.txt`.
+- Rate-limit wait-time is now deterministic — RPM/TPM/ITPM/OTPM all use `minimum_wait_time` instead of depending on the oldest in-flight request.
+- Controller reads `pipeline.model_name` (property) instead of `pipeline.model_config["model"]`, fixing display/logging for gateway endpoint configs.
+- `APIInferenceEngine.update_actual_usage` for `FAILED` requests now passes both input and output token counts (previously dropped one arg, raising `TypeError`).
+- `BaseRateLimiter.register_model` now normalises rate-limit dicts (accepts either `{"rpm","tpm"}` or `{"rpm","itpm","otpm"}`), matching its `FineGrainedBaseRateLimiter` sibling and removing a latent `KeyError`.
+- `RFAPIModelConfig.sampling_params_to_dict` no longer duplicates `max_completion_tokens` in the IC Ops JSON view — now excludes `max_completion_tokens`, `model`, and `messages` (mirrors the keys `APIInferenceEngine.__init__` pops).
+- Install issues on systems with CUDA and without a Nvidia GPU
+- Fixes issue with dependencies upgrading numpy, by pinning numpy 2.0.1
+- Restricts peft<0.19.0 until transformers can be upgraded to >5.0
+- Pins cupy-cuda12x to 14.0.1 to override issue in 14.1.0 that requires `pytest` the issue is fixed in `https://github.com/cupy/cupy/pull/9965` but there is not a current release with this fix.
+
+
 ## [v0.15.2]
 
 ### Additions

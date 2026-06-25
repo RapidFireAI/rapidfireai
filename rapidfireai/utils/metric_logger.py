@@ -84,12 +84,17 @@ class MetricLogger(ABC):
         pass
 
     @abstractmethod
-    def end_run(self, run_id: str) -> None:
+    def end_run(self, run_id: str, status: Optional[str] = None) -> None:
         """
         End a specific run.
 
         Args:
             run_id: Run identifier
+            status: Optional terminal status to record at the backend. MLflow
+                ``RunStatus`` string (``"FINISHED"``, ``"FAILED"``, ``"KILLED"``).
+                When ``None``, backends should fall back to their default
+                terminal state (today: MLflow ``FINISHED``) so external callers
+                that haven't been updated yet keep working.
         """
         pass
 
@@ -107,6 +112,42 @@ class MetricLogger(ABC):
     def clear_context(self) -> None:
         """Clear the tracking context (optional, not all backends need this)."""
         pass
+
+    def set_tag(self, run_id: str, key: str, value: str) -> None:
+        """
+        Set a tag on a specific run.
+
+        Unlike :meth:`log_param`, tags are mutable -- calling ``set_tag``
+        again with the same key overwrites the previous value. Used for
+        properties that evolve over a run's lifetime (e.g. progress
+        counters) that ``log_param`` cannot represent.
+
+        Args:
+            run_id: Run identifier.
+            key: Tag name.
+            value: Tag value (coerced to string by most backends).
+
+        The default implementation is a no-op so backends without a
+        native tag concept (TensorBoard, Trackio) don't need to implement
+        it. MLflow overrides this with a real ``set_tag`` call.
+        """
+        return None
+
+    def restart_run(self, run_id: str) -> None:
+        """Flip a previously-terminated run back to ``RUNNING``.
+
+        Used by IC "resume" handlers: stopping a run terminates the
+        corresponding MLflow run with ``KILLED`` so the dashboard mirrors
+        the notebook table, but a subsequent resume must put that same
+        run back into ``RUNNING`` -- otherwise the dashboard stays at
+        ``STOPPED`` while the notebook (and the actual training loop)
+        progresses through new chunks/shards.
+
+        The default implementation is a no-op so backends without a
+        meaningful "status" concept (TensorBoard, Trackio) don't need to
+        implement it. MLflow overrides this with an ``UpdateRun`` call.
+        """
+        return None
 
 class MetricLoggerType(Enum):
     """Enum for MetricLogger types."""

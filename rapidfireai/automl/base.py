@@ -1,4 +1,11 @@
-"""Base classes and configurations for AutoML algorithms."""
+"""Base class for AutoML search algorithms.
+
+Classes
+-------
+AutoMLAlgorithm
+    Abstract base subclassed by ``RFGridSearch``, ``RFRandomSearch``,
+    and ``RFOptuna``.
+"""
 
 from abc import ABC, abstractmethod
 from typing import Any
@@ -8,7 +15,35 @@ from rapidfireai.fit.utils.exceptions import AutoMLException
 
 
 class AutoMLAlgorithm(ABC):
-    """Base class for AutoML algorithms."""
+    """Abstract base class for AutoML search strategies.
+
+    Parameters
+    ----------
+    configs :
+        Config templates (``RFModelConfig`` for fit, dicts for evals).
+        Accepts a list, a ``List([...])`` wrapper, or a single object.
+    create_model_fn :
+        Legacy parameter (unused).
+    trainer_type : str or None
+        ``"SFT"`` / ``"DPO"`` / ``"GRPO"`` for fit mode, ``None`` for evals.
+    num_runs : int
+        Number of samples (used by ``RFRandomSearch``).
+
+    Attributes
+    ----------
+    configs : list
+    mode : str
+        ``"fit"`` or ``"evals"``.
+    trainer_type : str or None
+    num_runs : int
+
+    Methods
+    -------
+    get_runs(seed) -> list[dict]
+        Return concrete config-leaf dicts.
+    get_callback(**kwargs) -> ChunkCallback | ShardCallback | None
+        Return an optional inter-step pruning callback.
+    """
 
     VALID_TRAINER_TYPES = {"SFT", "DPO", "GRPO"}
 
@@ -19,19 +54,6 @@ class AutoMLAlgorithm(ABC):
         trainer_type: str | None = None,
         num_runs: int = 1,
     ):
-        """
-        Initialize AutoML algorithm with configurations and trainer type.
-
-        Args:
-            configs: List of configurations (RFModelConfig for fit mode, dict for evals mode)
-            create_model_fn: Optional function to create models (legacy parameter)
-            trainer_type: Trainer type ("SFT", "DPO", "GRPO") for fit mode, None for evals mode
-            num_runs: Number of runs for random search
-
-        Mode detection:
-            - If trainer_type is provided: fit mode (requires RFModelConfig instances)
-            - If trainer_type is None: evals mode (requires dict instances)
-        """
         try:
             self.configs = self._normalize_configs(configs)
             self.num_runs = num_runs
@@ -87,8 +109,27 @@ class AutoMLAlgorithm(ABC):
                         f"If you want fit mode, provide a trainer_type."
                     )
 
+    def get_callback(self, **kwargs):
+        """Return an optional callback for inter-chunk/shard pruning decisions.
+
+        Returns
+        -------
+        ChunkCallback or ShardCallback or None
+        """
+        return None
+
     @abstractmethod
     def get_runs(self, seed: int) -> list[dict[str, Any]]:
-        """Generate hyperparameter combinations for different training configurations."""
+        """Return concrete config-leaf dicts for the controller.
+
+        Parameters
+        ----------
+        seed : int
+            Non-negative random seed.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+        """
         if not isinstance(seed, int) or seed < 0:
             raise AutoMLException("seed must be a non-negative integer")

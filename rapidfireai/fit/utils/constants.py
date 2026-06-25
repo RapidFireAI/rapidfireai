@@ -108,6 +108,7 @@ class RunSource(Enum):
     SHA = "Successive Halving Algorithm"
     INITIAL = "Initial"
     INTERACTIVE_CONTROL = "Interactive Control"
+    OPTUNA = "Optuna Replacement"
 
 
 class RunEndedBy(Enum):
@@ -117,6 +118,7 @@ class RunEndedBy(Enum):
     EPOCH_COMPLETED = "Epoch Completed"
     INTERACTIVE_CONTROL = "Interactive Control"
     TOLERENCE = "Tolerence Threshold Met"
+    OPTUNA_PRUNED = "Optuna Pruned"
 
 
 # SHM Model Type Constants

@@ -4,40 +4,50 @@ Utility functions for doctor command.
 
 import os
 import platform
-from pathlib import Path
-from rapidfireai.utils.python_info import get_python_info, get_pip_packages
-from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
-from rapidfireai.utils.ping import ping_server
+
 from rapidfireai.utils.constants import (
-    JupyterConfig,
-    DispatcherConfig,
-    MLflowConfig,
-    FrontendConfig,
-    RayConfig,
-    ColabConfig,
-    RF_HOME,
-    RF_LOG_PATH,
-    RF_EXPERIMENT_PATH,
     RF_DB_PATH,
-    RF_TENSORBOARD_LOG_DIR,
-    RF_TRAINING_LOG_FILENAME,
+    RF_EXPERIMENT_PATH,
+    RF_HOME,
+    RF_LOG_FILENAME,
+    RF_LOG_PATH,
     RF_MLFLOW_ENABLED,
     RF_TENSORBOARD_ENABLED,
+    RF_TENSORBOARD_LOG_DIR,
     RF_TRACKIO_ENABLED,
-    RF_LOG_FILENAME,
+    RF_TRAINING_LOG_FILENAME,
+    ColabConfig,
+    DispatcherConfig,
+    FrontendConfig,
+    JupyterConfig,
+    MLflowConfig,
+    RayConfig,
 )
+from rapidfireai.utils.gpu_info import get_gpu_info, get_torch_version
+from rapidfireai.utils.mode_utils import DEFAULT_MODE, get_installed_mode
+from rapidfireai.utils.os_utils import (
+    check_multimodal_os_packages,
+    check_multimodal_python_packages,
+)
+from rapidfireai.utils.ping import ping_server
+from rapidfireai.utils.python_info import get_pip_packages, get_python_info
+
 
 def get_doctor_info(log_lines: int = 10):
     """
     Get doctor information.
     """
     status = 0
-    # Get mode from rf_mode.txt in RF_HOME
-    mode_file = Path(RF_HOME) / "rf_mode.txt"
-    if mode_file.exists():
-        mode = mode_file.read_text().strip()
+    # Get mode from rf_mode.txt in RF_HOME. A missing/unreadable file (None) means
+    # setup/start.sh falls back to the default dispatcher (see DEFAULT_MODE), so
+    # diagnose that mode — otherwise a valid default install with no mode file would
+    # skip mode-specific checks (e.g. multimodal). A present-but-blank file ("") is a
+    # broken install, so surface it as "unknown" rather than guessing.
+    installed = get_installed_mode()
+    if installed is None:
+        mode = DEFAULT_MODE
     else:
-        mode = "unknown"
+        mode = installed or "unknown"
     print(f"🩺 RapidFire AI System Diagnostics, Mode: {mode}")
     print("=" * 50)
 
@@ -59,6 +69,8 @@ def get_doctor_info(log_lines: int = 10):
         # Show only relevant packages
         relevant_packages = [
             "rapidfireai",
+            "cupy-cuda12x",
+            "cupy-cuda13x",
             "mlflow",
             "torch",
             "transformers",
@@ -73,6 +85,7 @@ def get_doctor_info(log_lines: int = 10):
             "ray",
             "sentence-transformers",
             "openai",
+            "huggingface-hub",
             "tiktoken",
             "langchain-core",
             "langchain-community",
@@ -87,6 +100,7 @@ def get_doctor_info(log_lines: int = 10):
             "rf-faiss",
             "rf-faiss-gpu-12-8",
             "faiss-gpu-cu12",
+            "faiss-cpu",
             "vllm",
             "flash-attn",
             "flash_attn",
@@ -101,9 +115,12 @@ def get_doctor_info(log_lines: int = 10):
             "torchaudio",
             "scipy",
             "datasets",
+            "pyarrow",
+            "fsspec",
             "evaluate",
             "rouge-score",
             "sentencepiece",
+            "dill",
         ]
         lines = pip_output.split("\n")
         found_packages = []
@@ -157,23 +174,69 @@ def get_doctor_info(log_lines: int = 10):
         print(f"Torch Version: {major}.{minor}.{patch}")
     else:
         status = 1 if status == 0 else status
-        print("⚠️ Torch version not found") 
+        print("⚠️ Torch version not found")
     if int(torch_cuda_major) > 0:
         print(f"Torch CUDA Version: {torch_cuda_major}.{torch_cuda_minor}")
     else:
         status = 1 if status == 0 else status
         print("⚠️ Torch CUDA Version: unknown")
 
+    # Multimodal document parsing dependencies (rapidfireai init --evals --multimodal).
+    # Only relevant in evals mode; skip entirely in fit mode so unrelated warnings
+    # don't appear when multimodal features aren't expected to be available.
+    if mode == "evals":
+        print("\n🧰 Multimodal Document Parsing Dependencies:")
+        print("-" * 30)
+        os_check = check_multimodal_os_packages()
+        if os_check["manager"] is None:
+            status = 1 if status == 0 else status
+            print("⚠️ Could not detect a supported OS package manager; cannot verify OS packages.")
+            print(f"   Distro detected: {os_check['distro_id'] or 'unknown'}")
+            print(
+                "   Expected packages (Debian/Ubuntu names): " + ", ".join(p["canonical"] for p in os_check["packages"])
+            )
+        else:
+            print(f"OS Package Manager: {os_check['manager']} (distro: {os_check['distro_id'] or 'unknown'})")
+            any_missing = False
+            for pkg in os_check["packages"]:
+                if pkg["installed"]:
+                    marker = "✅"
+                else:
+                    marker = "❌"
+                    any_missing = True
+                label = pkg["canonical"]
+                if pkg["native"] != pkg["canonical"]:
+                    label = f"{pkg['canonical']} ({pkg['native']})"
+                print(f"  {marker} {label}")
+            if any_missing:
+                status = 1 if status == 0 else status
+                print("⚠️ Missing OS packages above are needed for multimodal document parsing.")
+                print("   Reinstall with: rapidfireai init --evals --multimodal")
+
+        py_check = check_multimodal_python_packages()
+        print("Multimodal Python packages:")
+        any_py_missing = False
+        for pkg in py_check["packages"]:
+            if pkg["installed"]:
+                print(f"  ✅ {pkg['name']} {pkg['version']}")
+            else:
+                print(f"  ❌ {pkg['name']} (not installed)")
+                any_py_missing = True
+        if any_py_missing:
+            status = 1 if status == 0 else status
+            print("⚠️ Missing Python packages above are needed for multimodal document parsing.")
+            print("   Reinstall with: rapidfireai init --evals --multimodal")
+
     # Check RapidFire AI ports
-    print ("\n🛜 RapidFire AI Ports:")
-    print ("-" * 30)
+    print("\n🛜 RapidFire AI Ports:")
+    print("-" * 30)
     for check_item in [
-        {"host": JupyterConfig.HOST, "port": JupyterConfig.PORT, "service": "Jupyter"}, 
-        {"host": DispatcherConfig.HOST, "port": DispatcherConfig.PORT, "service": "API(Dispatcher)"}, 
+        {"host": JupyterConfig.HOST, "port": JupyterConfig.PORT, "service": "Jupyter"},
+        {"host": DispatcherConfig.HOST, "port": DispatcherConfig.PORT, "service": "API(Dispatcher)"},
         {"host": MLflowConfig.HOST, "port": MLflowConfig.PORT, "service": "MLflow"},
         {"host": FrontendConfig.HOST, "port": FrontendConfig.PORT, "service": "Frontend"},
-        {"host": RayConfig.HOST, "port": RayConfig.PORT, "service": "Ray"}]:
-
+        {"host": RayConfig.HOST, "port": RayConfig.PORT, "service": "Ray"},
+    ]:
         for host_index, host_check in enumerate(["127.0.0.1", check_item["host"]]):
             if host_index == 0 or (host_check not in ["127.0.0.1", "0.0.0.0"]):
                 checker = ping_server(host_check, check_item["port"])
@@ -181,7 +244,7 @@ def get_doctor_info(log_lines: int = 10):
                     print(f"{check_item['service']}: is currently Listening on {host_check}:{check_item['port']}")
                 else:
                     print(f"{check_item['service']}: is NOT currently listening on {host_check}:{check_item['port']}")
-        
+
     # System Information
     print("\n💻 System Information:")
     print("-" * 30)
@@ -227,7 +290,7 @@ def get_doctor_info(log_lines: int = 10):
             print(f"\n📄{current_item}:")
             if log_lines != 0:
                 if not os.path.isdir(current_item):
-                    with open(current_item, "r", encoding="utf-8") as f:
+                    with open(current_item, encoding="utf-8") as f:
                         lines = f.readlines()
                         read_lines = lines[-log_lines:]
                         if log_lines == -1:

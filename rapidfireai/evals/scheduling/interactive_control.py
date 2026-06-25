@@ -13,12 +13,13 @@ import time
 
 from rapidfireai.evals.utils.constants import RERANKER_CLASS_REGISTRY, SEARCH_DEFAULTS, SEARCH_TYPE_KEYS
 
+from rapidfireai.automl import RFAPIModelConfig, RFvLLMModelConfig, get_flattened_config_leaf
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
-from rapidfireai.automl import RFAPIModelConfig, RFvLLMModelConfig
 from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
 from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.evals.utils.serialize import extract_pipeline_config_json
 
 
 class InteractiveControlHandler:
@@ -155,6 +156,21 @@ class InteractiveControlHandler:
         # Update database status
         db.set_pipeline_status(pipeline_id, PipelineStatus.STOPPED)
 
+        # Terminate the MLflow run with KILLED so the dashboard matches the
+        # notebook table (which now shows STOPPED). Mirrors _handle_delete's
+        # try/except pattern: MLflow trouble must not fail the IC op.
+        if self.metric_manager:
+            try:
+                pipeline = db.get_pipeline(pipeline_id)
+                metric_run_id = pipeline.get("metric_run_id") if pipeline else None
+                if metric_run_id:
+                    self.metric_manager.end_run(metric_run_id, status="KILLED")
+                    self.logger.info(
+                        f"Marked MLflow run {metric_run_id} as KILLED for stopped pipeline {pipeline_id}"
+                    )
+            except Exception as e:
+                self.logger.warning(f"Failed to end MLflow run for stopped pipeline {pipeline_id}: {e}")
+
         # Update display
         if progress_display:
             progress_display.update_pipeline(pipeline_id, status="STOPPED")
@@ -191,6 +207,22 @@ class InteractiveControlHandler:
 
         # Update database status
         db.set_pipeline_status(pipeline_id, PipelineStatus.ONGOING)
+
+        # Counterpart of _handle_stop's end_run(KILLED): flip the MLflow run
+        # back to RUNNING so the dashboard stops showing STOPPED for a
+        # pipeline that is once again active. Mirrors the try/except pattern
+        # used elsewhere -- MLflow trouble must not fail the IC op.
+        metric_run_id = pipeline.get("metric_run_id") if pipeline else None
+        if self.metric_manager and metric_run_id:
+            try:
+                self.metric_manager.restart_run(metric_run_id)
+                self.logger.info(
+                    f"Restarted MLflow run {metric_run_id} (status -> RUNNING) for resumed pipeline {pipeline_id}"
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to restart MLflow run for resumed pipeline {pipeline_id}: {e}"
+                )
 
         # Update display
         if progress_display:
@@ -280,6 +312,13 @@ class InteractiveControlHandler:
         data = json.loads(request_data)
         parent_pipeline_id = data["parent_pipeline_id"]
         edited_json = data["config_json"]
+        # ``source`` is set to ``"autopilot"`` by the dispatcher's
+        # ``/clone-modify-run`` endpoint (used by the Converge autopilot
+        # and the chat agent's ``clone_run`` tool) and is absent for the
+        # UI "Clone Run" button (``/clone-pipeline``). Only LLM-driven
+        # clones get the duplicate-config gate below; humans may
+        # legitimately want to re-launch an existing config.
+        clone_source = data.get("source")
 
         # Get parent pipeline from database to inherit context_id
         parent_pipeline_db = db.get_pipeline(parent_pipeline_id)
@@ -490,12 +529,82 @@ class InteractiveControlHandler:
             # No parent strategy, use user's strategy as-is
             pipeline_config_dict["online_strategy_kwargs"] = edited_json["online_strategy_kwargs"]
 
+        # Generate flattened config for the IC Ops panel + Converge autopilot.
+        # Mirrors Controller._register_pipelines (controller.py L840-842): the
+        # converge backend's build_config_table() skips any run whose
+        # flattened_config is empty ("Run ID N does not have a valid
+        # 'flattened_config'. Skipping."), which would make every cloned run
+        # invisible to the LLM autopilot, defeating the whole IC clone loop.
+        clone_json_config = extract_pipeline_config_json(pipeline_config_dict)
+        clone_flattened_config = (
+            get_flattened_config_leaf(clone_json_config) if clone_json_config else {}
+        )
+
+        # Deduplication (autopilot/chat-agent only): refuse to launch a
+        # clone whose effective config is identical to an existing
+        # pipeline.
+        #
+        # Why this is needed: the autopilot's ``clone_modify [...]`` proposals
+        # can collapse back onto an existing pipeline once the deltas are
+        # applied to the parent (e.g. proposing ``top_n=5`` on a parent
+        # whose top_n is already 5, or "adding" a reranker that the parent
+        # already has -- see Trial 30 in scifact_D_converge, which ended up
+        # byte-for-byte identical to Trial 8). The chat ``clone_run`` tool
+        # can hit the same trap. Letting these through wastes API budget,
+        # pollutes the search space with duplicates, and produces misleading
+        # "different accuracy with same config" results whose only source of
+        # variance is non-deterministic LLM sampling.
+        #
+        # Why this is gated on ``clone_source == "autopilot"``: the human
+        # UI's "Clone Run" button (``/clone-pipeline``) routes through this
+        # same handler but does not set ``source``. A user may deliberately
+        # want to launch a duplicate (e.g. to estimate run-to-run variance
+        # of a stochastic generator), so we never block that path -- only
+        # the LLM-driven paths, where the duplicate is almost always a bug.
+        #
+        # Comparison key: ``(context_id, flattened_config)``. ``context_id``
+        # encodes the indexing stage (chunk size, embedding model, vector
+        # store), which clones always inherit from their parent. The
+        # ``flattened_config`` returned by ``extract_pipeline_config_json`` +
+        # ``get_flattened_config_leaf`` covers retrieval (search_cfg,
+        # reranker_cfg) + generation (model_config, sampling_params,
+        # rate-limit knobs, batch_size, online_strategy_kwargs). Together
+        # they fully determine pipeline behaviour, so equality on this
+        # tuple means the two pipelines are functionally identical.
+        # Stopped/completed pipelines still count as duplicates (the config
+        # was already explored). Deleted/failed pipelines do not -- they
+        # never produced data we would be redundantly recomputing.
+        if clone_source == "autopilot":
+            existing_pipelines = db.get_all_pipelines(include_decoded_config=False)
+            for existing in existing_pipelines:
+                if existing.get("context_id") != context_id:
+                    continue
+                existing_status = existing.get("status")
+                if existing_status in (
+                    PipelineStatus.DELETED.value,
+                    PipelineStatus.FAILED.value,
+                ):
+                    continue
+                if existing.get("flattened_config") == clone_flattened_config:
+                    duplicate_id = existing.get("pipeline_id")
+                    raise ValueError(
+                        f"Refusing autopilot clone of parent pipeline "
+                        f"{parent_pipeline_id}: the resulting configuration "
+                        f"is identical to existing pipeline {duplicate_id} "
+                        f"(context_id={context_id}, status={existing_status}). "
+                        f"Skipping to avoid a duplicate run. If the proposed "
+                        f"delta was meant to differ, double-check the parent's "
+                        f"current config -- the edit may have been a no-op "
+                        f"after merging with the parent."
+                    )
+
         # Create new pipeline in database
         new_pipeline_id = db.create_pipeline(
             context_id=context_id,  # Inherited from parent
             pipeline_type=pipeline_type,
             pipeline_config=pipeline_config_dict,
             status=PipelineStatus.NEW,
+            flattened_config=clone_flattened_config,
         )
 
         # Add to pipeline_id_to_config mapping
@@ -526,6 +635,30 @@ class InteractiveControlHandler:
                 if hasattr(model_config, "sampling_params") and model_config.sampling_params:
                     sampling_str = json.dumps(model_config.sampling_params) if isinstance(model_config.sampling_params, dict) else str(model_config.sampling_params)
                     self.metric_manager.log_param(metric_run_id, "sampling_params", sampling_str)
+
+                # Seed shard-progress tags so the dashboard's Shards
+                # column renders "0/N" -> "k/N" -> "N/N" for this clone.
+                # Clones always start fresh at shard 0 (see the
+                # ``scheduler.add_pipeline(..., shards_completed=0)``
+                # call later in this method); the per-shard bump that
+                # advances ``rapidfire.progress.current`` lives in the
+                # controller loop (``controller.py``: after
+                # ``db.set_pipeline_progress``). Without this seeding,
+                # cloned runs would render "-" in the Shards column even
+                # though they're advancing -- the column renderer
+                # requires *both* tags to be present.
+                try:
+                    self.metric_manager.set_tag(
+                        metric_run_id, "rapidfire.progress.total", str(num_shards)
+                    )
+                    self.metric_manager.set_tag(
+                        metric_run_id, "rapidfire.progress.current", "0"
+                    )
+                except Exception as tag_err:
+                    self.logger.warning(
+                        f"Failed to seed progress tags for cloned pipeline "
+                        f"{new_pipeline_id}: {tag_err}"
+                    )
 
                 self.logger.info(f"Created metric run {metric_run_id} for cloned pipeline {new_pipeline_id}")
             except Exception as e:

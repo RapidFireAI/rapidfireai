@@ -85,6 +85,30 @@ class QueryProcessingActor:
         self.current_engine_config_hash = None  # Track currently loaded model
         self.metric_run_id = None  # MLflow run ID for trace association
 
+    def _clear_local_mlflow_active_run(self) -> None:
+        """Pop this actor's MLflow active-run stack WITHOUT terminating on the server.
+
+        ``mlflow.end_run()`` fires ``SetTerminated(FINISHED)`` on the server,
+        which would mark a pipeline as COMPLETED on the dashboard even though
+        the pipeline may still have shards in flight on other actors (or
+        scheduled for this actor's later requests). The controller owns the
+        terminal-state decision and calls ``metric_manager.end_run(..., status=...)``
+        when the pipeline is truly done / failed / stopped.
+
+        Here we only need to clear the *local* per-actor active-run stack
+        so the subsequent ``mlflow.start_run(run_id=...)`` for the new
+        pipeline can succeed. Delegates to the shared
+        :func:`rapidfireai.utils.metric_mlflow_manager.clear_local_mlflow_active_run_stack`
+        helper so this code path stays in sync with the ``create_experiment``
+        / ``end_experiment`` / ``clear_context`` fallbacks that use the
+        same trick to avoid the FINISHED-clobber bug.
+        """
+        from rapidfireai.utils.metric_mlflow_manager import (
+            clear_local_mlflow_active_run_stack,
+        )
+
+        clear_local_mlflow_active_run_stack(self.logger)
+
     def initialize_for_pipeline(
         self,
         engine_class: type[InferenceEngine],
@@ -135,32 +159,29 @@ class QueryProcessingActor:
 
             config_hash = hashlib.md5(config_str.encode()).hexdigest()
 
+            # Two situations can leave a stale ``current_engine_config_hash``
+            # paired with a missing or torn-down ``inference_engine``:
+            #
+            #  1) A prior ``initialize_for_pipeline`` raised after the cleanup
+            #     branch ran but before ``inference_engine`` was re-created.
+            #  2) External ``cleanup()`` released the engine without resetting
+            #     the hash.
+            #
+            # If the next pipeline happens to share the same engine config (true
+            # for every API-only experiment that uses a single shared generator,
+            # such as SciFact's Gemini setup under ``num_shards > 1``), the
+            # ``hash matches`` short-circuit below would otherwise reuse a
+            # nonexistent engine and ``process_batch`` would AttributeError.
+            # Normalising to a clean ``None`` state up-front forces a rebuild.
+            if getattr(self, "inference_engine", None) is None:
+                self.current_engine_config_hash = None
+
             # Only reinitialize if the engine config has changed
             if self.current_engine_config_hash != config_hash:
                 # Clean up old engine if it exists
                 if self.inference_engine is not None:
                     self.logger.info(f"Cleaning up old inference engine (hash: {self.current_engine_config_hash[:8]})")
-                    try:
-                        self.inference_engine.cleanup()
-                    except Exception as e:
-                        self.logger.warning(f"Error during engine cleanup: {e}")
-
-                    # Force garbage collection and GPU memory release
-                    del self.inference_engine
-                    import gc
-
-                    gc.collect()
-
-                    # For CUDA, explicitly empty cache
-                    try:
-                        import torch
-
-                        if torch.cuda.is_available():
-                            torch.cuda.empty_cache()
-                            torch.cuda.synchronize()
-                            self.logger.info("GPU memory cache cleared")
-                    except ImportError:
-                        pass
+                    self._teardown_inference_engine()
 
                 self.logger.info(f"Initializing new inference engine (config hash: {config_hash[:8]})")
                 self.inference_engine = engine_class(**engine_kwargs)
@@ -275,8 +296,15 @@ class QueryProcessingActor:
                         reranker_cfg=reranker_cfg,
                         enable_gpu_search=False,
                         document_template=context_generator_ref.get("template"),
+                        artifact_storage_cfg=context_generator_ref.get("artifact_storage_cfg"),
                     )
                     self.rag_spec.build_pipeline()
+                    # Initialize the cloud storage SDK handle once and keep it
+                    # alive for the rest of the actor's lifetime (or until the
+                    # rag_spec is replaced for a new pipeline). User-supplied
+                    # preprocess_fn callbacks reach it via rag_spec.storage_client.
+                    # No-op when artifact_storage_cfg was not configured.
+                    self.rag_spec.init_storage_client()
                     self.logger.info("Recreated RAG spec with retrieval mode")
 
                 # Set up PromptManager if provided (reinitialize after deserialization)
@@ -301,19 +329,50 @@ class QueryProcessingActor:
                 self.prompt_manager.pipeline_id = pipeline_id
                 self.prompt_manager.model_name = model_name
 
-            # End any previously active MLflow run on this actor (happens when reused for a second pipeline).
-            # This marks the previous run as FINISHED on the server, but that's fine:
-            # the controller uses MlflowClient (not the fluent API) for final metric logging,
-            # which works on terminated runs, and its own end_run() is idempotent.
-            if self.metric_run_id and is_mlflow_enabled():
-                mlflow.end_run()
+            # Handle the actor's MLflow active-run context across pipeline
+            # transitions. Three cases:
+            #
+            # 1. Same pipeline, next shard (metric_run_id unchanged): leave
+            #    everything alone -- the active run is already open on this
+            #    actor and stays open until the controller (which is the
+            #    single authority on pipeline completion) explicitly ends it.
+            #
+            # 2. Switching to a different pipeline while the previous one is
+            #    still RUNNING on the server: we MUST NOT call
+            #    mlflow.end_run(), because that fires SetTerminated(FINISHED)
+            #    on the server and the previous pipeline may still have
+            #    shards in flight on other actors -- the dashboard would
+            #    flicker COMPLETED while the notebook still shows ONGOING.
+            #    Instead, clear only this actor's local active-run stack so
+            #    mlflow.start_run() below can take the new run, and leave
+            #    the server status untouched. The controller is responsible
+            #    for setting the terminal status when (and only when) the
+            #    pipeline has truly finished, failed, or been stopped.
+            #
+            # 3. Switching to a different pipeline whose previous run is
+            #    already terminal on the server (KILLED / FAILED / FINISHED
+            #    -- e.g. user IC-stop or controller-side error handler ran
+            #    while this actor was busy): the server state is correct;
+            #    we just need to clear local context and move on.
+            same_pipeline_next_shard = (
+                self.metric_run_id is not None and self.metric_run_id == metric_run_id
+            )
+            if self.metric_run_id and is_mlflow_enabled() and not same_pipeline_next_shard:
+                self._clear_local_mlflow_active_run()
 
             # Set the active MLflow run so traces are associated with this pipeline's run.
             # metric_run_id is a real MLflow UUID only when MLflow is enabled; when disabled
             # RFMetricLogger falls back to a plain run-name string which mlflow.start_run()
             # cannot accept, so the call must also be gated on is_mlflow_enabled().
+            # When this is the same pipeline continuing across shards, the active
+            # MLflow run is already open on this actor; calling start_run again
+            # would raise "Run with UUID ... is already active" -- skip in that case.
             self.metric_run_id = metric_run_id
-            if self.metric_run_id and is_mlflow_enabled():
+            if (
+                self.metric_run_id
+                and is_mlflow_enabled()
+                and not same_pipeline_next_shard
+            ):
                 mlflow.start_run(run_id=self.metric_run_id)
 
         except Exception as e:
@@ -429,9 +488,45 @@ class QueryProcessingActor:
                 f"Error processing batch: {error_type}: {error_message}"
             ) from None  # Don't chain to avoid serialization issues
 
+    def _teardown_inference_engine(self) -> None:
+        """Release the current inference engine, clear bookkeeping, and free GPU memory.
+
+        Always leaves ``self.inference_engine`` set to ``None`` (never deleted)
+        and ``self.current_engine_config_hash`` cleared, so that any subsequent
+        ``initialize_for_pipeline`` -- including one that re-uses the previous
+        engine's config hash -- correctly rebuilds the engine instead of
+        short-circuiting onto a freed handle.
+        """
+        if self.inference_engine is None:
+            self.current_engine_config_hash = None
+            return
+        try:
+            self.inference_engine.cleanup()
+        except Exception as e:
+            self.logger.warning(f"Error during engine cleanup: {e}")
+        # Assigning ``None`` (rather than ``del``) keeps the attribute defined
+        # so later ``is not None`` checks remain valid even if a fresh engine
+        # never gets created (e.g. exception during ``engine_class(...)``).
+        self.inference_engine = None
+        self.current_engine_config_hash = None
+
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                self.logger.info("GPU memory cache cleared")
+        except ImportError:
+            pass
+
     def cleanup(self):
-        """Clean up inference engine resources."""
-        self.inference_engine.cleanup()
+        """Clean up inference engine resources.
+
+        Safe to call multiple times and when no engine is currently loaded.
+        """
+        self._teardown_inference_engine()
 
 
 # Export for external use

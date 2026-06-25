@@ -119,6 +119,30 @@ class Controller:
 
         return sanitized
 
+    def _finalize_mlflow_run(self, db: RFDatabase, pipeline_id: int, mlflow_status: str) -> None:
+        """Terminate the MLflow run for ``pipeline_id`` with the given MLflow status.
+
+        Best-effort: MLflow failures are logged but never propagated. ``mlflow_status``
+        must be one of MLflow's ``RunStatus`` strings (``"FINISHED"``, ``"FAILED"``,
+        ``"KILLED"``). See :data:`DISPATCHER_TO_MLFLOW_STATUS` in
+        ``metric_mlflow_manager`` for the dispatcher -> MLflow mapping used here.
+        """
+        if not self.metric_manager:
+            return
+        try:
+            pipeline = db.get_pipeline(pipeline_id)
+            metric_run_id = pipeline.get("metric_run_id") if pipeline else None
+            if not metric_run_id:
+                return
+            self.metric_manager.end_run(metric_run_id, status=mlflow_status)
+            self.logger.info(
+                f"Marked MLflow run {metric_run_id} as {mlflow_status} for pipeline {pipeline_id}"
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to terminate MLflow run for pipeline {pipeline_id} (status={mlflow_status}): {e}"
+            )
+
     def _log_pipeline_params(
         self,
         pipeline_config: dict,
@@ -218,6 +242,66 @@ class Controller:
             manager.log_param(run_id, "max_completion_tokens", str(pipeline.max_completion_tokens))
 
     @staticmethod
+    def _collect_summarizer_batch_sizes(
+        config_leaves: Any,
+    ) -> dict[str, int]:
+        """
+        Build a ``context_hash -> max(batch_size)`` map.
+
+        The summarizer in :meth:`LangChainRagSpec._describe_multi_modal_documents`
+        accepts a hard ceiling on prompts per ``summarize_batch`` call. Because a
+        single context (rag_spec + prompt_manager) may be shared by many
+        pipelines — each with its own per-pipeline ``batch_size`` — we pick the
+        most permissive (max) value for the build-time summarizer. Picking max
+        is the most generous choice: build is shared infrastructure, so we
+        respect the largest user's intent. Pipelines with no ``batch_size`` set
+        contribute nothing; if no pipeline supplies one, the context is absent
+        from the map and the rag spec falls back to "send the modality in a
+        single call".
+
+        Args:
+            config_leaves: List of pipeline config dictionaries (same input as
+                :meth:`_collect_unique_contexts`).
+
+        Returns:
+            ``{context_hash: max_batch_size}`` for every context that has at
+            least one pipeline with a positive integer ``batch_size``.
+        """
+        ceilings: dict[str, int] = {}
+        for config_leaf in config_leaves:
+            pipeline_config = config_leaf.get("pipeline") if isinstance(config_leaf, dict) else None
+            if not pipeline_config:
+                continue
+
+            rag_spec = getattr(pipeline_config, "rag", None)
+            prompt_manager = getattr(pipeline_config, "prompt_manager", None)
+            if not rag_spec and not prompt_manager:
+                continue
+
+            rag_hash = rag_spec.get_hash() if rag_spec else None
+            prompt_hash = prompt_manager.get_hash() if prompt_manager else None
+            if rag_hash and prompt_hash:
+                context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
+            elif rag_hash:
+                context_hash = rag_hash
+            elif prompt_hash:
+                context_hash = prompt_hash
+            else:
+                continue
+
+            # Only positive integers are valid ceilings; silently skip anything
+            # else so a stray None / 0 / non-int doesn't poison the max().
+            batch_size = config_leaf.get("batch_size") if isinstance(config_leaf, dict) else None
+            if not isinstance(batch_size, int) or batch_size <= 0:
+                continue
+
+            current = ceilings.get(context_hash)
+            if current is None or batch_size > current:
+                ceilings[context_hash] = batch_size
+
+        return ceilings
+
+    @staticmethod
     def _collect_unique_contexts(
         config_leaves: Any,
     ) -> dict[str, tuple[Any, Any]]:
@@ -308,6 +392,13 @@ class Controller:
 
         self.logger.info(f"Found {len(unique_contexts)} unique RAG context(s)")
 
+        # Per-context hard ceiling for the multimodal summarizer, derived from
+        # the per-pipeline batch_size of any pipeline that targets the context.
+        # Contexts without a positive int batch_size on any consumer pipeline
+        # are absent from this map; the rag spec then defaults to "send the
+        # whole modality in one summarize_batch() call".
+        summarizer_batch_sizes = self._collect_summarizer_batch_sizes(config_leaves)
+
         # Step 2: Identify contexts that need to be built
         contexts_to_build = []
         for context_hash, (rag_spec, prompt_manager) in unique_contexts.items():
@@ -335,6 +426,7 @@ class Controller:
                     "rag": rag_spec,
                     "prompt_manager": prompt_manager,
                     "start_time": time.time(),
+                    "summarizer_batch_size": summarizer_batch_sizes.get(context_hash),
                 }
             )
 
@@ -349,6 +441,134 @@ class Controller:
         except Exception:
             self.logger.exception("Failed to build contexts in parallel")
             raise
+
+    def _provision_summarizer_rate_limiters(
+        self,
+        contexts_to_build: list[dict],
+    ) -> tuple[dict[str, Any], dict[int, dict[str, Any]]]:
+        """
+        Create one ``RateLimiterActor`` per provider used by build-time summarizers.
+
+        Walks ``contexts_to_build`` looking at each ``rag_spec.multimodal_processor``
+        for ``RFAPIModelConfig`` summarizer generators. Aggregates per-endpoint
+        rate limits into per-provider buckets (same shape as the query-side
+        ``provider_groups`` dict in PHASE 6) and provisions one
+        ``RateLimiterActor`` per distinct provider.
+
+        Args:
+            contexts_to_build: The list of context dicts being built in this
+                batch (each has a ``"rag"`` key holding a ``LangChainRagSpec``).
+
+        Returns:
+            A tuple of:
+
+            - ``build_rate_limiters``: ``{provider: RateLimiterActor}``.
+              Empty dict if no contexts use API summarizers. Caller is
+              responsible for ``ray.kill``-ing each actor when done.
+            - ``context_to_rate_limiters``: ``{id(context_info): {provider: actor}}``
+              — keyed by ``id()`` because ``context_info`` dicts aren't
+              hashable. Each context only sees the providers its own
+              summarizers actually reference.
+        """
+        try:
+            from rapidfireai.automl import RFAPIModelConfig
+        except ImportError:
+            return {}, {}
+
+        SUMMARIZER_KEYS = ("text_summarizer_cfg", "image_summarizer_cfg", "table_summarizer_cfg")
+
+        # Pass 1: aggregate per-provider rate limits and remember which
+        # providers each context uses, without building any actors yet.
+        provider_groups: dict[str, dict] = {}
+        context_to_providers: dict[int, set[str]] = {}
+
+        for context_info in contexts_to_build:
+            rag_spec = context_info.get("rag")
+            if not rag_spec or not getattr(rag_spec, "multimodal_processor", None):
+                continue
+
+            providers_used: set[str] = set()
+            for cfg_key in SUMMARIZER_KEYS:
+                cfg = rag_spec.multimodal_processor.get(cfg_key)
+                if not cfg:
+                    continue
+                generator = cfg.get("generator")
+                if not isinstance(generator, RFAPIModelConfig):
+                    # vLLM / unknown generators don't need a rate limiter.
+                    continue
+
+                provider = generator.endpoint_config.get("provider", "openai")
+                endpoint_name = generator.model_name
+
+                # Reuse the same validation the query-side path enforces, so
+                # build-time summarizers don't sneak past missing limits.
+                has_tpm = generator.tpm_limit is not None
+                has_itpm_otpm = (
+                    generator.itpm_limit is not None and generator.otpm_limit is not None
+                )
+                if generator.rpm_limit is None or (not has_tpm and not has_itpm_otpm):
+                    raise ValueError(
+                        f"Multimodal {cfg_key} generator (endpoint: {endpoint_name}, "
+                        f"provider: {provider}) is missing rate limits. Provide "
+                        f"rpm_limit and (tpm_limit or itpm_limit+otpm_limit) on the "
+                        f"RFAPIModelConfig used as the summarizer generator."
+                    )
+
+                group = provider_groups.setdefault(provider, {
+                    "model_rate_limits": {},
+                    "max_completion_tokens_by_model": {},
+                })
+
+                rate_limit_dict = generator.get_rate_limit_dict()
+                if endpoint_name not in group["model_rate_limits"]:
+                    group["model_rate_limits"][endpoint_name] = rate_limit_dict
+                    group["max_completion_tokens_by_model"][endpoint_name] = (
+                        generator.max_completion_tokens
+                    )
+                elif group["model_rate_limits"][endpoint_name] != rate_limit_dict:
+                    self.logger.warning(
+                        f"Summarizer endpoint {endpoint_name} (provider {provider}) has "
+                        f"inconsistent rate limits across contexts. Using first encountered "
+                        f"values: {group['model_rate_limits'][endpoint_name]}"
+                    )
+
+                providers_used.add(provider)
+
+            if providers_used:
+                context_to_providers[id(context_info)] = providers_used
+
+        if not provider_groups:
+            return {}, {}
+
+        # Pass 2: spawn one RateLimiterActor per provider.
+        from rapidfireai.evals.actors.rate_limiter_actor import RateLimiterActor
+
+        build_rate_limiters: dict[str, Any] = {}
+        for provider, group in provider_groups.items():
+            max_tokens = max(group["max_completion_tokens_by_model"].values()) if (
+                group["max_completion_tokens_by_model"]
+            ) else 150
+            build_rate_limiters[provider] = RateLimiterActor.remote(
+                model_rate_limits=group["model_rate_limits"],
+                max_completion_tokens=max_tokens,
+                limit_safety_ratio=0.95,
+                minimum_wait_time=1.0,
+                backend=provider,
+                experiment_name=self.experiment_name,
+                experiment_path=self.experiment_path,
+            )
+            self.logger.info(
+                f"Provisioned build-phase rate limiter for provider '{provider}' "
+                f"(endpoints: {sorted(group['model_rate_limits'].keys())})"
+            )
+
+        # Pass 3: project the global dict down to per-context views.
+        context_to_rate_limiters: dict[int, dict[str, Any]] = {
+            ctx_id: {p: build_rate_limiters[p] for p in providers}
+            for ctx_id, providers in context_to_providers.items()
+        }
+
+        return build_rate_limiters, context_to_rate_limiters
 
     def build_rag_components(
         self,
@@ -392,130 +612,199 @@ class Controller:
         context_display = ContextBuildingDisplay(contexts_to_build)
         context_display.start()
 
-        # Step 1: Create all DocProcessingActors and submit all build tasks
-        actor_tasks = []
-        for context_info in contexts_to_build:
-            rag_spec = context_info["rag"]
-            prompt_manager = context_info["prompt_manager"]
+        # Provision per-provider RateLimiterActors for any API summarizer
+        # generators referenced by rag_spec.multimodal_processor across the
+        # contexts being built. We mirror the query-side per-provider grouping
+        # (see PHASE 6 below, ~line 1010) so rate limits are aggregated across
+        # contexts that share a provider, and only one actor exists per provider.
+        # Actors are kept alive for the duration of this method only — they're
+        # purely a build-phase concern.
+        build_rate_limiters, context_to_rate_limiters = self._provision_summarizer_rate_limiters(
+            contexts_to_build
+        )
 
-            # Skip if neither RAG nor prompt_manager (shouldn't happen, but safety check)
-            if not rag_spec and not prompt_manager:
-                continue
+        # actor_tasks is declared outside the try so the outer `finally`
+        # below can sweep up any actors whose per-task `finally` never ran
+        # (e.g. Step 1 raises mid-loop, or Step 2 raises on task i and never
+        # reaches tasks i+1..N). killed_actors tracks which actors have
+        # already been reaped by the per-task finally so we don't kill twice.
+        actor_tasks: list[dict] = []
+        killed_actors: set[int] = set()
 
-            # Allocate resources based on GPU needs:
-            # - If GPU search enabled: 1 GPU + 2 CPUs
-            # - If CPU only: 0 GPUs + 2 CPUs
-            # - If prompt-only with CUDA device requested: 1 GPU + 2 CPUs
-            # - If prompt-only without CUDA: 0 GPUs + 2 CPUs
-            needs_gpu = False
-            if rag_spec and rag_spec.enable_gpu_search:
-                needs_gpu = True
-            elif rag_spec:
-                # Check if rag_spec embeddings or reranker request CUDA (even if enable_gpu_search=False)
-                if rag_spec.embedding_kwargs:
-                    model_kwargs = rag_spec.embedding_kwargs.get("model_kwargs", {})
+        try:
+            # Step 1: Create all DocProcessingActors and submit all build tasks
+            for context_info in contexts_to_build:
+                rag_spec = context_info["rag"]
+                prompt_manager = context_info["prompt_manager"]
+
+                # Skip if neither RAG nor prompt_manager (shouldn't happen, but safety check)
+                if not rag_spec and not prompt_manager:
+                    continue
+
+                # Allocate resources based on GPU needs:
+                # - If GPU search enabled: 1 GPU + 2 CPUs
+                # - If CPU only: 0 GPUs + 2 CPUs
+                # - If prompt-only with CUDA device requested: 1 GPU + 2 CPUs
+                # - If prompt-only without CUDA: 0 GPUs + 2 CPUs
+                needs_gpu = False
+                if rag_spec and rag_spec.enable_gpu_search:
+                    needs_gpu = True
+                elif rag_spec:
+                    # Check if rag_spec embeddings or reranker request CUDA (even if enable_gpu_search=False)
+                    if rag_spec.embedding_kwargs:
+                        model_kwargs = rag_spec.embedding_kwargs.get("model_kwargs", {})
+                        device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
+                        if device and str(device).startswith("cuda"):
+                            needs_gpu = True
+                    if not needs_gpu and rag_spec.reranker_kwargs:
+                        reranker_model_kwargs = rag_spec.reranker_kwargs.get("model_kwargs", {})
+                        device = reranker_model_kwargs.get("device", "") if isinstance(reranker_model_kwargs, dict) else ""
+                        if device and str(device).startswith("cuda"):
+                            needs_gpu = True
+                elif prompt_manager and prompt_manager.embedding_kwargs:
+                    # Check if prompt_manager requests CUDA device
+                    model_kwargs = prompt_manager.embedding_kwargs.get("model_kwargs", {})
                     device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
                     if device and str(device).startswith("cuda"):
                         needs_gpu = True
-                if not needs_gpu and rag_spec.reranker_kwargs:
-                    reranker_model_kwargs = rag_spec.reranker_kwargs.get("model_kwargs", {})
-                    device = reranker_model_kwargs.get("device", "") if isinstance(reranker_model_kwargs, dict) else ""
-                    if device and str(device).startswith("cuda"):
-                        needs_gpu = True
-            elif prompt_manager and prompt_manager.embedding_kwargs:
-                # Check if prompt_manager requests CUDA device
-                model_kwargs = prompt_manager.embedding_kwargs.get("model_kwargs", {})
-                device = model_kwargs.get("device", "") if isinstance(model_kwargs, dict) else ""
-                if device and str(device).startswith("cuda"):
-                    needs_gpu = True
-            if needs_gpu and self.cluster_num_gpus > 0:
-                num_gpus_for_actor = 1
-            else:
-                num_gpus_for_actor = 0
-            num_cpus_for_actor = self.num_cpus_per_actor
+                if needs_gpu and self.cluster_num_gpus > 0:
+                    num_gpus_for_actor = 1
+                else:
+                    num_gpus_for_actor = 0
+                num_cpus_for_actor = self.num_cpus_per_actor
 
-            # Create DocProcessingActor
-            # Ray will queue actors if resources aren't immediately available
-            doc_actor = DocProcessingActor.options(
-                num_gpus=num_gpus_for_actor,
-                num_cpus=num_cpus_for_actor,
-            ).remote(
-                experiment_name=self.experiment_name,
-                experiment_path=self.experiment_path,
-            )
-
-            # Submit build task (non-blocking)
-            components_future = doc_actor.build_rag_components.remote(rag_spec, prompt_manager)
-
-            actor_tasks.append(
-                {
-                    "actor": doc_actor,
-                    "future": components_future,
-                    "context_info": context_info,
-                }
-            )
-
-        self.logger.info(f"Submitted {len(actor_tasks)} build task(s) in parallel")
-
-        # Step 2: Wait for all tasks to complete and process results
-        for task in actor_tasks:
-            context_info = task["context_info"]
-            context_hash = context_info["context_hash"]
-            context_id = context_info["context_id"]
-            start_time = context_info["start_time"]
-
-            try:
-                # Wait for this specific build to complete
-                components = ray.get(task["future"])
-                end_time = time.time()
-                duration = end_time - start_time
-
-                # Put CPU-serializable components in Ray object store (shared memory)
-                context_generator_ref = ray.put(components)
-
-                # Update database
-                db.set_context_end_time(context_id, end_time, duration)
-                db.set_context_status(context_id, ContextStatus.ONGOING)
-                self.logger.info(f"Built context {context_id} ({context_hash[:8]}...) successfully in {duration:.2f}s")
-
-                # Cache for session-level reuse
-                self._context_cache[context_hash] = (context_id, context_generator_ref)
-
-                # Update display
-                context_display.update_context(context_hash, status="complete", duration=duration)
-
-            except Exception as e:
-                end_time = time.time()
-                duration = end_time - start_time
-
-                db.set_context_status(context_id, ContextStatus.FAILED)
-                db.set_context_error(context_id, str(e))
-                self.logger.exception(f"Failed to build context {context_id} ({context_hash[:8]}...)")
-
-                # Update display
-                context_display.update_context(context_hash, status="failed", duration=duration)
-
-                # HALT: Context creation is critical - stop the entire experiment
-                context_display.stop()
-                error_message = (
-                    f"\n{'='*80}\n"
-                    f"❌ CRITICAL ERROR: RAG Source Preprocessing Failed\n"
-                    f"{'='*80}\n"
-                    f"RAG Source ID: {context_id}\n"
-                    f"Context Hash: {context_hash[:16]}...\n"
-                    f"Error: {str(e)}\n"
-                    f"{'='*80}\n"
-                    f"\nThe experiment has been halted. Please fix the error and try again.\n"
+                # Create DocProcessingActor
+                # Ray will queue actors if resources aren't immediately available
+                doc_actor = DocProcessingActor.options(
+                    num_gpus=num_gpus_for_actor,
+                    num_cpus=num_cpus_for_actor,
+                ).remote(
+                    experiment_name=self.experiment_name,
+                    experiment_path=self.experiment_path,
                 )
-                print(error_message)
-                raise RuntimeError(f"Context creation failed for context {context_id}") from e
 
-            finally:
-                # Clean up DocProcessingActor
-                ray.kill(task["actor"])
+                # Submit build task (non-blocking). Pass only the rate limiters this
+                # context's summarizers actually need (keyed by provider); empty dict
+                # if the rag_spec has no API-based multimodal_processor.
+                per_context_rate_limiters = context_to_rate_limiters.get(id(context_info), {})
+                components_future = doc_actor.build_rag_components.remote(
+                    rag_spec,
+                    prompt_manager,
+                    summarizer_rate_limiters=per_context_rate_limiters or None,
+                    summarizer_batch_size=context_info.get("summarizer_batch_size"),
+                )
 
-        # Stop the context building display
-        context_display.stop()
+                actor_tasks.append(
+                    {
+                        "actor": doc_actor,
+                        "future": components_future,
+                        "context_info": context_info,
+                    }
+                )
+
+            self.logger.info(f"Submitted {len(actor_tasks)} build task(s) in parallel")
+
+            # Step 2: Wait for all tasks to complete and process results
+            for task in actor_tasks:
+                context_info = task["context_info"]
+                context_hash = context_info["context_hash"]
+                context_id = context_info["context_id"]
+                start_time = context_info["start_time"]
+
+                try:
+                    # Wait for this specific build to complete
+                    components = ray.get(task["future"])
+                    end_time = time.time()
+                    duration = end_time - start_time
+
+                    # Put CPU-serializable components in Ray object store (shared memory)
+                    context_generator_ref = ray.put(components)
+
+                    # Update database
+                    db.set_context_end_time(context_id, end_time, duration)
+                    db.set_context_status(context_id, ContextStatus.ONGOING)
+                    self.logger.info(f"Built context {context_id} ({context_hash[:8]}...) successfully in {duration:.2f}s")
+
+                    # Cache for session-level reuse
+                    self._context_cache[context_hash] = (context_id, context_generator_ref)
+
+                    # Update display
+                    context_display.update_context(context_hash, status="complete", duration=duration)
+
+                except Exception as e:
+                    end_time = time.time()
+                    duration = end_time - start_time
+
+                    db.set_context_status(context_id, ContextStatus.FAILED)
+                    db.set_context_error(context_id, str(e))
+                    self.logger.exception(f"Failed to build context {context_id} ({context_hash[:8]}...)")
+
+                    # Update display
+                    context_display.update_context(context_hash, status="failed", duration=duration)
+
+                    # HALT: Context creation is critical - stop the entire experiment.
+                    # The outer `finally` below will also call context_display.stop(),
+                    # tear down build_rate_limiters, and reap any actors whose per-task
+                    # finally never ran (tasks i+1..N below the failing task).
+                    error_message = (
+                        f"\n{'='*80}\n"
+                        f"❌ CRITICAL ERROR: RAG Source Preprocessing Failed\n"
+                        f"{'='*80}\n"
+                        f"RAG Source ID: {context_id}\n"
+                        f"Context Hash: {context_hash[:16]}...\n"
+                        f"Error: {str(e)}\n"
+                        f"{'='*80}\n"
+                        f"\nThe experiment has been halted. Please fix the error and try again.\n"
+                    )
+                    print(error_message)
+                    raise RuntimeError(f"Context creation failed for context {context_id}") from e
+
+                finally:
+                    # Clean up this task's DocProcessingActor as soon as the build
+                    # finishes (success or failure) so it doesn't hold GPU/CPU
+                    # resources while later tasks are still running. The outer
+                    # `finally` below uses killed_actors to avoid a double-kill,
+                    # and to reap any actor this branch never reached.
+                    try:
+                        ray.kill(task["actor"])
+                    finally:
+                        killed_actors.add(id(task["actor"]))
+        finally:
+            # Reap any actor whose per-task `finally` above never ran. This
+            # covers two failure modes:
+            #   1. Step 1 raised mid-loop, leaving the actors it had already
+            #      spawned in actor_tasks without ever entering Step 2.
+            #   2. Step 2 raised on task i (the `raise RuntimeError` branch),
+            #      exiting the loop and leaving tasks i+1..N's actors alive.
+            for task in actor_tasks:
+                if id(task["actor"]) in killed_actors:
+                    continue
+                try:
+                    ray.kill(task["actor"])
+                except Exception as e:
+                    self.logger.warning(
+                        f"Could not kill DocProcessingActor for context "
+                        f"{task['context_info'].get('context_id', '?')}: {e}"
+                    )
+
+            # Tear down build-phase rate limiters (one per provider). They
+            # were only needed while DocProcessingActors were running
+            # summarizer inference; the query-phase loop creates its own
+            # set later. This MUST live in `finally` — otherwise a failing
+            # build task raises out of the Step 2 loop and orphans every
+            # RateLimiterActor in build_rate_limiters.
+            for provider, rate_limiter in build_rate_limiters.items():
+                try:
+                    ray.kill(rate_limiter)
+                except Exception as e:
+                    self.logger.warning(
+                        f"Could not kill build-phase rate limiter for provider '{provider}': {e}"
+                    )
+
+            # Stop the context building display. Idempotent — the failure
+            # branch above may have already called it; calling again just
+            # re-renders the final state.
+            context_display.stop()
 
         self.logger.info(f"Completed parallel context building for {num_contexts} context(s)")
 
@@ -544,6 +833,11 @@ class Controller:
             has_rag_attr = hasattr(pipeline, "rag")
             rag_spec = getattr(pipeline, "rag", None) if has_rag_attr else None
             prompt_manager = getattr(pipeline, "prompt_manager", None)
+
+            if rag_spec and not rag_spec.experiment_name:
+                rag_spec.experiment_name = self.experiment_name
+            if prompt_manager and not getattr(prompt_manager, "experiment_name", None):
+                prompt_manager.experiment_name = self.experiment_name
 
             # Check if pipeline has RAG or prompt_manager to look up context
             if rag_spec or prompt_manager:
@@ -614,7 +908,7 @@ class Controller:
 
                     self.logger.debug(f"Created Metrics run {metric_run_id} for pipeline {pipeline_id}")
                 except Exception as e:
-                    self.logger.warning(f"Failed to create Metrics run for pipeline {pipeline_id}: {e}")
+                    self.logger.warning(f"Could not create Metrics run for pipeline {pipeline_id}; continuing without metric tracking: {e}")
 
             pipeline_ids.append(pipeline_id)
             pipeline_id_to_config[pipeline_id] = pipeline_config
@@ -664,7 +958,7 @@ class Controller:
             # Skip DELETED and FAILED pipelines
             if pipeline_status in [PipelineStatus.DELETED.value, PipelineStatus.FAILED.value]:
                 if pipeline_status == PipelineStatus.FAILED.value:
-                    self.logger.warning(f"Pipeline {pipeline_id} failed, skipping final metrics")
+                    self.logger.warning(f"Skipping final metrics for pipeline {pipeline_id} (status: FAILED)")
                 else:
                     self.logger.info(f"Pipeline {pipeline_id} deleted, skipping final metrics")
                 continue
@@ -736,8 +1030,21 @@ class Controller:
                 ordered_metrics,
             )
 
-            # Update pipeline status
-            db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
+            # Preserve terminal non-COMPLETED states. STOPPED pipelines
+            # (IC stop or Optuna prune) have already had their dispatcher
+            # status set to STOPPED and their MLflow run terminated with
+            # KILLED by the originating handler. Phase 8 still needs to
+            # publish their partial final metrics to ``final_results`` /
+            # the dashboard, but it must NOT flip the dispatcher status
+            # to COMPLETED or the MLflow status from KILLED -> FINISHED
+            # -- doing so would undo the dispatcher <-> MLflow parity fix
+            # and make stopped/pruned pipelines look like clean finishes.
+            # FAILED and DELETED are already filtered out at the top of
+            # the loop, so the only terminal non-COMPLETED state that
+            # reaches us here is STOPPED.
+            was_stopped = pipeline_status == PipelineStatus.STOPPED.value
+            if not was_stopped:
+                db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
             if progress_display:
                 # Update display with final metrics to ensure all metrics are shown.
                 # Exclude config/info keys — they are already shown in the metadata columns
@@ -760,7 +1067,7 @@ class Controller:
 
                 progress_display.update_pipeline(
                     pipeline_id,
-                    status="COMPLETED",
+                    status="STOPPED" if was_stopped else "COMPLETED",
                     metrics=display_metrics
                 )
 
@@ -793,19 +1100,36 @@ class Controller:
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
                                 except Exception as e:
-                                    self.logger.debug(f"Failed to log final metric {metric_name} to MetricLogger: {e}")
+                                    self.logger.warning(f"Could not log final metric {metric_name} to MetricLogger: {e}")
 
                             # Log confidence_interval if available
                             if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
                                 try:
                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_confidence_interval", float(confidence_interval), step=step)
                                 except Exception as e:
-                                    self.logger.debug(f"Failed to log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
+                                    self.logger.warning(f"Could not log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
-                        try:
-                            self.metric_manager.end_run(metric_run_id)
-                        except Exception as e:
-                            self.logger.debug(f"Failed to end MetricLogger run {metric_run_id}: {e}")
+                        if was_stopped:
+                            # The MLflow run was already terminated as KILLED
+                            # by _finalize_mlflow_run() at the IC-stop /
+                            # Optuna-prune site. Calling end_run(FINISHED)
+                            # here would POST a SetTerminated(FINISHED) that
+                            # flips KILLED -> FINISHED on the server,
+                            # undoing the dispatcher <-> MLflow parity fix.
+                            # The partial final metrics logged just above
+                            # still land on the existing KILLED run.
+                            self.logger.debug(
+                                f"Skipping end_run for stopped pipeline {pipeline_id}: "
+                                f"MLflow run {metric_run_id} is already terminal (KILLED)."
+                            )
+                        else:
+                            try:
+                                # COMPLETED dispatcher status -> MLflow FINISHED.
+                                # Explicit for clarity; matches the dispatcher ->
+                                # MLflow mapping in metric_mlflow_manager.
+                                self.metric_manager.end_run(metric_run_id, status="FINISHED")
+                            except Exception as e:
+                                self.logger.debug(f"Failed to end MetricLogger run {metric_run_id}: {e}")
                 except Exception as e:
                     self.logger.debug(f"Failed to log final metrics to MetricLogger for pipeline {pipeline_id}: {e}")
 
@@ -814,6 +1138,84 @@ class Controller:
         if progress_display:
             progress_display.stop()
         return final_results
+
+    @staticmethod
+    def _extract_pipeline_info(pipeline_id, pipeline_config):
+        """Extract display metadata from a pipeline config dict.
+
+        Used both for initial pipelines and dynamically added replacements
+        (e.g. Optuna pruning replacements) so that final results always
+        carry full config metadata.
+        """
+        model_name = "Unknown"
+        text_splitter_cfg = None
+        embedding_cfg = None
+        vector_store_cfg = None
+        search_cfg = None
+        reranker_cfg = None
+        sampling_params = None
+        prompt_manager_k = None
+        model_config = None
+
+        pipeline = pipeline_config["pipeline"]
+        if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
+            if "model" in pipeline.model_config:
+                model_name = pipeline.model_config["model"]
+            model_config_copy = pipeline.model_config.copy()
+            model_config_copy.pop("model", None)
+            if model_config_copy:
+                model_config = model_config_copy
+
+        if hasattr(pipeline, "rag") and pipeline.rag is not None:
+            rag = pipeline.rag
+
+            if hasattr(rag, "text_splitter") and rag.text_splitter is not None:
+                text_splitter_cfg = rag.get_text_splitter_cfg()
+            if getattr(rag, "embedding_cls", None) is not None:
+                cls_name = rag.embedding_cls.__name__ if isinstance(rag.embedding_cls, type) else str(rag.embedding_cls)
+                embedding_cfg = {"class": cls_name}
+                if getattr(rag, "embedding_kwargs", None):
+                    embedding_cfg.update(rag.embedding_kwargs)
+            if getattr(rag, "vector_store_cfg", None) is not None:
+                vector_store_cfg = dict(rag.vector_store_cfg)
+
+            if getattr(rag, "search_type", None) is not None:
+                search_cfg = {"type": rag.search_type}
+                if hasattr(rag, "search_kwargs") and rag.search_kwargs:
+                    allowed_keys = SEARCH_TYPE_KEYS.get(rag.search_type, set(rag.search_kwargs.keys()))
+                    search_cfg.update({k: v for k, v in rag.search_kwargs.items() if k in allowed_keys and v is not None})
+            if getattr(rag, "reranker_cls", None) is not None:
+                reranker_cfg = {"class": rag.reranker_cls.__qualname__ if isinstance(rag.reranker_cls, type) else str(rag.reranker_cls)}
+                if hasattr(rag, "reranker_kwargs") and rag.reranker_kwargs:
+                    reranker_cfg.update({k: v for k, v in rag.reranker_kwargs.items() if v is not None})
+
+        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
+            sampling_params = pipeline._user_params.get("sampling_params", None)
+
+        if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
+            prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
+
+        info_dict = {
+            "pipeline_id": pipeline_id,
+            "pipeline_config": pipeline_config,
+            "model_name": model_name,
+        }
+
+        optional_fields = {
+            "text_splitter_cfg": text_splitter_cfg,
+            "embedding_cfg": embedding_cfg,
+            "vector_store_cfg": vector_store_cfg,
+            "search_cfg": search_cfg,
+            "reranker_cfg": reranker_cfg,
+            "sampling_params": sampling_params,
+            "prompt_manager_k": prompt_manager_k,
+            "model_config": model_config,
+        }
+        for key, value in optional_fields.items():
+            if value is not None:
+                info_dict[key] = value
+
+        return info_dict
 
     def run_multi_pipeline_inference(
         self,
@@ -825,6 +1227,7 @@ class Controller:
         num_actors: int = None,
         num_gpus_per_actor: float = None,
         num_cpus_per_actor: float = None,
+        shard_callback=None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Run multi-pipeline inference with fair round-robin scheduling.
@@ -841,6 +1244,7 @@ class Controller:
             num_actors: Number of query processing actors to spawn
             num_gpus_per_actor: GPUs per actor (float, e.g. 1.0 or 0.0)
             num_cpus_per_actor: CPUs per actor (float, e.g. 3.75)
+            shard_callback: Optional ShardCallback for Optuna integration
 
         Returns:
             Dict mapping pipeline_id to (aggregated_results, cumulative_metrics) tuple
@@ -883,8 +1287,56 @@ class Controller:
 
         self.logger.info(f"Created {num_actors} query processing actors (generic pool)")
 
+        # Extract Optuna shard callback from config_group if available
+        if shard_callback is None and hasattr(config_group, "get_callback"):
+            shard_callback = config_group.get_callback()
+
         # PHASE 5: Register pipelines in database
         pipeline_ids, pipeline_id_to_config = self._register_pipelines(config_leaves, db)
+
+        # Publish shard-progress totals to MLflow so the dashboard's Shards
+        # column can render "x/N". We use tags (not params) because the
+        # paired "current" value is mutable and tags are MLflow's only
+        # mutable per-run key/value primitive. The frontend reads both:
+        # rapidfire.progress.current / rapidfire.progress.total.
+        #
+        # We use the lightweight ``get_pipeline_by_id_lite`` path
+        # (``include_decoded_config=False``) to avoid dill-decoding large
+        # FAISS/embedder objects -- decoding here would add seconds per
+        # pipeline and risk SIGSEGVs (see the docstring on
+        # ``RFDatabase.get_pipeline``).
+        if self.metric_manager:
+            seeded = 0
+            for pipeline_id in pipeline_ids:
+                pipeline = db.get_pipeline(pipeline_id, include_decoded_config=False)
+                metric_run_id = pipeline.get("metric_run_id") if pipeline else None
+                if not metric_run_id:
+                    continue
+                try:
+                    self.metric_manager.set_tag(
+                        metric_run_id, "rapidfire.progress.total", str(num_shards)
+                    )
+                    self.metric_manager.set_tag(
+                        metric_run_id, "rapidfire.progress.current", "0"
+                    )
+                    seeded += 1
+                except Exception as e:
+                    # Promoted from debug to warning -- this used to silently
+                    # swallow failures, which made it hard to diagnose why
+                    # the Shards column rendered "-" on the dashboard.
+                    self.logger.warning(
+                        f"Could not set initial progress tags for pipeline "
+                        f"{pipeline_id} (run {metric_run_id}): {e}"
+                    )
+            self.logger.info(
+                f"Seeded rapidfire.progress tags on {seeded}/{len(pipeline_ids)} "
+                f"MLflow runs (total={num_shards})"
+            )
+
+        # Bind Optuna trials to the newly created DB pipeline IDs
+        if shard_callback is not None and hasattr(config_group, "bind_initial_trials"):
+            config_group.bind_initial_trials(pipeline_ids)
+            self.logger.info(f"Optuna shard callback bound to {len(pipeline_ids)} initial pipelines")
 
         # PHASE 6: Initialize PipelineScheduler
         scheduler = PipelineScheduler(
@@ -1146,6 +1598,32 @@ class Controller:
                         samples_processed = shards_completed * len(shards[0])  # Approximate
                         db.set_pipeline_progress(pipeline_id, shard_id + 1, shards_completed, samples_processed)
 
+                        # Mirror the dispatcher's shards_completed into an MLflow
+                        # tag so the dashboard's Shards column updates live.
+                        # Tag (not metric) because the frontend reads a single
+                        # current value, not a time series.
+                        # ``include_decoded_config=False`` keeps this off the
+                        # hot per-shard path (see seeding block above for the
+                        # same caveat).
+                        if self.metric_manager:
+                            try:
+                                pipeline_row = db.get_pipeline(
+                                    pipeline_id, include_decoded_config=False
+                                )
+                                metric_run_id = (
+                                    pipeline_row.get("metric_run_id") if pipeline_row else None
+                                )
+                                if metric_run_id:
+                                    self.metric_manager.set_tag(
+                                        metric_run_id,
+                                        "rapidfire.progress.current",
+                                        str(shards_completed),
+                                    )
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Could not update progress tag for pipeline {pipeline_id}: {e}"
+                                )
+
                         # Check if pipeline completed all shards
                         if shards_completed >= num_shards:
                             # Mark as completed (metrics will be finalized in Phase 8)
@@ -1229,14 +1707,14 @@ class Controller:
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, metric_name, float(metric_value), step=step)
                                                 except Exception as e:
-                                                    self.logger.debug(f"Failed to log metric {metric_name} to MetricLogger: {e}")
+                                                    self.logger.warning(f"Could not log metric {metric_name} to MetricLogger: {e}")
 
                                             # Log confidence_interval if available
                                             if confidence_interval is not None and isinstance(confidence_interval, (int, float)):
                                                 try:
                                                     self.metric_manager.log_metric(metric_run_id, f"{metric_name}_confidence_interval", float(confidence_interval), step=step)
                                                 except Exception as e:
-                                                    self.logger.debug(f"Failed to log metric {metric_name}_confidence_interval to MetricLogger: {e}")
+                                                    self.logger.warning(f"Could not log metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
                                         if "Throughput" in display_metrics:
                                             throughput_value = display_metrics["Throughput"]["value"]
@@ -1263,6 +1741,137 @@ class Controller:
                             f"({task_info['batch_count']} batches, {duration:.2f}s)"
                         )
 
+                        # Optuna shard callback: evaluate pipeline and potentially prune
+                        if (
+                            shard_callback is not None
+                            and shards_completed < num_shards
+                        ):
+                            try:
+                                cb_metrics = display_metrics if display_metrics else {}
+                                shard_decision = shard_callback.on_shard_complete(
+                                    pipeline_id, shard_id, cb_metrics
+                                )
+                                if shard_decision.action == "prune":
+                                    db.set_pipeline_status(pipeline_id, PipelineStatus.STOPPED)
+                                    progress_display.update_pipeline(pipeline_id, status="STOPPED")
+                                    scheduler.remove_pipeline(pipeline_id)
+                                    # Optuna prune maps to MLflow KILLED -- same as
+                                    # user IC-stop. Both are intentional terminations
+                                    # rather than failures or clean finishes.
+                                    self._finalize_mlflow_run(db, pipeline_id, "KILLED")
+                                    self.logger.info(
+                                        f"Optuna pruned pipeline {pipeline_id} after shard {shard_id}"
+                                    )
+                                    if shard_decision.replacement_config:
+                                        # Inject experiment_name so the replacement's
+                                        # RAG hash matches the cached context built
+                                        # during _setup_context_generators.
+                                        repl_pipeline = shard_decision.replacement_config.get("pipeline")
+                                        if repl_pipeline is not None:
+                                            repl_rag = getattr(repl_pipeline, "rag", None)
+                                            repl_pm = getattr(repl_pipeline, "prompt_manager", None)
+                                            if repl_rag:
+                                                repl_rag.experiment_name = self.experiment_name
+                                            if repl_pm:
+                                                repl_pm.experiment_name = self.experiment_name
+
+                                        new_ids, new_map = self._register_pipelines(
+                                            [shard_decision.replacement_config], db
+                                        )
+                                        # Seed shards-progress tags on the
+                                        # replacement runs too, mirroring the
+                                        # initial-registration path above.
+                                        # Without this the Shards column on
+                                        # the dashboard would read "-" for
+                                        # any Optuna-spawned replacement.
+                                        if self.metric_manager:
+                                            for new_pid in new_ids:
+                                                repl_row = db.get_pipeline(
+                                                    new_pid, include_decoded_config=False
+                                                )
+                                                repl_run = (
+                                                    repl_row.get("metric_run_id")
+                                                    if repl_row
+                                                    else None
+                                                )
+                                                if not repl_run:
+                                                    continue
+                                                try:
+                                                    self.metric_manager.set_tag(
+                                                        repl_run,
+                                                        "rapidfire.progress.total",
+                                                        str(num_shards),
+                                                    )
+                                                    self.metric_manager.set_tag(
+                                                        repl_run,
+                                                        "rapidfire.progress.current",
+                                                        "0",
+                                                    )
+                                                except Exception as e:
+                                                    self.logger.warning(
+                                                        f"Could not seed progress tags for "
+                                                        f"replacement pipeline {new_pid}: {e}"
+                                                    )
+                                        for new_pid in new_ids:
+                                            pipeline_id_to_config[new_pid] = new_map[new_pid]
+                                            pipeline_ids.append(new_pid)
+                                            agg = Aggregator()
+                                            pc = new_map[new_pid]
+                                            p = pc["pipeline"]
+                                            if hasattr(p, "online_strategy"):
+                                                agg.set_online_strategy(**p.online_strategy)
+                                            agg.set_total_population_size(total_dataset_size)
+                                            pipeline_aggregators[new_pid] = agg
+                                            pipeline_results[new_pid] = {
+                                                "results": {},
+                                                "metrics": {},
+                                                "start_time": None,
+                                            }
+                                            scheduler.add_pipeline(new_pid, shards_completed=0)
+
+                                            # Replacement pipelines must inherit the
+                                            # parent's API resources. The rate limiter
+                                            # actor + max-completion-tokens maps are only
+                                            # populated for the initial wave of pipelines
+                                            # at experiment setup; without copying the
+                                            # parent's (``pipeline_id``) entries here the
+                                            # worker would build an ``APIInferenceEngine``
+                                            # with no ``rate_limiter_actor`` and fail to
+                                            # initialize (only manifests under sharding,
+                                            # where pruning + relaunch actually happens).
+                                            if pipeline_id in pipeline_to_rate_limiter:
+                                                pipeline_to_rate_limiter[new_pid] = (
+                                                    pipeline_to_rate_limiter[pipeline_id]
+                                                )
+                                            if pipeline_id in pipeline_to_max_completion_tokens:
+                                                pipeline_to_max_completion_tokens[new_pid] = (
+                                                    pipeline_to_max_completion_tokens[pipeline_id]
+                                                )
+
+                                            if hasattr(shard_callback, "_remap_pending_trial"):
+                                                shard_callback._remap_pending_trial(new_pid)
+
+                                            # Add replacement to live progress display
+                                            if progress_display:
+                                                info = self._extract_pipeline_info(new_pid, pc)
+                                                metadata = {
+                                                    k: v for k, v in info.items()
+                                                    if k not in ["pipeline_id", "pipeline_config", "model_name"]
+                                                }
+                                                progress_display.add_pipeline(
+                                                    pipeline_id=new_pid,
+                                                    pipeline_config=pc,
+                                                    model_name=info.get("model_name", "Unknown"),
+                                                    **metadata,
+                                                )
+                                        self.logger.info(
+                                            f"Optuna suggested replacement pipeline(s): {new_ids}"
+                                        )
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Optuna shard callback issue for pipeline {pipeline_id}: {e}"
+                                )
+
                         # Mark for cleanup
                         completed_actor_ids.append(actor_id)
 
@@ -1276,6 +1885,10 @@ class Controller:
                         db.set_actor_task_error(task_id, error_msg)
                         db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
                         db.set_pipeline_error(pipeline_id, error_msg)
+
+                        # Mirror the dispatcher FAILED state into MLflow so the
+                        # dashboard stops showing this run as RUNNING.
+                        self._finalize_mlflow_run(db, pipeline_id, "FAILED")
 
                         # Display error in notebook (but don't halt the experiment)
                         pipeline_config = pipeline_id_to_config.get(pipeline_id)
@@ -1357,7 +1970,19 @@ class Controller:
                         f"Busy actors: {status['busy_actors']}, "
                         f"Gen: {status['current_generation']}"
                     )
-                time.sleep(0.5)
+                # Block until something new happens so a dead actor's failed
+                # futures surface here. ray.wait must be filtered to not-yet-ready
+                # futures: any already-resolved batch ref would satisfy
+                # num_returns=1 and turn this into a tight spin.
+                all_futures = []
+                for task_info in active_tasks.values():
+                    all_futures.extend(task_info["futures"])
+                if all_futures:
+                    _ready, not_ready = ray.wait(all_futures, num_returns=len(all_futures), timeout=0)
+                    if not_ready:
+                        ray.wait(not_ready, num_returns=1, timeout=0.5)
+                else:
+                    time.sleep(0.5)
                 continue
 
             # Execute schedule
@@ -1482,6 +2107,7 @@ class Controller:
                 db.set_actor_task_error(task_id, error_msg)
                 db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
                 db.set_pipeline_error(pipeline_id, error_msg)
+                self._finalize_mlflow_run(db, pipeline_id, "FAILED")
                 scheduler.remove_pipeline(pipeline_id)
                 if progress_display:
                     progress_display.update_pipeline(pipeline_id, status="FAILED")
@@ -1489,35 +2115,75 @@ class Controller:
 
             self.logger.debug(f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})")
 
-            futures = []
-            preprocess_fn = pipeline_config.get("preprocess_fn")
-            postprocess_fn = pipeline_config.get("postprocess_fn")
-            compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
-            accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
-            for batch in batches:
-                future = actor.process_batch.remote(
-                    batch,
-                    preprocess_fn=preprocess_fn,
-                    postprocess_fn=postprocess_fn,
-                    compute_metrics_fn=compute_metrics_fn if accumulate_metrics_fn else None,
+            # Mirror the init-failure handler: if dispatch or bookkeeping
+            # raises, free the actor via remove_pipeline so it doesn't leak
+            # busy state.
+            try:
+                futures = []
+                preprocess_fn = pipeline_config.get("preprocess_fn")
+                postprocess_fn = pipeline_config.get("postprocess_fn")
+                compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
+                accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
+                for batch in batches:
+                    future = actor.process_batch.remote(
+                        batch,
+                        preprocess_fn=preprocess_fn,
+                        postprocess_fn=postprocess_fn,
+                        compute_metrics_fn=compute_metrics_fn if accumulate_metrics_fn else None,
+                    )
+                    futures.append(future)
+
+                # Track task
+                task_start_time = time.time()
+                active_tasks[actor_id] = {
+                    "futures": futures,
+                    "pipeline_id": pipeline_id,
+                    "shard_id": shard_id,
+                    "task_id": task_id,
+                    "batch_count": len(batches),
+                    "start_time": task_start_time,
+                }
+
+                # Update task status to in-progress
+                db.set_actor_task_start_time(task_id, task_start_time)
+                db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
+                db.set_pipeline_current_shard(pipeline_id, shard_id)
+            except Exception as dispatch_err:
+                error_msg = str(dispatch_err)
+                self.logger.exception(
+                    f"Pipeline {pipeline_id} ({pipeline_name}) failed during batch "
+                    f"dispatch on actor {actor_id}: {error_msg}"
                 )
-                futures.append(future)
+                db.set_actor_task_status(task_id, TaskStatus.FAILED)
+                db.set_actor_task_error(task_id, error_msg)
+                db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
+                db.set_pipeline_error(pipeline_id, error_msg)
+                self._finalize_mlflow_run(db, pipeline_id, "FAILED")
+                active_tasks.pop(actor_id, None)
+                scheduler.remove_pipeline(pipeline_id)
+                if progress_display:
+                    progress_display.update_pipeline(pipeline_id, status="FAILED")
+                continue
 
-            # Track task
-            task_start_time = time.time()
-            active_tasks[actor_id] = {
-                "futures": futures,
-                "pipeline_id": pipeline_id,
-                "shard_id": shard_id,
-                "task_id": task_id,
-                "batch_count": len(batches),
-                "start_time": task_start_time,
-            }
-
-            # Update task status to in-progress
-            db.set_actor_task_start_time(task_id, task_start_time)
-            db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
-            db.set_pipeline_current_shard(pipeline_id, shard_id)
+        # Finalize Optuna shard callback with final metrics from all pipelines.
+        # We must accumulate the raw per-shard metric lists into flat dicts
+        # (e.g. {"NDCG@5": {"value": 0.15}}) before passing to finalize(),
+        # because the callback's _resolve_metric expects scalar-valued dicts,
+        # not the raw aggregated lists stored in pipeline_results.
+        if shard_callback is not None:
+            try:
+                final_cb_metrics: dict[int, dict] = {}
+                for pid in pipeline_id_to_config:
+                    if pid in pipeline_results and pipeline_results[pid]["metrics"]:
+                        accumulate_fn = pipeline_id_to_config[pid].get("accumulate_metrics_fn")
+                        if accumulate_fn:
+                            final_cb_metrics[pid] = accumulate_fn(pipeline_results[pid]["metrics"])
+                        else:
+                            final_cb_metrics[pid] = pipeline_results[pid]["metrics"]
+                shard_callback.finalize(final_cb_metrics)
+                self.logger.info("Optuna shard callback finalized")
+            except Exception as e:
+                self.logger.warning(f"Optuna shard callback finalize issue: {e}")
 
         # PHASE 8: Compute final metrics for each pipeline (including dynamically cloned ones).
         # pipeline_id_to_config contains all pipelines (originals + clones added via _handle_clone).
@@ -1531,15 +2197,23 @@ class Controller:
             info_copy = {k: v for k, v in info_dict.items() if k not in ["pipeline_config", "pipeline_id"]}
             pipeline_id_to_info[pid] = info_copy
 
-        # For cloned pipelines (not in pipeline_info), pull their display metadata directly
-        # from the progress_display which already has it from add_pipeline().
+        # For dynamically added pipelines (Optuna replacements, interactive clones)
+        # not in pipeline_info, extract metadata from the pipeline config itself.
+        # Fall back to the progress_display for interactive clones that populated it.
         for pid in all_pipeline_ids:
-            if pid not in pipeline_id_to_info and progress_display:
-                clone_metadata = progress_display.pipeline_metadata.get(pid, {})
-                clone_data = progress_display.pipeline_data.get(pid, {})
-                clone_info = {"model_name": clone_data.get("model", "Unknown")}
-                clone_info.update(clone_metadata)
-                pipeline_id_to_info[pid] = clone_info
+            if pid not in pipeline_id_to_info:
+                if pid in pipeline_id_to_config:
+                    info_dict = self._extract_pipeline_info(pid, pipeline_id_to_config[pid])
+                    pipeline_id_to_info[pid] = {
+                        k: v for k, v in info_dict.items()
+                        if k not in ["pipeline_config", "pipeline_id"]
+                    }
+                elif progress_display:
+                    clone_metadata = progress_display.pipeline_metadata.get(pid, {})
+                    clone_data = progress_display.pipeline_data.get(pid, {})
+                    clone_info = {"model_name": clone_data.get("model", "Unknown")}
+                    clone_info.update(clone_metadata)
+                    pipeline_id_to_info[pid] = clone_info
 
         final_results = self._compute_final_metrics_for_pipelines(
             all_pipeline_ids,

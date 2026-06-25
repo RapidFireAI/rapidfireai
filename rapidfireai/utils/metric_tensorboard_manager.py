@@ -114,8 +114,13 @@ class TensorBoardMetricLogger(MetricLogger):
         """
         return {}
     
-    def end_run(self, run_id: str) -> None:
-        """End a TensorBoard run by closing the writer."""
+    def end_run(self, run_id: str, status: Optional[str] = None) -> None:
+        """End a TensorBoard run by closing the writer.
+
+        ``status`` is accepted for signature parity with MetricLogger and is
+        ignored here -- TensorBoard has no terminal-state concept.
+        """
+        del status  # unused; kept for signature parity
         if run_id in self.writers:
             self.writers[run_id].close()
             del self.writers[run_id]
