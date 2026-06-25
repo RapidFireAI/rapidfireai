@@ -13,6 +13,61 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+
+## [v0.16.1]
+
+### Additions
+- `rapidfireai/utils/mode_utils.py`: `get_installed_mode()` and `assert_mode_matches()` helpers for validating the installed RapidFire mode (`$RF_HOME/rf_mode.txt`).
+- New RF_API_WORKERS / RF_API_WORKER_CLASS / RF_API_THREADS / RF_API_TIMEOUT / RF_API_GRACEFUL_TIMEOUT / RF_API_KEEPALIVE env vars on DispatcherConfig to tune the dispatcher gunicorn server.
+- New include_decoded_config flag on RFDatabase.get_pipeline* / get_all_pipelines so HTTP callers can skip the expensive (and SIGSEGV-prone) dill decode of FAISS / embedder blobs.
+- Autopilot/chat-agent clone path now stamps requests with source: "autopilot" and refuses to launch a clone whose effective config duplicates an existing run.
+- Per-step intermediate checkpoint folders (`checkpoint-<step>`) for `save_strategy="chunk"`, preserving one snapshot per chunk.
+- Configurable eval generation via `generation_config`: `max_input_length`, `add_generation_prompt`, and `truncation_side`.
+- New `Status` column on the experiment runs table (pinned left after Run Name) showing dispatcher-vocabulary lifecycle state with per-state color.
+- New `Shards` column showing live shard / chunk progress (`current/total`) for both evals (per-shard) and fit (per-chunk-per-epoch) runs.
+- New mutable MLflow tags `rapidfire.progress.current` and `rapidfire.progress.total` emitted by both the fit and evals controllers; `MetricLogger.set_tag()` API across all backends.
+- Stranded-run recovery (`rf_db.py` `reset_all_tables` path) now also terminates orphaned MLflow runs as `FAILED`.
+- New unit-test suite `tests/test_mlflow_status_parity.py` covering every status-parity transition, idempotency path, and the new helpers.
+
+### Changes
+- Experiment now validates that the installed mode matches the requested mode at initialization — before Ray/DB setup — blocking early with a clear, actionable error on a mismatch instead of silently producing a dead IC Ops panel.
+- `doctor` reads the installed mode via `get_installed_mode()` (single source of truth).
+- Dispatcher gunicorn defaults switched from sync worker to gthread (4 threads, 120 s timeout, 5 s keepalive) for both evals/ and fit/ dispatchers to survive long-lived polling connections.
+- HTTP polling endpoints (/get-all-pipelines, /get-all-runs, /get-pipeline, IC validate calls) no longer dill-decode the pipeline_config blob; get_all_runs recovers per-row instead of failing the whole poll.
+- Frontend proxy strips hop-by-hop headers, returns 502 for upstream failures, and absorbs ChunkedEncodingError / ProtocolError mid-stream instead of logging tracebacks.
+- Eval generation now left-pads and forwards an explicit `attention_mask`; input truncation length is derived from the tokenizer/model instead of a fixed 512 tokens.
+- Worker reads the user's `save_strategy` as the single source of truth; training args use a shallow copy so the `"chunk"` sentinel is preserved on `config_leaf`.
+- Changed default behavior for `rapidfireai init` to be `--evals`, to do training use `rapidfireai init --train`
+- Pin datasets==3.6.0 and pyarrow>=18.1.0
+- Remove output from rag-fiqa notebook
+- Dashboard relabels MLflow's native enum to the dispatcher's vocabulary across the experiment runs table and the run detail page: `Finished` → `COMPLETED`, `Killed` → `STOPPED`, `Running` → `ONGOING`, `Scheduled` → `NEW`.
+- `KILLED` (dispatcher `STOPPED`) now renders with a `StopCircleIcon` in warning amber instead of the red error icon used for `FAILED` — an intentional halt is no longer visually conflated with a failure.
+- `DateCellRenderer` no longer prefixes the timestamp with the run-status icon (the new `Status` column owns that signal).
+- `experiment_utils.create_experiment` / `end_experiment` and `MLflowMetricLogger.clear_context()` now read the active run's server-side status before calling `mlflow.end_run()` so a terminal state already set by the controller / worker / IC handler is preserved instead of being overwritten with `FINISHED`.
+- RunFit Notebooks updated with param mode='fit'
+
+### Fixes
+- A missing `rf_mode.txt` no longer blocks `run_fit()`; it now defaults to fit mode, matching the dispatcher startup default (`run_evals()` remains correctly blocked in that case).
+- Fixes dispatcher worker WORKER TIMEOUT / "no URI read" SIGKILLs caused by the sync worker blocking on keep-alive sockets.
+- Fixes dispatcher worker SIGSEGVs when the autopilot polling loop re-hydrated ~25 FAISS-bearing pipeline blobs per poll.
+- Fixes Converge autopilot launching byte-identical duplicate clones and silently dropping cloned runs because their flattened_config was empty.
+- Fixes AttributeError in _transform_pipeline_to_run when SQLite returned NULL for string columns (.get(key, "") doesn't apply the default to None values).
+- Optuna label building no longer crashes on `dict`/`None` categorical knob choices (#268).
+- Optuna leaf configs now carry the `pipeline` key so the controller can launch them (#268).
+- Query actor reuses its inference engine only when it actually exists, fixing `AttributeError` under sharding (#268).
+- Replacement (relaunched) pipelines now inherit the parent's rate limiter and max-completion-tokens, fixing inference-engine init failures (#268).
+- Fixed intermediate checkpoints overwriting each other every chunk save.
+- Fixed `save_strategy="chunk"` being lost/mutated before the worker's save step.
+- Fixed corrupted batched eval generation when `pad_token_id == eos_token_id` (missing attention mask + right padding).
+- Fixed missing `add_generation_prompt` in eval chat templating, which degraded eval quality for instruction-tuned models.
+- Dashboard MLflow status now matches the dispatcher status shown in the notebook progress table across all terminal transitions in both `run_fit()` and `run_evals()`: clean completion, IC-stop, Optuna prune, worker exception, runtime / init / dispatch failure, create-run failure, and stranded-run recovery after a crash.
+- Reused query actors no longer mark a still-running pipeline as `FINISHED` on the MLflow server when switching to the next pipeline.
+- Orphaned `ONGOING` / `NEW` runs left over from a crashed experiment no longer remain stuck as `RUNNING` in MLflow after recovery.
+- Cloned pipelines (IC clone) and Optuna replacement runs now render shard progress in the `Shards` column instead of `-`.
+- Failed run-creation paths now record the MLflow run as `FAILED` instead of letting it default to `FINISHED`.
+- Downgrade `numpy` to 2.0.1 on Colab for SFT notebook issue with datasets
+
+
 ## [v0.16.0]
 
 ### Additions
@@ -96,8 +151,6 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixes issue with dependencies upgrading numpy, by pinning numpy 2.0.1
 - Restricts peft<0.19.0 until transformers can be upgraded to >5.0
 - Pins cupy-cuda12x to 14.0.1 to override issue in 14.1.0 that requires `pytest` the issue is fixed in `https://github.com/cupy/cupy/pull/9965` but there is not a current release with this fix.
-
-
 
 
 ## [v0.15.2]
