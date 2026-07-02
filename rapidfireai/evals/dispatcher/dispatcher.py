@@ -85,7 +85,21 @@ class Dispatcher:
             self.logger_experiment_name = current_experiment_name
         return self.logger
 
-    def _transform_pipeline_to_run(self, pipeline: dict) -> dict:
+    def _get_total_shards(self) -> int:
+        """Return the shard budget for the active experiment.
+
+        ``num_shards`` is stored on the ``experiments`` row (set when
+        ``run_evals(..., num_shards=N)`` is called), not on individual
+        pipelines. Every pipeline in the experiment shares the same total.
+        """
+        experiment = self.db.get_running_experiment()
+        if not experiment:
+            return 0
+        return experiment.get("num_shards") or 0
+
+    def _transform_pipeline_to_run(
+        self, pipeline: dict, *, total_shards: int | None = None
+    ) -> dict:
         """
         Transform pipeline data to run format for frontend compatibility.
 
@@ -105,16 +119,65 @@ class Dispatcher:
         # Without this, ``status.lower()`` on a NULL row raised AttributeError
         # which 500'd the whole autopilot data-fetch loop.
         status = pipeline.get("status") or ""
+        if total_shards is None:
+            total_shards = self._get_total_shards()
+        pipeline_config_json = pipeline.get("pipeline_config_json") or {}
         return {
             "run_id": pipeline.get("pipeline_id"),
             "status": self.STATUS_MAP.get(status.lower(), status),
             "metric_run_id": pipeline.get("metric_run_id"),
             "config": pipeline.get("pipeline_config_json") or {},
             "flattened_config": pipeline.get("flattened_config") or {},
+            "full_config": self._build_full_config(
+                pipeline_config_json, pipeline.get("context_id")
+            ),
             "num_chunks_visited": pipeline.get("shards_completed") or 0,
+            "total_shards": total_shards,
             "total_samples_processed": pipeline.get("total_samples_processed") or 0,
             "error": pipeline.get("error") or "",
         }
+
+    def _build_full_config(self, pipeline_config_json: dict, context_id) -> dict:
+        """Build the complete, display-only config view for a run.
+
+        The ``config``/``flattened_config`` fields only carry the cloneable
+        surface (retrieval/generation/endpoint params) because the clone path
+        intentionally reuses the parent's pre-built index. This combines that
+        surface with the indexing-stage context config (RAG index spec +
+        prompt manager) stored separately in the ``contexts`` table, so agents
+        can see the *entire* configuration even though some knobs are fixed at
+        launch and not cloneable.
+
+        This is read-only/display-only and never used for cloning, so it is
+        safe to expose the fixed-at-launch knobs here. Existing keys
+        (``config``, ``flattened_config``) are left untouched.
+        """
+        full_config = dict(pipeline_config_json or {})
+        if context_id is None:
+            return full_config
+
+        try:
+            context = self.db.get_context(context_id)
+        except Exception:
+            context = None
+        if not context:
+            return full_config
+
+        def _parse(value):
+            if isinstance(value, str):
+                try:
+                    return json.loads(value)
+                except (ValueError, TypeError):
+                    return None
+            return value
+
+        rag_index_config = _parse(context.get("rag_config_json"))
+        if rag_index_config:
+            full_config["rag_index_config"] = rag_index_config
+        prompt_config = _parse(context.get("prompt_config_json"))
+        if prompt_config:
+            full_config["prompt_config"] = prompt_config
+        return full_config
 
     def register_routes(self) -> None:
         """Register all REST API routes with OPTIONS support for CORS preflight."""
@@ -512,14 +575,18 @@ class Dispatcher:
         Get lightweight list of pipeline IDs with minimal info (optimized for polling).
 
         Returns:
-            List of pipelines with only: pipeline_id, status, shards_completed, total_samples_processed
+            List of pipelines with: pipeline_id, status, shards_completed,
+            total_samples_processed, total_shards
         """
         # Handle OPTIONS preflight
         if request.method == "OPTIONS":
             return jsonify({}), 200
 
         try:
+            total_shards = self._get_total_shards()
             pipelines = self.db.get_all_pipeline_ids()
+            for pipeline in pipelines:
+                pipeline["total_shards"] = total_shards
             return jsonify(pipelines), 200
 
         except Exception as e:
@@ -630,6 +697,7 @@ class Dispatcher:
         try:
             # include_decoded_config=False -- see ``get_all_pipelines`` above.
             pipelines = self.db.get_all_pipelines(include_decoded_config=False)
+            total_shards = self._get_total_shards()
             # Recover per-row instead of failing the whole poll on one bad row:
             # the autopilot polls every few seconds, so a single transient None
             # column or unexpected value used to 500 every subsequent poll until
@@ -637,7 +705,9 @@ class Dispatcher:
             runs = []
             for p in pipelines:
                 try:
-                    runs.append(self._transform_pipeline_to_run(p))
+                    runs.append(
+                        self._transform_pipeline_to_run(p, total_shards=total_shards)
+                    )
                 except Exception:
                     # transform failed for this row; log + skip so the rest of
                     # the dataset is still usable by the dashboard / autopilot.
@@ -682,7 +752,11 @@ class Dispatcher:
             if not pipeline:
                 return jsonify({"error": f"Run {run_id} not found"}), 400
 
-            return jsonify(self._transform_pipeline_to_run(pipeline)), 200
+            return jsonify(
+                self._transform_pipeline_to_run(
+                    pipeline, total_shards=self._get_total_shards()
+                )
+            ), 200
 
         except Exception as e:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
