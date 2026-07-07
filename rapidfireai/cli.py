@@ -456,10 +456,10 @@ def install_packages(
         packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         if evals:
             packages.append({"package": f"vllm=={vllm_version}", "extra_args": ["--upgrade"]})
-            packages.append({"package": "flashinfer-python==0.16.3", "extra_args": ["--upgrade"]})
-            packages.append({"package": "flashinfer-cubin==0.16.3", "extra_args": ["--upgrade"]})
+            packages.append({"package": "flashinfer-python==0.6.13", "extra_args": ["--upgrade"]})
+            packages.append({"package": "flashinfer-cubin==0.6.13", "extra_args": ["--upgrade"]})
             if cuda_major + (cuda_minor / 10.0) >= 12.8:
-                packages.append({"package": "flashinfer-jit-cache==0.16.3", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
+                packages.append({"package": "flashinfer-jit-cache==0.6.13", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
             # Re-install torch, torchvision, and torchaudio to ensure compatibility as many packages try and upgrade it
             packages.append({"package": "transformers>=4.56.1,<5.0.0", "extra_args": ["--upgrade"]})           
             packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
