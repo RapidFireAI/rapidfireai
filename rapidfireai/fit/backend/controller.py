@@ -234,6 +234,16 @@ class Controller:
                 else:
                     required_workers = self.default_req_workers
 
+            is_fsdp = "fsdp_config" in config_leaf.get("training_args", {})
+            if required_workers > 1 and not is_fsdp:
+                raise ControllerException(
+                    f"num_gpus={required_workers} requires an 'fsdp_config' in "
+                    "training_args. Please add an fsdp_config to enable "
+                    "distributed training, or set num_gpus=1. Without an "
+                    "fsdp_config the reserved workers duplicate compute and "
+                    "write to the same output paths."
+                )
+
             total_steps = self._get_total_step(
                 config_leaf, len_train_dataset, num_chunks, required_workers
             )
