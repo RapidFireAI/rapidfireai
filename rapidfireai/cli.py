@@ -5,22 +5,30 @@ Command-line interface for RapidFire AI
 
 import argparse
 import os
-import platform
 import re
-import signal
 import shutil
+import signal
 import site
 import subprocess
 import sys
 from pathlib import Path
-from importlib.resources import files
-from rapidfireai.utils.get_ip_address import get_ip_address
-from rapidfireai.utils.python_info import get_python_info
-from rapidfireai.utils.constants import DispatcherConfig, JupyterConfig, ColabConfig, MLflowConfig
+
+from rapidfireai.utils.constants import (
+    RF_EXPERIMENT_PATH,
+    RF_HOME,
+    ColabConfig,
+    DispatcherConfig,
+    JupyterConfig,
+    MLflowConfig,
+)
 from rapidfireai.utils.doctor import get_doctor_info
-from rapidfireai.utils.constants import RF_EXPERIMENT_PATH, RF_HOME
+from rapidfireai.utils.get_ip_address import get_ip_address
 from rapidfireai.utils.gpu_info import get_compute_capability
+from rapidfireai.utils.python_info import get_python_info
+
 from .version import __version__
+
+PURE_INFO_COMMANDS = {"--version", "-V", "--help", "-h"}
 
 RF_CONVERGE_MODE = os.getenv("RF_CONVERGE_MODE", "all")
 
@@ -432,25 +440,25 @@ def install_packages(
     if evals and ColabConfig.ON_COLAB:
         pass
 
-    
+
     ## TODO: re-enable for fit once trl has fix
     if not ColabConfig.ON_COLAB and cuda_major==0:
-        print(f"\n🎯 Using CPU")
+        print("\n🎯 Using CPU")
         packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade"]})
         packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade"]})
         packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade"]})
-    
+
     if cuda_major >= 12:
-        packages.append({"package": f"faiss-gpu-cu12", "extra_args": ["--upgrade"]})
+        packages.append({"package": "faiss-gpu-cu12", "extra_args": ["--upgrade"]})
     else:
-        packages.append({"package": f"faiss-cpu", "extra_args": ["--upgrade"]})
+        packages.append({"package": "faiss-cpu", "extra_args": ["--upgrade"]})
 
     if not ColabConfig.ON_COLAB and cuda_major >= 12:
         if cuda_from_user:
             print(f"\n🎯 Using CUDA {cuda_major}.{cuda_minor} (from --cudaversion), using {torch_cuda}")
         else:
             print(f"\n🎯 Detected CUDA {cuda_major}.{cuda_minor}, using {torch_cuda}")
-        
+
         packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
         packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
@@ -461,7 +469,7 @@ def install_packages(
             if cuda_major + (cuda_minor / 10.0) >= 12.8:
                 packages.append({"package": "flashinfer-jit-cache==0.6.13", "extra_args": ["--upgrade","--index-url", f"https://flashinfer.ai/whl/{flash_cuda}"]})
             # Re-install torch, torchvision, and torchaudio to ensure compatibility as many packages try and upgrade it
-            packages.append({"package": "transformers>=4.56.1,<5.0.0", "extra_args": ["--upgrade"]})           
+            packages.append({"package": "transformers>=4.56.1,<5.0.0", "extra_args": ["--upgrade"]})
             packages.append({"package": f"torch=={torch_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchvision=={torchvision_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
             packages.append({"package": f"torchaudio=={torchaudio_version}", "extra_args": ["--upgrade", "--index-url", f"https://download.pytorch.org/whl/{torch_cuda}"]})
@@ -477,7 +485,7 @@ def install_packages(
             # packages.append({"package": "https://github.com/RapidFireAI/faiss-wheels/releases/download/v1.13.0/rf_faiss_gpu_12_8-1.13.0-cp39-abi3-manylinux_2_34_x86_64.whl", "extra_args": []})
 
         packages.append({"package": "numpy<2.3", "extra_args": ["--upgrade"]})
-    
+
     if evals:
         # Temporarily pin cupy-cuda12x to 14.0.1 on all platforms to avoid issues
         #  with cupy-cuda12x 14.1.0
@@ -595,10 +603,11 @@ def copy_test_notebooks():
 
 def run_jupyter():
     """ Run the Jupyter notebook server. """
-    from jupyter_server.serverapp import ServerApp
-    import logging
     import io
-    from contextlib import redirect_stdout, redirect_stderr
+    import logging
+    from contextlib import redirect_stderr, redirect_stdout
+
+    from jupyter_server.serverapp import ServerApp
 
     # Suppress all logging
     logging.getLogger().setLevel(logging.CRITICAL)
@@ -628,7 +637,7 @@ def run_jupyter():
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
             app.initialize(argv=['--ServerApp.custom_display_url='])
-        
+
         dispatcher_port = DispatcherConfig.PORT
         mlflow_port = MLflowConfig.PORT
 
@@ -641,7 +650,7 @@ def run_jupyter():
             print(f"Manually forward port {app.port} to localhost")
             print(f"Manually forward port {dispatcher_port} to localhost")
             print(f"Manually forward port {mlflow_port} to localhost")
-            print(f"For example using ssh:")
+            print("For example using ssh:")
             #TODO: MLFLOW port forwarding
             print(f"    ssh -L {app.port}:localhost:{app.port} -L {dispatcher_port}:localhost:{dispatcher_port} -L {mlflow_port}:localhost:{mlflow_port} {os_username}@{get_ip_address()}")
         print("If there is a problem, try running jupyter manually with:")
@@ -652,25 +661,25 @@ def run_jupyter():
         print("\n\nStarting Jupyter server...")
         sys.stdout.flush()
         sys.stderr.flush()
-        
+
         # Don't redirect anything during start - let prompts through
         app.start()
-        
+
     except Exception as e:
         print("ERROR occurred during Jupyter server startup:", file=sys.stderr)
         print("=" * 60, file=sys.stderr)
-        
+
         stdout_output = stdout_capture.getvalue()
         stderr_output = stderr_capture.getvalue()
-        
+
         if stdout_output:
             print("   Standard output:", file=sys.stderr)
             print(stdout_output, file=sys.stderr)
-        
+
         if stderr_output:
             print("   Standard error:", file=sys.stderr)
             print(stderr_output, file=sys.stderr)
-        
+
         print("=" * 60, file=sys.stderr)
         print(f"Exception: {e}", file=sys.stderr)
         print("Try running jupyter manually with:")
@@ -679,6 +688,11 @@ def run_jupyter():
 
 def main():
     """Main entry point for the rapidfireai command."""
+    # Ensure runtime directories are created for non-info commands
+    if not (len(sys.argv) > 1 and any(arg in PURE_INFO_COMMANDS for arg in sys.argv[1:])):
+        from rapidfireai.utils.constants import init_directories
+        init_directories()
+
     parser = argparse.ArgumentParser(description="RapidFire AI - Start/stop/manage services", prog="rapidfireai",
     epilog="""
 Examples:
@@ -810,14 +824,12 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
             os.environ["RF_TRACKIO_ENABLED"] = "true"
     if args.tensorboard_log_dir:
         os.environ["RF_TENSORBOARD_LOG_DIR"] = args.tensorboard_log_dir
-    if args.colab:
-        os.environ["RF_COLAB_MODE"] = "true"
-    elif ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
+    if args.colab or ColabConfig.ON_COLAB and os.getenv("RF_COLAB_MODE") is None:
         os.environ["RF_COLAB_MODE"] = "true"
 
     if args.no_frontend:
         os.environ["RF_START_FRONTEND"] = "false"
-    
+
     # Handle force command separately
     if args.force:
         os.environ["RF_FORCE"] = "true"
@@ -840,7 +852,7 @@ For more information, visit: https://github.com/RapidFireAI/rapidfireai
             cuda_version=args.cuda_version,
             compute_capability_version=args.compute_capability_version,
         )
-    
+
     if args.command == "jupyter":
         return run_jupyter()
 

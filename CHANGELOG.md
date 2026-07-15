@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [Unreleased]
+
+### Fixed
+- Fixed `#219`: `rapidfireai --version` and `--help` no longer implicitly create `$RF_HOME` or `$RF_HOME/logs`. Directory initialization is now deferred until non-pure-info subcommands are run.
 
 ## [v0.16.1]
 
