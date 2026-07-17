@@ -149,22 +149,25 @@ class RFGridSearch(AutoMLAlgorithm):
                                 if num_gpus is not None:
                                     leaf["num_gpus"] = num_gpus
 
-                            if self.trainer_type == "DPO":
-                                leaf["ref_model_config"] = {
-                                    "model_name": config.ref_model_name,
-                                    "model_type": config.ref_model_type,
-                                }
-                                for ref_model_kwargs in ref_model_kwargs_instances:
-                                    leaf["ref_model_config"][
-                                        "model_kwargs"
-                                    ] = ref_model_kwargs
-                                    runs.append(leaf)
-                            elif self.trainer_type == "GRPO":
-                                for reward_func in reward_funcs_instances:
-                                    leaf["reward_funcs"] = reward_func
-                                    runs.append(leaf)
-                            else:
-                                runs.append(leaf)
+                                if self.trainer_type == "DPO":
+                                    leaf["ref_model_config"] = {
+                                        "model_name": config.ref_model_name,
+                                        "model_type": config.ref_model_type,
+                                    }
+                                    for ref_model_kwargs in ref_model_kwargs_instances:
+                                        leaf_copy = copy.deepcopy(leaf)
+                                        leaf_copy["ref_model_config"][
+                                            "model_kwargs"
+                                        ] = ref_model_kwargs
+                                        runs.append(leaf_copy)
+                                elif self.trainer_type == "GRPO":
+                                    for reward_func in reward_funcs_instances:
+                                        leaf_copy = copy.deepcopy(leaf)
+                                        leaf_copy["reward_funcs"] = reward_func
+                                        runs.append(leaf_copy)
+                                else:
+                                    leaf_copy = copy.deepcopy(leaf)
+                                    runs.append(leaf_copy)
 
         return runs
 
