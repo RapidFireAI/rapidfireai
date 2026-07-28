@@ -3,7 +3,7 @@ import { Link } from '../utils/RoutingUtils';
 import { RFDocsUrl, Version } from '../constants';
 import { DarkThemeSwitch } from '@mlflow/mlflow/src/common/components/DarkThemeSwitch';
 import { Button, MenuIcon, useDesignSystemTheme } from '@databricks/design-system';
-import logo from '../../common/static/RapidFire_Square_Bug.png';
+import logo from '../../common/static/RapidFire_Logo.svg';
 
 export const MlflowHeader = ({
   isDarkTheme = false,
