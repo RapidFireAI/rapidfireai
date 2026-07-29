@@ -59,7 +59,7 @@ export const MlflowHeader = ({
               src={isDarkTheme ? logoDark : logoLight}
             />
         </Link>
-        <span
+        {/* <span
           css={{
             fontSize: theme.typography.fontSizeLg,
             color: theme.colors.textPrimary,
@@ -67,7 +67,7 @@ export const MlflowHeader = ({
           }}
         >
           RapidFire
-        </span>
+        </span> */}
         <span
           css={{
             fontSize: theme.typography.fontSizeSm,
