@@ -3,7 +3,8 @@ import { Link } from '../utils/RoutingUtils';
 import { RFDocsUrl, Version } from '../constants';
 import { DarkThemeSwitch } from '@mlflow/mlflow/src/common/components/DarkThemeSwitch';
 import { Button, MenuIcon, useDesignSystemTheme } from '@databricks/design-system';
-import logo from '../../common/static/RapidFire_Square_Bug.png';
+import logoDark from '../../common/static/RapidFire_Logo.svg';
+import logoLight from '../../common/static/RapidFire_Logo_Light.svg';
 
 export const MlflowHeader = ({
   isDarkTheme = false,
@@ -55,10 +56,10 @@ export const MlflowHeader = ({
                 color: theme.colors.textPrimary,
               }}
               alt="RapidFireAI"
-              src={logo}
+              src={isDarkTheme ? logoDark : logoLight}
             />
         </Link>
-        <span
+        {/* <span
           css={{
             fontSize: theme.typography.fontSizeLg,
             color: theme.colors.textPrimary,
@@ -66,7 +67,7 @@ export const MlflowHeader = ({
           }}
         >
           RapidFire
-        </span>
+        </span> */}
         <span
           css={{
             fontSize: theme.typography.fontSizeSm,
