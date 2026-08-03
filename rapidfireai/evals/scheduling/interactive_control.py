@@ -22,6 +22,27 @@ from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.serialize import extract_pipeline_config_json
 
 
+def _coerce_json_obj(value):
+    """Return a dict/list when ``value`` is a JSON object/array string.
+
+    Clone-modify deltas normally arrive as nested JSON objects, but some
+    callers (e.g. an LLM tool emitting a section as stringified JSON) send a
+    JSON *string* for ``rag_config`` / ``search_cfg`` / ``reranker_cfg``.
+    Without this, ``"search_cfg" in rag_config`` matches as a substring and
+    ``rag_config["search_cfg"]`` then raises ``TypeError: string indices must
+    be integers``. Non-string values and plain strings are returned unchanged.
+    """
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped or stripped[0] not in "{[":
+        return value
+    try:
+        return json.loads(stripped)
+    except (ValueError, TypeError):
+        return value
+
+
 class InteractiveControlHandler:
     """
     Handler for processing interactive control operations on running experiments.
@@ -65,6 +86,7 @@ class InteractiveControlHandler:
         pipeline_to_rate_limiter: dict = None,
         pipeline_to_max_completion_tokens: dict = None,
         progress_display=None,
+        in_flight_pipeline_ids: set[int] | None = None,
     ) -> None:
         """
         Check for and process pending interactive control operations.
@@ -82,10 +104,19 @@ class InteractiveControlHandler:
             pipeline_id_to_config: Dict mapping pipeline_id to (name, config)
             online_strategy_kwargs: Optional online aggregation strategy parameters
             progress_display: Optional PipelineProgressDisplay instance for updating UI
+            in_flight_pipeline_ids: Set of pipeline_ids that currently have an
+                actor processing an in-flight shard (derived from the
+                controller's ``active_tasks``). Passed to stop/delete so the
+                scheduler does not prematurely free an actor that is still
+                busy -- the actor is released naturally when the in-flight
+                shard completes. ``None`` is treated as empty (no in-flight).
         """
         pending_ops = db.get_pending_ic_operations()
         if not pending_ops:
             return
+
+        if in_flight_pipeline_ids is None:
+            in_flight_pipeline_ids = set()
 
         for op in pending_ops:
             ic_id = op["ic_id"]
@@ -97,13 +128,17 @@ class InteractiveControlHandler:
                 db.update_ic_operation_status(ic_id, ICStatus.PROCESSING.value)
 
                 if operation == ICOperation.STOP.value:
-                    self._handle_stop(pipeline_id, scheduler, db, progress_display)
+                    self._handle_stop(
+                        pipeline_id, scheduler, db, progress_display, in_flight_pipeline_ids
+                    )
 
                 elif operation == ICOperation.RESUME.value:
                     self._handle_resume(pipeline_id, scheduler, db, num_shards, progress_display)
 
                 elif operation == ICOperation.DELETE.value:
-                    self._handle_delete(pipeline_id, scheduler, db, pipeline_results, progress_display)
+                    self._handle_delete(
+                        pipeline_id, scheduler, db, pipeline_results, progress_display, in_flight_pipeline_ids
+                    )
 
                 elif operation == ICOperation.CLONE.value:
                     self._handle_clone(
@@ -139,19 +174,36 @@ class InteractiveControlHandler:
                 time.sleep(0.5)
 
     def _handle_stop(
-        self, pipeline_id: int, scheduler: PipelineScheduler, db: RFDatabase, progress_display=None
+        self,
+        pipeline_id: int,
+        scheduler: PipelineScheduler,
+        db: RFDatabase,
+        progress_display=None,
+        in_flight_pipeline_ids: set[int] | None = None,
     ) -> None:
         """
         Stop a pipeline (remove from scheduling, save progress).
+
+        If the pipeline currently has an in-flight shard on some actor, the
+        actor is NOT freed here -- it keeps running the in-flight shard to
+        completion and is released naturally when that shard finishes. No
+        further shards are scheduled for this pipeline.
 
         Args:
             pipeline_id: ID of pipeline to stop
             scheduler: PipelineScheduler instance
             db: Database instance
             progress_display: Optional progress display to update
+            in_flight_pipeline_ids: Set of pipeline_ids with an in-flight shard
         """
-        # Remove from scheduler (returns shards completed)
-        shards_completed = scheduler.remove_pipeline(pipeline_id)
+        if in_flight_pipeline_ids is None:
+            in_flight_pipeline_ids = set()
+
+        # Remove from scheduler (returns shards completed). Do not free the
+        # actor if a shard is in flight -- it will be freed on completion.
+        shards_completed = scheduler.remove_pipeline(
+            pipeline_id, in_flight=(pipeline_id in in_flight_pipeline_ids)
+        )
 
         # Update database status
         db.set_pipeline_status(pipeline_id, PipelineStatus.STOPPED)
@@ -237,9 +289,15 @@ class InteractiveControlHandler:
         db: RFDatabase,
         pipeline_results: dict,
         progress_display=None,
+        in_flight_pipeline_ids: set[int] | None = None,
     ) -> None:
         """
         Delete a pipeline permanently (remove from scheduler and mark deleted).
+
+        If the pipeline currently has an in-flight shard on some actor, the
+        actor is NOT freed here -- it keeps running the in-flight shard to
+        completion and is released naturally when that shard finishes. No
+        further shards are scheduled for this pipeline.
 
         Args:
             pipeline_id: ID of pipeline to delete
@@ -247,9 +305,15 @@ class InteractiveControlHandler:
             db: Database instance
             pipeline_results: Dict mapping pipeline_id to results/metrics
             progress_display: Optional progress display to update
+            in_flight_pipeline_ids: Set of pipeline_ids with an in-flight shard
         """
-        # Remove from scheduler
-        scheduler.remove_pipeline(pipeline_id)
+        if in_flight_pipeline_ids is None:
+            in_flight_pipeline_ids = set()
+
+        # Remove from scheduler. Do not free the actor if a shard is in flight.
+        scheduler.remove_pipeline(
+            pipeline_id, in_flight=(pipeline_id in in_flight_pipeline_ids)
+        )
 
         # Delete run from MetricLogger (MLflow) - mirrors fit mode behavior
         if self.metric_manager:
@@ -363,15 +427,26 @@ class InteractiveControlHandler:
         # Indexing-stage params (embedding_cfg, vector_store_cfg, text_splitter) are
         # not accepted here — cloned pipelines always reuse the parent's pre-built index.
         if rag is not None and "rag_config" in edited_json:
-            rag_config = edited_json["rag_config"]
+            rag_config = _coerce_json_obj(edited_json["rag_config"])
             self.logger.info(f"Applying RAG config changes: {rag_config}")
+
+            if not isinstance(rag_config, dict):
+                raise ValueError(
+                    f"rag_config must be a JSON object, got "
+                    f"{type(rag_config).__name__}: {rag_config!r}"
+                )
 
             # search_cfg: {"type": ..., <type-specific kwargs>}
             # If the search type changes (e.g. parent used similarity, clone uses MMR),
             # reset to fresh type-specific defaults so the parent's irrelevant kwargs
             # (e.g. score_threshold) are not carried over.
             if "search_cfg" in rag_config:
-                search_cfg = rag_config["search_cfg"]
+                search_cfg = _coerce_json_obj(rag_config["search_cfg"])
+                if not isinstance(search_cfg, dict):
+                    raise ValueError(
+                        f"search_cfg must be a JSON object, got "
+                        f"{type(search_cfg).__name__}: {search_cfg!r}"
+                    )
                 new_type = search_cfg.get("type", rag.search_type)
                 rag.search_type = new_type
                 # Start from type-specific defaults, then apply user-provided overrides
@@ -386,7 +461,12 @@ class InteractiveControlHandler:
             # build_pipeline() can call it.  If the string doesn't match any known
             # class we raise a clear error rather than silently storing a string.
             if "reranker_cfg" in rag_config:
-                reranker_cfg = rag_config["reranker_cfg"]
+                reranker_cfg = _coerce_json_obj(rag_config["reranker_cfg"])
+                if not isinstance(reranker_cfg, dict):
+                    raise ValueError(
+                        f"reranker_cfg must be a JSON object, got "
+                        f"{type(reranker_cfg).__name__}: {reranker_cfg!r}"
+                    )
                 if "class" in reranker_cfg:
                     cls_value = reranker_cfg["class"]
                     if isinstance(cls_value, type):

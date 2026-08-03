@@ -165,7 +165,8 @@ class DBConfig:
     PAGE_SIZE: int = 4096
     BUSY_TIMEOUT: int = 30000
 
-    # Retry settings
-    DEFAULT_MAX_RETRIES: int = 3
-    DEFAULT_BASE_DELAY: float = 0.1
-    DEFAULT_MAX_DELAY: float = 1.0
+    # WAL checkpointing. Default auto-checkpoint is 1000 pages; raising it
+    # means the hot writer is ambushed by an auto-checkpoint 5x less often.
+    # The controller additionally runs an explicit PASSIVE checkpoint every
+    # N shards to bound WAL growth without blocking writers.
+    WAL_AUTO_CHECKPOINT: int = 5000

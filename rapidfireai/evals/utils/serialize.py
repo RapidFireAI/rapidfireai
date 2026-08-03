@@ -18,6 +18,54 @@ def decode_db_payload(payload: str) -> object:
     return dill.loads(base64.b64decode(payload))
 
 
+_JSON_SCALARS = (str, int, float, bool, type(None))
+
+
+def describe_value(value: Any) -> Any:
+    """Coerce an arbitrary config value into a JSON-safe knob representation.
+
+    Mirrors the rules already used for config hashing in
+    ``LangChainRagSpec._json_default_encoder`` so a knob is described the same way
+    wherever it is read:
+
+    - classes and callables become their ``__qualname__`` (``document_template``,
+      ``embedding_cfg["class"]``)
+    - objects exposing ``asdict()`` become that dict (Pinecone's ``ServerlessSpec``)
+    - objects carrying ``_user_params`` recurse into their declared constructor
+      kwargs, which is what expands a nested generator model config
+      (``multimodal_processor[...]["generator"]``) into real knobs
+
+    Any other object becomes just its class name. We deliberately do *not* fall
+    back to ``vars(obj)`` the way the hashing encoder does: dumping ``__dict__``
+    is what leaks runtime handles and internal attribute names into config views.
+    """
+    if isinstance(value, _JSON_SCALARS):
+        return value
+    if isinstance(value, dict):
+        return {str(k): describe_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [describe_value(v) for v in value]
+    if isinstance(value, type):
+        return value.__qualname__
+    if callable(value) and hasattr(value, "__qualname__"):
+        return value.__qualname__
+    asdict = getattr(value, "asdict", None)
+    if callable(asdict):
+        try:
+            return describe_value(asdict())
+        except Exception:
+            return type(value).__qualname__
+    user_params = getattr(value, "_user_params", None)
+    if isinstance(user_params, dict):
+        described = {
+            str(k): describe_value(v)
+            for k, v in user_params.items()
+            if v is not None
+        }
+        return {"class": type(value).__qualname__, **described}
+    return type(value).__qualname__
+
+
 def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, Any]:
     """
     Extract JSON-serializable data from a pipeline config dictionary.
@@ -167,3 +215,92 @@ def extract_pipeline_config_json(pipeline_config: dict[str, Any]) -> dict[str, A
         raise ValueError(f"Failed to serialize pipeline config to JSON: {e}") from e
 
     return json_config
+
+
+def build_pipeline_knobs(pipeline_config: dict[str, Any]) -> dict[str, Any]:
+    """Full knob view of a pipeline: cloneable config plus indexing-stage knobs.
+
+    ``extract_pipeline_config_json`` omits indexing-stage knobs on purpose: its
+    consumer is the clone-modify dialog, where they aren't editable because a
+    clone always reuses the parent's pre-built index. Display surfaces do need
+    them, so this wrapper adds them back rather than widening the extractor,
+    which would change clone behaviour.
+
+    Everything RAG lives under ``rag_config.*`` with the user's ``*_cfg`` kwarg
+    names regardless of which stage it belongs to, so no knob is reachable by two
+    different paths.
+
+    Knobs are read from the spec's internals rather than its ``_user_params``
+    because the clone path writes retrieval edits straight to
+    ``search_type`` / ``search_kwargs`` / ``reranker_cls`` / ``reranker_kwargs``;
+    a cloned spec's ``_user_params`` still holds the parent's values.
+    """
+    knobs = extract_pipeline_config_json(pipeline_config)
+
+    pipeline = pipeline_config.get("pipeline")
+    rag = getattr(pipeline, "rag", None) if pipeline is not None else None
+    if rag is None:
+        return knobs
+
+    rag_config = knobs.setdefault("rag_config", {})
+
+    if getattr(rag, "text_splitter", None) is not None:
+        text_splitter_cfg = rag.get_text_splitter_cfg()
+        if text_splitter_cfg:
+            rag_config["text_splitter_cfg"] = describe_value(text_splitter_cfg)
+
+    embedding_cls = getattr(rag, "embedding_cls", None)
+    if embedding_cls is not None:
+        rag_config["embedding_cfg"] = {
+            "class": describe_value(embedding_cls),
+            **describe_value(getattr(rag, "embedding_kwargs", None) or {}),
+        }
+
+    vector_store_cfg = getattr(rag, "vector_store_cfg", None)
+    if vector_store_cfg:
+        rag_config["vector_store_cfg"] = describe_value(dict(vector_store_cfg))
+
+    rag_config["enable_gpu_search"] = bool(getattr(rag, "enable_gpu_search", False))
+
+    # ``__init__`` substitutes a default for these two when the user leaves them
+    # out (a local-disk storage dict rooted at RF_HOME, and the built-in document
+    # template), so the internals can't tell "unset" from "explicitly configured
+    # that way". Reporting the substituted default would add a constant axis to
+    # every report that no user chose. ``_user_params`` still holds what was
+    # actually written, and unlike the retrieval knobs neither of these is
+    # rewritten by the clone path, so it is safe to consult here.
+    declared = getattr(rag, "_user_params", None)
+    if not isinstance(declared, dict):
+        declared = {}
+
+    # ``False`` is an explicit opt-out (artifacts dropped rather than stored),
+    # which is a different choice from leaving it unset, so test against None.
+    artifact_storage_cfg = declared.get("artifact_storage_cfg")
+    if artifact_storage_cfg is not None:
+        rag_config["artifact_storage_cfg"] = describe_value(artifact_storage_cfg)
+
+    multimodal_processor = getattr(rag, "multimodal_processor", None)
+    if multimodal_processor:
+        rag_config["multimodal_processor"] = describe_value(multimodal_processor)
+
+    document_loader = getattr(rag, "document_loader", None)
+    if document_loader:
+        described = describe_value(document_loader)
+        # Normalized to a list internally; collapse the common single-loader case
+        # so the knob reads as one class name instead of a one-element list.
+        if isinstance(described, list) and len(described) == 1:
+            described = described[0]
+        rag_config["document_loader"] = described
+
+    document_template = declared.get("document_template")
+    if document_template is not None:
+        rag_config["document_template"] = describe_value(document_template)
+
+    # The extractor validates its own output, but that runs before the merge
+    # above, so the indexing knobs would otherwise go unchecked.
+    try:
+        json.dumps(knobs)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Failed to serialize pipeline knobs to JSON: {e}") from e
+
+    return knobs

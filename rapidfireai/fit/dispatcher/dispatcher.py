@@ -18,6 +18,40 @@ from rapidfireai.fit.utils.logging import RFLogger
 CORS_ALLOWED_ORIGINS = ["http://localhost", DispatcherConfig.URL, MLflowConfig.URL, FrontendConfig.URL]
 
 
+def _sanitize_config_leaf(config_leaf: Any) -> Any:
+    """Strip the config-leaf keys that hold live Python objects, in place.
+
+    A ``config_leaf`` read back from the DB is dill-decoded, so it can hold
+    arbitrary objects that no JSON encoder can represent: ``model_kwargs``
+    carries a ``torch.dtype``, ``peft_params`` a PEFT ``TaskType`` enum,
+    ``reward_funcs`` a list of functions, and ``additional_kwargs`` whatever
+    callables/datasets the user attached to the run config.
+
+    Every route that serializes a config leaf must funnel through here, both so
+    a single such run cannot 500 the route and so the config views different
+    routes emit stay comparable (a key present in one route and stripped from
+    another would read as a config difference).
+
+    Non-dict input is returned untouched: a malformed leaf must not raise here.
+    """
+    if not isinstance(config_leaf, dict):
+        return config_leaf
+
+    config_leaf.pop("additional_kwargs", None)
+
+    # Guard against non-dict section values (e.g. a clone that overwrote
+    # peft_params with a scalar) so a malformed config doesn't raise.
+    if isinstance(config_leaf.get("peft_params"), dict):
+        config_leaf["peft_params"].pop("task_type", None)
+
+    if isinstance(config_leaf.get("model_kwargs"), dict):
+        config_leaf["model_kwargs"].pop("torch_dtype", None)
+
+    config_leaf.pop("reward_funcs", None)
+
+    return config_leaf
+
+
 class Dispatcher:
     """Class to co-ordinate the flow of tasks between the user and Controllers"""
 
@@ -88,6 +122,12 @@ class Dispatcher:
                 methods=["GET"],
             )
             self.app.add_url_rule(
+                f"{route_prefix}/get-experiment-by-name/<path:experiment_name>",
+                "get_experiment_by_name",
+                self.get_experiment_by_name,
+                methods=["GET"],
+            )
+            self.app.add_url_rule(
                 f"{route_prefix}/is-experiment-running",
                 "is_experiment_running",
                 self.is_experiment_running,
@@ -146,19 +186,8 @@ class Dispatcher:
             results = self.db.get_all_runs()
             safe_results: list[dict[str, Any]] = []
             for run_id, result in results.items():
-                # remove additional_kwargs from config_leaf
-                result["config_leaf"].pop("additional_kwargs", None)
-
-                # remove peft_params.task_type if it exists
-                if "peft_params" in result["config_leaf"]:
-                    result["config_leaf"]["peft_params"].pop("task_type", None)
-
-                # remove model_kwargs.torch_dtype if it exists
-                if "model_kwargs" in result["config_leaf"]:
-                    result["config_leaf"]["model_kwargs"].pop("torch_dtype", None)
-
-                if "reward_funcs" in result["config_leaf"]:
-                    result["config_leaf"].pop("reward_funcs", None)
+                # drop the config-leaf keys holding live Python objects
+                result["config_leaf"] = _sanitize_config_leaf(result["config_leaf"])
 
                 safe_results.append(
                     {
@@ -190,19 +219,8 @@ class Dispatcher:
             if not result:
                 return jsonify({"error": "Run not found"}), 404
 
-            # remove additional_kwargs from config_leaf
-            result["config_leaf"].pop("additional_kwargs", None)
-
-            # remove peft_params.task_type if it exists
-            if "peft_params" in result["config_leaf"]:
-                result["config_leaf"]["peft_params"].pop("task_type", None)
-
-            # remove model_kwargs.torch_dtype if it exists
-            if "model_kwargs" in result["config_leaf"]:
-                result["config_leaf"]["model_kwargs"].pop("torch_dtype", None)
-
-            if "reward_funcs" in result["config_leaf"]:
-                result["config_leaf"].pop("reward_funcs", None)
+            # drop the config-leaf keys holding live Python objects
+            result["config_leaf"] = _sanitize_config_leaf(result["config_leaf"])
 
             safe_result = {
                 "run_id": data["run_id"],
@@ -234,6 +252,20 @@ class Dispatcher:
         """Get the running experiment for the UI"""
         try:
             result = self.db.get_running_experiment()
+            return jsonify(result), 200
+        except Exception as e:
+            return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
+
+    def get_experiment_by_name(self, experiment_name: str) -> tuple[Response, int]:
+        """Get an experiment (any status) by name, exposing experiment_mode.
+
+        Lets a caller resolve the persisted experiment type for a historical
+        experiment via a plain DB lookup instead of run-config heuristics.
+        """
+        try:
+            result = self.db.get_experiment_by_name(experiment_name)
+            if result is None:
+                return jsonify({"error": "Experiment not found"}), 404
             return jsonify(result), 200
         except Exception as e:
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500

@@ -311,6 +311,28 @@ class Experiment:
             f"Using {self._ray_resource_config['num_actors']} actors, {self._ray_resource_config['gpus_per_actor']} GPUs per actor, {self._ray_resource_config['cpus_per_actor']} CPUs per actor"
         )
 
+        # Build the runtime_env env_vars. When the experiment reserves no GPUs
+        # (num_gpus=0), hide all GPUs from worker/actor processes by setting
+        # CUDA_VISIBLE_DEVICES="". Otherwise CUDA sees every GPU on the box
+        # (the var is unset in the actor env, which means "all GPUs"), and
+        # importing torch / loading sentence_transformers models lazily
+        # initializes a CUDA context on GPU 0 (~186MB per actor) even though
+        # the models run on CPU. Setting it empty makes CUDA report zero
+        # devices, so torch never opens a context and no GPU memory is grabbed.
+        _ray_env_vars = {
+            # Force CUDA to initialize properly in Ray actors (AWS fix)
+            "CUDA_LAUNCH_BLOCKING": "0",
+            "CUDA_MODULE_LOADING": "LAZY",
+            "TF_CPP_MIN_LOG_LEVEL": "3",
+            "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
+        }
+        if int(self._ray_resource_config["gpus_for_ray"]) == 0:
+            _ray_env_vars["CUDA_VISIBLE_DEVICES"] = ""
+            self.logger.info(
+                "No GPUs reserved for Ray; setting CUDA_VISIBLE_DEVICES=\"\" for workers "
+                "so torch/CUDA do not initialize a context on visible host GPUs."
+            )
+
         ray.init(
             num_cpus=int(self._ray_resource_config["cpus_for_ray"]),
             num_gpus=int(self._ray_resource_config["gpus_for_ray"]),
@@ -324,13 +346,7 @@ class Experiment:
             # Disable metrics export to prevent "Failed to establish connection" errors
             _metrics_export_port=None,
             runtime_env={
-                "env_vars": {
-                    # Force CUDA to initialize properly in Ray actors (AWS fix)
-                    "CUDA_LAUNCH_BLOCKING": "0",
-                    "CUDA_MODULE_LOADING": "LAZY",
-                    "TF_CPP_MIN_LOG_LEVEL": "3",
-                    "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
-                }
+                "env_vars": _ray_env_vars,
             },
         )
         if ColabConfig.ON_COLAB:

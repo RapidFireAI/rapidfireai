@@ -458,6 +458,19 @@ class Controller:
 
             # create model for the new run
             try:
+                # Flip the IC op to IN_PROGRESS *before* _create_models creates
+                # the run row. get_scheduled_ic_ops_tasks (and the dispatcher's
+                # /all-operations route built on it) only returns Scheduled
+                # tasks, so this removes the op from the "pending clones" set a
+                # caller counts against the run budget the instant the
+                # controller picks it up. Without this, the window between
+                # create_run and the COMPLETED mark below would leave the clone
+                # in both live_runs (the new run row) and pending_clones (the
+                # still-Scheduled op), and the budget check would double-count
+                # it and reject clones that still fit. Mirrors the evals
+                # controller, which marks an op PROCESSING before _handle_clone
+                # creates the pipeline row.
+                self.db.set_ic_ops_task_status(task["task_id"], TaskStatus.IN_PROGRESS)
                 if ic_op == ControllerTask.IC_CLONE_MODIFY:
                     clone_modify_info = {
                         "cloned_from": parent_run_id,

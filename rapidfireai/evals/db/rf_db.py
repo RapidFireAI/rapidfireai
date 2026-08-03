@@ -64,6 +64,12 @@ class RFDatabase:
                 self.db.conn.execute("ALTER TABLE experiments ADD COLUMN num_cpus_per_actor REAL")
             if "num_gpus_per_actor" not in columns:
                 self.db.conn.execute("ALTER TABLE experiments ADD COLUMN num_gpus_per_actor REAL")
+            # experiment_mode is the golden source of truth for the experiment
+            # type (this is the evals DB, so every row is 'evals').
+            if "experiment_mode" not in columns:
+                self.db.conn.execute(
+                    "ALTER TABLE experiments ADD COLUMN experiment_mode TEXT NOT NULL DEFAULT 'evals'"
+                )
             self.db.conn.commit()
         except Exception:
             pass
@@ -71,6 +77,10 @@ class RFDatabase:
     def close(self):
         """Close the database connection."""
         self.db.close()
+
+    def checkpoint(self):
+        """Run a non-blocking PASSIVE WAL checkpoint to bound WAL growth."""
+        self.db.checkpoint()
 
     def create_tables(self):
         """Create database tables.
@@ -113,8 +123,8 @@ class RFDatabase:
         query = """
         INSERT INTO experiments (
             experiment_name, num_actors, num_shards, num_cpus_per_actor, num_gpus_per_actor,
-            metric_experiment_id, status, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, '')
+            metric_experiment_id, status, error, experiment_mode
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, '', 'evals')
         """
         self.db.execute(
             query,
@@ -265,7 +275,7 @@ class RFDatabase:
         """
         query = """
         SELECT experiment_id, experiment_name, num_actors, num_cpus_per_actor, num_gpus_per_actor,
-               metric_experiment_id, status, num_shards, error, created_at
+               metric_experiment_id, status, num_shards, error, created_at, experiment_mode
         FROM experiments
         WHERE experiment_id = ?
         """
@@ -283,6 +293,7 @@ class RFDatabase:
                 "num_shards": row[7],
                 "error": row[8],
                 "created_at": row[9],
+                "experiment_mode": row[10],
             }
         return None
 
@@ -320,7 +331,7 @@ class RFDatabase:
         """
         query = """
         SELECT experiment_id, experiment_name, metric_experiment_id, num_shards,
-               num_actors, num_cpus_per_actor, num_gpus_per_actor, status, error, created_at
+               num_actors, num_cpus_per_actor, num_gpus_per_actor, status, error, created_at, experiment_mode
         FROM experiments
         WHERE status = ?
         ORDER BY experiment_id DESC
@@ -340,6 +351,78 @@ class RFDatabase:
                 "status": row[7],
                 "error": row[8],
                 "created_at": row[9],
+                "experiment_mode": row[10],
+            }
+        return None
+
+    def get_latest_experiment(self) -> dict[str, Any] | None:
+        """
+        Get the most recent experiment, regardless of status.
+
+        Unlike :meth:`get_running_experiment`, this does not filter on
+        ``status = 'running'``. It is intended for read-only/display paths
+        (e.g. exposing ``num_shards`` to the dashboard) that must still work
+        after an experiment has finished, failed, or been cancelled, or while
+        the dispatcher is idle between runs. Since pipelines are not tagged
+        with an ``experiment_id`` in this schema, the newest experiment row is
+        the owner of the currently stored pipelines.
+
+        Returns:
+            Dictionary with all experiment fields, or None if no experiment
+            has ever been created.
+        """
+        query = """
+        SELECT experiment_id, experiment_name, metric_experiment_id, num_shards,
+               num_actors, num_cpus_per_actor, num_gpus_per_actor, status, error, created_at, experiment_mode
+        FROM experiments
+        ORDER BY experiment_id DESC
+        LIMIT 1
+        """
+        result = self.db.execute(query, fetch=True)
+        if result:
+            row = result[0]
+            return {
+                "experiment_id": row[0],
+                "experiment_name": row[1],
+                "metric_experiment_id": row[2],
+                "num_shards": row[3],
+                "num_actors": row[4],
+                "num_cpus_per_actor": row[5],
+                "num_gpus_per_actor": row[6],
+                "status": row[7],
+                "error": row[8],
+                "created_at": row[9],
+                "experiment_mode": row[10],
+            }
+        return None
+
+    def get_experiment_by_name(self, experiment_name: str) -> dict[str, Any] | None:
+        """Return the latest experiment row for ``experiment_name``, or None.
+
+        Unlike :meth:`get_running_experiment` this does not filter on status,
+        so it resolves any experiment ever created in this (evals) DB - live,
+        ended, failed, or cancelled - which is what lets a caller read the
+        persisted ``experiment_mode`` for a historical experiment. Names can
+        recur across re-runs, so the most recent row (max experiment_id) wins.
+        """
+        query = """
+        SELECT experiment_id, experiment_name, metric_experiment_id, status, error, created_at, experiment_mode
+        FROM experiments
+        WHERE experiment_name = ?
+        ORDER BY experiment_id DESC
+        LIMIT 1
+        """
+        result = self.db.execute(query, (experiment_name,), fetch=True)
+        if result:
+            row = result[0]
+            return {
+                "experiment_id": row[0],
+                "experiment_name": row[1],
+                "metric_experiment_id": row[2],
+                "status": row[3],
+                "error": row[4],
+                "created_at": row[5],
+                "experiment_mode": row[6],
             }
         return None
 
@@ -770,7 +853,7 @@ class RFDatabase:
                 Controller needs internally when actually executing a pipeline, but
                 it is expensive AND has caused SIGSEGVs of the dispatcher gunicorn
                 worker when the polling endpoints (`get_all_runs` / `get_all_pipelines`,
-                hit every few seconds by the Converge autopilot loop) re-hydrated ~25
+                hit every few seconds by the autopilot / dashboard polling loop) re-hydrated ~25
                 FAISS-bearing blobs per poll. The polling endpoints only ever read the
                 JSON form (``pipeline_config_json`` + ``flattened_config``), so the
                 default is False; pass True only from in-process callers that genuinely

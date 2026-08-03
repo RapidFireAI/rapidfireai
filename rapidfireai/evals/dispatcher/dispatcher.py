@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import threading
+import functools
 import traceback
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
@@ -21,6 +22,27 @@ from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.evals.utils.constants import ICOperation
 
 CORS_ALLOWED_ORIGINS = "*" # Allow all origins
+
+
+class _ThreadSafeRFDatabase:
+    """Serializes all RFDatabase method calls through a lock so the single
+    shared sqlite3.Connection is only ever used by one HTTP thread at a time.
+    Fixes the shared-connection self-deadlock (design doc §4.1)."""
+
+    def __init__(self, rf_db: RFDatabase, lock: threading.Lock):
+        self._rf_db = rf_db
+        self._lock = lock
+
+    def __getattr__(self, name):
+        attr = getattr(self._rf_db, name)
+        if callable(attr):
+            @functools.wraps(attr)
+            def wrapper(*args, **kwargs):
+                with self._lock:
+                    return attr(*args, **kwargs)
+            return wrapper
+        return attr
+
 
 class Dispatcher:
     """
@@ -52,8 +74,13 @@ class Dispatcher:
         self.logger_experiment_name: str | None = None
         self.logger: SafeLoggerAdapter | None = None
 
-        # Create database handle
-        self.db: RFDatabase = RFDatabase()
+        # Create database handle.
+        # Wrap the single RFDatabase in a thread-safe proxy so the one shared
+        # sqlite3.Connection is only used by one HTTP thread at a time. Without
+        # this, concurrent writes from waitress/gthread threads trip an instant
+        # "database is locked" (a connection cannot wait on itself).
+        self._db_lock = threading.Lock()
+        self.db: RFDatabase = _ThreadSafeRFDatabase(RFDatabase(), self._db_lock)
 
         # Create Flask app
         self.app: Flask = Flask(__name__)
@@ -91,8 +118,17 @@ class Dispatcher:
         ``num_shards`` is stored on the ``experiments`` row (set when
         ``run_evals(..., num_shards=N)`` is called), not on individual
         pipelines. Every pipeline in the experiment shares the same total.
+
+        ``get_running_experiment()`` filters to ``status = 'running'`` and
+        returns ``None`` once the experiment finishes (completed / failed /
+        cancelled) or while the dispatcher is idle between runs. The pipeline
+        rows, however, persist with real ``shards_completed`` progress, so
+        relying solely on the running-experiment lookup made finished runs
+        report ``total_shards = 0`` and the UI show misleading ratios like
+        ``4 / 0``. Fall back to the most recent experiment row so the shard
+        budget stays correct regardless of experiment status.
         """
-        experiment = self.db.get_running_experiment()
+        experiment = self.db.get_running_experiment() or self.db.get_latest_experiment()
         if not experiment:
             return 0
         return experiment.get("num_shards") or 0
@@ -278,6 +314,12 @@ class Dispatcher:
             f"{route_prefix}/get-running-experiment",
             "get_running_experiment",
             self.get_running_experiment,
+            methods=["GET", "OPTIONS"],
+        )
+        self.app.add_url_rule(
+            f"{route_prefix}/get-experiment-by-name/<path:experiment_name>",
+            "get_experiment_by_name",
+            self.get_experiment_by_name,
             methods=["GET", "OPTIONS"],
         )
         self.app.add_url_rule(
@@ -927,6 +969,33 @@ class Dispatcher:
                 "experiment_name": experiment.get("experiment_name"),
                 "status": experiment.get("status"),
                 "metric_experiment_id": experiment.get("metric_experiment_id"),
+                "experiment_mode": experiment.get("experiment_mode"),
+            }), 200
+
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+    def get_experiment_by_name(self, experiment_name: str) -> tuple[Response, int]:
+        """
+        Get an experiment (any status) by name, exposing experiment_mode.
+
+        Lets a caller resolve the persisted experiment type for a historical
+        experiment via a plain DB lookup instead of run-config heuristics.
+        """
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+
+        try:
+            experiment = self.db.get_experiment_by_name(experiment_name)
+            if not experiment:
+                return jsonify({"error": "Experiment not found"}), 404
+
+            return jsonify({
+                "experiment_id": experiment.get("experiment_id"),
+                "experiment_name": experiment.get("experiment_name"),
+                "status": experiment.get("status"),
+                "metric_experiment_id": experiment.get("metric_experiment_id"),
+                "experiment_mode": experiment.get("experiment_mode"),
             }), 200
 
         except Exception as e:
