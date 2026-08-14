@@ -545,6 +545,18 @@ if (
             self.itpm_limit = itpm_limit
             self.otpm_limit = otpm_limit
 
+            # ``_user_params`` must capture the user's *input*, not the derived
+            # value. If we stored the extracted ``max_completion_tokens`` here
+            # when it was pulled from ``model_config`` (line below), the same
+            # ``automl.List`` object would appear under two ``_user_params``
+            # keys (``model_config.max_completion_tokens`` and the top-level
+            # ``max_completion_tokens``), and ``recursive_expand_gridsearch``
+            # would cross-product it twice — e.g. ``List([2048, 4096])`` x
+            # ``k=List([3, 5])`` yielding 10 leaves instead of 6, with phantom
+            # pipelines whose top-level and ``model_config`` token counts
+            # disagree. Keep the original parameter (None when unset) so only
+            # the axis the user actually specified expands.
+            _user_max_completion_tokens = max_completion_tokens
             if max_completion_tokens is None:
                 max_completion_tokens = self.model_config.get("max_completion_tokens", 150)
             self.max_completion_tokens = max_completion_tokens
@@ -560,7 +572,7 @@ if (
                 "tpm_limit": tpm_limit,
                 "itpm_limit": itpm_limit,
                 "otpm_limit": otpm_limit,
-                "max_completion_tokens": max_completion_tokens,
+                "max_completion_tokens": _user_max_completion_tokens,
             }
 
             # Validate endpoint: must be a single dict (leaf config) or an

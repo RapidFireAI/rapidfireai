@@ -25,7 +25,11 @@ from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 from rapidfireai.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.automl import get_runs, get_flattened_config_leaf, sanitize_flat_config
-from rapidfireai.evals.utils.serialize import build_pipeline_knobs, extract_pipeline_config_json
+from rapidfireai.evals.utils.serialize import (
+    build_pipeline_knobs,
+    describe_prompt_manager,
+    extract_pipeline_config_json,
+)
 
 # Noise keys dropped from the flattened config logged to MLflow. These are
 # framework-injected bookkeeping knobs that aren't user-chosen axes of
@@ -345,16 +349,6 @@ class Controller:
             manager.log_param(run_id, "itpm_limit", str(pipeline.itpm_limit))
         if hasattr(pipeline, "otpm_limit") and pipeline.otpm_limit:
             manager.log_param(run_id, "otpm_limit", str(pipeline.otpm_limit))
-
-        # Log prompt_manager params
-        if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager:
-            pm = pipeline.prompt_manager
-            if hasattr(pm, "k") and pm.k is not None:
-                manager.log_param(run_id, "fewshot_k", str(pm.k))
-            if hasattr(pm, "instructions") and pm.instructions:
-                # Truncate long instructions
-                instructions = pm.instructions[:200] + "..." if len(pm.instructions) > 200 else pm.instructions
-                manager.log_param(run_id, "instructions", instructions)
 
         # Log RAG params
         if hasattr(pipeline, "rag") and pipeline.rag:
@@ -1171,7 +1165,10 @@ class Controller:
             hyperparam_keys = [
                 "text_splitter_cfg", "embedding_cfg", "vector_store_cfg",
                 "search_cfg", "reranker_cfg",
-                "sampling_params", "prompt_manager_k", "model_config",
+                "sampling_params", "prompt_manager_config", "model_config",
+                "endpoint_config", "client_config",
+                "rpm_limit", "tpm_limit", "itpm_limit", "otpm_limit",
+                "max_completion_tokens",
             ]
             for key in hyperparam_keys:
                 if key in cumulative_metrics:
@@ -1275,7 +1272,7 @@ class Controller:
                         # controller adds itself) AND the hyperparam/config keys that
                         # were merged into ordered_metrics above (text_splitter_cfg,
                         # embedding_cfg, vector_store_cfg, search_cfg, reranker_cfg,
-                        # sampling_params, prompt_manager_k, model_config) plus the
+                        # sampling_params, prompt_manager_config, model_config) plus the
                         # pipeline_id_to_info-injected keys (which are a subset of
                         # {model_name} ∪ hyperparam_keys). Without excluding these,
                         # config fields would be tagged as rapidfire.user_metrics and
@@ -1377,7 +1374,7 @@ class Controller:
         search_cfg = None
         reranker_cfg = None
         sampling_params = None
-        prompt_manager_k = None
+        prompt_manager_config = None
         model_config = None
 
         pipeline = pipeline_config["pipeline"]
@@ -1415,8 +1412,27 @@ class Controller:
         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
             sampling_params = pipeline._user_params.get("sampling_params", None)
 
+        # RFAPIModelConfig generator knobs (endpoint/client config + rate limits).
+        endpoint_config = None
+        client_config = None
+        rpm_limit = getattr(pipeline, "rpm_limit", None)
+        tpm_limit = getattr(pipeline, "tpm_limit", None)
+        itpm_limit = getattr(pipeline, "itpm_limit", None)
+        otpm_limit = getattr(pipeline, "otpm_limit", None)
+        max_completion_tokens = getattr(pipeline, "max_completion_tokens", None)
+        if getattr(pipeline, "endpoint_config", None) is not None:
+            endpoint_config = dict(pipeline.endpoint_config)
+            endpoint_config.pop("api_key", None)
+            if not endpoint_config:
+                endpoint_config = None
+        if getattr(pipeline, "client_config", None):
+            sensitive = {"api_key", "secret", "token", "password", "key"}
+            client_config = {k: v for k, v in pipeline.client_config.items() if k.lower() not in sensitive}
+            if not client_config:
+                client_config = None
+
         if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
-            prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
+            prompt_manager_config = describe_prompt_manager(pipeline.prompt_manager)
 
         info_dict = {
             "pipeline_id": pipeline_id,
@@ -1431,7 +1447,14 @@ class Controller:
             "search_cfg": search_cfg,
             "reranker_cfg": reranker_cfg,
             "sampling_params": sampling_params,
-            "prompt_manager_k": prompt_manager_k,
+            "endpoint_config": endpoint_config,
+            "client_config": client_config,
+            "rpm_limit": rpm_limit,
+            "tpm_limit": tpm_limit,
+            "itpm_limit": itpm_limit,
+            "otpm_limit": otpm_limit,
+            "max_completion_tokens": max_completion_tokens,
+            "prompt_manager_config": prompt_manager_config,
             "model_config": model_config,
         }
         for key, value in optional_fields.items():
@@ -1599,7 +1622,7 @@ class Controller:
             reranker_cfg = None
             # Generation-stage fields
             sampling_params = None
-            prompt_manager_k = None
+            prompt_manager_config = None
             model_config = None
 
             pipeline = pipeline_config["pipeline"]
@@ -1643,9 +1666,30 @@ class Controller:
             if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
                 sampling_params = pipeline._user_params.get("sampling_params", None)
 
+            # Extract RFAPIModelConfig generator knobs (endpoint/client config + rate
+            # limits). These are display-only flattened dotted columns; clone-modify
+            # does not touch them (they are fixed at launch).
+            endpoint_config = None
+            client_config = None
+            rpm_limit = getattr(pipeline, "rpm_limit", None)
+            tpm_limit = getattr(pipeline, "tpm_limit", None)
+            itpm_limit = getattr(pipeline, "itpm_limit", None)
+            otpm_limit = getattr(pipeline, "otpm_limit", None)
+            max_completion_tokens = getattr(pipeline, "max_completion_tokens", None)
+            if getattr(pipeline, "endpoint_config", None) is not None:
+                endpoint_config = dict(pipeline.endpoint_config)
+                endpoint_config.pop("api_key", None)
+                if not endpoint_config:
+                    endpoint_config = None
+            if getattr(pipeline, "client_config", None):
+                sensitive = {"api_key", "secret", "token", "password", "key"}
+                client_config = {k: v for k, v in pipeline.client_config.items() if k.lower() not in sensitive}
+                if not client_config:
+                    client_config = None
+
             # Extract prompt_manager fields
             if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
-                prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
+                prompt_manager_config = describe_prompt_manager(pipeline.prompt_manager)
 
             pipeline_info_dict = {
                 "pipeline_id": pipeline_id,
@@ -1669,8 +1713,22 @@ class Controller:
             # Generation stage
             if sampling_params is not None:
                 pipeline_info_dict["sampling_params"] = sampling_params
-            if prompt_manager_k is not None:
-                pipeline_info_dict["prompt_manager_k"] = prompt_manager_k
+            if endpoint_config is not None:
+                pipeline_info_dict["endpoint_config"] = endpoint_config
+            if client_config is not None:
+                pipeline_info_dict["client_config"] = client_config
+            if rpm_limit is not None:
+                pipeline_info_dict["rpm_limit"] = rpm_limit
+            if tpm_limit is not None:
+                pipeline_info_dict["tpm_limit"] = tpm_limit
+            if itpm_limit is not None:
+                pipeline_info_dict["itpm_limit"] = itpm_limit
+            if otpm_limit is not None:
+                pipeline_info_dict["otpm_limit"] = otpm_limit
+            if max_completion_tokens is not None:
+                pipeline_info_dict["max_completion_tokens"] = max_completion_tokens
+            if prompt_manager_config is not None:
+                pipeline_info_dict["prompt_manager_config"] = prompt_manager_config
             if model_config is not None:
                 pipeline_info_dict["model_config"] = model_config
 

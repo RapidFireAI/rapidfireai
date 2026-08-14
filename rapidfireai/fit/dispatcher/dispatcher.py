@@ -1,5 +1,6 @@
 """This module contains functions for the dispatcher module."""
 
+import json
 import os
 import traceback
 from logging import Logger
@@ -16,6 +17,17 @@ from rapidfireai.fit.utils.exceptions import DispatcherException
 from rapidfireai.fit.utils.logging import RFLogger
 
 CORS_ALLOWED_ORIGINS = ["http://localhost", DispatcherConfig.URL, MLflowConfig.URL, FrontendConfig.URL]
+
+# Map fit ``ControllerTask`` IC ops to the short lowercase ``operation`` strings
+# the evals dispatcher uses in its ``/dispatcher/all-operations`` payload, so a
+# client can parse both dispatchers uniformly.
+_FIT_IC_OP_TO_OPERATION = {
+    ControllerTask.IC_CLONE_MODIFY: "clone",
+    ControllerTask.IC_CLONE_MODIFY_WARM: "clone",
+    ControllerTask.IC_STOP: "stop",
+    ControllerTask.IC_RESUME: "resume",
+    ControllerTask.IC_DELETE: "delete",
+}
 
 
 def _sanitize_config_leaf(config_leaf: Any) -> Any:
@@ -50,6 +62,29 @@ def _sanitize_config_leaf(config_leaf: Any) -> Any:
     config_leaf.pop("reward_funcs", None)
 
     return config_leaf
+
+
+def _encode_request_data(run_id: Any, config_leaf: Any) -> str:
+    """JSON-encode one IC op's ``request_data``, never raising.
+
+    :func:`_sanitize_config_leaf` clears the leaf keys known to hold live
+    objects, but a dill-decoded leaf can always surprise us elsewhere (a
+    quantization config under ``model_kwargs``, a tokenizer instance, a
+    ``torch.dtype`` under a DPO ``ref_model_config``). ``default=str`` renders
+    any such value as its ``repr``, matching how consumers stringify config
+    leaves for comparison anyway, and ``skipkeys`` drops the
+    unrepresentable-key case.
+
+    If the encode still fails (a self-referencing config, say), fall back to
+    the ids alone rather than dropping the op: a pending clone with no config
+    still has to count against the run budget, and a caller that only sees
+    ``config_json: None`` skips it for dedup instead of misreading it.
+    """
+    request_data = {"parent_pipeline_id": run_id, "config_json": config_leaf}
+    try:
+        return json.dumps(request_data, default=str, skipkeys=True)
+    except (TypeError, ValueError, RecursionError):
+        return json.dumps({"parent_pipeline_id": run_id, "config_json": None})
 
 
 class Dispatcher:
@@ -168,6 +203,12 @@ class Dispatcher:
                 self.get_experiment_logs,
                 methods=["POST"],
             )
+            self.app.add_url_rule(
+                f"{route_prefix}/all-operations",
+                "get_all_operations",
+                self.get_all_operations,
+                methods=["GET", "OPTIONS"],
+            )
         except Exception as e:
             raise DispatcherException(f"Error while registering routes: {e}") from e
 
@@ -178,6 +219,60 @@ class Dispatcher:
             return jsonify("Dispatcher is up and running"), 200
         except Exception as e:
             return jsonify({"error": str(e) + " " + str(traceback.format_exc())}), 500
+
+    def get_all_operations(self) -> tuple[Response, int]:
+        """Pending Interactive Control operations, in the evals-compatible shape.
+
+        Run-budget / duplicate-clone checks need to see clones that have been
+        *queued* here but not yet turned into run rows by the controller (they
+        land at the next epoch boundary). The evals dispatcher exposes these via
+        ``/dispatcher/all-operations``; this mirrors that shape so a client
+        parses both dispatchers uniformly.
+
+        Only ``Scheduled`` (pending) ops are returned — that is all such a check
+        needs. Each row carries ``operation`` (short lowercase string),
+        ``status`` ("pending"), and ``request_data`` (JSON string). For clones
+        ``request_data`` is ``{"parent_pipeline_id": <run_id>, "config_json":
+        <config_leaf>}``; the fit dispatcher stores the *full* resulting config
+        in ``config_leaf`` (unlike evals, which stores a nested delta), so a
+        consumer branches on experiment type to interpret it.
+
+        The leaf is dill-decoded, so it is put through
+        :func:`_sanitize_config_leaf` and encoded with a stringifying fallback
+        before it goes out: stop/resume/delete ops store the parent run's
+        *full* leaf, which routinely holds live Python objects (a
+        ``torch.dtype``, a PEFT ``TaskType``, reward functions). Without that,
+        one queued stop would fail the encode and 500 the whole list, and a
+        fetcher that soft-fails to ``[]`` would silently drop the pending
+        *clones* it needs for budget/dedup accounting along with it.
+        """
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+        try:
+            tasks = self.db.get_scheduled_ic_ops_tasks()
+            operations = []
+            for task in tasks:
+                ic_op = task.get("ic_op")
+                operation = _FIT_IC_OP_TO_OPERATION.get(ic_op)
+                if operation is None:
+                    continue
+                run_id = task.get("run_id")
+                config_leaf = _sanitize_config_leaf(task.get("config_leaf"))
+                operations.append(
+                    {
+                        "ic_id": task.get("task_id"),
+                        "pipeline_id": run_id,
+                        "operation": operation,
+                        "status": "pending",
+                        "request_data": _encode_request_data(run_id, config_leaf),
+                        "error": None,
+                        "created_at": None,
+                        "processed_at": None,
+                    }
+                )
+            return jsonify(operations), 200
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
     # UI routes
     def get_all_runs(self) -> tuple[Response, int]:
