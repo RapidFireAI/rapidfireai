@@ -65,6 +65,13 @@ class RfDb:
                             "ALTER TABLE experiments ADD COLUMN metric_experiment_id TEXT"
                         )
                         self.db.conn.commit()
+                    # experiment_mode is the golden source of truth for the
+                    # experiment type (this is the fit DB, so every row is 'fit').
+                    if "experiment_mode" not in columns:
+                        self.db.conn.execute(
+                            "ALTER TABLE experiments ADD COLUMN experiment_mode TEXT NOT NULL DEFAULT 'fit'"
+                        )
+                        self.db.conn.commit()
                 except sqlite3.Error:
                     pass
         except FileNotFoundError as e:
@@ -176,8 +183,8 @@ class RfDb:
         """Create a new experiment"""
         query = """
             INSERT INTO experiments (experiment_name, metric_experiment_id, config_options,
-            status, current_task, error)
-            VALUES (?, ?, ?, ?, ?, ?)
+            status, current_task, error, experiment_mode)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             RETURNING experiment_id
         """
 
@@ -190,6 +197,8 @@ class RfDb:
                 ExperimentStatus.RUNNING.value,
                 ExperimentTask.IDLE.value,
                 "",
+                # This is the fit DB — every experiment created here is fit mode.
+                "fit",
             ),
             commit=True,
             fetch=True,
@@ -205,7 +214,7 @@ class RfDb:
     def get_running_experiment(self) -> dict[str, Any]:
         """Get an experiment's details by its ID"""
         query = """
-            SELECT experiment_id, experiment_name, status, error, metric_experiment_id, config_options
+            SELECT experiment_id, experiment_name, status, error, metric_experiment_id, config_options, experiment_mode
             FROM experiments
             WHERE status = ?
             ORDER BY experiment_id DESC
@@ -226,9 +235,39 @@ class RfDb:
                 "error": experiment_details[3],
                 "metric_experiment_id": experiment_details[4],
                 "config_options": decode_db_payload(experiment_details[5]),
+                "experiment_mode": experiment_details[6],
             }
             return experiment_details
         raise DBException("No running experiment found")
+
+    def get_experiment_by_name(self, experiment_name: str) -> dict[str, Any] | None:
+        """Return the latest experiment row for ``experiment_name``, or None.
+
+        Unlike :meth:`get_running_experiment` this does not filter on status,
+        so it resolves any experiment ever created in this (fit) DB - live,
+        ended, failed, or cancelled - which is what lets a caller read the
+        persisted ``experiment_mode`` for a historical experiment. Names can
+        recur across re-runs, so the most recent row (max experiment_id) wins.
+        """
+        query = """
+            SELECT experiment_id, experiment_name, status, error, metric_experiment_id, experiment_mode
+            FROM experiments
+            WHERE experiment_name = ?
+            ORDER BY experiment_id DESC
+            LIMIT 1
+        """
+        result = self.db.execute(query, (experiment_name,), fetch=True)
+        if result:
+            row = result[0]
+            return {
+                "experiment_id": row[0],
+                "experiment_name": row[1],
+                "status": row[2],
+                "error": row[3],
+                "metric_experiment_id": row[4],
+                "experiment_mode": row[5],
+            }
+        return None
 
     def get_experiment_status(self) -> ExperimentStatus | None:
         """Get the status of an experiment"""

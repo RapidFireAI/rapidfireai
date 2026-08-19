@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS experiments (
     num_gpus_per_actor REAL,
     status TEXT NOT NULL,  -- 'running', 'completed', 'failed'
     error TEXT DEFAULT '',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    experiment_mode TEXT NOT NULL DEFAULT 'evals'
 );
 
 -- ============================================================================

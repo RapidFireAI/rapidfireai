@@ -104,6 +104,13 @@ def create_model_instance(
     model_instance, tokenizer = create_model_fn(model_config)
 
     if is_peft and checkpoint_path:
+        # NOTE (warm start, disk path only): PeftModel.from_pretrained
+        # reconstructs the adapter from the checkpoint's saved
+        # adapter_config.json, so clone-modified peft_params (lora_alpha,
+        # lora_dropout, r, ...) are NOT honored here - the parent's config
+        # wins. Only the default shared-memory path
+        # (load_checkpoint_from_shared_memory) rebuilds the adapter from the
+        # fresh LoraConfig(**peft_params) before loading the parent weights.
         model_instance = PeftModel.from_pretrained(model_instance, checkpoint_path)
     _configure_tokenizer(tokenizer)
 

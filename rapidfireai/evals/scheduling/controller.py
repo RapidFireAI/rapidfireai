@@ -24,8 +24,28 @@ from rapidfireai.evals.utils.constants import (
 from rapidfireai.evals.utils.logger import RFLogger
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 from rapidfireai.automl import RFGridSearch, RFRandomSearch
-from rapidfireai.automl import get_runs, get_flattened_config_leaf
-from rapidfireai.evals.utils.serialize import extract_pipeline_config_json
+from rapidfireai.automl import get_runs, get_flattened_config_leaf, sanitize_flat_config
+from rapidfireai.evals.utils.serialize import (
+    build_pipeline_knobs,
+    describe_prompt_manager,
+    extract_pipeline_config_json,
+)
+
+# Noise keys dropped from the flattened config logged to MLflow. These are
+# framework-injected bookkeeping knobs that aren't user-chosen axes of
+# experimentation, so logging them would just add constant columns to every
+# report. Kept as a frozenset so the drop set is immutable and shared across
+# the live and finalization logging paths.
+_RAG_CONFIG_KEYS_TO_DROP = frozenset(
+    {
+        "client_config.max_retries",
+        "online_strategy_kwargs.confidence_level",
+        "online_strategy_kwargs.strategy_name",
+        "online_strategy_kwargs.use_fpc",
+        "pipeline_type",
+    }
+)
+
 
 class Controller:
     """
@@ -63,6 +83,12 @@ class Controller:
         # Cache for RAG contexts (persists only during Controller lifetime)
         # Maps context_hash -> (context_id, components_ref)
         self._context_cache: dict[str, tuple[int, ray.ObjectRef]] = {}
+
+        # Incremental accumulator state for RAG API system metrics, keyed by
+        # metric_run_id. Lets ``aggregate_api_trace_metrics`` scan only traces
+        # newer than the last shard instead of rescanning the whole (growing)
+        # trace history every shard, keeping per-shard cost linear.
+        self._api_metric_cache: dict[str, dict] = {}
 
         # Initialize interactive control handler
         self.ic_handler = InteractiveControlHandler(
@@ -119,28 +145,147 @@ class Controller:
 
         return sanitized
 
-    def _finalize_mlflow_run(self, db: RFDatabase, pipeline_id: int, mlflow_status: str) -> None:
+    def _finalize_mlflow_run(self, db: RFDatabase, pipeline_id: int, mlflow_status: str) -> str | None:
         """Terminate the MLflow run for ``pipeline_id`` with the given MLflow status.
 
         Best-effort: MLflow failures are logged but never propagated. ``mlflow_status``
         must be one of MLflow's ``RunStatus`` strings (``"FINISHED"``, ``"FAILED"``,
         ``"KILLED"``). See :data:`DISPATCHER_TO_MLFLOW_STATUS` in
         ``metric_mlflow_manager`` for the dispatcher -> MLflow mapping used here.
+
+        Returns:
+            The ``metric_run_id`` that was terminated, or ``None`` if the metric
+            manager is absent, the pipeline has no metric run, or the
+            termination raised. Callers use the return value to track which runs
+            were already finalized (e.g. at shard completion) so a later
+            end-of-experiment pass does not call ``end_run`` on them again.
         """
         if not self.metric_manager:
-            return
+            return None
         try:
             pipeline = db.get_pipeline(pipeline_id)
             metric_run_id = pipeline.get("metric_run_id") if pipeline else None
             if not metric_run_id:
-                return
+                return None
             self.metric_manager.end_run(metric_run_id, status=mlflow_status)
             self.logger.info(
                 f"Marked MLflow run {metric_run_id} as {mlflow_status} for pipeline {pipeline_id}"
             )
+            return metric_run_id
         except Exception as e:
             self.logger.warning(
                 f"Failed to terminate MLflow run for pipeline {pipeline_id} (status={mlflow_status}): {e}"
+            )
+            return None
+
+    def _log_api_system_metrics(
+        self,
+        pipeline_config: dict,
+        metric_run_id: str,
+        step: int,
+        aggregator: Any = None,
+    ) -> None:
+        """Log RAG API ``system/*`` metrics (latency / tokens / spend) for one shard step.
+
+        Only applies to pipelines backed by ``RFAPIModelConfig``: their LLM calls
+        are autologged as ``CHAT_MODEL`` spans tagged with ``metric_run_id``, which
+        we aggregate cumulatively (average per-query latency, summed tokens, summed
+        spend). vLLM pipelines produce no such spans and are skipped. Best-effort:
+        any failure is swallowed so it never breaks metric logging for the run.
+
+        When ``aggregator`` is supplied, the three metrics are projected to
+        full-dataset scale through its ``online_strategy`` (same path the eval
+        metrics use) and a ``system/<name>_confidence_interval`` sibling is logged
+        alongside each projected value. Projection makes a run stopped at 1 shard
+        comparable to one that completed all shards (cumulative sums otherwise
+        always favour the shorter run on lower-is-better metrics). Falls back to
+        logging raw cumulative values when no aggregator / population size is
+        available.
+        """
+        if not pipeline_config or not metric_run_id:
+            return
+        try:
+            from rapidfireai.automl import RFAPIModelConfig
+            from rapidfireai.evals.utils.trace_metrics import (
+                aggregate_api_trace_metrics,
+                project_system_metrics,
+                provider_model_for_pipeline,
+                resolve_mlflow_handle,
+                system_metric_value_ranges,
+            )
+
+            pipeline = pipeline_config.get("pipeline")
+            if not isinstance(pipeline, RFAPIModelConfig):
+                return
+
+            client, experiment_id = resolve_mlflow_handle(self.metric_manager)
+            if client is None:
+                return
+
+            model, provider = provider_model_for_pipeline(pipeline)
+            metrics = aggregate_api_trace_metrics(
+                client,
+                metric_run_id,
+                model,
+                provider,
+                experiment_id=experiment_id,
+                cache=self._api_metric_cache.setdefault(metric_run_id, {}),
+            )
+            if not metrics:
+                return
+
+            query_count = metrics.get("query_count")
+            strategy = getattr(aggregator, "online_strategy", None) if aggregator is not None else None
+            projected = None
+            if (
+                strategy is not None
+                and isinstance(query_count, (int, float))
+                and query_count > 0
+            ):
+                value_ranges = system_metric_value_ranges(pipeline, model, provider)
+                projected = project_system_metrics(
+                    strategy, metrics, value_ranges, int(query_count)
+                )
+
+            if projected:
+                for name, (value, ci) in projected.items():
+                    if value is None:
+                        continue
+                    self.metric_manager.log_metric(metric_run_id, name, float(value), step=step)
+                    if ci is not None:
+                        self.metric_manager.log_metric(
+                            metric_run_id,
+                            f"{name}_confidence_interval",
+                            float(ci),
+                            step=step,
+                        )
+                return
+
+            # Fallback: no aggregator / no population size -> log raw cumulative
+            # values (no confidence-interval sibling).
+            self.metric_manager.log_metric(
+                metric_run_id,
+                "system/query_latency_avg_seconds",
+                float(metrics["query_latency_avg_seconds"]),
+                step=step,
+            )
+            self.metric_manager.log_metric(
+                metric_run_id,
+                "system/total_tokens",
+                float(metrics["total_tokens"]),
+                step=step,
+            )
+            token_spend = metrics.get("token_spend_usd")
+            if isinstance(token_spend, (int, float)):
+                self.metric_manager.log_metric(
+                    metric_run_id,
+                    "system/token_spend_usd",
+                    float(token_spend),
+                    step=step,
+                )
+        except Exception as e:
+            self.logger.debug(
+                f"Failed to log RAG API system metrics for run {metric_run_id}: {e}"
             )
 
     def _log_pipeline_params(
@@ -204,16 +349,6 @@ class Controller:
             manager.log_param(run_id, "itpm_limit", str(pipeline.itpm_limit))
         if hasattr(pipeline, "otpm_limit") and pipeline.otpm_limit:
             manager.log_param(run_id, "otpm_limit", str(pipeline.otpm_limit))
-
-        # Log prompt_manager params
-        if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager:
-            pm = pipeline.prompt_manager
-            if hasattr(pm, "k") and pm.k is not None:
-                manager.log_param(run_id, "fewshot_k", str(pm.k))
-            if hasattr(pm, "instructions") and pm.instructions:
-                # Truncate long instructions
-                instructions = pm.instructions[:200] + "..." if len(pm.instructions) > 200 else pm.instructions
-                manager.log_param(run_id, "instructions", instructions)
 
         # Log RAG params
         if hasattr(pipeline, "rag") and pipeline.rag:
@@ -892,19 +1027,32 @@ class Controller:
                         if hasattr(pipeline, "model_name"):
                             self.metric_manager.log_param(metric_run_id, "model", pipeline.model_name)
 
-                        if hasattr(pipeline, "rag") and pipeline.rag:
-                            if hasattr(pipeline.rag, "search_type"):
-                                self.metric_manager.log_param(metric_run_id, "rag_search_type", str(pipeline.rag.search_type))
-                            if hasattr(pipeline.rag, "search_kwargs") and pipeline.rag.search_kwargs:
-                                k = pipeline.rag.search_kwargs.get("k")
-                                if k is not None:
-                                    self.metric_manager.log_param(metric_run_id, "rag_k", str(k))
-
-                        # Extract sampling params
-                        if hasattr(pipeline, "sampling_params") and pipeline.sampling_params:
-                            import json
-                            sampling_str = json.dumps(pipeline.sampling_params) if isinstance(pipeline.sampling_params, dict) else str(pipeline.sampling_params)
-                            self.metric_manager.log_param(metric_run_id, "sampling_params", sampling_str)
+                        # Log the FULL flattened config (indexing + retrieval +
+                        # generation) to MLflow, mirroring the fit controller so
+                        # every knob is visible even for completed experiments
+                        # (where the dispatcher ``full_config`` fetch is empty).
+                        knob_cfg = build_pipeline_knobs(pipeline_config)
+                        flat = get_flattened_config_leaf(knob_cfg) if knob_cfg else {}
+                        for drop_key in _RAG_CONFIG_KEYS_TO_DROP:
+                            flat.pop(drop_key, None)
+                        # Apply both secret rules before persisting to the tracking
+                        # backend (defense in depth; the report also sanitizes):
+                        # drop secret-named keys, redact credentials embedded in
+                        # values such as a pgvector connection DSN. Token-derived
+                        # knobs (max_tokens, tokenizer, *_token_id) are kept.
+                        flat = sanitize_flat_config(flat)
+                        for key, value in flat.items():
+                            try:
+                                param_value = (
+                                    value
+                                    if isinstance(value, (int, float, str, bool))
+                                    else str(value)
+                                )
+                                self.metric_manager.log_param(metric_run_id, key, param_value)
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Could not log param {key} for pipeline {pipeline_id}: {e}"
+                                )
 
                     self.logger.debug(f"Created Metrics run {metric_run_id} for pipeline {pipeline_id}")
                 except Exception as e:
@@ -925,6 +1073,7 @@ class Controller:
         progress_display=None,
         pipeline_id_to_info: dict[int, dict] = None,
         total_dataset_size: int = None,
+        finalized_mlflow_run_ids: set[str] | None = None,
     ) -> dict[int, tuple[dict, dict]]:
         """
         Compute final metrics for each pipeline and update database.
@@ -940,6 +1089,11 @@ class Controller:
             db: Database instance
             progress_display: Optional progress display to update
             pipeline_id_to_info: Optional mapping of pipeline_id to pipeline info dict
+            finalized_mlflow_run_ids: Optional set of MLflow run_ids that were
+                already terminated as FINISHED at shard-completion time (Bug 2
+                fix). For these runs end_run(FINISHED) is skipped here to avoid
+                a redundant set_terminated-on-terminal POST; their final metrics
+                are still published to ``final_results`` and (best-effort) logged.
 
         Returns:
             Dict mapping pipeline_id to (aggregated_results, cumulative_metrics) for
@@ -1011,7 +1165,10 @@ class Controller:
             hyperparam_keys = [
                 "text_splitter_cfg", "embedding_cfg", "vector_store_cfg",
                 "search_cfg", "reranker_cfg",
-                "sampling_params", "prompt_manager_k", "model_config",
+                "sampling_params", "prompt_manager_config", "model_config",
+                "endpoint_config", "client_config",
+                "rpm_limit", "tpm_limit", "itpm_limit", "otpm_limit",
+                "max_completion_tokens",
             ]
             for key in hyperparam_keys:
                 if key in cumulative_metrics:
@@ -1109,6 +1266,57 @@ class Controller:
                                 except Exception as e:
                                     self.logger.warning(f"Could not log final metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
+                        # Authoritative user-defined metric keys for this run: the keys
+                        # the user's compute/accumulate functions returned, minus the
+                        # framework-injected bookkeeping keys (and Throughput, which the
+                        # controller adds itself) AND the hyperparam/config keys that
+                        # were merged into ordered_metrics above (text_splitter_cfg,
+                        # embedding_cfg, vector_store_cfg, search_cfg, reranker_cfg,
+                        # sampling_params, prompt_manager_config, model_config) plus the
+                        # pipeline_id_to_info-injected keys (which are a subset of
+                        # {model_name} ∪ hyperparam_keys). Without excluding these,
+                        # config fields would be tagged as rapidfire.user_metrics and
+                        # the runs-table "Columns" dropdown / metric column order would
+                        # treat config fields as user metrics. Tagged here at
+                        # finalization so the tag is present even for pipelines whose
+                        # live path never fired (no accumulate fn); this overwrites the
+                        # live-path tag, so it must not regress the live-path key set.
+                        _final_user_metric_keys = [
+                            k for k in ordered_metrics
+                            if k not in ("run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second", "Throughput")
+                            and k not in hyperparam_keys
+                        ]
+                        # Also tag the framework-injected <metric>_confidence_interval
+                        # siblings of user metrics as user metrics so the runs-table
+                        # "Columns" dropdown / metric column order groups each CI right
+                        # after its parent metric (alphabetical sort puts
+                        # "<metric>_confidence_interval" immediately after "<metric>")
+                        # instead of dumping them in the auto-computed tail block.
+                        _seen_final = set(_final_user_metric_keys)
+                        for _k in list(_final_user_metric_keys):
+                            _ci_key = f"{_k}_confidence_interval"
+                            if _ci_key not in _seen_final:
+                                _final_user_metric_keys.append(_ci_key)
+                                _seen_final.add(_ci_key)
+                        if _final_user_metric_keys:
+                            try:
+                                self.metric_manager.set_tag(
+                                    metric_run_id,
+                                    "rapidfire.user_metrics",
+                                    ",".join(_final_user_metric_keys),
+                                )
+                            except Exception as e:
+                                self.logger.debug(f"Could not set rapidfire.user_metrics tag: {e}")
+
+                        # RAG API system metrics (latency / tokens / spend), logged once
+                        # more at the terminal step so the last point is complete even if
+                        # the final shard's live log was skipped. No-op for vLLM pipelines.
+                        # Passed the pipeline aggregator so the values are projected to
+                        # full-dataset scale with a confidence-interval sibling.
+                        self._log_api_system_metrics(
+                            pipeline_config, metric_run_id, step, aggregator=aggregator
+                        )
+
                         if was_stopped:
                             # The MLflow run was already terminated as KILLED
                             # by _finalize_mlflow_run() at the IC-stop /
@@ -1121,6 +1329,18 @@ class Controller:
                             self.logger.debug(
                                 f"Skipping end_run for stopped pipeline {pipeline_id}: "
                                 f"MLflow run {metric_run_id} is already terminal (KILLED)."
+                            )
+                        elif finalized_mlflow_run_ids and metric_run_id in finalized_mlflow_run_ids:
+                            # Bug 2: this run was already terminated as FINISHED
+                            # at shard-completion time so the dashboard would flip
+                            # to FINISHED immediately. Calling end_run(FINISHED)
+                            # again would POST a set_terminated on an already-
+                            # terminal run. Skip it; the final metrics logged
+                            # just above still land on the existing FINISHED run.
+                            self.logger.debug(
+                                f"Skipping end_run for completed pipeline {pipeline_id}: "
+                                f"MLflow run {metric_run_id} was already finalized at "
+                                f"shard completion."
                             )
                         else:
                             try:
@@ -1154,7 +1374,7 @@ class Controller:
         search_cfg = None
         reranker_cfg = None
         sampling_params = None
-        prompt_manager_k = None
+        prompt_manager_config = None
         model_config = None
 
         pipeline = pipeline_config["pipeline"]
@@ -1192,8 +1412,27 @@ class Controller:
         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
             sampling_params = pipeline._user_params.get("sampling_params", None)
 
+        # RFAPIModelConfig generator knobs (endpoint/client config + rate limits).
+        endpoint_config = None
+        client_config = None
+        rpm_limit = getattr(pipeline, "rpm_limit", None)
+        tpm_limit = getattr(pipeline, "tpm_limit", None)
+        itpm_limit = getattr(pipeline, "itpm_limit", None)
+        otpm_limit = getattr(pipeline, "otpm_limit", None)
+        max_completion_tokens = getattr(pipeline, "max_completion_tokens", None)
+        if getattr(pipeline, "endpoint_config", None) is not None:
+            endpoint_config = dict(pipeline.endpoint_config)
+            endpoint_config.pop("api_key", None)
+            if not endpoint_config:
+                endpoint_config = None
+        if getattr(pipeline, "client_config", None):
+            sensitive = {"api_key", "secret", "token", "password", "key"}
+            client_config = {k: v for k, v in pipeline.client_config.items() if k.lower() not in sensitive}
+            if not client_config:
+                client_config = None
+
         if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
-            prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
+            prompt_manager_config = describe_prompt_manager(pipeline.prompt_manager)
 
         info_dict = {
             "pipeline_id": pipeline_id,
@@ -1208,7 +1447,14 @@ class Controller:
             "search_cfg": search_cfg,
             "reranker_cfg": reranker_cfg,
             "sampling_params": sampling_params,
-            "prompt_manager_k": prompt_manager_k,
+            "endpoint_config": endpoint_config,
+            "client_config": client_config,
+            "rpm_limit": rpm_limit,
+            "tpm_limit": tpm_limit,
+            "itpm_limit": itpm_limit,
+            "otpm_limit": otpm_limit,
+            "max_completion_tokens": max_completion_tokens,
+            "prompt_manager_config": prompt_manager_config,
             "model_config": model_config,
         }
         for key, value in optional_fields.items():
@@ -1376,7 +1622,7 @@ class Controller:
             reranker_cfg = None
             # Generation-stage fields
             sampling_params = None
-            prompt_manager_k = None
+            prompt_manager_config = None
             model_config = None
 
             pipeline = pipeline_config["pipeline"]
@@ -1420,9 +1666,30 @@ class Controller:
             if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
                 sampling_params = pipeline._user_params.get("sampling_params", None)
 
+            # Extract RFAPIModelConfig generator knobs (endpoint/client config + rate
+            # limits). These are display-only flattened dotted columns; clone-modify
+            # does not touch them (they are fixed at launch).
+            endpoint_config = None
+            client_config = None
+            rpm_limit = getattr(pipeline, "rpm_limit", None)
+            tpm_limit = getattr(pipeline, "tpm_limit", None)
+            itpm_limit = getattr(pipeline, "itpm_limit", None)
+            otpm_limit = getattr(pipeline, "otpm_limit", None)
+            max_completion_tokens = getattr(pipeline, "max_completion_tokens", None)
+            if getattr(pipeline, "endpoint_config", None) is not None:
+                endpoint_config = dict(pipeline.endpoint_config)
+                endpoint_config.pop("api_key", None)
+                if not endpoint_config:
+                    endpoint_config = None
+            if getattr(pipeline, "client_config", None):
+                sensitive = {"api_key", "secret", "token", "password", "key"}
+                client_config = {k: v for k, v in pipeline.client_config.items() if k.lower() not in sensitive}
+                if not client_config:
+                    client_config = None
+
             # Extract prompt_manager fields
             if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
-                prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
+                prompt_manager_config = describe_prompt_manager(pipeline.prompt_manager)
 
             pipeline_info_dict = {
                 "pipeline_id": pipeline_id,
@@ -1446,8 +1713,22 @@ class Controller:
             # Generation stage
             if sampling_params is not None:
                 pipeline_info_dict["sampling_params"] = sampling_params
-            if prompt_manager_k is not None:
-                pipeline_info_dict["prompt_manager_k"] = prompt_manager_k
+            if endpoint_config is not None:
+                pipeline_info_dict["endpoint_config"] = endpoint_config
+            if client_config is not None:
+                pipeline_info_dict["client_config"] = client_config
+            if rpm_limit is not None:
+                pipeline_info_dict["rpm_limit"] = rpm_limit
+            if tpm_limit is not None:
+                pipeline_info_dict["tpm_limit"] = tpm_limit
+            if itpm_limit is not None:
+                pipeline_info_dict["itpm_limit"] = itpm_limit
+            if otpm_limit is not None:
+                pipeline_info_dict["otpm_limit"] = otpm_limit
+            if max_completion_tokens is not None:
+                pipeline_info_dict["max_completion_tokens"] = max_completion_tokens
+            if prompt_manager_config is not None:
+                pipeline_info_dict["prompt_manager_config"] = prompt_manager_config
             if model_config is not None:
                 pipeline_info_dict["model_config"] = model_config
 
@@ -1540,6 +1821,24 @@ class Controller:
         # Track active tasks: {actor_id: {"futures": [...], "pipeline_id": int, ...}}
         active_tasks = {}
 
+        # Track in-flight non-blocking actor inits: {actor_id: {"init_ref": ObjectRef,
+        # "actor": ..., "pipeline_id": int, "shard_id": int, "task_id": int,
+        # "batches": [...], "pipeline_config": dict, "pipeline_name": str}}.
+        # An actor lives here between when initialize_for_pipeline.remote(...) is
+        # fired and when that init future resolves. Batches cannot be submitted
+        # until init resolves (process_batch depends on the engine/rag_spec init
+        # sets), so submission is deferred to the init-drain step at the top of
+        # the loop. The scheduler already marks the actor busy at schedule time
+        # (pipeline_scheduler.py:177), so it won't be re-assigned while here.
+        pending_inits: dict[int, dict] = {}
+
+        # Track MLflow run_ids that were already terminated as FINISHED at
+        # shard-completion time (Bug 2 fix). _compute_final_metrics_for_pipelines
+        # uses this to skip calling end_run(FINISHED) again on runs that are
+        # already terminal, avoiding redundant POSTs / set_terminated-on-terminal
+        # exceptions, while still publishing final metrics to final_results.
+        finalized_mlflow_run_ids: set[str] = set()
+
         # Track start time for each pipeline (for throughput calculation)
         pipeline_start_times = {}
 
@@ -1547,8 +1846,153 @@ class Controller:
         progress_display.start()
 
         loop_iteration = 0
+        # Bound WAL growth with a non-blocking PASSIVE checkpoint every N
+        # completed shards so the auto-checkpoint doesn't ambush this hot
+        # writer mid-burst. PASSIVE never blocks readers/writers.
+        _shards_since_checkpoint = 0
+        _CHECKPOINT_EVERY_N_SHARDS = 10
         while True:
             loop_iteration += 1
+
+            # ---- Drain completed non-blocking actor inits ----
+            # For each actor whose initialize_for_pipeline future has resolved:
+            #   - success -> submit process_batch futures, move to active_tasks
+            #   - raised  -> mark task+pipeline FAILED, free the actor, continue
+            # Batches cannot be submitted until init resolves (process_batch
+            # depends on the engine/rag_spec init sets), which is why this is
+            # a separate phase from the init fire at the bottom of the loop.
+            if pending_inits:
+                init_refs_map = {aid: p["init_ref"] for aid, p in pending_inits.items()}
+                ready_init_refs, _ = ray.wait(
+                    list(init_refs_map.values()), num_returns=len(init_refs_map), timeout=0
+                )
+                ready_set = set(ready_init_refs)
+                drained_actor_ids = []
+                for actor_id, p in pending_inits.items():
+                    if p["init_ref"] not in ready_set:
+                        continue
+                    drained_actor_ids.append(actor_id)
+                    pipeline_id = p["pipeline_id"]
+                    task_id = p["task_id"]
+                    pipeline_name = p["pipeline_name"]
+                    pipeline_config = p["pipeline_config"]
+                    shard_id = p["shard_id"]
+                    batches = p["batches"]
+                    actor = p["actor"]
+                    # Stopping-pipeline guard (covers both STOP and DELETE).
+                    # With the in_flight_pipeline_ids fix, both _handle_stop and
+                    # _handle_delete call remove_pipeline(in_flight=True) when a
+                    # pipeline is stopped/deleted while its init is pending, so
+                    # the pipeline sits in stopping_pipelines with its actor
+                    # still marked busy, and the IC handler already set the
+                    # terminal DB status (STOPPED/DELETED) and (for DELETE)
+                    # deleted the MLflow run + popped the pipeline_results entry.
+                    # No batches have run for this shard yet (init hasn't even
+                    # resolved), so discard the pending shard: surface the init
+                    # result to the log, record the actor task as completed, and
+                    # free the actor via set_completed_task (which clears the
+                    # stopping marker and pops pipeline_shards_completed). This
+                    # skips the init-failure and dispatch-failure paths below,
+                    # which would otherwise overwrite STOPPED/DELETED -> FAILED
+                    # and call remove_pipeline(in_flight=False) -- a no-op on the
+                    # already-removed pipeline that leaves the actor stuck busy
+                    # and stopping_pipelines leaked (schedule() then refuses to
+                    # terminate). The active_tasks completion handler below is
+                    # intentionally NOT changed: a STOPPED pipeline with batches
+                    # already in flight still runs that shard to completion and
+                    # may flip STOPPED -> COMPLETED ("no work started = discard;
+                    # work in progress = finish").
+                    if pipeline_id in scheduler.stopping_pipelines:
+                        try:
+                            ray.get(p["init_ref"])
+                        except Exception as init_err:
+                            self.logger.debug(
+                                f"Init for stopped/deleted pipeline {pipeline_id} ({pipeline_name}) "
+                                f"raised on actor {actor_id} (swallowed; pipeline is already "
+                                f"terminal): {init_err}"
+                            )
+                        try:
+                            end_time = time.time()
+                            db.set_actor_task_end_time(task_id, end_time, 0.0)
+                            db.set_actor_task_status(task_id, TaskStatus.COMPLETED)
+                        except Exception as e:
+                            self.logger.warning(
+                                f"Failed to record task completion for stopped/deleted pipeline "
+                                f"{pipeline_id} (actor {actor_id}): {e}; freeing the actor anyway."
+                            )
+                        scheduler.set_completed_task(actor_id)
+                        self.logger.info(
+                            f"Pipeline {pipeline_id} ({pipeline_name}) was stopped/deleted while "
+                            f"init was in flight; freed actor {actor_id} without touching pipeline "
+                            f"state."
+                        )
+                        continue
+                    try:
+                        # ref is already ready, so this is non-blocking; surfaces
+                        # any exception the actor raised during init.
+                        ray.get(p["init_ref"])
+                    except Exception as init_err:
+                        error_msg = str(init_err)
+                        self.logger.exception(
+                            f"Pipeline {pipeline_id} ({pipeline_name}) failed to initialize "
+                            f"on actor {actor_id}: {error_msg}"
+                        )
+                        db.set_actor_task_status(task_id, TaskStatus.FAILED)
+                        db.set_actor_task_error(task_id, error_msg)
+                        db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
+                        db.set_pipeline_error(pipeline_id, error_msg)
+                        self._finalize_mlflow_run(db, pipeline_id, "FAILED")
+                        scheduler.remove_pipeline(pipeline_id)
+                        if progress_display:
+                            progress_display.update_pipeline(pipeline_id, status="FAILED")
+                        continue
+                    # Init succeeded -> submit batches (moved here from the old
+                    # bottom-of-loop dispatch block).
+                    try:
+                        futures = []
+                        preprocess_fn = pipeline_config.get("preprocess_fn")
+                        postprocess_fn = pipeline_config.get("postprocess_fn")
+                        compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
+                        accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
+                        for batch in batches:
+                            future = actor.process_batch.remote(
+                                batch,
+                                preprocess_fn=preprocess_fn,
+                                postprocess_fn=postprocess_fn,
+                                compute_metrics_fn=compute_metrics_fn if accumulate_metrics_fn else None,
+                            )
+                            futures.append(future)
+
+                        task_start_time = time.time()
+                        active_tasks[actor_id] = {
+                            "futures": futures,
+                            "pipeline_id": pipeline_id,
+                            "shard_id": shard_id,
+                            "task_id": task_id,
+                            "batch_count": len(batches),
+                            "start_time": task_start_time,
+                        }
+                        db.set_actor_task_start_time(task_id, task_start_time)
+                        db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
+                        db.set_pipeline_current_shard(pipeline_id, shard_id)
+                    except Exception as dispatch_err:
+                        error_msg = str(dispatch_err)
+                        self.logger.exception(
+                            f"Pipeline {pipeline_id} ({pipeline_name}) failed during batch "
+                            f"dispatch on actor {actor_id}: {error_msg}"
+                        )
+                        db.set_actor_task_status(task_id, TaskStatus.FAILED)
+                        db.set_actor_task_error(task_id, error_msg)
+                        db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
+                        db.set_pipeline_error(pipeline_id, error_msg)
+                        self._finalize_mlflow_run(db, pipeline_id, "FAILED")
+                        active_tasks.pop(actor_id, None)
+                        scheduler.remove_pipeline(pipeline_id)
+                        if progress_display:
+                            progress_display.update_pipeline(pipeline_id, status="FAILED")
+                        continue
+                for aid in drained_actor_ids:
+                    pending_inits.pop(aid, None)
 
             # Check for completed tasks
             completed_actor_ids = []
@@ -1563,6 +2007,56 @@ class Controller:
 
                 if len(ready_futures) == len(futures):
                     # All batches completed
+                    # Detect whether this pipeline was stopped/deleted while
+                    # this shard was in flight. The pipeline stays in
+                    # scheduler.stopping_pipelines until set_completed_task
+                    # (called below, after this block) cleans it up, so the
+                    # check is valid here. We still aggregate the in-flight
+                    # shard's results and bump DB progress (the shard ran to
+                    # completion), but we skip Optuna pruning/replacement for
+                    # user-initiated stops.
+                    was_stopping = pipeline_id in scheduler.stopping_pipelines
+                    # If this pipeline was *deleted* while its shard was in
+                    # flight, _handle_delete already set the terminal state
+                    # (DELETED), deleted the MLflow run, and popped the
+                    # pipeline_results entry. Skip all pipeline-level
+                    # processing here -- the merge below would KeyError on the
+                    # popped entry, and the except handler would rewrite
+                    # DELETED -> FAILED; a last-shard completion would also
+                    # overwrite DELETED -> COMPLETED. Only record the actor
+                    # task as completed and let the cleanup loop free the
+                    # actor. (_handle_stop does NOT pop pipeline_results, so a
+                    # stopped pipeline still takes the normal merge path and
+                    # can flip STOPPED -> COMPLETED on its last shard.)
+                    if was_stopping and pipeline_id not in pipeline_results:
+                        # These DB updates live outside the surrounding try/except
+                        # (which starts below for the normal merge path), so a
+                        # failure here would propagate out of the for-loop and
+                        # abort the scheduling loop before the actor is added to
+                        # completed_actor_ids -- orphaning it in
+                        # actor_current_pipeline forever, since the in-flight
+                        # shard already completed. Wrap them so the actor is
+                        # always freed via set_completed_task below; the pipeline
+                        # is already DELETED, so a missed task-status write is
+                        # cosmetic and not worth killing the experiment over.
+                        try:
+                            end_time = time.time()
+                            duration = end_time - task_info["start_time"]
+                            db.set_actor_task_end_time(task_id, end_time, duration)
+                            db.set_actor_task_status(task_id, TaskStatus.COMPLETED)
+                        except Exception as e:
+                            self.logger.warning(
+                                f"Failed to record task completion for deleted pipeline "
+                                f"{pipeline_id} shard {shard_id} (actor {actor_id}): {e}; "
+                                f"freeing the actor anyway."
+                            )
+                        completed_actor_ids.append(actor_id)
+                        self.logger.info(
+                            f"Pipeline {pipeline_id} was deleted while shard {shard_id} "
+                            f"was in flight; recorded task completion and freed actor "
+                            f"{actor_id} without touching pipeline state."
+                        )
+                        continue
                     try:
                         # Aggregate results for this shard
                         aggregator = pipeline_aggregators[pipeline_id]
@@ -1598,6 +2092,28 @@ class Controller:
                         samples_processed = shards_completed * len(shards[0])  # Approximate
                         db.set_pipeline_progress(pipeline_id, shard_id + 1, shards_completed, samples_processed)
 
+                        # Bound WAL growth so auto-checkpoint doesn't ambush
+                        # this hot writer mid-burst. PASSIVE is non-blocking,
+                        # but it can still surface SQLITE_BUSY when another
+                        # connection (dispatcher, auto-checkpoint) holds the
+                        # checkpoint lock. The checkpoint is purely a
+                        # best-effort optimization to bound WAL growth, so a
+                        # failure must NEVER propagate into the surrounding
+                        # completion handler -- doing so would mark this
+                        # already-succeeded shard's pipeline FAILED. Swallow
+                        # and log; the next checkpoint attempt will retry.
+                        _shards_since_checkpoint += 1
+                        if _shards_since_checkpoint >= _CHECKPOINT_EVERY_N_SHARDS:
+                            try:
+                                db.checkpoint()
+                            except Exception as checkpoint_err:
+                                self.logger.debug(
+                                    f"Non-blocking WAL checkpoint failed for pipeline "
+                                    f"{pipeline_id} after shard {shard_id} (will retry on "
+                                    f"next interval): {checkpoint_err}"
+                                )
+                            _shards_since_checkpoint = 0
+
                         # Mirror the dispatcher's shards_completed into an MLflow
                         # tag so the dashboard's Shards column updates live.
                         # Tag (not metric) because the frontend reads a single
@@ -1625,8 +2141,14 @@ class Controller:
                                 )
 
                         # Check if pipeline completed all shards
-                        if shards_completed >= num_shards:
-                            # Mark as completed (metrics will be finalized in Phase 8)
+                        pipeline_just_completed = shards_completed >= num_shards
+                        if pipeline_just_completed:
+                            # Mark as completed in DB + display. MLflow is finalized
+                            # further below, AFTER the terminal-step live metrics
+                            # have been logged, so the run flips to FINISHED with
+                            # all terminal metrics already on it (Bug 2 fix: the
+                            # dashboard previously stayed RUNNING until the whole
+                            # experiment ended).
                             db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
                             progress_display.update_pipeline(pipeline_id, status="COMPLETED")
                             self.logger.info(
@@ -1716,6 +2238,38 @@ class Controller:
                                                 except Exception as e:
                                                     self.logger.warning(f"Could not log metric {metric_name}_confidence_interval to MetricLogger: {e}")
 
+                                        # Tag the run with the user-defined metric keys (the keys
+                                        # the user's accumulate_metrics_fn returned, minus the
+                                        # framework-injected bookkeeping keys) so the runs-table
+                                        # "Columns" dropdown can sort user metrics first. Set on
+                                        # the live path so the tag is present while the run is still
+                                        # RUNNING. Best-effort: never break metric logging.
+                                        _live_user_metric_keys = [
+                                            k for k in metrics_with_ci
+                                            if k not in ("run_id", "model_name", "Samples Processed", "Processing Time", "Samples Per Second")
+                                        ]
+                                        # Also tag the framework-injected <metric>_confidence_interval
+                                        # siblings of user metrics as user metrics so the runs-table
+                                        # "Columns" dropdown / metric column order groups each CI right
+                                        # after its parent metric (alphabetical sort puts
+                                        # "<metric>_confidence_interval" immediately after "<metric>")
+                                        # instead of dumping them in the auto-computed tail block.
+                                        _seen_live = set(_live_user_metric_keys)
+                                        for _k in list(_live_user_metric_keys):
+                                            _ci_key = f"{_k}_confidence_interval"
+                                            if _ci_key not in _seen_live:
+                                                _live_user_metric_keys.append(_ci_key)
+                                                _seen_live.add(_ci_key)
+                                        if _live_user_metric_keys:
+                                            try:
+                                                self.metric_manager.set_tag(
+                                                    metric_run_id,
+                                                    "rapidfire.user_metrics",
+                                                    ",".join(_live_user_metric_keys),
+                                                )
+                                            except Exception as e:
+                                                self.logger.debug(f"Could not set rapidfire.user_metrics tag: {e}")
+
                                         if "Throughput" in display_metrics:
                                             throughput_value = display_metrics["Throughput"]["value"]
                                             if isinstance(throughput_value, (int, float)):
@@ -1723,6 +2277,18 @@ class Controller:
                                                     self.metric_manager.log_metric(metric_run_id, "Throughput", float(throughput_value), step=step)
                                                 except Exception as e:
                                                     self.logger.debug(f"Failed to log Throughput to MetricLogger: {e}")
+
+                                        # RAG API system metrics (latency / tokens / spend),
+                                        # cumulative as of this shard. No-op for vLLM pipelines.
+                                        # Passed the pipeline aggregator so the values are
+                                        # projected to full-dataset scale with a
+                                        # confidence-interval sibling.
+                                        self._log_api_system_metrics(
+                                            pipeline_config,
+                                            metric_run_id,
+                                            step,
+                                            aggregator=pipeline_aggregators[pipeline_id],
+                                        )
                                     except Exception as e:
                                         self.logger.debug(f"Failed to log metrics to MetricLogger: {e}")
                             except Exception as e:
@@ -1741,10 +2307,27 @@ class Controller:
                             f"({task_info['batch_count']} batches, {duration:.2f}s)"
                         )
 
+                        # Bug 2 fix: finalize the MLflow run immediately when a
+                        # pipeline completes all its shards, rather than waiting
+                        # until the whole experiment ends. By this point the
+                        # terminal-step live metrics (including throughput and
+                        # confidence intervals) have already been logged above,
+                        # so ending the run now flips the dashboard to FINISHED at
+                        # completion time. For a pipeline that was stopped during
+                        # its last shard (was_stopping=True), _handle_stop already
+                        # terminated the MLflow run as KILLED; flipping it to
+                        # FINISHED here is the correct parity (DB -> COMPLETED,
+                        # MLflow -> FINISHED) since the shard ran to completion.
+                        if pipeline_just_completed:
+                            finalized_run_id = self._finalize_mlflow_run(db, pipeline_id, "FINISHED")
+                            if finalized_run_id is not None:
+                                finalized_mlflow_run_ids.add(finalized_run_id)
+
                         # Optuna shard callback: evaluate pipeline and potentially prune
                         if (
                             shard_callback is not None
                             and shards_completed < num_shards
+                            and not was_stopping
                         ):
                             try:
                                 cb_metrics = display_metrics if display_metrics else {}
@@ -1918,7 +2501,19 @@ class Controller:
                 del active_tasks[actor_id]
                 scheduler.set_completed_task(actor_id)
 
-            # Check for interactive control requests (stop/resume/delete/clone)
+            # Check for interactive control requests (stop/resume/delete/clone).
+            # A pipeline is "in flight" if it has batches running (active_tasks)
+            # OR a non-blocking init pending (pending_inits). Both must be
+            # included so stop/delete take the in_flight=True branch of
+            # remove_pipeline, which leaves the actor busy and registers the
+            # pipeline in stopping_pipelines until the in-flight work drains.
+            # Omitting pending_inits makes a pending-init pipeline look idle,
+            # causing remove_pipeline(in_flight=False) to free the actor mid-
+            # init and skip stopping_pipelines -- reopening the double-booking
+            # leak and letting the init-drain path overwrite DELETED -> FAILED.
+            in_flight_pipeline_ids = {t["pipeline_id"] for t in active_tasks.values()} | {
+                p["pipeline_id"] for p in pending_inits.values()
+            }
             self.ic_handler.check_and_process_requests(
                 scheduler=scheduler,
                 db=db,
@@ -1931,6 +2526,7 @@ class Controller:
                 pipeline_to_max_completion_tokens=pipeline_to_max_completion_tokens,
                 # online_strategy_kwargs=online_strategy_kwargs,
                 progress_display=progress_display,
+                in_flight_pipeline_ids=in_flight_pipeline_ids,
             )
 
             # Get next schedule
@@ -1942,7 +2538,10 @@ class Controller:
                 # that may have arrived in the DB just after the previous IC check ran.
                 # This closes the narrow race window where all pipelines finish between
                 # the IC poll and this termination check.
-                if not active_tasks:
+                if not active_tasks and not pending_inits:
+                    in_flight_pipeline_ids = {t["pipeline_id"] for t in active_tasks.values()} | {
+                        p["pipeline_id"] for p in pending_inits.values()
+                    }
                     self.ic_handler.check_and_process_requests(
                         scheduler=scheduler,
                         db=db,
@@ -1954,12 +2553,21 @@ class Controller:
                         pipeline_to_rate_limiter=pipeline_to_rate_limiter,
                         pipeline_to_max_completion_tokens=pipeline_to_max_completion_tokens,
                         progress_display=progress_display,
+                        in_flight_pipeline_ids=in_flight_pipeline_ids,
                     )
                     schedule = scheduler.schedule()
 
                 if schedule["pipeline_id"] is None:
-                    self.logger.info("All pipelines completed all shards!")
-                    break
+                    # All pipelines have completed all shards. Only terminate
+                    # when nothing is in flight (no batches, no pending inits).
+                    # The scheduler invariants guarantee schedule(None) implies
+                    # nothing in flight, but guard explicitly so a pending init
+                    # can never be orphaned: if somehow in-flight work remains,
+                    # fall through to the all-actors-busy wait instead of breaking.
+                    if not active_tasks and not pending_inits:
+                        self.logger.info("All pipelines completed all shards!")
+                        break
+                    schedule = {"pipeline_id": -1, "actor_id": -1, "shard_id": -1}
 
             # Check if all actors busy
             if schedule["pipeline_id"] == -1:
@@ -1977,6 +2585,12 @@ class Controller:
                 all_futures = []
                 for task_info in active_tasks.values():
                     all_futures.extend(task_info["futures"])
+                # Include in-flight init refs so ray.wait wakes the moment any
+                # init finishes (not just when a batch finishes). Without this,
+                # when all actors are initializing (active_tasks empty) the loop
+                # would time.sleep(0.5) in a slow spin instead of waking on init
+                # completion.
+                all_futures.extend(p["init_ref"] for p in pending_inits.values())
                 if all_futures:
                     _ready, not_ready = ray.wait(all_futures, num_returns=len(all_futures), timeout=0)
                     if not_ready:
@@ -1989,6 +2603,27 @@ class Controller:
             pipeline_id = schedule["pipeline_id"]
             actor_id = schedule["actor_id"]
             shard_id = schedule["shard_id"]
+
+            # Safety net: never dispatch to an actor that already has an
+            # in-flight task. The scheduler and active_tasks should agree,
+            # but if they ever diverge (e.g. a stop raced with completion)
+            # this prevents silently overwriting active_tasks[actor_id] and
+            # orphaning the in-flight futures. Roll back the mutations
+            # schedule() already made (actor assignment + generation bump)
+            # before re-looping; otherwise the scheduler would believe the
+            # new pipeline owns this actor while active_tasks still tracks
+            # the old in-flight shard, and the old shard's later
+            # set_completed_task would free/credit the wrong pipeline.
+            if actor_id in active_tasks or actor_id in pending_inits:
+                self.logger.warning(
+                    f"Scheduler returned busy actor {actor_id} (active_tasks has "
+                    f"pipeline {active_tasks[actor_id]['pipeline_id'] if actor_id in active_tasks else 'N/A'}"
+                    f" / pending_inits has it); skipping dispatch "
+                    f"of pipeline {pipeline_id} shard {shard_id} to avoid double-booking."
+                )
+                scheduler.rollback_last_schedule()
+                time.sleep(0.1)
+                continue
 
             pipeline_config = pipeline_id_to_config[pipeline_id]
             pipeline = pipeline_config["pipeline"]
@@ -2083,87 +2718,38 @@ class Controller:
             pipeline_data = db.get_pipeline(pipeline_id)
             metric_run_id = pipeline_data.get("metric_run_id") if pipeline_data else None
 
-            try:
-                ray.get(
-                    actor.initialize_for_pipeline.remote(
-                        engine_class=pipeline.get_engine_class(),
-                        engine_kwargs=engine_kwargs,
-                        context_generator_ref=context_generator_ref,
-                        pipeline_search_cfg=pipeline_search_cfg,
-                        pipeline_reranker_cfg=pipeline_reranker_cfg,
-                        pipeline_id=pipeline_id,
-                        model_name=pipeline_model_name,
-                        metric_run_id=metric_run_id,
-                    )
-                )
-            except Exception as init_err:
-                # Mark only this pipeline as FAILED; free the actor and continue.
-                error_msg = str(init_err)
-                self.logger.exception(
-                    f"Pipeline {pipeline_id} ({pipeline_name}) failed to initialize "
-                    f"on actor {actor_id}: {error_msg}"
-                )
-                db.set_actor_task_status(task_id, TaskStatus.FAILED)
-                db.set_actor_task_error(task_id, error_msg)
-                db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
-                db.set_pipeline_error(pipeline_id, error_msg)
-                self._finalize_mlflow_run(db, pipeline_id, "FAILED")
-                scheduler.remove_pipeline(pipeline_id)
-                if progress_display:
-                    progress_display.update_pipeline(pipeline_id, status="FAILED")
-                continue
-
-            self.logger.debug(f"Initialized actor {actor_id} for pipeline {pipeline_id} ({pipeline_name})")
-
-            # Mirror the init-failure handler: if dispatch or bookkeeping
-            # raises, free the actor via remove_pipeline so it doesn't leak
-            # busy state.
-            try:
-                futures = []
-                preprocess_fn = pipeline_config.get("preprocess_fn")
-                postprocess_fn = pipeline_config.get("postprocess_fn")
-                compute_metrics_fn = pipeline_config.get("compute_metrics_fn")
-                accumulate_metrics_fn = pipeline_config.get("accumulate_metrics_fn")
-                for batch in batches:
-                    future = actor.process_batch.remote(
-                        batch,
-                        preprocess_fn=preprocess_fn,
-                        postprocess_fn=postprocess_fn,
-                        compute_metrics_fn=compute_metrics_fn if accumulate_metrics_fn else None,
-                    )
-                    futures.append(future)
-
-                # Track task
-                task_start_time = time.time()
-                active_tasks[actor_id] = {
-                    "futures": futures,
-                    "pipeline_id": pipeline_id,
-                    "shard_id": shard_id,
-                    "task_id": task_id,
-                    "batch_count": len(batches),
-                    "start_time": task_start_time,
-                }
-
-                # Update task status to in-progress
-                db.set_actor_task_start_time(task_id, task_start_time)
-                db.set_actor_task_status(task_id, TaskStatus.IN_PROGRESS)
-                db.set_pipeline_current_shard(pipeline_id, shard_id)
-            except Exception as dispatch_err:
-                error_msg = str(dispatch_err)
-                self.logger.exception(
-                    f"Pipeline {pipeline_id} ({pipeline_name}) failed during batch "
-                    f"dispatch on actor {actor_id}: {error_msg}"
-                )
-                db.set_actor_task_status(task_id, TaskStatus.FAILED)
-                db.set_actor_task_error(task_id, error_msg)
-                db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
-                db.set_pipeline_error(pipeline_id, error_msg)
-                self._finalize_mlflow_run(db, pipeline_id, "FAILED")
-                active_tasks.pop(actor_id, None)
-                scheduler.remove_pipeline(pipeline_id)
-                if progress_display:
-                    progress_display.update_pipeline(pipeline_id, status="FAILED")
-                continue
+            # Fire initialize_for_pipeline NON-BLOCKING so the controller can
+            # immediately loop back and fire init on the next free actor (all
+            # free actors load in parallel on their own GPUs, eliminating the
+            # serial ~2min/actor staircase). process_batch cannot run until
+            # this init resolves (it depends on the engine/rag_spec init sets),
+            # so batch submission is deferred to the init-drain step at the top
+            # of the loop, which submits batches the moment this future resolves.
+            init_ref = actor.initialize_for_pipeline.remote(
+                engine_class=pipeline.get_engine_class(),
+                engine_kwargs=engine_kwargs,
+                context_generator_ref=context_generator_ref,
+                pipeline_search_cfg=pipeline_search_cfg,
+                pipeline_reranker_cfg=pipeline_reranker_cfg,
+                pipeline_id=pipeline_id,
+                model_name=pipeline_model_name,
+                metric_run_id=metric_run_id,
+            )
+            pending_inits[actor_id] = {
+                "init_ref": init_ref,
+                "actor": actor,
+                "pipeline_id": pipeline_id,
+                "shard_id": shard_id,
+                "task_id": task_id,
+                "batches": batches,
+                "pipeline_config": pipeline_config,
+                "pipeline_name": pipeline_name,
+            }
+            self.logger.debug(
+                f"Fired non-blocking init for actor {actor_id}, pipeline {pipeline_id} "
+                f"({pipeline_name}) shard {shard_id}"
+            )
+            continue
 
         # Finalize Optuna shard callback with final metrics from all pipelines.
         # We must accumulate the raw per-shard metric lists into flat dicts
@@ -2224,6 +2810,7 @@ class Controller:
             progress_display,
             pipeline_id_to_info,
             total_dataset_size=total_dataset_size,
+            finalized_mlflow_run_ids=finalized_mlflow_run_ids,
         )
 
 

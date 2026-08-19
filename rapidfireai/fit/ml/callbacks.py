@@ -461,6 +461,23 @@ class GenerationMetricsCallback(TrainerCallback):
 
         return metrics
 
+    def _tag_user_metrics(self, metrics: dict[str, float]) -> None:
+        """Tag the MLflow run with the user-defined metric keys (the keys the
+        user's ``compute_metrics`` returned) so the runs-table "Columns"
+        dropdown can sort user metrics ahead of auto-computed Trainer metrics
+        (``loss``, ``grad_norm``, ``chunk number``, …). Best-effort: failures
+        are logged at debug and never propagated, so a tracking-backend hiccup
+        can't break evaluation. Only rank 0 should call this (FSDP path
+        broadcasts metrics to all ranks, but only rank 0 owns the run)."""
+        if not metrics or not self.metric_logger or not self.metric_run_id:
+            return
+        try:
+            self.metric_logger.set_tag(
+                self.metric_run_id, "rapidfire.user_metrics", ",".join(metrics.keys())
+            )
+        except Exception as e:
+            self._logger.debug(f"Could not set rapidfire.user_metrics tag: {e}")
+
     def _compute_metrics_standard(
         self,
         model,
@@ -488,6 +505,7 @@ class GenerationMetricsCallback(TrainerCallback):
             del predictions, references
             gc.collect()
 
+        self._tag_user_metrics(metrics)
         return metrics
 
     def _compute_metrics_fsdp(
@@ -596,6 +614,9 @@ class GenerationMetricsCallback(TrainerCallback):
             finally:
                 # Clean up large lists on rank 0
                 del flat_preds, flat_refs, all_predictions, all_references
+
+            # Only rank 0 owns the MLflow run; tag it with the user metric keys.
+            self._tag_user_metrics(metrics)
 
         # Clean up per-rank predictions/references
         del predictions, references

@@ -176,34 +176,87 @@ class PipelineProgressDisplay:
     Keys that match sensitive patterns (api_key, password, etc.) are automatically hidden.
     """
 
-    # Substring patterns — any key whose lowercased name contains one of these strings is hidden.
+    # Substring patterns — any key whose lowercased leaf contains one of these is hidden.
+    # NOTE: the bare ``token`` substring is deliberately NOT matched naively: it
+    # collides with ordinary tokenizer/generation knobs (``tokenizer``,
+    # ``tokenizer_kwargs``, ``*_token_id``, ``max_tokens``,
+    # ``max_completion_tokens``). Those are exempted in :func:`_is_sensitive_key`
+    # so the display shows them. Real credential token fields use the bare
+    # ``token`` leaf or the singular ``*_token`` suffix (``api_token``,
+    # ``access_token``), which are still matched.
     _SENSITIVE_PATTERNS = frozenset({
         "api_key",
         "api_secret",
         "secret",
         "password",
-        "token",
         "credentials",
         "connection",
         "device",
     })
 
+    # Leaves that contain ``token`` but are NOT credentials — kept as columns.
+    _TOKEN_KNOB_EXEMPT_PREFIXES = ("tokenizer",)  # ``tokenizer`` & ``tokenizer_kwargs``
+    _TOKEN_KNOB_EXEMPT_SUFFIXES = (
+        "_token_id",  # ``pad_token_id``, ``eos_token_id``, ``bos_token_id``, ...
+        "_tokens",  # ``max_tokens``, ``max_completion_tokens`` (generation-length knobs)
+    )
+
+    @staticmethod
+    def _is_token_leaf(leaf: str) -> bool:
+        """True if a lowercased leaf is a credential token field.
+
+        Matches the bare ``token`` leaf or any singular ``*_token`` suffix
+        (``api_token``, ``access_token``, ``auth_token``). The tokenizer-derived
+        knobs (``tokenizer``, ``*_token_id``, ``*_tokens``) are excluded
+        upstream by the prefix/suffix exemptions, so this only needs to
+        recognise the credential shapes.
+        """
+        if leaf == "token":
+            return True
+        return leaf.endswith("_token") and not leaf.endswith("_tokens")
+
+    @staticmethod
+    def _is_sensitive_key(key: str) -> bool:
+        """Check if a flattened config key is a secret to hide from the display.
+
+        Matched against the last dotted segment (lowercased). Plural
+        ``*_tokens`` leaves (``max_tokens``, ``max_completion_tokens``) and
+        tokenizer knobs (``tokenizer``, ``*_token_id``) are kept; ``api_key`` /
+        ``secret`` / bare ``token`` / singular ``*_token`` are hidden.
+        """
+        leaf = key.rsplit(".", 1)[-1].lower()
+        if any(leaf.startswith(p) for p in PipelineProgressDisplay._TOKEN_KNOB_EXEMPT_PREFIXES):
+            return False
+        if any(leaf.endswith(s) for s in PipelineProgressDisplay._TOKEN_KNOB_EXEMPT_SUFFIXES):
+            return False
+        if PipelineProgressDisplay._is_token_leaf(leaf):
+            return True
+        return any(s in leaf for s in PipelineProgressDisplay._SENSITIVE_PATTERNS)
+
     _CFG_FIELDS_TO_FLATTEN = frozenset({
         "text_splitter_cfg", "embedding_cfg", "vector_store_cfg", "search_cfg", "reranker_cfg",
+        "prompt_manager_config",
+        "model_config", "sampling_params", "endpoint_config", "client_config",
     })
 
     _METADATA_KEYS = [
         "text_splitter_cfg",
         "embedding_cfg", "vector_store_cfg",
         "search_cfg", "reranker_cfg",
-        "sampling_params", "prompt_manager_k", "model_config",
+        "sampling_params", "endpoint_config", "client_config",
+        "rpm_limit", "tpm_limit", "itpm_limit", "otpm_limit",
+        "max_completion_tokens",
+        "prompt_manager_config", "model_config",
     ]
 
     _METADATA_PREFIX_ORDER = [
         "text_splitter_cfg",
         "embedding_cfg", "vector_store_cfg",
         "search_cfg", "reranker_cfg",
-        "sampling_params", "prompt_manager_k", "model_config",
+        "sampling_params", "endpoint_config", "client_config",
+        "rpm_limit", "tpm_limit", "itpm_limit", "otpm_limit",
+        "max_completion_tokens",
+        "prompt_manager_config", "model_config",
     ]
 
     def __init__(self, pipelines: list[dict], num_shards: int):
@@ -226,7 +279,9 @@ class PipelineProgressDisplay:
                       - reranker_cfg (optional, dict)
                       Generation stage:
                       - sampling_params (optional, dict)
-                      - prompt_manager_k (optional, int)
+                      - prompt_manager_config (optional, dict; indexing-stage
+                        knobs for the fewshot example selector — display only,
+                        not clone-modifyable)
                       - model_config (optional, dict)
             num_shards: Total number of shards
         """
@@ -261,15 +316,6 @@ class PipelineProgressDisplay:
         self.display_handle = None
 
     @staticmethod
-    def _is_sensitive_key(key: str) -> bool:
-        """Check if a key (or any component of a dot-separated key) matches a sensitive pattern."""
-        key_lower = key.lower()
-        for pattern in PipelineProgressDisplay._SENSITIVE_PATTERNS:
-            if pattern in key_lower:
-                return True
-        return False
-
-    @staticmethod
     def _flatten_dict(prefix: str, d: dict, result: dict | None = None) -> dict:
         """
         Recursively flatten a dict into dot-notation keys, skipping sensitive keys.
@@ -298,27 +344,14 @@ class PipelineProgressDisplay:
         Flatten a pipeline's raw metadata dict for DataFrame display.
 
         Dict-valued fields listed in ``_CFG_FIELDS_TO_FLATTEN`` are recursively
-        expanded into dot-notation columns.  All other fields are kept as-is
-        (with special formatting for ``sampling_params`` and ``model_config``).
+        expanded into dot-notation columns (e.g. ``model_config.max_tokens``,
+        ``endpoint_config.endpoint.name``, ``sampling_params.temperature``).
+        All other fields are kept as-is.
         """
         flat: dict[str, Any] = {}
         for key, value in metadata.items():
             if key in self._CFG_FIELDS_TO_FLATTEN and isinstance(value, dict):
                 self._flatten_dict(key, value, flat)
-            elif key == "sampling_params" and isinstance(value, dict):
-                parts = []
-                if "temperature" in value:
-                    parts.append(f"temp={value['temperature']}")
-                if "top_p" in value:
-                    parts.append(f"top_p={value['top_p']}")
-                if "top_k" in value:
-                    parts.append(f"top_k={value['top_k']}")
-                if "max_tokens" in value:
-                    parts.append(f"max_tokens={value['max_tokens']}")
-                flat[key] = ", ".join(parts) if parts else str(value)[:50]
-            elif key == "model_config" and isinstance(value, dict):
-                parts = [f"{k}={v}" for k, v in value.items() if k != "model"]
-                flat[key] = ", ".join(parts) if parts else "-"
             else:
                 flat[key] = value
         return flat

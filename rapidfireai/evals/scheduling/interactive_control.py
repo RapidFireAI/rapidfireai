@@ -13,13 +13,38 @@ import time
 
 from rapidfireai.evals.utils.constants import RERANKER_CLASS_REGISTRY, SEARCH_DEFAULTS, SEARCH_TYPE_KEYS
 
-from rapidfireai.automl import RFAPIModelConfig, RFvLLMModelConfig, get_flattened_config_leaf
+from rapidfireai.automl import RFAPIModelConfig, RFvLLMModelConfig, get_flattened_config_leaf, sanitize_flat_config
 from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
 from rapidfireai.evals.utils.constants import ICOperation, ICStatus, PipelineStatus
 from rapidfireai.evals.utils.logger import RFLogger
-from rapidfireai.evals.utils.serialize import extract_pipeline_config_json
+from rapidfireai.evals.utils.serialize import (
+    build_pipeline_knobs,
+    describe_prompt_manager,
+    extract_pipeline_config_json,
+)
+
+
+def _coerce_json_obj(value):
+    """Return a dict/list when ``value`` is a JSON object/array string.
+
+    Clone-modify deltas normally arrive as nested JSON objects, but some
+    callers (e.g. an LLM tool emitting a section as stringified JSON) send a
+    JSON *string* for ``rag_config`` / ``search_cfg`` / ``reranker_cfg``.
+    Without this, ``"search_cfg" in rag_config`` matches as a substring and
+    ``rag_config["search_cfg"]`` then raises ``TypeError: string indices must
+    be integers``. Non-string values and plain strings are returned unchanged.
+    """
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped or stripped[0] not in "{[":
+        return value
+    try:
+        return json.loads(stripped)
+    except (ValueError, TypeError):
+        return value
 
 
 class InteractiveControlHandler:
@@ -65,6 +90,7 @@ class InteractiveControlHandler:
         pipeline_to_rate_limiter: dict = None,
         pipeline_to_max_completion_tokens: dict = None,
         progress_display=None,
+        in_flight_pipeline_ids: set[int] | None = None,
     ) -> None:
         """
         Check for and process pending interactive control operations.
@@ -82,10 +108,19 @@ class InteractiveControlHandler:
             pipeline_id_to_config: Dict mapping pipeline_id to (name, config)
             online_strategy_kwargs: Optional online aggregation strategy parameters
             progress_display: Optional PipelineProgressDisplay instance for updating UI
+            in_flight_pipeline_ids: Set of pipeline_ids that currently have an
+                actor processing an in-flight shard (derived from the
+                controller's ``active_tasks``). Passed to stop/delete so the
+                scheduler does not prematurely free an actor that is still
+                busy -- the actor is released naturally when the in-flight
+                shard completes. ``None`` is treated as empty (no in-flight).
         """
         pending_ops = db.get_pending_ic_operations()
         if not pending_ops:
             return
+
+        if in_flight_pipeline_ids is None:
+            in_flight_pipeline_ids = set()
 
         for op in pending_ops:
             ic_id = op["ic_id"]
@@ -97,13 +132,17 @@ class InteractiveControlHandler:
                 db.update_ic_operation_status(ic_id, ICStatus.PROCESSING.value)
 
                 if operation == ICOperation.STOP.value:
-                    self._handle_stop(pipeline_id, scheduler, db, progress_display)
+                    self._handle_stop(
+                        pipeline_id, scheduler, db, progress_display, in_flight_pipeline_ids
+                    )
 
                 elif operation == ICOperation.RESUME.value:
                     self._handle_resume(pipeline_id, scheduler, db, num_shards, progress_display)
 
                 elif operation == ICOperation.DELETE.value:
-                    self._handle_delete(pipeline_id, scheduler, db, pipeline_results, progress_display)
+                    self._handle_delete(
+                        pipeline_id, scheduler, db, pipeline_results, progress_display, in_flight_pipeline_ids
+                    )
 
                 elif operation == ICOperation.CLONE.value:
                     self._handle_clone(
@@ -139,19 +178,36 @@ class InteractiveControlHandler:
                 time.sleep(0.5)
 
     def _handle_stop(
-        self, pipeline_id: int, scheduler: PipelineScheduler, db: RFDatabase, progress_display=None
+        self,
+        pipeline_id: int,
+        scheduler: PipelineScheduler,
+        db: RFDatabase,
+        progress_display=None,
+        in_flight_pipeline_ids: set[int] | None = None,
     ) -> None:
         """
         Stop a pipeline (remove from scheduling, save progress).
+
+        If the pipeline currently has an in-flight shard on some actor, the
+        actor is NOT freed here -- it keeps running the in-flight shard to
+        completion and is released naturally when that shard finishes. No
+        further shards are scheduled for this pipeline.
 
         Args:
             pipeline_id: ID of pipeline to stop
             scheduler: PipelineScheduler instance
             db: Database instance
             progress_display: Optional progress display to update
+            in_flight_pipeline_ids: Set of pipeline_ids with an in-flight shard
         """
-        # Remove from scheduler (returns shards completed)
-        shards_completed = scheduler.remove_pipeline(pipeline_id)
+        if in_flight_pipeline_ids is None:
+            in_flight_pipeline_ids = set()
+
+        # Remove from scheduler (returns shards completed). Do not free the
+        # actor if a shard is in flight -- it will be freed on completion.
+        shards_completed = scheduler.remove_pipeline(
+            pipeline_id, in_flight=(pipeline_id in in_flight_pipeline_ids)
+        )
 
         # Update database status
         db.set_pipeline_status(pipeline_id, PipelineStatus.STOPPED)
@@ -237,9 +293,15 @@ class InteractiveControlHandler:
         db: RFDatabase,
         pipeline_results: dict,
         progress_display=None,
+        in_flight_pipeline_ids: set[int] | None = None,
     ) -> None:
         """
         Delete a pipeline permanently (remove from scheduler and mark deleted).
+
+        If the pipeline currently has an in-flight shard on some actor, the
+        actor is NOT freed here -- it keeps running the in-flight shard to
+        completion and is released naturally when that shard finishes. No
+        further shards are scheduled for this pipeline.
 
         Args:
             pipeline_id: ID of pipeline to delete
@@ -247,9 +309,15 @@ class InteractiveControlHandler:
             db: Database instance
             pipeline_results: Dict mapping pipeline_id to results/metrics
             progress_display: Optional progress display to update
+            in_flight_pipeline_ids: Set of pipeline_ids with an in-flight shard
         """
-        # Remove from scheduler
-        scheduler.remove_pipeline(pipeline_id)
+        if in_flight_pipeline_ids is None:
+            in_flight_pipeline_ids = set()
+
+        # Remove from scheduler. Do not free the actor if a shard is in flight.
+        scheduler.remove_pipeline(
+            pipeline_id, in_flight=(pipeline_id in in_flight_pipeline_ids)
+        )
 
         # Delete run from MetricLogger (MLflow) - mirrors fit mode behavior
         if self.metric_manager:
@@ -312,12 +380,9 @@ class InteractiveControlHandler:
         data = json.loads(request_data)
         parent_pipeline_id = data["parent_pipeline_id"]
         edited_json = data["config_json"]
-        # ``source`` is set to ``"autopilot"`` by the dispatcher's
-        # ``/clone-modify-run`` endpoint (used by the Converge autopilot
-        # and the chat agent's ``clone_run`` tool) and is absent for the
-        # UI "Clone Run" button (``/clone-pipeline``). Only LLM-driven
-        # clones get the duplicate-config gate below; humans may
-        # legitimately want to re-launch an existing config.
+        # Set to ``"autopilot"`` by ``/clone-modify-run`` for LLM-driven clones
+        # and absent for the UI's "Clone Run" button; only the former get the
+        # duplicate-config gate below.
         clone_source = data.get("source")
 
         # Get parent pipeline from database to inherit context_id
@@ -363,15 +428,26 @@ class InteractiveControlHandler:
         # Indexing-stage params (embedding_cfg, vector_store_cfg, text_splitter) are
         # not accepted here — cloned pipelines always reuse the parent's pre-built index.
         if rag is not None and "rag_config" in edited_json:
-            rag_config = edited_json["rag_config"]
+            rag_config = _coerce_json_obj(edited_json["rag_config"])
             self.logger.info(f"Applying RAG config changes: {rag_config}")
+
+            if not isinstance(rag_config, dict):
+                raise ValueError(
+                    f"rag_config must be a JSON object, got "
+                    f"{type(rag_config).__name__}: {rag_config!r}"
+                )
 
             # search_cfg: {"type": ..., <type-specific kwargs>}
             # If the search type changes (e.g. parent used similarity, clone uses MMR),
             # reset to fresh type-specific defaults so the parent's irrelevant kwargs
             # (e.g. score_threshold) are not carried over.
             if "search_cfg" in rag_config:
-                search_cfg = rag_config["search_cfg"]
+                search_cfg = _coerce_json_obj(rag_config["search_cfg"])
+                if not isinstance(search_cfg, dict):
+                    raise ValueError(
+                        f"search_cfg must be a JSON object, got "
+                        f"{type(search_cfg).__name__}: {search_cfg!r}"
+                    )
                 new_type = search_cfg.get("type", rag.search_type)
                 rag.search_type = new_type
                 # Start from type-specific defaults, then apply user-provided overrides
@@ -386,7 +462,12 @@ class InteractiveControlHandler:
             # build_pipeline() can call it.  If the string doesn't match any known
             # class we raise a clear error rather than silently storing a string.
             if "reranker_cfg" in rag_config:
-                reranker_cfg = rag_config["reranker_cfg"]
+                reranker_cfg = _coerce_json_obj(rag_config["reranker_cfg"])
+                if not isinstance(reranker_cfg, dict):
+                    raise ValueError(
+                        f"reranker_cfg must be a JSON object, got "
+                        f"{type(reranker_cfg).__name__}: {reranker_cfg!r}"
+                    )
                 if "class" in reranker_cfg:
                     cls_value = reranker_cfg["class"]
                     if isinstance(cls_value, type):
@@ -529,51 +610,21 @@ class InteractiveControlHandler:
             # No parent strategy, use user's strategy as-is
             pipeline_config_dict["online_strategy_kwargs"] = edited_json["online_strategy_kwargs"]
 
-        # Generate flattened config for the IC Ops panel + Converge autopilot.
-        # Mirrors Controller._register_pipelines (controller.py L840-842): the
-        # converge backend's build_config_table() skips any run whose
-        # flattened_config is empty ("Run ID N does not have a valid
-        # 'flattened_config'. Skipping."), which would make every cloned run
-        # invisible to the LLM autopilot, defeating the whole IC clone loop.
+        # Flattened config for the IC Ops panel, mirroring
+        # Controller._register_pipelines. Consumers skip runs whose
+        # flattened_config is empty, which would hide every cloned run.
         clone_json_config = extract_pipeline_config_json(pipeline_config_dict)
         clone_flattened_config = (
             get_flattened_config_leaf(clone_json_config) if clone_json_config else {}
         )
 
-        # Deduplication (autopilot/chat-agent only): refuse to launch a
-        # clone whose effective config is identical to an existing
-        # pipeline.
-        #
-        # Why this is needed: the autopilot's ``clone_modify [...]`` proposals
-        # can collapse back onto an existing pipeline once the deltas are
-        # applied to the parent (e.g. proposing ``top_n=5`` on a parent
-        # whose top_n is already 5, or "adding" a reranker that the parent
-        # already has -- see Trial 30 in scifact_D_converge, which ended up
-        # byte-for-byte identical to Trial 8). The chat ``clone_run`` tool
-        # can hit the same trap. Letting these through wastes API budget,
-        # pollutes the search space with duplicates, and produces misleading
-        # "different accuracy with same config" results whose only source of
-        # variance is non-deterministic LLM sampling.
-        #
-        # Why this is gated on ``clone_source == "autopilot"``: the human
-        # UI's "Clone Run" button (``/clone-pipeline``) routes through this
-        # same handler but does not set ``source``. A user may deliberately
-        # want to launch a duplicate (e.g. to estimate run-to-run variance
-        # of a stochastic generator), so we never block that path -- only
-        # the LLM-driven paths, where the duplicate is almost always a bug.
-        #
-        # Comparison key: ``(context_id, flattened_config)``. ``context_id``
-        # encodes the indexing stage (chunk size, embedding model, vector
-        # store), which clones always inherit from their parent. The
-        # ``flattened_config`` returned by ``extract_pipeline_config_json`` +
-        # ``get_flattened_config_leaf`` covers retrieval (search_cfg,
-        # reranker_cfg) + generation (model_config, sampling_params,
-        # rate-limit knobs, batch_size, online_strategy_kwargs). Together
-        # they fully determine pipeline behaviour, so equality on this
-        # tuple means the two pipelines are functionally identical.
-        # Stopped/completed pipelines still count as duplicates (the config
-        # was already explored). Deleted/failed pipelines do not -- they
-        # never produced data we would be redundantly recomputing.
+        # Deduplication, LLM-driven clones only: a proposed delta can collapse
+        # back onto an existing pipeline once merged with the parent, burning
+        # budget on a run whose only variance is sampling noise. The UI's
+        # "Clone Run" button leaves ``source`` unset and is never blocked -- a
+        # user may want a duplicate to gauge run-to-run variance. Identity is
+        # ``(context_id, flattened_config)``; deleted/failed pipelines are
+        # excluded since they produced no data worth reusing.
         if clone_source == "autopilot":
             existing_pipelines = db.get_all_pipelines(include_decoded_config=False)
             for existing in existing_pipelines:
@@ -623,30 +674,26 @@ class InteractiveControlHandler:
                 if hasattr(model_config, "model_name"):
                     self.metric_manager.log_param(metric_run_id, "model", model_config.model_name)
 
-                # Log RAG params
-                if rag and hasattr(rag, "search_type"):
-                    self.metric_manager.log_param(metric_run_id, "rag_search_type", str(rag.search_type))
-                if rag and hasattr(rag, "search_kwargs") and rag.search_kwargs:
-                    k = rag.search_kwargs.get("k")
-                    if k is not None:
-                        self.metric_manager.log_param(metric_run_id, "rag_k", str(k))
+                # Log the FULL flattened config (indexing + retrieval + generation)
+                # to MLflow, mirroring Controller._register_pipelines so cloned
+                # pipelines surface the same knobs as their parents.
+                from rapidfireai.evals.scheduling.controller import _RAG_CONFIG_KEYS_TO_DROP
 
-                # Log sampling params
-                if hasattr(model_config, "sampling_params") and model_config.sampling_params:
-                    sampling_str = json.dumps(model_config.sampling_params) if isinstance(model_config.sampling_params, dict) else str(model_config.sampling_params)
-                    self.metric_manager.log_param(metric_run_id, "sampling_params", sampling_str)
+                knob_cfg = build_pipeline_knobs(pipeline_config_dict)
+                flat = get_flattened_config_leaf(knob_cfg) if knob_cfg else {}
+                for drop_key in _RAG_CONFIG_KEYS_TO_DROP:
+                    flat.pop(drop_key, None)
+                flat = sanitize_flat_config(flat)
+                for key, value in flat.items():
+                    try:
+                        param_value = value if isinstance(value, (int, float, str, bool)) else str(value)
+                        self.metric_manager.log_param(metric_run_id, key, param_value)
+                    except Exception as e:
+                        self.logger.warning(f"Could not log param {key} for clone {new_pipeline_id}: {e}")
 
-                # Seed shard-progress tags so the dashboard's Shards
-                # column renders "0/N" -> "k/N" -> "N/N" for this clone.
-                # Clones always start fresh at shard 0 (see the
-                # ``scheduler.add_pipeline(..., shards_completed=0)``
-                # call later in this method); the per-shard bump that
-                # advances ``rapidfire.progress.current`` lives in the
-                # controller loop (``controller.py``: after
-                # ``db.set_pipeline_progress``). Without this seeding,
-                # cloned runs would render "-" in the Shards column even
-                # though they're advancing -- the column renderer
-                # requires *both* tags to be present.
+                # Seed both shard-progress tags: the dashboard's Shards column
+                # renders "-" unless both are present. Clones start at shard 0;
+                # the controller loop advances ``rapidfire.progress.current``.
                 try:
                     self.metric_manager.set_tag(
                         metric_run_id, "rapidfire.progress.total", str(num_shards)
@@ -683,15 +730,11 @@ class InteractiveControlHandler:
                         break
 
             if existing_rate_limiter:
-                # The reused rate-limiter actor is keyed on provider, so it
-                # only knows about endpoint names that existed at startup
-                # (or were registered by previous clones).  If this clone
-                # introduces a new endpoint name, register it now —
-                # otherwise the engine's first ``acquire_slot`` /
-                # ``count_prompt_tokens`` call would raise
-                # ``ValueError: Model '<name>' not found in rate limits``.
-                # ``register_model`` is idempotent: a no-op when the
-                # endpoint is already known.
+                # The reused rate-limiter actor is keyed on provider, so it only
+                # knows endpoint names registered so far. A clone introducing a
+                # new one must register it here or the first ``acquire_slot``
+                # raises "Model '<name>' not found in rate limits".
+                # ``register_model`` is idempotent.
                 import ray
 
                 ray.get(
@@ -762,7 +805,7 @@ class InteractiveControlHandler:
         search_cfg = None
         reranker_cfg = None
         sampling_params = None
-        prompt_manager_k = None
+        prompt_manager_config = None
         model_config_dict = None
 
         if hasattr(pipeline, "model_config") and pipeline.model_config:
@@ -799,8 +842,27 @@ class InteractiveControlHandler:
         if hasattr(pipeline, "sampling_params") and pipeline.sampling_params is not None:
             sampling_params = pipeline._user_params.get("sampling_params", None)
 
+        # RFAPIModelConfig generator knobs (endpoint/client config + rate limits).
+        endpoint_config = None
+        client_config = None
+        rpm_limit = getattr(pipeline, "rpm_limit", None)
+        tpm_limit = getattr(pipeline, "tpm_limit", None)
+        itpm_limit = getattr(pipeline, "itpm_limit", None)
+        otpm_limit = getattr(pipeline, "otpm_limit", None)
+        max_completion_tokens = getattr(pipeline, "max_completion_tokens", None)
+        if getattr(pipeline, "endpoint_config", None) is not None:
+            endpoint_config = dict(pipeline.endpoint_config)
+            endpoint_config.pop("api_key", None)
+            if not endpoint_config:
+                endpoint_config = None
+        if getattr(pipeline, "client_config", None):
+            sensitive = {"api_key", "secret", "token", "password", "key"}
+            client_config = {k: v for k, v in pipeline.client_config.items() if k.lower() not in sensitive}
+            if not client_config:
+                client_config = None
+
         if hasattr(pipeline, "prompt_manager") and pipeline.prompt_manager is not None:
-            prompt_manager_k = getattr(pipeline.prompt_manager, "k", None)
+            prompt_manager_config = describe_prompt_manager(pipeline.prompt_manager)
 
         # Add to progress display with ALL fields (indexing + retrieval + generation)
         if progress_display:
@@ -815,7 +877,14 @@ class InteractiveControlHandler:
                 search_cfg=search_cfg,
                 reranker_cfg=reranker_cfg,
                 sampling_params=sampling_params,
-                prompt_manager_k=prompt_manager_k,
+                endpoint_config=endpoint_config,
+                client_config=client_config,
+                rpm_limit=rpm_limit,
+                tpm_limit=tpm_limit,
+                itpm_limit=itpm_limit,
+                otpm_limit=otpm_limit,
+                max_completion_tokens=max_completion_tokens,
+                prompt_manager_config=prompt_manager_config,
                 model_config=model_config_dict,
             )
 

@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS experiments (
     config_options TEXT NOT NULL,
     status TEXT NOT NULL,
     current_task TEXT NOT NULL,
-    error TEXT DEFAULT ''
+    error TEXT DEFAULT '',
+    experiment_mode TEXT NOT NULL DEFAULT 'fit'
 );
 
 -- Runs table
