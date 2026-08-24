@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import copy
 import math
+import random
 import statistics
 import uuid
 from dataclasses import fields, is_dataclass
@@ -184,6 +185,13 @@ def _extract_search_space(
     structures that work with ``RFGridSearch`` / ``RFRandomSearch`` also work
     here (including ``RFModelConfig`` dataclass templates with nested
     ``peft_config`` / ``training_args`` objects).
+
+    Only *unconditional* entries appear here.  A ``List`` is terminal: knobs
+    nested inside its members depend on which member Optuna draws, so they are
+    conditional parameters registered at suggest time by
+    :func:`_sample_list_member` rather than listed up front.  Inspect
+    ``trial.params`` -- not this function -- to see everything a trial actually
+    sampled.
     """
     params: list[tuple[str, Range | List]] = []
 
@@ -204,6 +212,42 @@ def _extract_search_space(
             params.extend(_extract_search_space(value, child_prefix))
     # Primitive or non-searchable -- skip
     return params
+
+
+def _find_unsampled_params(obj: Any, prefix: str = "") -> list[str]:
+    """Return dotted paths of any ``Range`` / ``List`` still present in *obj*.
+
+    Safety net used after sampling: anything reported here would otherwise be
+    resolved by ``recursive_expand_randomsearch`` via ``item.sample()`` on the
+    global RNG, i.e. silently randomized outside Optuna's view.
+
+    Traverses everything :func:`_extract_search_space` does, plus ``list`` /
+    ``tuple`` members, so it catches structures the sampler cannot reach
+    (``_set_nested`` splits on ``.`` and has no integer indexing).
+
+    Known gap: arbitrary ``__dict__`` is deliberately not walked.  Evals
+    configs hold heavy objects (FAISS indices, embedders, Ray refs) and
+    traversing them would be slow and fragile, so a ``Range`` stashed directly
+    on a plain object with no ``_user_params`` still slips through.
+    """
+    if isinstance(obj, (Range, List)):
+        return [prefix or "<root>"]
+    if hasattr(obj, "_user_params"):
+        return _find_unsampled_params(obj._user_params, prefix)
+
+    found: list[str] = []
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            found.extend(_find_unsampled_params(value, child_prefix))
+    elif isinstance(obj, (list, tuple)):
+        for index, value in enumerate(obj):
+            found.extend(_find_unsampled_params(value, f"{prefix}[{index}]"))
+    elif is_dataclass(obj) and not isinstance(obj, type):
+        for f in fields(obj):
+            child_prefix = f"{prefix}.{f.name}" if prefix else f.name
+            found.extend(_find_unsampled_params(getattr(obj, f.name), child_prefix))
+    return found
 
 
 _PRIMITIVE_TYPES = (type(None), bool, int, float, str)
@@ -294,11 +338,49 @@ def _object_labels(objects: list[Any]) -> list[str]:
     return labels
 
 
+def _sample_list_member(
+    trial: optuna.Trial,
+    list_name: str,
+    idx: int,
+    member: Any,
+) -> Any:
+    """Resolve any Range/List nested inside a chosen ``List`` member.
+
+    These knobs are *conditional* on the categorical draw, so they are
+    registered only for the member Optuna actually picked.  Names are
+    namespaced by member index (``api_config[1].rag.embedding_cfg``) so two
+    members declaring the same path with different distributions never
+    collide under one Optuna parameter name.
+
+    The deep copy is required: ``search_space`` entries are extracted from the
+    *original* template rather than the copy made in ``_sample_from_trial``,
+    so ``param.values[idx]`` is the shared template object.  Mutating it in
+    place would corrupt the template for every subsequent trial.
+    """
+    if isinstance(member, (Range, List)):
+        # A search-space object nested directly as a choice. Sample it in place
+        # rather than recursing, since it has no dotted path to write back to.
+        return _suggest_value(trial, f"{list_name}[{idx}]", member)
+
+    nested = _extract_search_space(member)
+    if not nested:
+        return member
+    member = copy.deepcopy(member)
+    for path, nested_param in nested:
+        value = _suggest_value(trial, f"{list_name}[{idx}].{path}", nested_param)
+        _set_nested(member, path, value)
+    return member
+
+
 def _suggest_value(trial: optuna.Trial, name: str, param: Range | List) -> Any:
     """Use an Optuna trial to sample a single value for *param*.
 
     Maps ``Range`` → ``suggest_int`` / ``suggest_float`` and
     ``List`` → ``suggest_categorical``.
+
+    For a ``List`` of non-primitive members, any ``Range`` / ``List`` nested
+    inside the chosen member is also registered, as a conditional parameter
+    namespaced under ``{name}[{idx}].``.  See :func:`_sample_list_member`.
     """
     if isinstance(param, Range):
         if param.dtype == "int":
@@ -325,8 +407,8 @@ def _suggest_value(trial: optuna.Trial, name: str, param: Range | List) -> Any:
         labels = _object_labels(param.values)
         if len(set(labels)) < len(labels):
             labels = [f"{lbl}#{i}" for i, lbl in enumerate(labels)]
-        chosen = trial.suggest_categorical(name, labels)
-        return param.values[labels.index(chosen)]
+        chosen_idx = labels.index(trial.suggest_categorical(name, labels))
+        return _sample_list_member(trial, name, chosen_idx, param.values[chosen_idx])
     raise AutoMLException(f"Unsupported search-space type: {type(param)}")
 
 
@@ -378,19 +460,40 @@ def _sample_from_trial_multi(
 
     Single-template case is identical to ``_sample_from_trial`` (no extra
     categorical, no parameter prefix) for full backward compatibility.
+
+    Raises
+    ------
+    AutoMLException
+        If any ``Range`` / ``List`` survives sampling.  This is the single
+        choke point for every sampling entry point (``RFOptuna.get_runs`` and
+        both callbacks' ``_maybe_suggest_replacement``), so the check cannot be
+        bypassed.  ``get_runs`` runs before any worker or API spend, so an
+        unreachable search-space entry fails at launch rather than after a
+        full-cost run.
     """
     if len(config_templates) == 1:
-        return _sample_from_trial(trial, search_spaces[0], config_templates[0])
+        sampled = _sample_from_trial(trial, search_spaces[0], config_templates[0])
+    else:
+        tidx = trial.suggest_categorical(
+            "_config_template_idx", list(range(len(config_templates))),
+        )
+        sampled = _sample_from_trial(
+            trial,
+            search_spaces[tidx],
+            config_templates[tidx],
+            param_prefix=f"_t{tidx}.",
+        )
 
-    tidx = trial.suggest_categorical(
-        "_config_template_idx", list(range(len(config_templates))),
-    )
-    return _sample_from_trial(
-        trial,
-        search_spaces[tidx],
-        config_templates[tidx],
-        param_prefix=f"_t{tidx}.",
-    )
+    residual = _find_unsampled_params(sampled)
+    if residual:
+        raise AutoMLException(
+            "RFOptuna could not register these search-space entries as Optuna "
+            f"parameters: {residual}. They would be silently randomized outside "
+            "Optuna's view. Move them into a dict, a config object exposing "
+            "_user_params, or a dataclass field -- Range/List nested inside a "
+            "plain list or tuple literal cannot be addressed."
+        )
+    return sampled
 
 
 # ---------------------------------------------------------------------------
@@ -1133,6 +1236,17 @@ class RFOptuna(AutoMLAlgorithm):
         wrapper, or a single template.  When multiple templates are
         provided, Optuna treats the template choice as a categorical
         hyperparameter.
+
+        A ``List`` of config objects (e.g.
+        ``api_config=List([gemini_a, gemini_b])``) is supported: the member
+        choice becomes a categorical, and any ``Range`` / ``List`` nested
+        inside the chosen member becomes a conditional parameter named
+        ``api_config[<idx>].<path>``.  Namespacing by member index keeps
+        members with different distributions at the same path from colliding
+        under one parameter name; the cost is that TPE treats
+        ``api_config[0].*`` and ``api_config[1].*`` as distinct parameters and
+        learns preferences separately per member (the same trade-off already
+        made by the ``_t{idx}.`` prefix for multiple templates).
     trainer_type : str or None
         ``"SFT"`` / ``"DPO"`` / ``"GRPO"`` for fit mode, ``None`` for evals
         mode.
@@ -1246,6 +1360,13 @@ class RFOptuna(AutoMLAlgorithm):
             raise AutoMLException("seed must be a non-negative integer")
 
         effective_seed = self._seed if self._seed is not None else seed
+
+        # Parity with RFRandomSearch.get_runs. Optuna owns every registered
+        # parameter, so nothing should reach the global RNG -- but leaf
+        # construction still routes through recursive_expand_randomsearch, and
+        # a seeded RNG keeps that reproducible if anything ever slips past
+        # _find_unsampled_params.
+        random.seed(effective_seed)
 
         if self._is_multi_objective:
             self._study = optuna.create_study(

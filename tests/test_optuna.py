@@ -13,17 +13,20 @@ from rapidfireai.automl.optuna_search import (
     OptunaShardCallback,
     RFOptuna,
     _extract_search_space,
+    _find_unsampled_params,
     _object_labels,
     _resolve_metric_history,
     _resolve_scalar_for_objective,
     _sample_from_trial,
     _sample_from_trial_multi,
+    _sample_list_member,
     _set_nested,
     _suggest_value,
     _template_to_leaf_evals,
     _trial_state_from_storage,
 )
 from rapidfireai.automl.callbacks import RunDecision, PipelineDecision
+from rapidfireai.fit.utils.exceptions import AutoMLException
 
 
 # ---------------------------------------------------------------------------
@@ -910,3 +913,230 @@ class TestTemplateToLeafEvalsPipelineAliases:
         original = {"foo": 1, "bar": 2}
         leaf = _template_to_leaf_evals(original)
         assert leaf == original
+
+
+# ---------------------------------------------------------------------------
+# RF-OPT-01: search space nested inside a List of config objects
+#
+# A ``List`` is terminal in ``_extract_search_space``, so knobs nested inside
+# its members used to be invisible to Optuna while still being resolved by
+# ``recursive_expand_randomsearch`` via an unseeded ``item.sample()``. They are
+# now registered as conditional parameters namespaced ``{name}[{idx}].{path}``.
+# ---------------------------------------------------------------------------
+
+
+class _FakeCfg:
+    """Stand-in for RFAPIModelConfig: exposes the ``_user_params`` protocol."""
+
+    def __init__(self, **kwargs):
+        self._user_params = dict(kwargs)
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+def _scifact_shaped_template():
+    """Mirror the SciFact notebook shape: List of config objects, each with a
+    nested rag spec carrying its own List knobs."""
+    def make_cfg(name):
+        return _FakeCfg(
+            model=name,
+            rag=_FakeCfg(
+                embedding_cfg=List(["3-small", "3-large"]),
+                search_cfg=List(["similarity", "mmr"]),
+            ),
+        )
+
+    return {"api_config": List([make_cfg("a"), make_cfg("b")]), "batch_size": 32}
+
+
+def _nested_knobs(member):
+    """Read the sampled knobs back out of ``_user_params``.
+
+    ``_set_nested`` writes into ``_user_params`` (the canonical store that
+    ``recursive_expand_randomsearch`` later reads), not onto attributes.
+    """
+    rag = member._user_params["rag"]
+    return rag._user_params["embedding_cfg"], rag._user_params["search_cfg"]
+
+
+class TestNestedListSearchSpace:
+    def test_extract_search_space_keeps_list_terminal(self):
+        """The static space intentionally reports only the categorical itself.
+        Nested knobs are conditional on the draw, so they show up in
+        ``trial.params`` instead."""
+        space = _extract_search_space(_scifact_shaped_template())
+        assert [path for path, _ in space] == ["api_config"]
+
+    def test_suggest_value_resolves_nested_knobs(self):
+        study = optuna.create_study()
+        trial = study.ask()
+        template = _scifact_shaped_template()
+
+        member = _suggest_value(trial, "api_config", template["api_config"])
+
+        embedding, search = _nested_knobs(member)
+        assert embedding in ("3-small", "3-large")
+        assert search in ("similarity", "mmr")
+
+        assert "api_config" in trial.params
+        nested_names = [k for k in trial.params if k.startswith("api_config[")]
+        assert sorted(n.split("].")[1] for n in nested_names) == [
+            "rag.embedding_cfg",
+            "rag.search_cfg",
+        ]
+
+    def test_sample_from_trial_end_to_end(self):
+        template = _scifact_shaped_template()
+        space = _extract_search_space(template)
+        study = optuna.create_study()
+        trial = study.ask()
+
+        config = _sample_from_trial(trial, space, template)
+
+        embedding, search = _nested_knobs(config["api_config"])
+        assert not isinstance(embedding, (List, Range))
+        assert not isinstance(search, (List, Range))
+        assert config["batch_size"] == 32
+        # The categorical plus both conditional knobs are all recorded.
+        assert len(trial.params) >= 3
+
+    def test_template_not_mutated_across_trials(self):
+        template = _scifact_shaped_template()
+        space = _extract_search_space(template)
+        study = optuna.create_study()
+
+        for _ in range(2):
+            _sample_from_trial(study.ask(), space, template)
+
+        for member in template["api_config"].values:
+            embedding, search = _nested_knobs(member)
+            assert isinstance(embedding, List)
+            assert isinstance(search, List)
+
+    def test_shared_nested_object_is_not_cross_contaminated(self):
+        """The SciFact notebook hands the *same* rag spec to both generator
+        configs, so ``api_config[0]`` and ``api_config[1]`` alias one object.
+
+        Resolving a knob in place would therefore resolve it for both members at
+        once, and the residual guard could not catch it -- a leaked value is a
+        plain string, not a ``List``. Only the deep copy in
+        ``_sample_list_member`` keeps the template reusable.
+        """
+        shared_rag = _FakeCfg(
+            embedding_cfg=List(["3-small", "3-large"]),
+            search_cfg=List(["similarity", "mmr"]),
+        )
+        template = {
+            "api_config": List(
+                [
+                    _FakeCfg(model="a", rag=shared_rag),
+                    _FakeCfg(model="b", rag=shared_rag),
+                ]
+            )
+        }
+        space = _extract_search_space(template)
+        study = optuna.create_study()
+
+        for _ in range(6):
+            config = _sample_from_trial(study.ask(), space, template)
+
+            embedding, search = _nested_knobs(config["api_config"])
+            assert not isinstance(embedding, (List, Range))
+            assert not isinstance(search, (List, Range))
+
+            assert isinstance(shared_rag._user_params["embedding_cfg"], List)
+            assert isinstance(shared_rag._user_params["search_cfg"], List)
+
+    def test_nested_list_inside_chosen_member(self):
+        """A List inside a chosen List member resolves too (mutual recursion)."""
+        template = {
+            "outer": List([
+                _FakeCfg(tag="x", inner=List([1, 2])),
+                _FakeCfg(tag="y", inner=List([3, 4])),
+            ])
+        }
+        space = _extract_search_space(template)
+        study = optuna.create_study()
+        trial = study.ask()
+
+        config = _sample_from_trial(trial, space, template)
+
+        chosen = config["outer"]
+        assert chosen._user_params["inner"] in (1, 2, 3, 4)
+        assert "outer" in trial.params
+        assert any(k.startswith("outer[") for k in trial.params)
+
+    def test_none_member_round_trips(self):
+        """An optional component expressed as ``None`` has no nested space and
+        must pass through untouched."""
+        study = optuna.create_study()
+        trial = study.ask()
+        assert _sample_list_member(trial, "reranker_cfg", 0, None) is None
+
+    def test_search_space_object_as_direct_choice(self):
+        """A Range nested directly as a List choice has no dotted path to write
+        back to, so it is sampled in place rather than recursed into."""
+        study = optuna.create_study()
+        trial = study.ask()
+        value = _sample_list_member(trial, "k", 1, Range(4, 8))
+        assert 4 <= value <= 8
+        assert trial.params["k[1]"] == value
+
+    def test_deterministic_with_seed_over_object_list(self):
+        """Regression for the unseeded-RNG half of RF-OPT-01: nested knobs used
+        to come from ``random.choice`` and so varied run to run despite
+        ``seed=42``. The existing determinism test only covers primitives,
+        which Optuna already owned."""
+        def make_study(seed):
+            rfopt = RFOptuna(
+                configs=[_scifact_shaped_template()],
+                trainer_type=None,
+                n_initial=4,
+                budget=4,
+                objective="maximize:Accuracy",
+                sampler="tpe",
+                pruner=None,
+                seed=seed,
+            )
+            runs = rfopt.get_runs(seed=seed)
+            return runs, [t.params for t in rfopt._study.trials]
+
+        runs_a, params_a = make_study(42)
+        runs_b, params_b = make_study(42)
+
+        assert params_a == params_b
+        # Every nested knob is a real Optuna parameter, not an RNG draw.
+        assert any(k.startswith("api_config[") for k in params_a[0])
+        for leaf in runs_a + runs_b:
+            assert _find_unsampled_params(leaf) == []
+
+
+class TestFindUnsampledParams:
+    def test_clean_config_reports_nothing(self):
+        assert _find_unsampled_params({"a": 1, "b": {"c": "x"}}) == []
+
+    def test_finds_range_in_list_literal(self):
+        """``_set_nested`` splits on ``.`` and cannot index into a list, so this
+        is genuinely unreachable for the sampler."""
+        found = _find_unsampled_params({"targets": [Range(1, 5)]})
+        assert found == ["targets[0]"]
+
+    def test_finds_nested_list_under_user_params(self):
+        cfg = _FakeCfg(rag=_FakeCfg(k=List([5, 10])))
+        assert _find_unsampled_params({"api_config": cfg}) == ["api_config.rag.k"]
+
+    def test_get_runs_raises_on_unreachable_param(self):
+        rfopt = RFOptuna(
+            configs=[
+                {"pipeline": "p", "temp": Range(0.0, 1.0), "targets": [Range(1, 5)]}
+            ],
+            trainer_type=None,
+            n_initial=2,
+            budget=2,
+            objective="maximize:Accuracy",
+            sampler="random",
+            pruner=None,
+            seed=42,
+        )
+        with pytest.raises(AutoMLException, match=r"targets\[0\]"):
+            rfopt.get_runs(seed=42)
