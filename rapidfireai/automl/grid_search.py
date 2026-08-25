@@ -6,7 +6,7 @@ from itertools import product
 from typing import Any
 
 from rapidfireai.automl.base import AutoMLAlgorithm
-from rapidfireai.automl.datatypes import List
+from rapidfireai.automl.datatypes import List, Range
 from rapidfireai.automl.automl_utils import filter_evals_runs_valid_reranker
 from rapidfireai.fit.utils.exceptions import AutoMLException
 
@@ -19,11 +19,26 @@ def _accepts_verbose(cls: type) -> bool:
         return False
 
 
-def recursive_expand_gridsearch(item: Any):
-    """Recursively expand nested structures with List datatypes into all combinations."""
+def recursive_expand_gridsearch(item: Any, path: str = ""):
+    """Recursively expand nested structures with List datatypes into all combinations.
+
+    ``Range`` is rejected rather than expanded.  Grid search enumerates every
+    combination, which a continuous range cannot supply; passing one through
+    untouched used to leave a live ``Range`` object in the generated config,
+    which then silently fell back to a default in fit mode and crashed in evals
+    mode.  ``RFRandomSearch`` and ``RFOptuna`` do sample from a ``Range``.
+    """
+    if isinstance(item, Range):
+        where = f" at '{path}'" if path else ""
+        raise AutoMLException(
+            f"RFGridSearch does not support Range{where}. Grid search enumerates "
+            "every combination and a continuous range has no finite set of values. "
+            "Replace it with List([...]) of the exact values to try, or use "
+            "RFRandomSearch or RFOptuna, which sample from a Range."
+        )
     # Handle objects with _user_params (like RF config classes)
     if hasattr(item, "_user_params"):
-        expanded_params_list = list(recursive_expand_gridsearch(item._user_params))
+        expanded_params_list = list(recursive_expand_gridsearch(item._user_params, path))
         suppress = _accepts_verbose(item.__class__)
         for params in expanded_params_list:
             if suppress:
@@ -31,14 +46,17 @@ def recursive_expand_gridsearch(item: Any):
             yield item.__class__(**params)
     elif isinstance(item, dict):
         keys = list(item.keys())
-        value_lists = [list(recursive_expand_gridsearch(item[k])) for k in keys]
+        value_lists = [
+            list(recursive_expand_gridsearch(item[k], f"{path}.{k}" if path else str(k)))
+            for k in keys
+        ]
         for values in product(*value_lists):
             # Deep copy ensures values reused across combinations by product() are
             # independent objects and cannot be mutated by one combination to affect another.
             yield copy.deepcopy(dict(zip(keys, values, strict=False)))
     elif isinstance(item, List):
         for value in item.values:
-            yield from recursive_expand_gridsearch(value)
+            yield from recursive_expand_gridsearch(value, path)
     else:
         yield item
 

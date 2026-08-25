@@ -22,8 +22,6 @@ class AutoMLAlgorithm(ABC):
     configs :
         Config templates (``RFModelConfig`` for fit, dicts for evals).
         Accepts a list, a ``List([...])`` wrapper, or a single object.
-    create_model_fn :
-        Legacy parameter (unused).
     trainer_type : str or None
         ``"SFT"`` / ``"DPO"`` / ``"GRPO"`` for fit mode, ``None`` for evals.
     num_runs : int
@@ -50,7 +48,6 @@ class AutoMLAlgorithm(ABC):
     def __init__(
         self,
         configs=None,
-        create_model_fn=None,
         trainer_type: str | None = None,
         num_runs: int = 1,
     ):

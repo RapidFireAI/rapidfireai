@@ -8,12 +8,17 @@ import pytest
 import optuna
 
 from rapidfireai.automl.datatypes import List, Range
+from rapidfireai.automl.grid_search import recursive_expand_gridsearch
+from rapidfireai.automl.random_search import RFRandomSearch, recursive_expand_randomsearch
 from rapidfireai.automl.optuna_search import (
     OptunaChunkCallback,
     OptunaShardCallback,
     RFOptuna,
+    _context_coverage_leaves,
     _extract_search_space,
     _find_unsampled_params,
+    _is_index_affecting_path,
+    _MAX_REPLACEMENT_ATTEMPTS,
     _object_labels,
     _resolve_metric_history,
     _resolve_scalar_for_objective,
@@ -103,6 +108,15 @@ class TestExtractSearchSpace:
 
 def test_resolve_scalar_prefers_primary_key():
     assert _resolve_scalar_for_objective({"eval_loss": 1.0, "train_loss": 9.0}, "eval_loss") == 1.0
+
+
+def test_resolve_scalar_fuzzy_key_match():
+    """Case/underscore/whitespace-insensitive key fallback catches MLflow
+    variants (``"Eval Loss"``, ``"eval-loss"``) not in the alias table."""
+    assert _resolve_scalar_for_objective({"Eval Loss": 0.5}, "eval_loss") == 0.5
+    assert _resolve_scalar_for_objective({"eval-loss": {"value": 0.7}}, "eval_loss") == 0.7
+    assert _resolve_scalar_for_objective({"Eval_Loss": 0.3, "other": 1.0}, "eval_loss") == 0.3
+    assert _resolve_scalar_for_objective({"other": 1.0}, "eval_loss") is None
 
 
 class TestResolveMetricHistory:
@@ -580,7 +594,6 @@ class TestRFOptuna:
             objective="maximize:accuracy",
             sampler="random",
             pruner=None,
-            seed=42,
         )
         runs = rfopt.get_runs(seed=42)
         assert len(runs) == 5
@@ -654,7 +667,6 @@ class TestRFOptuna:
                 objective="minimize:loss",
                 sampler="tpe",
                 pruner=None,
-                seed=seed,
             )
             return rfopt.get_runs(seed=seed)
 
@@ -663,6 +675,38 @@ class TestRFOptuna:
         for a, b in zip(runs_a, runs_b, strict=True):
             assert a["x"] == b["x"]
             assert a["y"] == b["y"]
+
+    def test_constructor_accepts_seed(self):
+        """RFOptuna carries a constructor seed that governs the algorithm's
+        stochastic state (Range draws, global RNG, Optuna sampler)."""
+        rfopt = RFOptuna(
+            configs=[{"x": Range(0.0, 1.0)}],
+            objective="minimize:loss",
+            seed=42,
+        )
+        assert rfopt._seed == 42
+
+    def test_constructor_seed_governs_range_draws(self):
+        """The constructor seed governs Range draws; the run-level seed passed
+        to get_runs is ignored for the algorithm's draws."""
+        template = [{"x": Range(0.0, 100.0)}]
+
+        def runs(ctor_seed, run_seed):
+            rfopt = RFOptuna(
+                configs=template,
+                n_initial=4,
+                budget=4,
+                objective="minimize:loss",
+                sampler="random",
+                pruner=None,
+                seed=ctor_seed,
+            )
+            return [run["x"] for run in rfopt.get_runs(seed=run_seed)]
+
+        # Same constructor seed -> same draws, regardless of the run-level seed.
+        assert runs(42, 42) == runs(42, 7)
+        # Different constructor seed -> different draws, regardless of run-level.
+        assert runs(42, 42) != runs(7, 42)
 
     def test_base_class_get_callback_returns_none(self):
         from rapidfireai.automl import RFGridSearch
@@ -689,7 +733,6 @@ class TestRFOptuna:
             objective="minimize:eval_loss",
             sampler="random",
             pruner=None,
-            seed=42,
             granularity="epoch",
         )
         assert rfopt._granularity == "epoch"
@@ -703,7 +746,6 @@ class TestRFOptuna:
             objective="minimize:eval_loss",
             sampler="random",
             pruner=None,
-            seed=42,
         )
         assert rfopt._granularity == "chunk"
 
@@ -761,7 +803,6 @@ class TestMultiTemplate:
             objective="maximize:accuracy",
             sampler="random",
             pruner=None,
-            seed=42,
         )
         runs = rfopt.get_runs(seed=42)
         assert len(runs) == 6
@@ -781,7 +822,6 @@ class TestMultiTemplate:
             objective="maximize:score",
             sampler="random",
             pruner=None,
-            seed=7,
         )
         runs = rfopt.get_runs(seed=7)
         assert len(runs) == 4
@@ -1096,7 +1136,6 @@ class TestNestedListSearchSpace:
                 objective="maximize:Accuracy",
                 sampler="tpe",
                 pruner=None,
-                seed=seed,
             )
             runs = rfopt.get_runs(seed=seed)
             return runs, [t.params for t in rfopt._study.trials]
@@ -1136,7 +1175,514 @@ class TestFindUnsampledParams:
             objective="maximize:Accuracy",
             sampler="random",
             pruner=None,
-            seed=42,
         )
         with pytest.raises(AutoMLException, match=r"targets\[0\]"):
             rfopt.get_runs(seed=42)
+
+
+# ---------------------------------------------------------------------------
+# RF-OPT-04: RAG index coverage for replacement pipelines
+#
+# Indexes used to be built only from the ``n_initial`` sample, so a replacement
+# Optuna suggested later could need an index that was never built and would then
+# launch with ``context_generator_ref=None``. ``build_all_indexes`` pre-builds
+# every reachable index; the alternative is rejecting infeasible suggestions.
+# ---------------------------------------------------------------------------
+
+
+class TestRangeSampleN:
+    def test_returns_sample_n_distinct_values_in_range(self):
+        values = Range(0.0, 1.0, sample_n=4).sample(4)
+        assert len(values) == 4
+        assert len(set(values)) == 4
+        assert all(0.0 <= v <= 1.0 for v in values)
+
+    def test_values_are_sorted(self):
+        values = Range(0, 1000, sample_n=5).sample(5)
+        assert values == sorted(values)
+
+    def test_int_dtype_returns_ints(self):
+        assert all(isinstance(v, int) for v in Range(5, 20).sample(3))
+
+    def test_log_stays_within_bounds(self):
+        values = Range(1, 1000, dtype="int", log=True, sample_n=4).sample(4)
+        assert len(values) == 4
+        assert all(1 <= v <= 1000 for v in values)
+
+    def test_step_values_land_on_the_grid(self):
+        values = Range(5, 20, step=5, sample_n=3).sample(3)
+        assert len(values) == 3
+        assert set(values) <= {5, 10, 15, 20}
+
+    def test_seed_determines_which_values_are_drawn(self):
+        """Reproducibility comes from the seed, not from fixed spacing."""
+        first = Range(0.0, 1.0, sample_n=3, seed=0).sample(3)
+        assert Range(0.0, 1.0, sample_n=3, seed=0).sample(3) == first
+        assert Range(0.0, 1.0, sample_n=3, seed=1).sample(3) != first
+
+    def test_repeat_calls_on_one_range_differ(self):
+        """Range is a pure sampler: two ``sample(n)`` calls draw independently.
+
+        Range no longer memoizes a value set, so the second call advances the
+        generator and returns different values. The guarantee that coverage
+        enumeration and suggest_categorical see one value set now lives in
+        RFOptuna, which caches the coverage draw and reuses it at suggest time
+        (see TestRangeCacheConsistency).
+        """
+        rng_range = Range(0.0, 1.0, sample_n=3, seed=7)
+        assert rng_range.sample(3) != rng_range.sample(3)
+
+    def test_returns_fewer_when_range_is_exhausted(self):
+        assert Range(1, 2, sample_n=5).sample(5) == [1, 2]
+
+    def test_explicit_n_overrides_sample_n(self):
+        assert len(Range(0.0, 1.0, sample_n=3).sample(2)) == 2
+
+    def test_sample_n_one(self):
+        assert len(Range(5, 20, sample_n=1).sample(1)) == 1
+
+    @pytest.mark.parametrize("bad", [0, -1, 2.5, "x", True])
+    def test_sample_n_must_be_positive_int(self, bad):
+        with pytest.raises(ValueError, match="sample_n must be a positive integer"):
+            Range(1, 10, sample_n=bad)
+
+    @pytest.mark.parametrize("bad", [0, -1, 2.5, "x", True])
+    def test_explicit_n_must_be_positive_int(self, bad):
+        with pytest.raises(ValueError, match="n must be a positive integer"):
+            Range(1, 10).sample(bad)
+
+    def test_sample_is_unchanged_by_sample_n(self):
+        """RFRandomSearch must keep drawing continuously; sample_n is inert there.
+
+        Random search calls ``sample(1)`` once per run, so 50 draws should
+        produce many distinct values even when ``sample_n`` is small.
+        """
+        rng_range = Range(0.0, 1.0, sample_n=2)
+        draws = {rng_range.sample(1)[0] for _ in range(50)}
+        assert len(draws) > 2
+        assert all(0.0 <= d <= 1.0 for d in draws)
+
+
+class TestGridSearchRejectsRange:
+    """Range belongs to RFRandomSearch and RFOptuna only.
+
+    Grid search used to yield a Range through unexpanded, which silently fell
+    back to a default in fit mode and crashed on a live Range object in evals.
+    """
+
+    @pytest.mark.parametrize(
+        "template, expected_path",
+        [
+            ({"lr": Range(1e-5, 1e-3)}, "lr"),
+            (
+                {"rag": {"embedding_cfg": {"batch_size": Range(32, 128)}}},
+                "rag.embedding_cfg.batch_size",
+            ),
+            ({"x": List([{"k": Range(1, 5)}])}, "x.k"),
+        ],
+    )
+    def test_raises_naming_the_path(self, template, expected_path):
+        with pytest.raises(AutoMLException, match="does not support Range") as exc:
+            list(recursive_expand_gridsearch(template))
+        assert f"'{expected_path}'" in str(exc.value)
+
+    def test_list_still_expands(self):
+        expanded = list(recursive_expand_gridsearch({"a": List([1, 2]), "b": 3}))
+        assert expanded == [{"a": 1, "b": 3}, {"a": 2, "b": 3}]
+
+
+class TestIsIndexAffectingPath:
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "rag.embedding_cfg.model",
+            "rag.text_splitter",
+            "prompt_manager.k",
+            "api_config[1].rag.embedding_cfg",
+            "_t0.api_config.rag.vector_store_cfg.type",
+        ],
+    )
+    def test_index_affecting(self, path):
+        assert _is_index_affecting_path(path) is True
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "rag.search_cfg.k",
+            "rag.reranker_cfg.top_n",
+            "_t0.api_config[1].rag.search_cfg.k",
+            "training_args.learning_rate",
+            "temperature",
+        ],
+    )
+    def test_not_index_affecting(self, path):
+        assert _is_index_affecting_path(path) is False
+
+
+class TestIndexAffectingSampling:
+    def test_index_affecting_range_becomes_categorical(self):
+        chunk = Range(100, 500)
+        template = {"pipeline": _FakeCfg(rag=_FakeCfg(chunk=chunk))}
+        study = optuna.create_study()
+        trial = study.ask()
+
+        # Range no longer memoizes, so the value set suggest uses is the one
+        # coverage enumeration drew and cached. Thread the cache in and compare
+        # against it rather than against a second sample(n) draw (which would
+        # now differ).
+        cache: dict[int, list] = {}
+        _sample_from_trial(
+            trial, _extract_search_space(template), template, range_cache=cache
+        )
+
+        dist = trial.distributions["pipeline.rag.chunk"]
+        assert isinstance(dist, optuna.distributions.CategoricalDistribution)
+        assert list(dist.choices) == cache[id(chunk)]
+
+    def test_retrieval_only_range_stays_continuous(self):
+        template = {
+            "pipeline": _FakeCfg(rag=_FakeCfg(search_cfg={"k": Range(5, 20, step=5)}))
+        }
+        study = optuna.create_study()
+        trial = study.ask()
+
+        _sample_from_trial(trial, _extract_search_space(template), template)
+
+        dist = trial.distributions["pipeline.rag.search_cfg.k"]
+        assert isinstance(dist, optuna.distributions.IntDistribution)
+        assert (dist.low, dist.high, dist.step) == (5, 20, 5)
+
+    def test_index_affecting_range_inside_list_member(self):
+        template = {
+            "api_config": List(
+                [
+                    _FakeCfg(name="a", rag=_FakeCfg(chunk=Range(100, 500))),
+                    _FakeCfg(name="b", rag=_FakeCfg(chunk=Range(100, 500))),
+                ]
+            )
+        }
+        study = optuna.create_study()
+        trial = study.ask()
+
+        _sample_from_trial(trial, _extract_search_space(template), template)
+
+        nested = [k for k in trial.distributions if k.endswith(".rag.chunk")]
+        assert len(nested) == 1
+        assert isinstance(
+            trial.distributions[nested[0]], optuna.distributions.CategoricalDistribution
+        )
+
+
+def _fiqa_shaped_template():
+    """Mirror the FiQA Optuna tutorial: one index-affecting List and Range, plus
+    retrieval-only knobs that must not multiply the index count."""
+    return {
+        "api_config": _FakeCfg(
+            rag=_FakeCfg(
+                text_splitter=List(["chunk256", "chunk128"]),
+                embedding_cfg={
+                    "model": "minilm",
+                    "batch_size": Range(32, 128, step=32),
+                },
+                search_cfg={"type": "similarity", "k": Range(5, 20, step=5)},
+                reranker_cfg={"top_n": List([2, 5])},
+            ),
+            prompt_manager=None,
+        ),
+        "batch_size": 32,
+    }
+
+
+def _coverage_rag_params(leaves):
+    return [leaf["pipeline"].rag._user_params for leaf in leaves]
+
+
+class TestContextCoverageLeaves:
+    def test_enumerates_index_affecting_axes_only(self):
+        template = _fiqa_shaped_template()
+        batch_range = template["api_config"].rag._user_params["embedding_cfg"][
+            "batch_size"
+        ]
+        # Range no longer memoizes, so the batch values coverage draws are
+        # captured in the cache; compare against the cache rather than a second
+        # sample(n) draw (which would now differ).
+        cache: dict[int, list] = {}
+        leaves = _context_coverage_leaves(template["api_config"], cache)
+
+        # 2 splitters x 3 sampled batch sizes; k and top_n do not multiply.
+        assert len(leaves) == 6
+        params = _coverage_rag_params(leaves)
+        combos = {
+            (p["text_splitter"], p["embedding_cfg"]["batch_size"]) for p in params
+        }
+        assert combos == {
+            (splitter, batch)
+            for splitter in ("chunk256", "chunk128")
+            for batch in cache[id(batch_range)]
+        }
+
+    def test_retrieval_only_knobs_collapse_to_one_value(self):
+        leaves = _context_coverage_leaves(_fiqa_shaped_template()["api_config"])
+        ks = {p["search_cfg"]["k"] for p in _coverage_rag_params(leaves)}
+        top_ns = {p["reranker_cfg"]["top_n"] for p in _coverage_rag_params(leaves)}
+        # Retrieval-only knobs collapse to a single representative value across
+        # all leaves (they do not multiply the index count). ``List`` collapses
+        # to its first element deterministically; ``Range`` collapses to the
+        # smallest of its sampled set, which depends on the draw, so only the
+        # "one value" contract is asserted for k, not a specific number.
+        assert len(ks) == 1
+        assert len(top_ns) == 1
+        assert top_ns == {2}
+        assert ks.pop() in {5, 10, 15, 20}
+
+    def test_no_search_space_objects_survive(self):
+        """Coverage leaves are hashed and built, so a live Range/List would break."""
+        for params in _coverage_rag_params(
+            _context_coverage_leaves(_fiqa_shaped_template()["api_config"])
+        ):
+            assert _find_unsampled_params(params) == []
+
+    def test_pipeline_without_context_yields_nothing(self):
+        assert _context_coverage_leaves(_FakeCfg(temperature=0.5)) == []
+
+    def test_rfoptuna_covers_every_list_member(self):
+        rfopt = RFOptuna(
+            configs=_scifact_shaped_template(),
+            trainer_type=None,
+            objective="maximize:NDCG@3",
+        )
+        leaves = rfopt.get_context_coverage_leaves()
+        # 2 api_config members x 2 embeddings each; search_cfg does not multiply.
+        assert len(leaves) == 4
+        embeddings = {
+            leaf["pipeline"].rag._user_params["embedding_cfg"] for leaf in leaves
+        }
+        assert embeddings == {"3-small", "3-large"}
+
+    def test_disabled_flag_returns_empty(self):
+        rfopt = RFOptuna(
+            configs=_scifact_shaped_template(),
+            trainer_type=None,
+            objective="maximize:NDCG@3",
+            build_all_indexes=False,
+        )
+        assert rfopt.get_context_coverage_leaves() == []
+
+    def test_fit_mode_returns_empty(self):
+        rfopt = RFOptuna(
+            configs=_scifact_shaped_template(),
+            trainer_type=None,
+            objective="minimize:eval_loss",
+        )
+        # Fit mode is set from trainer_type, which requires a real RFModelConfig;
+        # the flag itself is mode-gated, so assert that gate directly.
+        rfopt.mode = "fit"
+        assert rfopt.get_context_coverage_leaves() == []
+
+    def test_raises_above_prebuild_cap(self):
+        template = {
+            "api_config": _FakeCfg(
+                rag=_FakeCfg(
+                    embedding_cfg=List([f"e{i}" for i in range(9)]),
+                    text_splitter=List([f"s{i}" for i in range(8)]),
+                )
+            )
+        }
+        rfopt = RFOptuna(
+            configs=template, trainer_type=None, objective="maximize:NDCG@3",
+        )
+        with pytest.raises(AutoMLException, match="above the limit"):
+            rfopt.get_context_coverage_leaves()
+
+
+class TestRangeCacheConsistency:
+    """Coverage enumeration draws an index-affecting Range's value set once;
+    suggest reuses that cached set rather than re-drawing.
+
+    Range no longer memoizes, so this consistency is now RFOptuna's job: the
+    evals controller runs ``get_context_coverage_leaves`` before ``get_runs``,
+    the coverage pass populates ``RFOptuna._range_value_cache``, and the suggest
+    pass reads from it.
+    """
+
+    def test_coverage_populates_cache_and_suggest_reuses_it(self):
+        template = _fiqa_shaped_template()
+        batch_range = template["api_config"].rag._user_params["embedding_cfg"][
+            "batch_size"
+        ]
+        rfopt = RFOptuna(
+            configs=template, trainer_type=None, objective="maximize:NDCG@3",
+        )
+
+        # Coverage runs first (as the evals controller now orders it) and draws
+        # the index-affecting batch_size value set into the cache.
+        leaves = rfopt.get_context_coverage_leaves()
+        assert id(batch_range) in rfopt._range_value_cache
+        cached = rfopt._range_value_cache[id(batch_range)]
+
+        # Every coverage leaf's batch_size is one of the cached values.
+        coverage_batches = {
+            p["embedding_cfg"]["batch_size"] for p in _coverage_rag_params(leaves)
+        }
+        assert coverage_batches <= set(cached)
+        assert coverage_batches == set(cached)
+
+        # Suggest then reads the same cache; every run's batch_size is in it.
+        runs = rfopt.get_runs(seed=42)
+        for run in runs:
+            batch = run["pipeline"].rag._user_params["embedding_cfg"]["batch_size"]
+            assert batch in cached
+
+    def test_build_all_indexes_false_leaves_cache_empty_until_suggest(self):
+        template = _fiqa_shaped_template()
+        batch_range = template["api_config"].rag._user_params["embedding_cfg"][
+            "batch_size"
+        ]
+        rfopt = RFOptuna(
+            configs=template, trainer_type=None, objective="maximize:NDCG@3",
+            build_all_indexes=False,
+        )
+        # No coverage drawn, so the cache is empty before get_runs.
+        assert rfopt.get_context_coverage_leaves() == []
+        assert id(batch_range) not in rfopt._range_value_cache
+
+        # The first suggest call draws and caches the set; all runs share it.
+        runs = rfopt.get_runs(seed=42)
+        cached = rfopt._range_value_cache[id(batch_range)]
+        for run in runs:
+            batch = run["pipeline"].rag._user_params["embedding_cfg"]["batch_size"]
+            assert batch in cached
+
+
+def _rejection_callback(budget=100):
+    template = {"pipeline": {"index": List(["a", "b", "c"]), "k": Range(1, 10)}}
+    study = optuna.create_study(
+        direction="maximize", sampler=optuna.samplers.TPESampler(seed=0)
+    )
+    callback = OptunaShardCallback(
+        study=study,
+        search_spaces=[_extract_search_space(template)],
+        config_templates=[template],
+        budget=budget,
+        objective_metric="ndcg",
+    )
+    callback._set_initial_trials({}, spawned=0)
+    return study, callback
+
+
+class TestReplacementFeasibility:
+    def test_accepts_everything_without_a_predicate(self):
+        _, callback = _rejection_callback()
+        assert callback._maybe_suggest_replacement() is not None
+        assert callback._spawned == 1
+
+    def test_only_feasible_configs_are_returned(self):
+        study, callback = _rejection_callback()
+        callback.set_context_feasibility(lambda leaf: leaf["pipeline"]["index"] == "a")
+
+        with pytest.warns(UserWarning, match="rejected a suggested config"):
+            leaves = [callback._maybe_suggest_replacement() for _ in range(4)]
+
+        assert all(leaf["pipeline"]["index"] == "a" for leaf in leaves)
+        # Rejections must not consume budget.
+        assert callback._spawned == 4
+        states = [t.state for t in study.get_trials(deepcopy=False)]
+        assert optuna.trial.TrialState.FAIL in states
+
+    def test_rejected_trials_are_failed_not_completed(self):
+        study, callback = _rejection_callback()
+        callback.set_context_feasibility(lambda leaf: False)
+
+        with pytest.warns(UserWarning):
+            assert callback._maybe_suggest_replacement() is None
+
+        trials = study.get_trials(deepcopy=False)
+        assert len(trials) == _MAX_REPLACEMENT_ATTEMPTS
+        assert all(t.state == optuna.trial.TrialState.FAIL for t in trials)
+        assert callback._spawned == 0
+        assert study.best_trials == []
+
+    def test_narrowing_warning_fires_once(self):
+        _, callback = _rejection_callback()
+        callback.set_context_feasibility(lambda leaf: leaf["pipeline"]["index"] == "a")
+
+        with pytest.warns(UserWarning) as record:
+            for _ in range(6):
+                callback._maybe_suggest_replacement()
+
+        narrowing = [
+            w for w in record if "rejected a suggested config" in str(w.message)
+        ]
+        assert len(narrowing) == 1
+
+    def test_budget_still_caps_replacements(self):
+        _, callback = _rejection_callback(budget=2)
+        callback._set_initial_trials({}, spawned=2)
+        callback.set_context_feasibility(lambda leaf: True)
+        assert callback._maybe_suggest_replacement() is None
+
+
+class TestRandomSearchReproducibility:
+    """RFRandomSearch stamps its constructor seed onto every Range so Range
+    draws are reproducible alongside List draws (which use the global RNG).
+    Range uses its own generator, so without this seeding the constructor seed
+    would not affect Range draws at all. The run-level seed passed to get_runs
+    is ignored for the algorithm's draws.
+    """
+
+    @staticmethod
+    def _knobs(run):
+        rag = run["pipeline"].rag._user_params
+        return rag["embedding_cfg"]["batch_size"]
+
+    def test_same_seed_produces_identical_runs(self):
+        template = {
+            "api_config": _FakeCfg(
+                rag=_FakeCfg(
+                    embedding_cfg={
+                        "model": "minilm",
+                        "batch_size": Range(32, 128, step=32),
+                    },
+                    search_cfg={"type": "similarity", "k": Range(5, 20, step=5)},
+                ),
+            ),
+            "batch_size": 32,
+        }
+
+        def make_runs():
+            # Fresh template each call so the Range objects are unseeded to start.
+            rfopt = RFRandomSearch(
+                configs=copy.deepcopy(template),
+                trainer_type=None,
+                num_runs=6,
+                seed=42,
+            )
+            return rfopt.get_runs(seed=42)
+
+        first = [self._knobs(r) for r in make_runs()]
+        second = [self._knobs(r) for r in make_runs()]
+        assert first == second
+
+    def test_different_seeds_produce_different_runs(self):
+        template = {
+            "api_config": _FakeCfg(
+                rag=_FakeCfg(
+                    embedding_cfg={
+                        "model": "minilm",
+                        "batch_size": Range(32, 128, step=32),
+                    },
+                ),
+            ),
+        }
+
+        def make_runs(ctor_seed):
+            rfopt = RFRandomSearch(
+                configs=copy.deepcopy(template),
+                trainer_type=None,
+                num_runs=6,
+                seed=ctor_seed,
+            )
+            # The run-level seed is ignored; vary only the constructor seed.
+            return [self._knobs(r) for r in rfopt.get_runs(seed=42)]
+
+        assert make_runs(42) != make_runs(7)
