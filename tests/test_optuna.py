@@ -555,6 +555,69 @@ class TestOptunaShardCallback:
 
 
 # ---------------------------------------------------------------------------
+# RF-OPT-02: pruner=None short-circuits pruning; pruner="median" prunes
+# ---------------------------------------------------------------------------
+
+
+class TestPrunerNopShortCircuit:
+    """Regression tests for RF-OPT-02.
+
+    ``pruner=None`` must disable pruning entirely (the ``NopPruner`` short-
+    circuits before ``_should_prune_concurrent`` runs).  ``pruner="median"``
+    must still prune via the adapted median pruner when the current trial is
+    worse than the peer median.
+    """
+
+    @staticmethod
+    def _make_chunk_callback(pruner):
+        study = optuna.create_study(direction="minimize", pruner=pruner)
+        space = [("lr", Range(0.0, 1.0))]
+        template = _fit_template_for_chunk_callback_tests()
+        cb = OptunaChunkCallback(
+            study=study,
+            search_spaces=[space],
+            config_templates=[template],
+            trainer_type="SFT",
+            budget=5,
+            objective_metric="eval_loss",
+        )
+        return cb, study
+
+    def test_pruner_none_never_prunes(self):
+        """NopPruner short-circuits even when _should_prune_concurrent would fire."""
+        cb, study = self._make_chunk_callback(optuna.pruners.NopPruner())
+        peer = study.ask()
+        current = study.ask()
+        cb._set_initial_trials({1: peer, 2: current}, spawned=2)
+
+        # Peer reports a good (low) loss at step 0; current reports a bad
+        # (high) loss at the same step, so _should_prune_concurrent would
+        # return True (0.9 > median([0.2]) == 0.2) without the short-circuit.
+        cb.on_chunk_complete(1, 0, {"eval_loss": 0.2})
+        decision = cb.on_chunk_complete(2, 0, {"eval_loss": 0.9})
+
+        assert decision.action == "continue"
+        assert decision.replacement_config is None
+        assert sum(
+            t.state == optuna.trial.TrialState.PRUNED for t in study.trials
+        ) == 0
+
+    def test_pruner_median_prunes(self):
+        """pruner='median' prunes the current trial when it is worse than the peer median."""
+        cb, study = self._make_chunk_callback(optuna.pruners.MedianPruner())
+        peer = study.ask()
+        current = study.ask()
+        cb._set_initial_trials({1: peer, 2: current}, spawned=2)
+
+        cb.on_chunk_complete(1, 0, {"eval_loss": 0.2})
+        decision = cb.on_chunk_complete(2, 0, {"eval_loss": 0.9})
+
+        assert decision.action == "prune"
+        assert decision.replacement_config is not None
+        assert _trial_state_from_storage(study, current) == optuna.trial.TrialState.PRUNED
+
+
+# ---------------------------------------------------------------------------
 # RFOptuna class
 # ---------------------------------------------------------------------------
 

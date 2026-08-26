@@ -895,7 +895,6 @@ _SAMPLERS: dict[str, Any] = {
 
 _PRUNERS: dict[str, Any] = {
     "median": lambda n_startup: optuna.pruners.MedianPruner(n_startup_trials=n_startup),
-    "hyperband": lambda n_startup: optuna.pruners.HyperbandPruner(),
 }
 
 
@@ -1046,6 +1045,9 @@ class OptunaChunkCallback:
                 return RunDecision(action="continue")
             self._chunks_since_last_eval[run_id] = 0
 
+        if isinstance(self._study.pruner, optuna.pruners.NopPruner):
+            return RunDecision(action="continue")
+
         if trial.should_prune() or self._should_prune_concurrent(trial):
             self._study.tell(trial, state=optuna.trial.TrialState.PRUNED)
             replacement = self._maybe_suggest_replacement()
@@ -1147,14 +1149,21 @@ class OptunaChunkCallback:
         return dominating_peers > total_peers / 2
 
     def _should_prune_concurrent(self, trial: optuna.Trial) -> bool:
-        """Concurrent-aware pruning that compares intermediate values across
-        ALL trials (RUNNING + COMPLETE).
+        """RapidFire's adapted median pruner for fit mode.
 
-        Optuna's built-in pruners (MedianPruner, etc.) only compare against
-        COMPLETE trials, but in RapidFire's concurrent chunk loop every trial
-        stays RUNNING until ``finalize()``, so the built-in pruner never has
-        reference data.  This method supplements ``trial.should_prune()`` by
-        checking intermediate values from all peers regardless of state.
+        Compares the current trial's best intermediate value (across all its
+        reported steps) against the median of peer values at the current
+        trial's latest step, across ALL trials (RUNNING + COMPLETE), and prunes
+        if the current value is strictly worse than the median.
+
+        Optuna's built-in ``MedianPruner`` only compares against ``COMPLETE``
+        trials, but in RapidFire's concurrent chunk loop every trial stays
+        ``RUNNING`` until ``finalize()``, so the built-in pruner never has
+        reference data.  This method is the actual pruning mechanism selected
+        by ``pruner="median"``; ``trial.should_prune()`` is also called but is
+        a no-op until ``finalize()``.  NaN intermediate values are filtered out
+        before the median comparison.  No startup-trial threshold or minimum
+        step is applied, so a pipeline can be pruned after the first chunk.
         """
         all_frozen = self._study.get_trials(deepcopy=False)
 
@@ -1342,6 +1351,9 @@ class OptunaShardCallback:
 
         trial.report(metric_value, step=shard_id)
 
+        if isinstance(self._study.pruner, optuna.pruners.NopPruner):
+            return PipelineDecision(action="continue")
+
         if trial.should_prune() or self._should_prune_concurrent(trial):
             self._study.tell(trial, state=optuna.trial.TrialState.PRUNED)
             replacement = self._maybe_suggest_replacement()
@@ -1405,7 +1417,16 @@ class OptunaShardCallback:
         return dominating_peers > total_peers / 2
 
     def _should_prune_concurrent(self, trial: optuna.Trial) -> bool:
-        """Same concurrent-aware pruning as OptunaChunkCallback."""
+        """RapidFire's adapted median pruner for evals mode.
+
+        Differs from the fit-mode (``OptunaChunkCallback``) version in two
+        ways: it uses the value at the current trial's latest step rather than
+        the best value across all steps, and a NaN current value prunes
+        immediately (the fit-mode version filters NaN out of the median pool
+        instead).  Otherwise the same adapted median comparison across ALL
+        trials (RUNNING + COMPLETE) applies, with no startup-trial threshold
+        or minimum step.
+        """
         all_frozen = self._study.get_trials(deepcopy=False)
 
         current = None
@@ -1570,8 +1591,23 @@ class RFOptuna(AutoMLAlgorithm):
     sampler : str
         ``"tpe"`` (default), ``"cmaes"``, or ``"random"``.
     pruner : str or None
-        ``"median"`` (default), ``"hyperband"``, or ``None``.  Ignored for
-        multi-objective studies.
+        ``"median"`` (default) or ``None``.
+
+        ``"median"`` selects RapidFire's *adapted* median pruner, not Optuna's
+        stock ``MedianPruner``. Optuna's built-in pruners only compare against
+        ``COMPLETE`` trials, but in RapidFire's concurrent loop every trial
+        stays ``RUNNING`` until ``finalize()``, so the built-in pruner never
+        has reference data. The adapted pruner (``_should_prune_concurrent``)
+        instead compares the current trial's intermediate value against the
+        median of all peer values at the same step, across ``RUNNING`` and
+        ``COMPLETE`` trials. It applies no startup-trial threshold and no
+        minimum step, so a pipeline can be pruned after the first shard/chunk.
+
+        ``None`` disables pruning entirely: no trial is ever marked ``PRUNED``
+        and no replacement is spawned.
+
+        In multi-objective mode ``pruner`` is ignored and Pareto-dominance
+        pruning (``_should_prune_pareto``) always applies.
     seed : int
         Seed for the algorithm's own stochastic state: every ``Range``
         generator, the global RNG used by ``List.sample()`` / fallback draws,
