@@ -1,13 +1,13 @@
-"""Callback protocols for inter-chunk/shard decision-making during experiments.
+"""Callback protocols for inter-shard decision-making during experiments.
 
 Classes
 -------
 RunDecision
-    Dataclass returned by ``ChunkCallback.on_chunk_complete`` (fit mode).
+    Dataclass returned by ``FitShardCallback.on_shard_complete`` (fit mode).
 PipelineDecision
     Dataclass returned by ``ShardCallback.on_shard_complete`` (evals mode).
-ChunkCallback
-    Protocol for fit-mode inter-chunk pruning callbacks.
+FitShardCallback
+    Protocol for fit-mode inter-shard pruning callbacks.
 ShardCallback
     Protocol for evals-mode inter-shard pruning callbacks.
 """
@@ -20,7 +20,7 @@ from typing import Any, Literal, Protocol
 
 @dataclass
 class RunDecision:
-    """Decision returned by a ``ChunkCallback`` after a fit-mode chunk completes.
+    """Decision returned by a ``FitShardCallback`` after a fit-mode shard completes.
 
     Attributes
     ----------
@@ -48,28 +48,28 @@ class PipelineDecision:
     replacement_config: dict[str, Any] | None = None
 
 
-class ChunkCallback(Protocol):
-    """Protocol for callbacks invoked after each chunk in fit mode.
+class FitShardCallback(Protocol):
+    """Protocol for callbacks invoked after each shard in fit mode.
 
-    Call order: ``register_runs`` → ``on_chunk_complete`` (repeated) → ``finalize``.
+    Call order: ``register_runs`` → ``on_shard_complete`` (repeated) → ``finalize``.
     """
 
     def register_runs(self, run_id_to_config: dict[int, dict[str, Any]]) -> None:
         """Map newly created DB run IDs to their config dicts."""
         ...
 
-    def on_chunk_complete(
+    def on_shard_complete(
         self,
         run_id: int,
-        chunk_id: int,
+        shard_id: int,
         metrics: dict[str, Any],
     ) -> RunDecision:
-        """Evaluate a run after it finishes a chunk.
+        """Evaluate a run after it finishes a shard.
 
         Parameters
         ----------
         run_id : int
-        chunk_id : int
+        shard_id : int
         metrics : dict[str, Any]
 
         Returns

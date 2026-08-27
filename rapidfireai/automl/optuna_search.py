@@ -1,13 +1,13 @@
-"""Optuna-based hyperparameter optimization integrated with RapidFire's chunk/shard loop.
+"""Optuna-based hyperparameter optimization integrated with RapidFire's shard loop.
 
 Classes
 -------
 RFOptuna
     User-facing ``AutoMLAlgorithm`` subclass.  Drop-in replacement for
     ``RFGridSearch`` / ``RFRandomSearch``.
-OptunaChunkCallback
-    ``ChunkCallback`` implementation for fit mode — prunes/replaces runs
-    between training chunks.
+OptunaFitShardCallback
+    ``FitShardCallback`` implementation for fit mode — prunes/replaces runs
+    between training shards.
 OptunaShardCallback
     ``ShardCallback`` implementation for evals mode — prunes/replaces
     pipelines between evaluation shards.
@@ -35,7 +35,7 @@ import optuna
 
 from rapidfireai.automl.base import AutoMLAlgorithm
 from rapidfireai.automl.callbacks import (
-    ChunkCallback,
+    FitShardCallback,
     PipelineDecision,
     RunDecision,
     ShardCallback,
@@ -903,11 +903,11 @@ _PRUNERS: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 
 
-class OptunaChunkCallback:
-    """``ChunkCallback`` implementation for Optuna-based pruning in fit mode.
+class OptunaFitShardCallback:
+    """``FitShardCallback`` implementation for Optuna-based pruning in fit mode.
 
-    Created by :meth:`RFOptuna.get_callback`.  After each training chunk the
-    controller calls ``on_chunk_complete`` which reports metrics to Optuna
+    Created by :meth:`RFOptuna.get_callback`.  After each training shard the
+    controller calls ``on_shard_complete`` which reports metrics to Optuna
     and returns a ``RunDecision`` (continue / prune with optional replacement).
 
     Parameters
@@ -924,9 +924,9 @@ class OptunaChunkCallback:
     objective_metric : str
         Primary metric key (e.g. ``"eval_loss"``).
     granularity : str
-        ``"chunk"`` or ``"epoch"``.
-    num_chunks : int or None
-        Total chunks per epoch; required when ``granularity="epoch"``.
+        ``"shard"`` or ``"epoch"``.
+    num_shards : int or None
+        Total shards per epoch; required when ``granularity="epoch"``.
     objective_metrics : list[str] or None
         All metric keys (multi-objective).
     directions : list[str] or None
@@ -934,8 +934,8 @@ class OptunaChunkCallback:
 
     Methods
     -------
-    on_chunk_complete(run_id, chunk_id, metrics) -> RunDecision
-        Evaluate a run after a chunk.
+    on_shard_complete(run_id, shard_id, metrics) -> RunDecision
+        Evaluate a run after a shard.
     finalize(final_metrics)
         Tell remaining RUNNING trials their final objective values.
     _remap_pending_trial(db_run_id)
@@ -950,20 +950,20 @@ class OptunaChunkCallback:
         trainer_type: str,
         budget: int,
         objective_metric: str,
-        granularity: str = "chunk",
-        num_chunks: int | None = None,
+        granularity: str = "shard",
+        num_shards: int | None = None,
         *,
         objective_metrics: list[str] | None = None,
         directions: list[str] | None = None,
         range_cache: dict[int, list] | None = None,
     ):
-        if granularity not in ("chunk", "epoch"):
+        if granularity not in ("shard", "epoch"):
             raise AutoMLException(
-                f"granularity must be 'chunk' or 'epoch', got '{granularity}'"
+                f"granularity must be 'shard' or 'epoch', got '{granularity}'"
             )
-        if granularity == "epoch" and (num_chunks is None or num_chunks < 1):
+        if granularity == "epoch" and (num_shards is None or num_shards < 1):
             raise AutoMLException(
-                "num_chunks must be a positive integer when granularity='epoch'"
+                "num_shards must be a positive integer when granularity='epoch'"
             )
 
         self._study = study
@@ -976,12 +976,12 @@ class OptunaChunkCallback:
         self._directions = directions or ["minimize"]
         self._is_multi_objective = len(self._objective_metrics) > 1
         self._granularity = granularity
-        self._num_chunks = num_chunks
+        self._num_shards = num_shards
         self._range_cache = range_cache
         self._trials: dict[int, optuna.trial.Trial] = {}
         self._spawned = 0
         self._cumulative_step: dict[int, int] = {}
-        self._chunks_since_last_eval: dict[int, int] = {}
+        self._shards_since_last_eval: dict[int, int] = {}
         self._multi_intermediates: dict[int, dict[int, list[float]]] = {}
         self._pruned_run_ids: set[int] = set()
 
@@ -992,26 +992,26 @@ class OptunaChunkCallback:
         self._trials.update(trial_map)
         self._spawned = spawned
 
-    # -- ChunkCallback protocol --
+    # -- FitShardCallback protocol --
 
     def register_runs(self, run_id_to_config: dict[int, dict[str, Any]]) -> None:
         """No-op — initial mapping is handled via ``_set_initial_trials``."""
         pass
 
-    def on_chunk_complete(
+    def on_shard_complete(
         self,
         run_id: int,
-        chunk_id: int,
+        shard_id: int,
         metrics: dict[str, Any],
     ) -> RunDecision:
-        """Evaluate a run after a training chunk.
+        """Evaluate a run after a training shard.
 
         Parameters
         ----------
         run_id : int
             DB run identifier.
-        chunk_id : int
-            Zero-based chunk index.
+        shard_id : int
+            Zero-based shard index.
         metrics : dict[str, Any]
             Metric values (flat scalars, MLflow step histories, or
             dict-wrapped values).
@@ -1025,15 +1025,15 @@ class OptunaChunkCallback:
             return RunDecision(action="continue")
 
         if self._is_multi_objective:
-            return self._on_chunk_complete_multi(run_id, chunk_id, metrics, trial)
+            return self._on_shard_complete_multi(run_id, shard_id, metrics, trial)
 
-        # Report one value per chunk at a monotonic, batch-size-independent
-        # step (cumulative chunks completed, 0-indexed).  The anchor is a
+        # Report one value per shard at a monotonic, batch-size-independent
+        # step (cumulative shards completed, 0-indexed).  The anchor is a
         # per-run counter rather than the optimizer step, so trials with
         # different batch sizes remain comparable; it also keeps increasing
-        # across epochs (chunk_id cycles 0..n-1 each epoch).  The reported
+        # across epochs (shard_id cycles 0..n-1 each epoch).  The reported
         # value is the last (most recent) entry in the metric history, i.e.
-        # the metric state at the chunk boundary.
+        # the metric state at the shard boundary.
         step = self._cumulative_step.get(run_id, 0)
         self._cumulative_step[run_id] = step + 1
         metric_value = self._resolve_metric(metrics)
@@ -1042,12 +1042,12 @@ class OptunaChunkCallback:
         trial.report(metric_value, step=step)
 
         if self._granularity == "epoch":
-            self._chunks_since_last_eval[run_id] = (
-                self._chunks_since_last_eval.get(run_id, 0) + 1
+            self._shards_since_last_eval[run_id] = (
+                self._shards_since_last_eval.get(run_id, 0) + 1
             )
-            if self._chunks_since_last_eval[run_id] < self._num_chunks:
+            if self._shards_since_last_eval[run_id] < self._num_shards:
                 return RunDecision(action="continue")
-            self._chunks_since_last_eval[run_id] = 0
+            self._shards_since_last_eval[run_id] = 0
 
         if isinstance(self._study.pruner, optuna.pruners.NopPruner):
             return RunDecision(action="continue")
@@ -1059,21 +1059,21 @@ class OptunaChunkCallback:
 
         return RunDecision(action="continue")
 
-    def _on_chunk_complete_multi(
+    def _on_shard_complete_multi(
         self,
         run_id: int,
-        chunk_id: int,
+        shard_id: int,
         metrics: dict[str, Any],
         trial: optuna.Trial,
     ) -> RunDecision:
-        """Multi-objective variant of on_chunk_complete.
+        """Multi-objective variant of on_shard_complete.
 
         Optuna's built-in pruners and ``trial.report()`` don't support
         multi-objective studies, so we track intermediate values ourselves
         and use Pareto-dominance-based pruning.
         """
-        # Key intermediates by the cumulative chunks-completed counter (see
-        # on_chunk_complete) so Pareto pruning compares trials at a monotonic,
+        # Key intermediates by the cumulative shards-completed counter (see
+        # on_shard_complete) so Pareto pruning compares trials at a monotonic,
         # batch-size-independent step that keeps increasing across epochs.
         step = self._cumulative_step.get(run_id, 0)
         self._cumulative_step[run_id] = step + 1
@@ -1085,12 +1085,12 @@ class OptunaChunkCallback:
         intermediates[step] = values
 
         if self._granularity == "epoch":
-            self._chunks_since_last_eval[run_id] = (
-                self._chunks_since_last_eval.get(run_id, 0) + 1
+            self._shards_since_last_eval[run_id] = (
+                self._shards_since_last_eval.get(run_id, 0) + 1
             )
-            if self._chunks_since_last_eval[run_id] < self._num_chunks:
+            if self._shards_since_last_eval[run_id] < self._num_shards:
                 return RunDecision(action="continue")
-            self._chunks_since_last_eval[run_id] = 0
+            self._shards_since_last_eval[run_id] = 0
 
         if self._should_prune_pareto(run_id, step):
             self._pruned_run_ids.add(run_id)
@@ -1166,13 +1166,13 @@ class OptunaChunkCallback:
         if the current value is strictly worse than the median.
 
         Optuna's built-in ``MedianPruner`` only compares against ``COMPLETE``
-        trials, but in RapidFire's concurrent chunk loop every trial stays
+        trials, but in RapidFire's concurrent shard loop every trial stays
         ``RUNNING`` until ``finalize()``, so the built-in pruner never has
         reference data.  This method is the actual pruning mechanism selected
         by ``pruner="median"``; ``trial.should_prune()`` is also called but is
         a no-op until ``finalize()``.  NaN intermediate values are filtered out
         before the median comparison.  No startup-trial threshold or minimum
-        step is applied, so a pipeline can be pruned after the first chunk.
+        step is applied, so a pipeline can be pruned after the first shard.
         """
         all_frozen = self._study.get_trials(deepcopy=False)
 
@@ -1247,7 +1247,7 @@ class OptunaChunkCallback:
 class OptunaShardCallback:
     """``ShardCallback`` implementation for Optuna-based pruning in evals mode.
 
-    Evals-mode counterpart of :class:`OptunaChunkCallback`.
+    Evals-mode counterpart of :class:`OptunaFitShardCallback`.
 
     Parameters
     ----------
@@ -1428,7 +1428,7 @@ class OptunaShardCallback:
     def _should_prune_concurrent(self, trial: optuna.Trial) -> bool:
         """RapidFire's adapted median pruner for evals mode.
 
-        Differs from the fit-mode (``OptunaChunkCallback``) version in two
+        Differs from the fit-mode (``OptunaFitShardCallback``) version in two
         ways: it uses the value at the current trial's latest step rather than
         the best value across all steps, and a NaN current value prunes
         immediately (the fit-mode version filters NaN out of the median pool
@@ -1610,7 +1610,7 @@ class RFOptuna(AutoMLAlgorithm):
         instead compares the current trial's intermediate value against the
         median of all peer values at the same step, across ``RUNNING`` and
         ``COMPLETE`` trials. It applies no startup-trial threshold and no
-        minimum step, so a pipeline can be pruned after the first shard/chunk.
+        minimum step, so a pipeline can be pruned after the first shard.
 
         ``None`` disables pruning entirely: no trial is ever marked ``PRUNED``
         and no replacement is spawned.
@@ -1629,7 +1629,7 @@ class RFOptuna(AutoMLAlgorithm):
         box; pass an explicit ``seed`` to vary which part of each ``Range``
         this run explores.
     granularity : str
-        ``"chunk"`` (default) or ``"epoch"``.  Controls when pruning is
+        ``"shard"`` (default) or ``"epoch"``.  Controls when pruning is
         evaluated in fit mode.  Ignored in evals mode.
     build_all_indexes : bool
         Evals mode only; ignored in fit mode.  When ``True`` (default), every
@@ -1653,7 +1653,7 @@ class RFOptuna(AutoMLAlgorithm):
         Create the Optuna study and sample ``n_initial`` config leaves.
         The ``seed`` argument is accepted for the controller contract but
         ignored -- the constructor ``seed`` governs all draws.
-    get_callback(num_chunks=None) -> OptunaChunkCallback | OptunaShardCallback | None
+    get_callback(num_shards=None) -> OptunaFitShardCallback | OptunaShardCallback | None
         Return the callback wired to the study.  Call after ``get_runs()``.
     bind_initial_trials(ordered_ids)
         Map DB run/pipeline IDs to the Optuna trials from ``get_runs()``.
@@ -1673,12 +1673,12 @@ class RFOptuna(AutoMLAlgorithm):
         sampler: str = "tpe",
         pruner: str | None = "median",
         seed: int = 42,
-        granularity: str = "chunk",
+        granularity: str = "shard",
         build_all_indexes: bool = True,
     ):
-        if granularity not in ("chunk", "epoch"):
+        if granularity not in ("shard", "epoch"):
             raise AutoMLException(
-                f"granularity must be 'chunk' or 'epoch', got '{granularity}'"
+                f"granularity must be 'shard' or 'epoch', got '{granularity}'"
             )
 
         self.n_initial = n_initial
@@ -1691,7 +1691,7 @@ class RFOptuna(AutoMLAlgorithm):
         self.build_all_indexes = build_all_indexes
 
         self._study: optuna.Study | None = None
-        self._callback: OptunaChunkCallback | OptunaShardCallback | None = None
+        self._callback: OptunaFitShardCallback | OptunaShardCallback | None = None
         self._config_templates: list[Any] = []
         self._search_spaces: list[list[tuple[str, Range | List]]] = []
         self._initial_trials: list[optuna.trial.Trial] = []
@@ -1810,24 +1810,24 @@ class RFOptuna(AutoMLAlgorithm):
 
         return runs
 
-    def get_callback(self, num_chunks: int | None = None) -> OptunaChunkCallback | OptunaShardCallback | None:
-        """Return the callback for inter-chunk/shard pruning.  Call after ``get_runs()``.
+    def get_callback(self, num_shards: int | None = None) -> OptunaFitShardCallback | OptunaShardCallback | None:
+        """Return the callback for inter-shard pruning.  Call after ``get_runs()``.
 
         Parameters
         ----------
-        num_chunks : int or None
-            Total chunks per epoch.  Only used when ``granularity="epoch"``
+        num_shards : int or None
+            Total shards per epoch.  Only used when ``granularity="epoch"``
             in fit mode so the callback can detect epoch boundaries.
 
         Returns
         -------
-        OptunaChunkCallback or OptunaShardCallback or None
+        OptunaFitShardCallback or OptunaShardCallback or None
         """
         if self._study is None:
             return None
 
         if self.mode == "fit":
-            cb = OptunaChunkCallback(
+            cb = OptunaFitShardCallback(
                 study=self._study,
                 search_spaces=self._search_spaces,
                 config_templates=self._config_templates,
@@ -1835,7 +1835,7 @@ class RFOptuna(AutoMLAlgorithm):
                 budget=self.budget,
                 objective_metric=self._objective_metric,
                 granularity=self._granularity,
-                num_chunks=num_chunks,
+                num_shards=num_shards,
                 objective_metrics=self._objective_metrics,
                 directions=self._directions,
                 range_cache=self._range_value_cache,

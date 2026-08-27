@@ -39,7 +39,7 @@ class AutoMLAlgorithm(ABC):
     -------
     get_runs(seed) -> list[dict]
         Return concrete config-leaf dicts.
-    get_callback(**kwargs) -> ChunkCallback | ShardCallback | None
+    get_callback(**kwargs) -> FitShardCallback | ShardCallback | None
         Return an optional inter-step pruning callback.
     """
 
@@ -107,11 +107,11 @@ class AutoMLAlgorithm(ABC):
                     )
 
     def get_callback(self, **kwargs):
-        """Return an optional callback for inter-chunk/shard pruning decisions.
+        """Return an optional callback for inter-shard pruning decisions.
 
         Returns
         -------
-        ChunkCallback or ShardCallback or None
+        FitShardCallback or ShardCallback or None
         """
         return None
 

@@ -33,7 +33,7 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
   const [originalTextareaContent, setOriginalTextareaContent] = useState('');
   const [warmStart, setWarmStart] = useState(false);
   const [runStatus, setRunStatus] = useState('');
-  const [chunkNumber, setChunkNumber] = useState(0);
+  const [shardNumber, setShardNumber] = useState(0);
 
   useEffect(() => {
     const fetchRunConfiguration = async () => {
@@ -55,8 +55,8 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
           if ('status' in response && typeof response.status === 'string') {
             setRunStatus(response.status);
           }
-          if ('num_chunks_visited' in response && typeof response.num_chunks_visited === 'number') {
-            setChunkNumber(response.num_chunks_visited);
+          if ('num_shards_visited' in response && typeof response.num_shards_visited === 'number') {
+            setShardNumber(response.num_shards_visited);
           }
         } else {
           console.error('Response does not contain a config object');
@@ -258,8 +258,8 @@ const InteractiveControllerComponent: React.FC<InteractiveControllerComponentPro
                 <span css={styles.detailValue}>{runStatus}</span>
               </div>
               <div css={styles.detailRow}>
-                <span css={styles.detailLabel}>Chunk Number:</span>
-                <span css={styles.detailValue}>{chunkNumber}</span>
+                <span css={styles.detailLabel}>Shard Number:</span>
+                <span css={styles.detailValue}>{shardNumber}</span>
               </div>
             </div>
           </div>

@@ -797,10 +797,10 @@ def save_checkpoint_to_disk(
     elif last:
         checkpoint_path = DataPath.final_checkpoint_path(base_run_path)
     else:
-        # One folder per chunk save, suffixed by completed_steps. Prior to this
+        # One folder per shard save, suffixed by completed_steps. Prior to this
         # change every intermediate save overwrote the same "checkpoint" folder,
-        # which silently dropped per-chunk snapshots even when the user opted
-        # in to save_strategy="chunk".
+        # which silently dropped per-shard snapshots even when the user opted
+        # in to save_strategy="shard".
         checkpoint_path = DataPath.intermediate_checkpoint_for_step(
             base_run_path, completed_steps
         )

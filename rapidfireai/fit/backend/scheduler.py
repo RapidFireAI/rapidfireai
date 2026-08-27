@@ -1,4 +1,4 @@
-"""This module contains the Scheduler class which is responsible for scheduling runs on workers to train on a chunk."""
+"""This module contains the Scheduler class which is responsible for scheduling runs on workers to train on a shard."""
 
 import copy
 import random
@@ -9,7 +9,7 @@ class SchedulerState:
 
     def __init__(self):
         self.worker_running_current_run: dict[int, int] = {}
-        self.run_visited_num_chunks: dict[int, int] = {}
+        self.run_visited_num_shards: dict[int, int] = {}
         self.run_assigned_workers: dict[int, set[int]] = {}
         self.run_completion_time: dict[int, float] = {}
         self.run_scheduling_generation: dict[int, int] = (
@@ -24,7 +24,7 @@ class SchedulerState:
         new_state.worker_running_current_run = copy.deepcopy(
             self.worker_running_current_run
         )
-        new_state.run_visited_num_chunks = copy.deepcopy(self.run_visited_num_chunks)
+        new_state.run_visited_num_shards = copy.deepcopy(self.run_visited_num_shards)
         new_state.run_assigned_workers = copy.deepcopy(self.run_assigned_workers)
         new_state.run_completion_time = copy.deepcopy(self.run_completion_time)
         new_state.run_scheduling_generation = copy.deepcopy(
@@ -36,17 +36,17 @@ class SchedulerState:
 
 
 class Scheduler:
-    """This class is responsible for scheduling runs on to workers to train on a chunk"""
+    """This class is responsible for scheduling runs on to workers to train on a shard"""
 
     def __init__(
         self,
         runs_info: list[dict],
         num_workers: int,
-        num_chunks: int,
+        num_shards: int,
         num_simulations: int = 1000,
     ) -> None:
         self.n_workers: int = num_workers
-        self.n_chunks: int = num_chunks
+        self.n_shards: int = num_shards
         self.num_simulations: int = num_simulations
 
         # Extract run information from runs_info
@@ -70,7 +70,7 @@ class Scheduler:
         # Initialize actual state
         self.state = SchedulerState()
         self.state.worker_running_current_run = dict.fromkeys(range(self.n_workers), -1)
-        self.state.run_visited_num_chunks = dict.fromkeys(self.run_ids, 0)
+        self.state.run_visited_num_shards = dict.fromkeys(self.run_ids, 0)
         self.state.run_assigned_workers = {run_id: set() for run_id in self.run_ids}
         self.state.run_scheduling_generation = dict.fromkeys(self.run_ids, 0)
 
@@ -80,7 +80,7 @@ class Scheduler:
             return
 
         # Reset progress for this run
-        self.state.run_visited_num_chunks[run_id] = 0
+        self.state.run_visited_num_shards[run_id] = 0
         self.state.run_epochs_completed[run_id] = (
             self.state.run_epochs_completed.get(run_id, 0) + 1
         )
@@ -97,7 +97,7 @@ class Scheduler:
     def add_run(
         self,
         run_info: dict,
-        run_visited_num_chunks: int = 0,
+        run_visited_num_shards: int = 0,
         run_epochs_completed: int = 0,
     ) -> None:
         """Add a new run to the scheduler."""
@@ -118,7 +118,7 @@ class Scheduler:
         self.run_estimated_runtime[run_id] = run_info.get("estimated_runtime", 1.0)
 
         # Set the progress
-        self.state.run_visited_num_chunks[run_id] = run_visited_num_chunks
+        self.state.run_visited_num_shards[run_id] = run_visited_num_shards
         self.state.run_epochs_completed[run_id] = run_epochs_completed
         # Initialize scheduling generation for new runs
         # Set to minimum generation so it gets scheduled fairly
@@ -144,7 +144,7 @@ class Scheduler:
         state.run_assigned_workers[run_id].clear()
 
         # Increment progress for this run
-        state.run_visited_num_chunks[run_id] += 1
+        state.run_visited_num_shards[run_id] += 1
 
         # Clear completion time (only relevant in simulation)
         if run_id in state.run_completion_time:
@@ -156,7 +156,7 @@ class Scheduler:
             return 0
 
         # Get the progress before removing
-        progress = self.state.run_visited_num_chunks.get(run_id, 0)
+        progress = self.state.run_visited_num_shards.get(run_id, 0)
 
         # Free all workers assigned to this run
         workers_to_free = list(self.state.run_assigned_workers.get(run_id, set()))
@@ -165,7 +165,7 @@ class Scheduler:
                 self.state.worker_running_current_run[worker_id] = -1
 
         # Remove from all data structures
-        self.state.run_visited_num_chunks.pop(run_id, None)
+        self.state.run_visited_num_shards.pop(run_id, None)
         self.state.run_assigned_workers.pop(run_id, None)
         self.state.run_scheduling_generation.pop(run_id, None)
         self.state.run_epochs_completed.pop(run_id, None)
@@ -197,7 +197,7 @@ class Scheduler:
         state.run_assigned_workers[run_id].clear()
 
         # Increment progress for this run
-        state.run_visited_num_chunks[run_id] += 1
+        state.run_visited_num_shards[run_id] += 1
 
         # Clear completion time (only relevant in simulation)
         if run_id in state.run_completion_time:
@@ -218,7 +218,7 @@ class Scheduler:
         # Identify runs that are not currently running and not completed
         for run_id in self.run_ids:
             # Skip completed runs
-            if sim_state.run_visited_num_chunks[run_id] >= self.n_chunks:
+            if sim_state.run_visited_num_shards[run_id] >= self.n_shards:
                 continue
             # Skip currently running runs
             if len(sim_state.run_assigned_workers[run_id]) > 0:
@@ -230,7 +230,7 @@ class Scheduler:
 
         # Find the run with least progress using epoch-aware priority:
         # 1. First: fewest epochs completed (ensures runs complete current epoch before others start new ones)
-        # 2. Then: fewest chunks in current epoch (fair round-robin within an epoch)
+        # 2. Then: fewest shards in current epoch (fair round-robin within an epoch)
         # 3. Finally: lowest run_id for tie-breaking
         # NOTE: newly inserted clones will have 0 epochs, so they get priority
 
@@ -248,14 +248,14 @@ class Scheduler:
         if not runs_at_min_epoch:
             return []
 
-        # Among runs at minimum epoch, find those with fewest chunks
-        min_chunks = min(
-            sim_state.run_visited_num_chunks[run_id] for run_id in runs_at_min_epoch
+        # Among runs at minimum epoch, find those with fewest shards
+        min_shards = min(
+            sim_state.run_visited_num_shards[run_id] for run_id in runs_at_min_epoch
         )
 
         fair_schedulable = []
         for run_id in runs_at_min_epoch:
-            if sim_state.run_visited_num_chunks[run_id] == min_chunks:
+            if sim_state.run_visited_num_shards[run_id] == min_shards:
                 fair_schedulable.append(run_id)
 
         # Sort by run_id for tie-breaking (lowest run_id gets priority)
@@ -266,7 +266,7 @@ class Scheduler:
     def _simulate_random_schedule(
         self, start_state: SchedulerState, seed: int = None
     ) -> tuple[float, list[dict]]:
-        """Run a simulation from a given state. Treats all chunks as equal for simulation purposes."""
+        """Run a simulation from a given state. Treats all shards as equal for simulation purposes."""
         if seed is not None:
             random.seed(seed)
 
@@ -280,7 +280,7 @@ class Scheduler:
 
             # Check termination
             if all(
-                sim_state.run_visited_num_chunks[run_id] >= self.n_chunks
+                sim_state.run_visited_num_shards[run_id] >= self.n_shards
                 for run_id in self.run_ids
             ):
                 break
@@ -317,7 +317,7 @@ class Scheduler:
                 available_workers = self._get_available_workers(sim_state)  # Refresh
 
                 if req_workers <= len(available_workers):
-                    chunk_id = sim_state.run_visited_num_chunks[run_id]
+                    shard_id = sim_state.run_visited_num_shards[run_id]
                     assigned_workers = available_workers[:req_workers]
                     runtime = self.run_estimated_runtime[run_id]
 
@@ -340,7 +340,7 @@ class Scheduler:
                         {
                             "run_id": run_id,
                             "worker_ids": tuple(assigned_workers),
-                            "chunk_id": chunk_id,
+                            "shard_id": shard_id,
                             "start_time": sim_state.current_time,
                             "end_time": sim_state.current_time + runtime,
                         }
@@ -366,16 +366,16 @@ class Scheduler:
         Schedule tasks using Monte Carlo simulation to find the best schedule.
         The actual scheduler doesn't care about time - that's managed externally.
         """
-        # Check if all runs have seen all chunks first
+        # Check if all runs have seen all shards first
         if all(
-            self.state.run_visited_num_chunks[run_id] >= self.n_chunks
+            self.state.run_visited_num_shards[run_id] >= self.n_shards
             for run_id in self.run_ids
         ):
             return {
                 "run_id": None,
                 "worker_ids": None,
-                "chunk_id": None,
-                "is_last_chunk": None,
+                "shard_id": None,
+                "is_last_shard": None,
             }
 
         # Check basic conditions using actual state
@@ -384,8 +384,8 @@ class Scheduler:
             return {
                 "run_id": -1,
                 "worker_ids": None,
-                "chunk_id": -1,
-                "is_last_chunk": None,
+                "shard_id": -1,
+                "is_last_shard": None,
             }
 
         schedulable_runs = self._get_schedulable_runs(self.state)
@@ -393,8 +393,8 @@ class Scheduler:
             return {
                 "run_id": -1,
                 "worker_ids": None,
-                "chunk_id": -1,
-                "is_last_chunk": None,
+                "shard_id": -1,
+                "is_last_shard": None,
             }
 
         # Run Monte Carlo simulations from current state
@@ -425,11 +425,11 @@ class Scheduler:
             req_workers = self.run_req_workers[run_id]
 
             if req_workers <= len(available_workers):
-                chunk_id = self.state.run_visited_num_chunks[run_id]
+                shard_id = self.state.run_visited_num_shards[run_id]
                 best_first_action = {
                     "run_id": run_id,
                     "worker_ids": tuple(available_workers[:req_workers]),
-                    "chunk_id": chunk_id,
+                    "shard_id": shard_id,
                 }
 
         if best_first_action:
@@ -441,7 +441,7 @@ class Scheduler:
 
             if req_workers <= len(current_available):
                 worker_ids = tuple(current_available[:req_workers])
-                chunk_id = self.state.run_visited_num_chunks[run_id]
+                shard_id = self.state.run_visited_num_shards[run_id]
 
                 # Update actual state
                 for worker_id in worker_ids:
@@ -453,38 +453,38 @@ class Scheduler:
                     self.state.run_scheduling_generation.get(run_id, 0) + 1
                 )
 
-                is_last_chunk = chunk_id == self.n_chunks - 1
+                is_last_shard = shard_id == self.n_shards - 1
 
                 return {
                     "run_id": run_id,
                     "worker_ids": worker_ids,
-                    "chunk_id": chunk_id,
-                    "is_last_chunk": is_last_chunk,
+                    "shard_id": shard_id,
+                    "is_last_shard": is_last_shard,
                 }
 
-        return {"run_id": -1, "worker_ids": None, "chunk_id": -1, "is_last_chunk": None}
+        return {"run_id": -1, "worker_ids": None, "shard_id": -1, "is_last_shard": None}
 
     def get_status(self) -> dict:
         """Get current scheduler status for debugging."""
         completed_runs = [
             run_id
             for run_id in self.run_ids
-            if self.state.run_visited_num_chunks[run_id] == self.n_chunks
+            if self.state.run_visited_num_shards[run_id] == self.n_shards
         ]
 
-        current_chunks = {}
+        current_shards = {}
         for run_id in self.run_ids:
             if len(self.state.run_assigned_workers[run_id]) > 0:
-                current_chunks[run_id] = self.state.run_visited_num_chunks[run_id]
+                current_shards[run_id] = self.state.run_visited_num_shards[run_id]
             else:
-                current_chunks[run_id] = "None"
+                current_shards[run_id] = "None"
 
         return {
             "active_runs": len(
                 [
                     r
                     for r in self.run_ids
-                    if self.state.run_visited_num_chunks[r] < self.n_chunks
+                    if self.state.run_visited_num_shards[r] < self.n_shards
                 ]
             ),
             "busy_workers": len(
@@ -496,10 +496,10 @@ class Scheduler:
             ),
             "completed_runs": len(completed_runs),
             "run_progress": {
-                r: f"{self.state.run_visited_num_chunks[r]}/{self.n_chunks}"
+                r: f"{self.state.run_visited_num_shards[r]}/{self.n_shards}"
                 for r in self.run_ids
             },
-            "current_chunks": current_chunks,
+            "current_shards": current_shards,
             "run_workers": {
                 r: f"{len(self.state.run_assigned_workers[r])}/{self.run_req_workers[r]}"
                 for r in self.run_ids

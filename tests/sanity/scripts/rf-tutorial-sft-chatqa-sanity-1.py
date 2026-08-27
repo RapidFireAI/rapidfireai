@@ -175,8 +175,8 @@ if __name__ == '__main__':
     # Every experiment instance must be uniquely named
     experiment = Experiment(experiment_name=args.experiment_name, mode="fit")
 
-    # Launch training of all configs in the config_group with swap granularity of 4 chunks
-    experiment.run_fit(config_group, sample_create_model, train_dataset, eval_dataset, num_chunks=4, seed=42)
+    # Launch training of all configs in the config_group with swap granularity of 4 shards
+    experiment.run_fit(config_group, sample_create_model, train_dataset, eval_dataset, num_shards=4, seed=42)
 
     # End the experiment
     experiment.end()

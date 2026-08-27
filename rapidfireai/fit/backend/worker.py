@@ -16,7 +16,7 @@ from typing import Any
 
 import torch
 
-from rapidfireai.fit.backend.chunks import DatasetChunks
+from rapidfireai.fit.backend.shards import DatasetShards
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.fit.ml.checkpoint_utils import (
     flush_cuda_cache,
@@ -179,7 +179,7 @@ class Worker:
         self.metric_logger.get_experiment(self.experiment_name)
 
         # load datasets
-        self.train_dataset, self.eval_dataset, self.num_chunks = self.load_datasets()
+        self.train_dataset, self.eval_dataset, self.num_shards = self.load_datasets()
         self.len_train_dataset = len(self.train_dataset)
 
     def load_datasets(
@@ -190,20 +190,20 @@ class Worker:
             with open(DataPath.dataset_path(), "rb") as f:
                 datasets = decode_db_payload(f.read())
             self.logger.debug("Loaded datasets")
-            return datasets["train"], datasets["eval"], datasets["num_chunks"]
+            return datasets["train"], datasets["eval"], datasets["num_shards"]
         except Exception as e:
             raise WorkerException(f"Error loading datasets: {e}") from e
 
     def run_fit(
         self,
         run_id: int,
-        chunk_id: int,
+        shard_id: int,
         multi_worker_details: dict[str, Any],
         create_model_fn: Callable,
     ) -> None:
         """Run fit"""
         self.logger.debug(
-            f"Received run_fit on worker for run {run_id} with chunk {chunk_id}"
+            f"Received run_fit on worker for run {run_id} with shard {shard_id}"
         )
 
         # get run details
@@ -282,15 +282,15 @@ class Worker:
             * multi_worker_details.get("world_size", 1)
         )
 
-        # fetch train dataset chunk
-        train_dataset_chunker = DatasetChunks(
+        # fetch train dataset shard
+        train_dataset_sharder = DatasetShards(
             self.len_train_dataset,
-            self.num_chunks,
+            self.num_shards,
             batch_size=effective_batch_size,
-            offset=run_details["chunk_offset"],
+            offset=run_details["shard_offset"],
         )
-        train_dataset_chunk = train_dataset_chunker.get_chunk(
-            self.train_dataset, chunk_id
+        train_dataset_shard = train_dataset_sharder.get_shard(
+            self.train_dataset, shard_id
         )
 
         # create worker config
@@ -305,7 +305,7 @@ class Worker:
             world_size=multi_worker_details["world_size"],
             world_worker_ids=multi_worker_details["worker_ids"],
             create_model_fn=create_model_fn,
-            train_dataset=train_dataset_chunk,
+            train_dataset=train_dataset_shard,
             eval_dataset=self.eval_dataset,
             warm_started_from=run_details["warm_started_from"],
             cloned_from=run_details["cloned_from"],
@@ -353,7 +353,7 @@ class Worker:
 
             # Snapshot the user's save_strategy before any downstream code can
             # mutate it. This is the single source of truth for RapidFire's
-            # checkpoint cadence (e.g. the "chunk" sentinel is not a valid HF
+            # checkpoint cadence (e.g. the "shard" sentinel is not a valid HF
             # SaveStrategy and only RapidFire understands it).
             rf_save_strategy = config_leaf.get("training_args", {}).get(
                 "save_strategy", "no"
@@ -364,7 +364,7 @@ class Worker:
                 self.shm_manager,
                 USE_SHARED_MEMORY,
                 self.metric_logger,
-                chunk_id,
+                shard_id,
                 use_fsdp=use_fsdp,
             )
             is_quantized = bool(
@@ -384,7 +384,7 @@ class Worker:
             self.db.set_run_details(run_id, config_leaf=trainer_config.config_leaf)
 
             self.logger.debug(
-                f"Beginning training for run {run_id} on chunk {chunk_id}"
+                f"Beginning training for run {run_id} on shard {shard_id}"
             )
 
             # Synchronize all workers before training starts
@@ -406,7 +406,7 @@ class Worker:
             if trainer_config.local_rank == 0:
                 new_runtime_per_batch = (
                     end_time - start_time
-                ) / train_dataset_chunker.get_chunk_size(chunk_id)
+                ) / train_dataset_sharder.get_shard_size(shard_id)
                 running_average_runtime = (
                     run_details["estimated_runtime"] * completed_steps
                     + new_runtime_per_batch
@@ -446,12 +446,12 @@ class Worker:
                 flush_cuda_cache()
 
                 is_run_finished = (
-                    chunk_id == self.num_chunks - 1
+                    shard_id == self.num_shards - 1
                     and new_completed_steps >= trainer_config.total_steps
                 )
 
                 if is_run_finished:
-                    # Skip shared memory for final chunk (flat_param zeroing would corrupt state)
+                    # Skip shared memory for final shard (flat_param zeroing would corrupt state)
                     save_checkpoint_to_disk(
                         trainer_instance,
                         trainer_config,
@@ -459,7 +459,7 @@ class Worker:
                         use_fsdp=use_fsdp,
                     )
                     self.logger.debug(
-                        f"Saved final checkpoint to disk for run {run_id} on chunk {chunk_id}"
+                        f"Saved final checkpoint to disk for run {run_id} on shard {shard_id}"
                     )
                 else:
                     save_checkpoint_to_shared_memory(
@@ -479,7 +479,7 @@ class Worker:
                             use_fsdp=use_fsdp,
                         )
                     self.logger.debug(
-                        f"Saved checkpoint to shared memory for run {run_id} on chunk {chunk_id}",
+                        f"Saved checkpoint to shared memory for run {run_id} on shard {shard_id}",
                         f"and worker {self.worker_id}",
                     )
 
@@ -487,7 +487,7 @@ class Worker:
                         barrier()
 
                     # save checkpoint to disk based on save strategy
-                    if rf_save_strategy == "chunk":
+                    if rf_save_strategy == "shard":
                         save_checkpoint_to_disk(
                             trainer_instance,
                             trainer_config,
@@ -495,7 +495,7 @@ class Worker:
                             use_fsdp=use_fsdp,
                         )
                         self.logger.debug(
-                            f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}"
+                            f"Saved checkpoint to disk for run {run_id} on shard {shard_id}"
                         )
             else:
                 # save checkpoint to disk when not using shared memory
@@ -506,20 +506,20 @@ class Worker:
                     use_fsdp=use_fsdp,
                 )
                 self.logger.debug(
-                    f"Saved checkpoint to disk for run {run_id} on chunk {chunk_id}"
+                    f"Saved checkpoint to disk for run {run_id} on shard {shard_id}"
                 )
 
             # Save final checkpoint (non-shared-memory path only)
             if (
                 not USE_SHARED_MEMORY
-                and chunk_id == self.num_chunks - 1
+                and shard_id == self.num_shards - 1
                 and new_completed_steps >= trainer_config.total_steps
             ):
                 save_checkpoint_to_disk(
                     trainer_instance, trainer_config, last=True, use_fsdp=use_fsdp
                 )
                 self.logger.debug(
-                    f"Saved final checkpoint for run {run_id} on chunk {chunk_id}"
+                    f"Saved final checkpoint for run {run_id} on shard {shard_id}"
                 )
 
             if use_fsdp and is_distributed_initialized():
@@ -666,7 +666,7 @@ class Worker:
                 prev_task_id = scheduled_task["task_id"]
                 task_type = scheduled_task["task_type"]
                 run_id = scheduled_task["run_id"]
-                chunk_id = scheduled_task["chunk_id"]
+                shard_id = scheduled_task["shard_id"]
                 multi_worker_details = scheduled_task["multi_worker_details"]
                 create_model_fn = scheduled_task["config_options"]["create_model_fn"]
                 self.logger.debug(f"Received task {task_type} for run {run_id}")
@@ -679,14 +679,14 @@ class Worker:
                     # run train and validation function
                     try:
                         self.run_fit(
-                            run_id, chunk_id, multi_worker_details, create_model_fn
+                            run_id, shard_id, multi_worker_details, create_model_fn
                         )
                         self.db.set_worker_task_status(
                             self.worker_id, TaskStatus.COMPLETED
                         )
                     except Exception as e:
                         self.logger.opt(exception=True).error(
-                            f"Error while running run_fit for run {run_id} and chunk {chunk_id}: {e}"
+                            f"Error while running run_fit for run {run_id} and shard {shard_id}: {e}"
                         )
                         self.db.set_run_details(
                             run_id,

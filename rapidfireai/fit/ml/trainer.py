@@ -367,7 +367,7 @@ def create_trainer_instance(
     shm_manager: SharedMemoryManager,
     use_shared_memory: bool = False,
     metric_logger=None,
-    chunk_id: int = 0,
+    shard_id: int = 0,
     use_fsdp: bool = False,
 ) -> tuple[SFTTrainer | DPOTrainer | GRPOTrainer | None, str]:
     """
@@ -439,7 +439,7 @@ def create_trainer_instance(
         _setup_callbacks(  # FIXME: avoid returning additional_trainer_kwargs
             metric_logger,
             trainer_config,
-            chunk_id,
+            shard_id,
             compute_metrics,
             additional_trainer_kwargs,
             tokenizer,
@@ -476,7 +476,7 @@ def _configure_training_args(
     # The caller passes config_leaf["training_args"] by reference; mutating it
     # (e.g. replacing user-set max_steps with num_train_epochs=1 below) would
     # leak into the run's persisted config_leaf in the DB, and any subsequent
-    # clone / warm-clone would inherit those derived chunk-level values
+    # clone / warm-clone would inherit those derived shard-level values
     # instead of the user's original config (see Cloned runs picking up
     # num_train_epochs=1 instead of parent's max_steps).
     training_args = copy.deepcopy(training_args)
@@ -529,7 +529,7 @@ def _configure_training_args(
         training_args.pop("logging_first_step")
 
     # RapidFire manages its own save cadence (see worker.run_fit). The HF/TRL
-    # trainer never auto-saves. The RapidFire-specific "chunk" sentinel is also
+    # trainer never auto-saves. The RapidFire-specific "shard" sentinel is also
     # mapped to "no" here so it never reaches HF validation; the original value
     # is preserved on config_leaf for the worker to read.
     training_args["save_strategy"] = "no"
@@ -699,7 +699,7 @@ def _prepare_trainer_kwargs(
 def _setup_callbacks(
     metric_logger,
     trainer_config,
-    chunk_id,
+    shard_id,
     compute_metrics,
     additional_trainer_kwargs,
     tokenizer,
@@ -716,7 +716,7 @@ def _setup_callbacks(
             metric_logger=metric_logger,
             metric_run_id=trainer_config.metric_run_id,
             completed_steps=trainer_config.completed_steps,
-            chunk_id=chunk_id,
+            shard_id=shard_id,
             num_epochs_completed=trainer_config.num_epochs_completed,
         )
         callbacks.append(metric_callback)
