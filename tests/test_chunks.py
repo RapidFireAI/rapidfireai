@@ -36,15 +36,16 @@ class TestDatasetChunks:
         chunker = DatasetChunks(dataset_size=101, n_chunks=10, batch_size=10)
 
         # Should have 11 total batches: 10 full + 1 partial
-        # 1 chunk gets 2 batches (10 + 1 examples), 9 chunks get 1 batch (10 examples each)
+        # 1 chunk gets 2 batches (the first chunk: 10 + 10 = 20 examples), 8 chunks get 1 full batch (10 examples each),
+        # 1 chunk gets 1 partial batch (1 example). With extras-to-the-front, the first chunk is the largest.
         chunk_sizes = [chunker.get_chunk_size(i) for i in chunker.chunk_ids]
         chunk_batches = [chunker.get_chunk_batches(i) for i in chunker.chunk_ids]
 
         assert len(chunk_sizes) == 10
         assert sum(chunk_sizes) == 101
-        assert chunk_sizes == [10, 10, 10, 10, 10, 10, 10, 10, 10, 11]
+        assert chunk_sizes == [20, 10, 10, 10, 10, 10, 10, 10, 10, 1]
         assert sum(chunk_batches) == 11  # Total 11 batches
-        assert chunk_batches.count(2) == 1  # One chunk with 2 batches
+        assert chunk_batches.count(2) == 1  # One chunk with 2 batches (the first)
         assert chunk_batches.count(1) == 9  # Nine chunks with 1 batch each
 
     def test_basic_offset_functionality(self):

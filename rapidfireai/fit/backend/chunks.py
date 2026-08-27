@@ -61,9 +61,9 @@ class DatasetChunks:
 
         current_example_idx = 0
         for chunk_id in range(self.n_chunks):
-            # Last 'extra_batches' chunks get one additional batch
+            # First 'extra_batches' chunks get one additional batch
             num_batches_in_chunk = batches_per_chunk + (
-                1 if chunk_id >= (self.n_chunks - extra_batches) else 0
+                1 if chunk_id < extra_batches else 0
             )
 
             start_idx = current_example_idx
