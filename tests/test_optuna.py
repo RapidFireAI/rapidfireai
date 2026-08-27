@@ -334,8 +334,10 @@ class TestOptunaChunkCallback:
                 return ft.intermediate_values
         return {}
 
-    def test_reports_all_training_steps(self):
-        """on_chunk_complete should report every training step, not just one per chunk."""
+    def test_reports_last_value_per_chunk_at_cumulative_step(self):
+        """on_chunk_complete reports one value per chunk (the last/most-recent
+        value in the metric history) at a monotonic cumulative-chunks-completed
+        step, not at the optimizer step."""
         cb, study = self._make_callback()
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
@@ -345,23 +347,23 @@ class TestOptunaChunkCallback:
         assert decision.action == "continue"
 
         reported = self._get_intermediate_values(study, trial)
-        assert reported == {0: 0.9, 5: 0.8, 10: 0.7}
-        assert cb._last_reported_step[1] == 10
+        assert reported == {0: 0.7}
+        assert cb._cumulative_step[1] == 1
 
     def test_cumulative_across_chunks(self):
-        """Second chunk should only report new steps, not re-report old ones."""
+        """Each chunk reports at the next cumulative step using its last value."""
         cb, study = self._make_callback()
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
         cb.on_chunk_complete(1, 0, {"eval_loss": [(0, 0.9), (5, 0.8)]})
-        assert cb._last_reported_step[1] == 5
+        assert cb._cumulative_step[1] == 1
 
         cb.on_chunk_complete(1, 1, {"eval_loss": [(0, 0.9), (5, 0.8), (10, 0.6), (15, 0.5)]})
-        assert cb._last_reported_step[1] == 15
+        assert cb._cumulative_step[1] == 2
 
         reported = self._get_intermediate_values(study, trial)
-        assert reported == {0: 0.9, 5: 0.8, 10: 0.6, 15: 0.5}
+        assert reported == {0: 0.8, 1: 0.5}
 
     def test_flat_scalar_reports_at_step_zero(self):
         """A flat scalar metric gets reported at step 0."""
@@ -452,8 +454,9 @@ class TestOptunaChunkCallbackEpochGranularity:
             assert decision.action == "continue"
 
     def test_metrics_still_reported_every_chunk(self):
-        """Even with epoch granularity, intermediate metric values are reported to Optuna
-        on every chunk so the pruner has full visibility."""
+        """Even with epoch granularity, one intermediate value (the last in the
+        chunk's history) is reported to Optuna on every chunk at the cumulative
+        chunks-completed step so the pruner has visibility at chunk boundaries."""
         cb, study = self._make_callback()
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
@@ -465,7 +468,7 @@ class TestOptunaChunkCallbackEpochGranularity:
         for ft in study.get_trials(deepcopy=False):
             if ft.number == trial.number:
                 reported = ft.intermediate_values
-        assert reported == {0: 0.9, 5: 0.8, 10: 0.7}
+        assert reported == {0: 0.8, 1: 0.7}
 
     def test_independent_tracking_per_run(self):
         cb, study = self._make_callback()

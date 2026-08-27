@@ -980,7 +980,7 @@ class OptunaChunkCallback:
         self._range_cache = range_cache
         self._trials: dict[int, optuna.trial.Trial] = {}
         self._spawned = 0
-        self._last_reported_step: dict[int, int] = {}
+        self._cumulative_step: dict[int, int] = {}
         self._chunks_since_last_eval: dict[int, int] = {}
         self._multi_intermediates: dict[int, dict[int, list[float]]] = {}
         self._pruned_run_ids: set[int] = set()
@@ -1027,15 +1027,19 @@ class OptunaChunkCallback:
         if self._is_multi_objective:
             return self._on_chunk_complete_multi(run_id, chunk_id, metrics, trial)
 
-        history = _resolve_metric_history(metrics, self._objective_metric)
-        if not history:
+        # Report one value per chunk at a monotonic, batch-size-independent
+        # step (cumulative chunks completed, 0-indexed).  The anchor is a
+        # per-run counter rather than the optimizer step, so trials with
+        # different batch sizes remain comparable; it also keeps increasing
+        # across epochs (chunk_id cycles 0..n-1 each epoch).  The reported
+        # value is the last (most recent) entry in the metric history, i.e.
+        # the metric state at the chunk boundary.
+        step = self._cumulative_step.get(run_id, 0)
+        self._cumulative_step[run_id] = step + 1
+        metric_value = self._resolve_metric(metrics)
+        if metric_value is None:
             return RunDecision(action="continue")
-
-        last_reported = self._last_reported_step.get(run_id, -1)
-        for step, value in history:
-            if step > last_reported:
-                trial.report(value, step=step)
-                self._last_reported_step[run_id] = step
+        trial.report(metric_value, step=step)
 
         if self._granularity == "epoch":
             self._chunks_since_last_eval[run_id] = (
@@ -1068,12 +1072,17 @@ class OptunaChunkCallback:
         multi-objective studies, so we track intermediate values ourselves
         and use Pareto-dominance-based pruning.
         """
+        # Key intermediates by the cumulative chunks-completed counter (see
+        # on_chunk_complete) so Pareto pruning compares trials at a monotonic,
+        # batch-size-independent step that keeps increasing across epochs.
+        step = self._cumulative_step.get(run_id, 0)
+        self._cumulative_step[run_id] = step + 1
         values = _resolve_multi_objectives(metrics, self._objective_metrics)
         if values is None:
             return RunDecision(action="continue")
 
         intermediates = self._multi_intermediates.setdefault(run_id, {})
-        intermediates[chunk_id] = values
+        intermediates[step] = values
 
         if self._granularity == "epoch":
             self._chunks_since_last_eval[run_id] = (
@@ -1083,7 +1092,7 @@ class OptunaChunkCallback:
                 return RunDecision(action="continue")
             self._chunks_since_last_eval[run_id] = 0
 
-        if self._should_prune_pareto(run_id, chunk_id):
+        if self._should_prune_pareto(run_id, step):
             self._pruned_run_ids.add(run_id)
             self._study.tell(trial, state=optuna.trial.TrialState.PRUNED)
             replacement = self._maybe_suggest_replacement()
