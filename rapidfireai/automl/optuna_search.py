@@ -19,6 +19,7 @@ config-leaf expansion, and metric resolution.
 from __future__ import annotations
 
 import copy
+import logging
 import math
 import random
 import re
@@ -42,6 +43,68 @@ from rapidfireai.automl.callbacks import (
 )
 from rapidfireai.automl.datatypes import List, Range
 from rapidfireai.fit.utils.exceptions import AutoMLException
+
+# Module logger for the adapted median pruner's comparison trace. One INFO line
+# is emitted per prune-check so the runtime ordering / peer-availability gap
+# (the fastest pipeline reaching each shard first and finding no peers) is
+# visible in the logs. See OptunaFitShardCallback / OptunaShardCallback.
+_log = logging.getLogger("rapidfireai.automl.optuna")
+
+
+def _log_prune_compare(
+    logger: logging.Logger | logging.LoggerAdapter,
+    trial_num: int,
+    step: int,
+    direction: str,
+    current: float,
+    peers: list[float],
+    median: float | None,
+    *,
+    prune: bool,
+    reason: str,
+) -> None:
+    """Emit a single readable line describing one adapted-median prune decision.
+
+    Parameters
+    ----------
+    logger : logging.Logger or logging.LoggerAdapter
+        Logger to emit through. The callbacks pass their injected
+        ``SafeLoggerAdapter`` when the controller has wired one in, so the line
+        picks up the ``[<experiment>:<name>]`` prefix that the dashboard's log
+        viewer filters on (dispatcher.py:1096). Falls back to the module logger
+        ``rapidfireai.automl.optuna`` otherwise.
+    trial_num : int
+        Optuna trial number (not the DB run/pipeline id).
+    step : int
+        The intermediate step the comparison ran at (cumulative shard count in
+        fit mode, raw shard id in evals mode).
+    direction : str
+        ``"MINIMIZE"`` / ``"MAXIMIZE"`` -- controls which side of the median is
+        "worse".
+    current : float
+        The current trial's value at *step* (best-across-steps in fit mode,
+        latest-step value in evals mode).
+    peers : list[float]
+        Values of every other trial that has reported at *step* so far. Empty
+        when the current trial is the first to reach *step* -- the structural
+        "leader is un-prunable" case.
+    median : float or None
+        Median of *peers*, or ``None`` when *peers* is empty.
+    prune : bool
+        Whether the adapted pruner decided to prune.
+    reason : str
+        Short tag: ``no_peers_at_step``, ``current_is_nan``, ``worse_than_median``,
+        ``better_than_median``.
+    """
+    peers_str = ", ".join(f"{v:.4f}" for v in peers) if peers else "(none)"
+    median_str = f"{median:.4f}" if median is not None else "n/a"
+    logger.info(
+        "[RFOptuna prune-check] trial=%s step=%s dir=%s current=%.4f "
+        "peers=[%s] median=%s -> %s (%s)",
+        trial_num, step, direction, current, peers_str, median_str,
+        "PRUNE" if prune else "continue", reason,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Optuna Trial helpers (API compatibility across Optuna versions)
@@ -984,6 +1047,28 @@ class OptunaFitShardCallback:
         self._shards_since_last_eval: dict[int, int] = {}
         self._multi_intermediates: dict[int, dict[int, list[float]]] = {}
         self._pruned_run_ids: set[int] = set()
+        # Logger for prune-check trace lines. Set by the controller via
+        # set_logger() so the lines pick up the SafeLoggerAdapter's
+        # [<experiment>:<name>] prefix and pass the dashboard log filter
+        # (dispatcher.py:1096). Falls back to the module logger until then.
+        self._rf_logger: logging.Logger | logging.LoggerAdapter | None = None
+
+    def set_logger(self, logger: logging.Logger | logging.LoggerAdapter) -> None:
+        """Install the controller's logger so prune-check lines reach the dashboard.
+
+        The dashboard's ``get_experiment_logs`` endpoint only returns lines
+        containing ``[<experiment_name>:`` or ``| <experiment_name> |``
+        (dispatcher.py:1096). The controller's ``SafeLoggerAdapter`` adds that
+        prefix; the module-level ``rapidfireai.automl.optuna`` logger does not,
+        so without this call the prune-check lines are written to the file but
+        hidden in the dashboard.
+        """
+        self._rf_logger = logger
+
+    @property
+    def _prune_log(self) -> logging.Logger | logging.LoggerAdapter:
+        """Logger used for prune-check lines: the injected one if set, else module."""
+        return self._rf_logger if self._rf_logger is not None else _log
 
     # -- bookkeeping kept by RFOptuna before handing off --
 
@@ -1201,13 +1286,22 @@ class OptunaFitShardCallback:
                 if not math.isnan(v):
                     peer_values.append(v)
 
+        direction = self._study.direction.name
         if not peer_values:
+            _log_prune_compare(
+                self._prune_log, trial.number, last_step, direction, best_current, [], None,
+                prune=False, reason="no_peers_at_step",
+            )
             return False
 
         median_val = statistics.median(peer_values)
-        if minimize:
-            return best_current > median_val
-        return best_current < median_val
+        will_prune = best_current > median_val if minimize else best_current < median_val
+        _log_prune_compare(
+            self._prune_log, trial.number, last_step, direction, best_current, peer_values, median_val,
+            prune=will_prune,
+            reason="worse_than_median" if will_prune else "better_than_median",
+        )
+        return will_prune
 
     def _resolve_metric(self, metrics: dict[str, Any]) -> float | None:
         """Extract the objective metric value from a metrics dict.
@@ -1304,6 +1398,20 @@ class OptunaShardCallback:
         self._pruned_run_ids: set[int] = set()
         self._context_feasibility: Any = None
         self._warned_context_narrowing = False
+        # Logger for prune-check trace lines; see OptunaFitShardCallback.set_logger.
+        self._rf_logger: logging.Logger | logging.LoggerAdapter | None = None
+
+    def set_logger(self, logger: logging.Logger | logging.LoggerAdapter) -> None:
+        """Install the controller's logger so prune-check lines reach the dashboard.
+
+        See OptunaFitShardCallback.set_logger for the dashboard-filter rationale.
+        """
+        self._rf_logger = logger
+
+    @property
+    def _prune_log(self) -> logging.Logger | logging.LoggerAdapter:
+        """Logger used for prune-check lines: the injected one if set, else module."""
+        return self._rf_logger if self._rf_logger is not None else _log
 
     def _set_initial_trials(self, trial_map: dict[int, optuna.trial.Trial], spawned: int) -> None:
         """Populate the pipeline_id → trial mapping from the initial batch."""
@@ -1448,7 +1556,12 @@ class OptunaShardCallback:
 
         last_step = max(current.intermediate_values.keys())
         current_value = current.intermediate_values[last_step]
+        direction = self._study.direction.name
         if math.isnan(current_value):
+            _log_prune_compare(
+                self._prune_log, trial.number, last_step, direction, current_value, [], None,
+                prune=True, reason="current_is_nan",
+            )
             return True
 
         peer_values = []
@@ -1461,13 +1574,21 @@ class OptunaShardCallback:
                     peer_values.append(v)
 
         if not peer_values:
+            _log_prune_compare(
+                self._prune_log, trial.number, last_step, direction, current_value, [], None,
+                prune=False, reason="no_peers_at_step",
+            )
             return False
 
         median_val = statistics.median(peer_values)
         minimize = self._study.direction == optuna.study.StudyDirection.MINIMIZE
-        if minimize:
-            return current_value > median_val
-        return current_value < median_val
+        will_prune = current_value > median_val if minimize else current_value < median_val
+        _log_prune_compare(
+            self._prune_log, trial.number, last_step, direction, current_value, peer_values, median_val,
+            prune=will_prune,
+            reason="worse_than_median" if will_prune else "better_than_median",
+        )
+        return will_prune
 
     def _resolve_metric(self, metrics: dict[str, Any]) -> float | None:
         """Extract the objective metric value from a metrics dict.
