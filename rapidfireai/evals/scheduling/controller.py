@@ -1584,6 +1584,13 @@ class Controller:
         if shard_callback is None and hasattr(config_group, "get_callback"):
             shard_callback = config_group.get_callback()
 
+        # Route the callback's prune-check trace lines through the controller's
+        # SafeLoggerAdapter so they pick up the [<experiment>:<name>] prefix
+        # the dashboard's log viewer filters on (dispatcher.py:1096). Without
+        # this the lines are written to rapidfire.log but hidden in the UI.
+        if shard_callback is not None and hasattr(shard_callback, "set_logger"):
+            shard_callback.set_logger(self.logger)
+
         # Let the callback check a proposed replacement against the contexts that
         # actually exist. Injected unconditionally: with build_all_indexes=True
         # every reachable context is already built, so the predicate always
