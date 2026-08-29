@@ -1406,9 +1406,9 @@ class Controller:
         model_config = None
 
         pipeline = pipeline_config["pipeline"]
+        if hasattr(pipeline, "model_name"):
+            model_name = pipeline.model_name
         if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-            if "model" in pipeline.model_config:
-                model_name = pipeline.model_config["model"]
             model_config_copy = pipeline.model_config.copy()
             model_config_copy.pop("model", None)
             if model_config_copy:
