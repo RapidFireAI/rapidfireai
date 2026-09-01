@@ -309,6 +309,12 @@ def _seed_ranges(obj: Any, seed: int, _seen: set[int] | None = None) -> None:
     reproducibility: ``Range`` no longer memoizes a value set, so seeding has
     nothing to do with making two call sites agree -- the value set a coverage
     enumeration draws is cached by ``RFOptuna`` and reused by suggest.
+
+    ``List`` itself is not seeded: it is a categorical of ordered choices
+    (``List.sample()`` uses the already-seeded global RNG).  Its members are
+    still walked so a ``Range`` nested inside a choice is not left on an
+    unseeded generator.
+
     ``_seen`` guards against shared or cyclic references re-seeding one range
     twice.
     """
@@ -320,6 +326,9 @@ def _seed_ranges(obj: Any, seed: int, _seen: set[int] | None = None) -> None:
 
     if isinstance(obj, Range):
         obj.set_seed(seed)
+    elif isinstance(obj, List):
+        for value in obj.values:
+            _seed_ranges(value, seed, _seen)
     elif hasattr(obj, "_user_params"):
         _seed_ranges(obj._user_params, seed, _seen)
     elif isinstance(obj, dict):
