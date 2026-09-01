@@ -25,6 +25,7 @@ from rapidfireai.automl.optuna_search import (
     _sample_from_trial,
     _sample_from_trial_multi,
     _sample_list_member,
+    _seed_ranges,
     _set_nested,
     _suggest_value,
     _template_to_leaf_evals,
@@ -104,6 +105,42 @@ class TestExtractSearchSpace:
         r2 = Range(8, 64, step=8)
         assert r2.step == 8
         assert r2.log is False
+
+
+class TestSeedRanges:
+    """``_seed_ranges`` stamps the run seed onto every reachable Range.
+
+    ``List`` is a categorical of ordered choices and is not itself seeded;
+    its members must still be walked so a Range nested inside a choice is
+    not left on an unseeded generator.
+    """
+
+    def test_seeds_range_nested_in_list_member(self):
+        nested = Range(0.0, 1.0)
+        sibling = Range(10, 20)
+        template = {"api_config": List([{"k": nested}, {"k": sibling}])}
+        assert nested.seed is None
+        assert sibling.seed is None
+
+        _seed_ranges(template, 42)
+
+        assert nested.seed == 42
+        assert sibling.seed == 42
+
+    def test_seeds_range_nested_in_list_of_config_objects(self):
+        inner = Range(32, 128, step=32)
+        template = {
+            "api_config": List(
+                [_FakeCfg(rag=_FakeCfg(embedding_cfg={"batch_size": inner}))]
+            )
+        }
+        _seed_ranges(template, 7)
+        assert inner.seed == 7
+
+    def test_list_of_primitives_is_a_no_op(self):
+        """A List of ordered primitives has no Range to seed."""
+        template = {"k": List([5, 10, 15])}
+        _seed_ranges(template, 42)  # must not raise
 
 
 def test_resolve_scalar_prefers_primary_key():
@@ -1525,6 +1562,42 @@ class TestContextCoverageLeaves:
         }
         assert embeddings == {"3-small", "3-large"}
 
+    def test_range_inside_list_member_is_seeded_for_coverage(self):
+        """Coverage draws from each Range's generator; a Range nested in a
+        ``List`` of api_config members must receive the constructor seed so
+        two coverage passes with the same seed enumerate the same value set.
+        """
+
+        def make_template():
+            return {
+                "api_config": List(
+                    [
+                        _FakeCfg(
+                            rag=_FakeCfg(
+                                embedding_cfg={
+                                    "batch_size": Range(32, 128, step=32, sample_n=3),
+                                },
+                            ),
+                        ),
+                    ]
+                ),
+            }
+
+        def coverage_batches(seed):
+            rfopt = RFOptuna(
+                configs=make_template(),
+                trainer_type=None,
+                objective="maximize:NDCG@3",
+                seed=seed,
+            )
+            leaves = rfopt.get_context_coverage_leaves()
+            return [
+                leaf["pipeline"].rag._user_params["embedding_cfg"]["batch_size"]
+                for leaf in leaves
+            ]
+
+        assert coverage_batches(42) == coverage_batches(42)
+
     def test_disabled_flag_returns_empty(self):
         rfopt = RFOptuna(
             configs=_scifact_shaped_template(),
@@ -1752,3 +1825,49 @@ class TestRandomSearchReproducibility:
             return [self._knobs(r) for r in rfopt.get_runs(seed=42)]
 
         assert make_runs(42) != make_runs(7)
+
+    def test_range_nested_in_list_member_is_reproducible(self):
+        """``_seed_ranges`` must walk into ``List`` members so a Range nested
+        in a chosen config is stamped with the constructor seed.  SciFact-shaped
+        templates (``api_config=List([cfg_a, cfg_b])``) hit this path.
+        """
+
+        def make_template():
+            return {
+                "api_config": List(
+                    [
+                        _FakeCfg(
+                            rag=_FakeCfg(
+                                embedding_cfg={
+                                    "model": "minilm",
+                                    "batch_size": Range(32, 128, step=32),
+                                },
+                            ),
+                        ),
+                        _FakeCfg(
+                            rag=_FakeCfg(
+                                embedding_cfg={
+                                    "model": "other",
+                                    "batch_size": Range(16, 64, step=16),
+                                },
+                            ),
+                        ),
+                    ]
+                ),
+                "batch_size": 32,
+            }
+
+        def knobs(run):
+            rag = run["pipeline"].rag._user_params["embedding_cfg"]
+            return rag["model"], rag["batch_size"]
+
+        def make_runs():
+            rfopt = RFRandomSearch(
+                configs=copy.deepcopy(make_template()),
+                trainer_type=None,
+                num_runs=6,
+                seed=42,
+            )
+            return [knobs(r) for r in rfopt.get_runs(seed=42)]
+
+        assert make_runs() == make_runs()
