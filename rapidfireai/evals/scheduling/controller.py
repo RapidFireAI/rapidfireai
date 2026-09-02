@@ -47,6 +47,57 @@ _RAG_CONFIG_KEYS_TO_DROP = frozenset(
 )
 
 
+def combine_context_hash(rag_spec: Any, prompt_manager: Any) -> str | None:
+    """Hash the (rag_spec, prompt_manager) pair identifying one built context.
+
+    Returns ``None`` when neither contributes a hash.
+
+    This is the single definition shared by context collection, batch-ceiling
+    computation, pipeline registration, task launch, and the ``RFOptuna``
+    feasibility check. One of those writes the cache keys the others look up, so
+    they have to agree exactly; keeping four copies in sync by hand is how a
+    lookup silently starts missing.
+
+    Note that ``search_cfg`` and ``reranker_cfg`` are deliberately excluded by
+    ``LangChainRagSpec.get_hash``, so clone-modified retrieval knobs share an
+    index instead of forcing a rebuild.
+    """
+    rag_hash = rag_spec.get_hash() if rag_spec else None
+    prompt_hash = prompt_manager.get_hash() if prompt_manager else None
+    if rag_hash and prompt_hash:
+        return hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
+    return rag_hash or prompt_hash or None
+
+
+def context_parts(pipeline: Any) -> tuple[Any, Any]:
+    """Return ``(rag_spec, prompt_manager)`` for *pipeline*; either may be ``None``."""
+    return getattr(pipeline, "rag", None), getattr(pipeline, "prompt_manager", None)
+
+
+def leaf_context_hash(config_leaf: Any, experiment_name: str) -> str | None:
+    """Context hash for a config leaf, stamping *experiment_name* first.
+
+    ``LangChainRagSpec.get_hash`` and ``PromptManager.get_hash`` both include
+    ``experiment_name``, so it has to be set before hashing or the result will
+    not match the keys written by ``_setup_context_generators``. An existing
+    value is never overwritten.
+    """
+    pipeline = config_leaf.get("pipeline") if isinstance(config_leaf, dict) else None
+    if pipeline is None:
+        return None
+
+    rag_spec, prompt_manager = context_parts(pipeline)
+    if not rag_spec and not prompt_manager:
+        return None
+
+    if rag_spec and not getattr(rag_spec, "experiment_name", None):
+        rag_spec.experiment_name = experiment_name
+    if prompt_manager and not getattr(prompt_manager, "experiment_name", None):
+        prompt_manager.experiment_name = experiment_name
+
+    return combine_context_hash(rag_spec, prompt_manager)
+
+
 class Controller:
     """
     Controller for orchestrating distributed inference pipeline.
@@ -408,20 +459,12 @@ class Controller:
             if not pipeline_config:
                 continue
 
-            rag_spec = getattr(pipeline_config, "rag", None)
-            prompt_manager = getattr(pipeline_config, "prompt_manager", None)
+            rag_spec, prompt_manager = context_parts(pipeline_config)
             if not rag_spec and not prompt_manager:
                 continue
 
-            rag_hash = rag_spec.get_hash() if rag_spec else None
-            prompt_hash = prompt_manager.get_hash() if prompt_manager else None
-            if rag_hash and prompt_hash:
-                context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
-            elif rag_hash:
-                context_hash = rag_hash
-            elif prompt_hash:
-                context_hash = prompt_hash
-            else:
+            context_hash = combine_context_hash(rag_spec, prompt_manager)
+            if context_hash is None:
                 continue
 
             # Only positive integers are valid ceilings; silently skip anything
@@ -457,34 +500,32 @@ class Controller:
         for config_leaf in config_leaves:
             # Check if pipeline has a RAG spec or prompt_manager
             pipeline_config = config_leaf["pipeline"]
-            has_rag_attr = hasattr(pipeline_config, "rag")
-
-            # Get RAG spec and prompt_manager
-            rag_spec = getattr(pipeline_config, "rag", None) if has_rag_attr else None
-            prompt_manager = getattr(pipeline_config, "prompt_manager", None)
+            rag_spec, prompt_manager = context_parts(pipeline_config)
 
             # Skip if neither RAG nor prompt_manager (no context to build)
             if not rag_spec and not prompt_manager:
                 continue
 
             # Compute context hash (experiment_name already injected onto each object)
-            rag_hash = rag_spec.get_hash() if rag_spec else None
-            prompt_hash = prompt_manager.get_hash() if prompt_manager else None
-
-            # Create combined context hash
-            if rag_hash and prompt_hash:
-                context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
-            elif rag_hash:
-                context_hash = rag_hash
-            elif prompt_hash:
-                context_hash = prompt_hash
-            else:
+            context_hash = combine_context_hash(rag_spec, prompt_manager)
+            if context_hash is None:
                 continue  # Should not happen, but safety check
 
             if context_hash not in unique_contexts:
                 unique_contexts[context_hash] = (rag_spec, prompt_manager)
 
         return unique_contexts
+
+    def _has_built_context(self, config_leaf: Any) -> bool:
+        """Whether *config_leaf* can actually run: no context needed, or its context exists.
+
+        Handed to ``OptunaShardCallback.set_context_feasibility`` so a suggested
+        replacement whose RAG index was never built is rejected and resampled
+        instead of launching without a retriever. Reads ``_context_cache``
+        live, so it reflects every context built so far.
+        """
+        context_hash = leaf_context_hash(config_leaf, self.experiment_name)
+        return context_hash is None or context_hash in self._context_cache
 
     def _setup_context_generators(
         self,
@@ -965,35 +1006,22 @@ class Controller:
             # Determine context_id for this pipeline
             context_id = None
             pipeline = pipeline_config["pipeline"]
-            has_rag_attr = hasattr(pipeline, "rag")
-            rag_spec = getattr(pipeline, "rag", None) if has_rag_attr else None
-            prompt_manager = getattr(pipeline, "prompt_manager", None)
 
-            if rag_spec and not rag_spec.experiment_name:
-                rag_spec.experiment_name = self.experiment_name
-            if prompt_manager and not getattr(prompt_manager, "experiment_name", None):
-                prompt_manager.experiment_name = self.experiment_name
+            # Stamps experiment_name onto the rag spec / prompt manager before
+            # hashing, so the key matches the one _setup_context_generators wrote.
+            context_hash = leaf_context_hash(pipeline_config, self.experiment_name)
 
-            # Check if pipeline has RAG or prompt_manager to look up context
-            if rag_spec or prompt_manager:
-                # Get RAG hash if present
-                rag_hash = rag_spec.get_hash() if rag_spec else None
-
-                # Get prompt_manager hash if present
-                prompt_hash = prompt_manager.get_hash() if prompt_manager else None
-
-                # Create combined context hash (matches logic in _collect_unique_contexts)
-                if rag_hash and prompt_hash:
-                    context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
-                elif rag_hash:
-                    context_hash = rag_hash
-                elif prompt_hash:
-                    context_hash = prompt_hash
-                else:
-                    context_hash = None
-
-                if context_hash and context_hash in self._context_cache:
-                    context_id, _ = self._context_cache[context_hash]
+            if context_hash is not None:
+                if context_hash not in self._context_cache:
+                    raise RuntimeError(
+                        f"No RAG context was built for pipeline config with context hash "
+                        f"{context_hash[:12]}. A pipeline registered without a context "
+                        f"would run with no retriever and fail inside the user's "
+                        f"preprocess_fn. If this is an RFOptuna run, set "
+                        f"build_all_indexes=True so every index the search space can "
+                        f"reach is built up front."
+                    )
+                context_id, _ = self._context_cache[context_hash]
 
             # Generate flattened config for IC Ops panel display
             # First extract JSON-serializable config, then flatten it
@@ -1378,9 +1406,9 @@ class Controller:
         model_config = None
 
         pipeline = pipeline_config["pipeline"]
+        if hasattr(pipeline, "model_name"):
+            model_name = pipeline.model_name
         if hasattr(pipeline, "model_config") and pipeline.model_config is not None:
-            if "model" in pipeline.model_config:
-                model_name = pipeline.model_config["model"]
             model_config_copy = pipeline.model_config.copy()
             model_config_copy.pop("model", None)
             if model_config_copy:
@@ -1511,13 +1539,32 @@ class Controller:
         shard_sizes = [len(shard) for shard in shards]
         self.logger.info(f"Dataset sharded into {num_shards} shard(s). Shard sizes: {shard_sizes}")
 
+        # PHASE 2: Enumerate context coverage BEFORE sampling runs.
+        #
+        # An AutoML strategy that can propose new configs mid-run (RFOptuna)
+        # reports the contexts those configs could need. For RFOptuna this is
+        # also the moment the index-affecting Range value sets are drawn and
+        # cached, so the later get_runs()/suggest calls reuse the exact values
+        # coverage enumerated (Range no longer memoizes; RFOptuna owns the
+        # cache). Running coverage first guarantees the cache is populated
+        # before any suggest reads it. Duplicates are collapsed by context
+        # hash, so overlapping candidates cost nothing.
+        coverage_leaves = []
+        if hasattr(config_group, "get_context_coverage_leaves"):
+            coverage_leaves = config_group.get_context_coverage_leaves(seed)
+            if coverage_leaves:
+                self.logger.info(
+                    f"AutoML strategy contributed {len(coverage_leaves)} context "
+                    f"coverage candidate(s) for pre-building"
+                )
+
         config_leaves = get_runs(config_group, seed)
 
-        # PHASE 2: Receive pipeline configurations from user
+        # PHASE 2b: Receive pipeline configurations from user
         self.logger.info(f"Received {len(config_leaves)} pipeline configuration(s)")
 
         # PHASE 3: Setup context generators (collect unique, check DB, build if needed)
-        self._setup_context_generators(config_leaves, db)
+        self._setup_context_generators(config_leaves + coverage_leaves, db)
 
         # PHASE 4: Create query processing actors (shared pool)
         # Actors are created without any pipeline or context information
@@ -1536,6 +1583,20 @@ class Controller:
         # Extract Optuna shard callback from config_group if available
         if shard_callback is None and hasattr(config_group, "get_callback"):
             shard_callback = config_group.get_callback()
+
+        # Route the callback's prune-check trace lines through the controller's
+        # SafeLoggerAdapter so they pick up the [<experiment>:<name>] prefix
+        # the dashboard's log viewer filters on (dispatcher.py:1096). Without
+        # this the lines are written to rapidfire.log but hidden in the UI.
+        if shard_callback is not None and hasattr(shard_callback, "set_logger"):
+            shard_callback.set_logger(self.logger)
+
+        # Let the callback check a proposed replacement against the contexts that
+        # actually exist. Injected unconditionally: with build_all_indexes=True
+        # every reachable context is already built, so the predicate always
+        # passes and doubles as a self-check on the coverage enumeration.
+        if shard_callback is not None and hasattr(shard_callback, "set_context_feasibility"):
+            shard_callback.set_context_feasibility(self._has_built_context)
 
         # PHASE 5: Register pipelines in database
         pipeline_ids, pipeline_id_to_config = self._register_pipelines(config_leaves, db)
@@ -2664,30 +2725,36 @@ class Controller:
             context_generator_ref = None
             pipeline_config = pipeline_id_to_config[pipeline_id]
             pipeline = pipeline_config["pipeline"]
-            has_rag_attr = hasattr(pipeline, "rag")
-            rag_spec = getattr(pipeline, "rag", None) if has_rag_attr else None
-            prompt_manager = getattr(pipeline, "prompt_manager", None)
+            rag_spec, _prompt_manager = context_parts(pipeline)
 
-            # Check if pipeline has RAG or prompt_manager to look up context
-            if rag_spec or prompt_manager:
-                # Get RAG hash if present
-                rag_hash = rag_spec.get_hash() if rag_spec else None
+            context_hash = leaf_context_hash(pipeline_config, self.experiment_name)
+            if context_hash is not None:
+                if context_hash not in self._context_cache:
+                    # Launching anyway would hand the actor rag_spec=None, and the
+                    # user's preprocess_fn would then raise an opaque AttributeError
+                    # on None.get_context(...). Fail this pipeline instead, so the
+                    # rest of the experiment still finishes.
+                    error_msg = (
+                        f"No RAG context was built for this pipeline (context hash "
+                        f"{context_hash[:12]}), so it has no retriever to query. If "
+                        f"this is an RFOptuna run, set build_all_indexes=True so "
+                        f"every index the search space can reach is built up front."
+                    )
+                    self.logger.error(
+                        f"Pipeline {pipeline_id} ({pipeline_name}) has no built context: "
+                        f"{error_msg}"
+                    )
+                    db.set_actor_task_status(task_id, TaskStatus.FAILED)
+                    db.set_actor_task_error(task_id, error_msg)
+                    db.set_pipeline_status(pipeline_id, PipelineStatus.FAILED)
+                    db.set_pipeline_error(pipeline_id, error_msg)
+                    self._finalize_mlflow_run(db, pipeline_id, "FAILED")
+                    if progress_display:
+                        progress_display.update_pipeline(pipeline_id, status="FAILED")
+                    scheduler.remove_pipeline(pipeline_id)
+                    continue
 
-                # Get prompt_manager hash if present
-                prompt_hash = prompt_manager.get_hash() if prompt_manager else None
-
-                # Create combined context hash (matches logic in _collect_unique_contexts)
-                if rag_hash and prompt_hash:
-                    context_hash = hashlib.sha256(f"{rag_hash}:{prompt_hash}".encode()).hexdigest()
-                elif rag_hash:
-                    context_hash = rag_hash
-                elif prompt_hash:
-                    context_hash = prompt_hash
-                else:
-                    context_hash = None
-
-                if context_hash and context_hash in self._context_cache:
-                    _, context_generator_ref = self._context_cache[context_hash]
+                _, context_generator_ref = self._context_cache[context_hash]
 
             engine_kwargs = pipeline.get_engine_kwargs()
 

@@ -266,7 +266,7 @@ def _create_rf_class_evals(base_class: Type, class_name: str):
             elif isinstance(value, Range):
                 # Sample a default value from Range for parent initialization
                 # Keep original Range in _user_params for AutoML sampling
-                parent_kwargs[key] = value.sample()
+                parent_kwargs[key] = value.sample(1)[0]
             else:
                 parent_kwargs[key] = value
 

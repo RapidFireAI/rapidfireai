@@ -27,24 +27,75 @@ def recursive_expand_randomsearch(item: Any):
         return item.__class__(**sampled_params)
     elif isinstance(item, dict):
         return {k: recursive_expand_randomsearch(v) for k, v in item.items()}
-    elif isinstance(item, (List | Range)):
+    elif isinstance(item, Range):
+        # Range.sample now always returns a list; draw one value for this run.
+        return item.sample(1)[0]
+    elif isinstance(item, List):
         return item.sample()
     else:
         return item
 
 
 class RFRandomSearch(AutoMLAlgorithm):
-    """Random search algorithm that samples num_runs hyperparameter combinations."""
+    """Random search algorithm that samples num_runs hyperparameter combinations.
+
+    Parameters
+    ----------
+    seed : int
+        Seed for the algorithm's own stochastic state: the global RNG used by
+        ``List.sample()`` / fallback draws, and every ``Range`` generator.
+        This is the **single** seed governing the algorithm's reproducibility
+        -- the run-level ``seed`` passed to ``run_evals`` / ``run_fit`` (and on
+        to :meth:`get_runs`) is ignored for the algorithm's draws and only
+        governs surrounding infrastructure.  Defaults to 42 so
+        ``RFRandomSearch()`` is reproducible out of the box; pass an explicit
+        ``seed`` to vary the sampled configs.
+    """
+
+    def __init__(
+        self,
+        configs=None,
+        trainer_type: str | None = None,
+        num_runs: int = 1,
+        seed: int = 42,
+    ):
+        self._seed = seed
+        super().__init__(
+            configs=configs,
+            trainer_type=trainer_type,
+            num_runs=num_runs,
+        )
 
     def get_runs(self, seed: int = 42) -> list[dict[str, Any]]:
-        """Generate num_runs random hyperparameter combinations."""
+        """Generate num_runs random hyperparameter combinations.
+
+        Parameters
+        ----------
+        seed : int
+            Run-level seed (from ``run_evals`` / ``run_fit``).  Accepted for
+            the controller contract but **ignored** -- the constructor
+            ``seed`` governs the global RNG and every ``Range`` generator.
+        """
         if seed is not None and (not isinstance(seed, int) or seed < 0):
             raise AutoMLException("seed must be a non-negative integer")
 
         if not isinstance(self.num_runs, int) or self.num_runs <= 0:
             raise AutoMLException("num_runs must be a positive integer")
 
-        random.seed(seed)
+        # The constructor seed is the single source for the algorithm's
+        # stochastic state: the global RNG and every Range's generator. The
+        # run-level seed (passed in here) is ignored for the algorithm's draws.
+        random.seed(self._seed)
+
+        # Range draws from its own generator (not the global RNG), so seed every
+        # Range reachable from the templates with the constructor seed to make
+        # Range draws reproducible alongside List draws (which use the global
+        # RNG). Lazy import avoids a circular import: optuna_search imports
+        # recursive_expand_randomsearch from this module (also lazily).
+        from rapidfireai.automl.optuna_search import _seed_ranges
+
+        for config in self.configs:
+            _seed_ranges(config, self._seed)
 
         try:
             if self.mode == "fit":

@@ -284,6 +284,13 @@ class NormalApproximationStrategy(OnlineAggregationStrategy):
         if metric_type == "distributive":
             sample_mean = estimate / sample_size
 
+        # Clamp into [a, b] before the boundary check. A weighted average of
+        # in-range values can round to a value just outside the bounds (e.g.
+        # 1.0000000000002), which would otherwise slip past the exact-match
+        # boundary guard and make the binomial variance p(1-p) negative,
+        # tripping math.sqrt with "math domain error".
+        sample_mean = min(max(sample_mean, a), b)
+
         if sample_mean == a or sample_mean == b:
             estimate = population_size * sample_mean
             return estimate, estimate, estimate
@@ -291,7 +298,7 @@ class NormalApproximationStrategy(OnlineAggregationStrategy):
         variance = self.get_variance_estimate(sample_mean, a, b, sample_size)
         variance = (population_size) ** 2 * variance
 
-        std_error = math.sqrt(variance)
+        std_error = math.sqrt(max(variance, 0.0))
         std_error = self.apply_finite_population_correction_to_stderr(std_error, sample_size, self.use_fpc)
         z_score = self.get_z_score(confidence_level)
         margin_of_error = z_score * std_error
