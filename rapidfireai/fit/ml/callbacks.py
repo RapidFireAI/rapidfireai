@@ -465,7 +465,7 @@ class GenerationMetricsCallback(TrainerCallback):
         """Tag the MLflow run with the user-defined metric keys (the keys the
         user's ``compute_metrics`` returned) so the runs-table "Columns"
         dropdown can sort user metrics ahead of auto-computed Trainer metrics
-        (``loss``, ``grad_norm``, ``chunk number``, …). Best-effort: failures
+        (``loss``, ``grad_norm``, ``shard number``, …). Best-effort: failures
         are logged at debug and never propagated, so a tracking-backend hiccup
         can't break evaluation. Only rank 0 should call this (FSDP path
         broadcasts metrics to all ranks, but only rank 0 owns the run)."""
@@ -643,7 +643,7 @@ class MetricLoggingCallback(TrainerCallback):
         metric_run_id: str,
         excluded_keys: list = None,
         completed_steps: int = 0,
-        chunk_id: int = 0,
+        shard_id: int = 0,
         num_epochs_completed: int = 0,
     ):
         self.metric_logger = metric_logger
@@ -653,7 +653,7 @@ class MetricLoggingCallback(TrainerCallback):
             "step",
             "epoch",
         ]
-        self.chunk_id = chunk_id
+        self.shard_id = shard_id
         self.num_epochs_completed = num_epochs_completed
 
     def on_log(
@@ -685,8 +685,8 @@ class MetricLoggingCallback(TrainerCallback):
                 if self.metric_logger:
                     self.metric_logger.log_metric(
                         self.metric_run_id,
-                        "chunk number",
-                        self.chunk_id,
+                        "shard number",
+                        self.shard_id,
                         step=step,
                     )
                     self.metric_logger.log_metric(

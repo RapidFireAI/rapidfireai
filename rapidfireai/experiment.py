@@ -405,7 +405,7 @@ class Experiment:
         create_model_fn: Callable,
         train_dataset: Any,
         eval_dataset: Any,
-        num_chunks: int,
+        num_shards: int,
         seed: int = 42,
         num_gpus: int = 1,
         monte_carlo_simulations: int = 1000,
@@ -418,7 +418,7 @@ class Experiment:
             create_model_fn: Function to create the model
             train_dataset: Training dataset
             eval_dataset: Evaluation dataset
-            num_chunks: Number of chunks to split data into
+            num_shards: Number of shards to split data into
             seed: Random seed (default: 42)
 
         Raises:
@@ -438,10 +438,10 @@ class Experiment:
             print("⚠️  Training is already running in background. Please wait for it to complete.")
             return
 
-        # Extract chunk callback from param_config if it supports Optuna-style callbacks
-        chunk_callback = None
+        # Extract shard callback from param_config if it supports Optuna-style callbacks
+        shard_callback = None
         if hasattr(param_config, "get_callback"):
-            chunk_callback = param_config.get_callback()
+            shard_callback = param_config.get_callback()
 
         if ColabConfig.ON_COLAB:
             # Run Controller in background thread to keep kernel responsive
@@ -464,11 +464,11 @@ class Experiment:
                         create_model_fn,
                         train_dataset,
                         eval_dataset,
-                        num_chunks,
+                        num_shards,
                         seed,
                         num_gpus,
                         monte_carlo_simulations,
-                        chunk_callback=chunk_callback,
+                        shard_callback=shard_callback,
                     )
                 except Exception as e:
                     # Restore stdout for error logging
@@ -513,11 +513,11 @@ class Experiment:
                     create_model_fn,
                     train_dataset,
                     eval_dataset,
-                    num_chunks,
+                    num_shards,
                     seed,
                     num_gpus,
                     monte_carlo_simulations,
-                    chunk_callback=chunk_callback,
+                    shard_callback=shard_callback,
                 )
             except Exception as e:
                 if hasattr(self, "logger"):

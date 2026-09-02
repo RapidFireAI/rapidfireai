@@ -11,7 +11,7 @@ from rapidfireai.automl.datatypes import List, Range
 from rapidfireai.automl.grid_search import recursive_expand_gridsearch
 from rapidfireai.automl.random_search import RFRandomSearch, recursive_expand_randomsearch
 from rapidfireai.automl.optuna_search import (
-    OptunaChunkCallback,
+    OptunaFitShardCallback,
     OptunaShardCallback,
     RFOptuna,
     _context_coverage_leaves,
@@ -251,11 +251,11 @@ class TestSetNested:
 
 
 # ---------------------------------------------------------------------------
-# OptunaChunkCallback
+# OptunaFitShardCallback
 # ---------------------------------------------------------------------------
 
 
-def _fit_template_for_chunk_callback_tests() -> types.SimpleNamespace:
+def _fit_template_for_shard_callback_tests() -> types.SimpleNamespace:
     """Minimal RFModelConfig-like object for tests that call ``_template_to_leaf_fit``."""
     return types.SimpleNamespace(
         model_name="m",
@@ -277,15 +277,15 @@ def _fit_template_for_chunk_callback_tests() -> types.SimpleNamespace:
     )
 
 
-class TestOptunaChunkCallback:
+class TestOptunaFitShardCallback:
     def _make_callback(self, direction="minimize", pruner=None):
         study = optuna.create_study(
             direction=direction,
             pruner=pruner or optuna.pruners.NopPruner(),
         )
         space = [("lr", Range(0.0, 1.0))]
-        template = _fit_template_for_chunk_callback_tests()
-        cb = OptunaChunkCallback(
+        template = _fit_template_for_shard_callback_tests()
+        cb = OptunaFitShardCallback(
             study=study,
             search_spaces=[space],
             config_templates=[template],
@@ -300,7 +300,7 @@ class TestOptunaChunkCallback:
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
-        decision = cb.on_chunk_complete(1, 0, {"eval_loss": 0.5})
+        decision = cb.on_shard_complete(1, 0, {"eval_loss": 0.5})
         assert decision.action == "continue"
         assert decision.replacement_config is None
 
@@ -309,12 +309,12 @@ class TestOptunaChunkCallback:
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
-        decision = cb.on_chunk_complete(1, 0, {"other_metric": 0.5})
+        decision = cb.on_shard_complete(1, 0, {"other_metric": 0.5})
         assert decision.action == "continue"
 
     def test_continue_when_run_unknown(self):
         cb, _ = self._make_callback()
-        decision = cb.on_chunk_complete(999, 0, {"eval_loss": 0.5})
+        decision = cb.on_shard_complete(999, 0, {"eval_loss": 0.5})
         assert decision.action == "continue"
 
     def test_resolve_metric_flat(self):
@@ -371,32 +371,32 @@ class TestOptunaChunkCallback:
                 return ft.intermediate_values
         return {}
 
-    def test_reports_last_value_per_chunk_at_cumulative_step(self):
-        """on_chunk_complete reports one value per chunk (the last/most-recent
-        value in the metric history) at a monotonic cumulative-chunks-completed
+    def test_reports_last_value_per_shard_at_cumulative_step(self):
+        """on_shard_complete reports one value per shard (the last/most-recent
+        value in the metric history) at a monotonic cumulative-shards-completed
         step, not at the optimizer step."""
         cb, study = self._make_callback()
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
         metrics = {"eval_loss": [(0, 0.9), (5, 0.8), (10, 0.7)]}
-        decision = cb.on_chunk_complete(1, 0, metrics)
+        decision = cb.on_shard_complete(1, 0, metrics)
         assert decision.action == "continue"
 
         reported = self._get_intermediate_values(study, trial)
         assert reported == {0: 0.7}
         assert cb._cumulative_step[1] == 1
 
-    def test_cumulative_across_chunks(self):
-        """Each chunk reports at the next cumulative step using its last value."""
+    def test_cumulative_across_shards(self):
+        """Each shard reports at the next cumulative step using its last value."""
         cb, study = self._make_callback()
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
-        cb.on_chunk_complete(1, 0, {"eval_loss": [(0, 0.9), (5, 0.8)]})
+        cb.on_shard_complete(1, 0, {"eval_loss": [(0, 0.9), (5, 0.8)]})
         assert cb._cumulative_step[1] == 1
 
-        cb.on_chunk_complete(1, 1, {"eval_loss": [(0, 0.9), (5, 0.8), (10, 0.6), (15, 0.5)]})
+        cb.on_shard_complete(1, 1, {"eval_loss": [(0, 0.9), (5, 0.8), (10, 0.6), (15, 0.5)]})
         assert cb._cumulative_step[1] == 2
 
         reported = self._get_intermediate_values(study, trial)
@@ -408,7 +408,7 @@ class TestOptunaChunkCallback:
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
-        cb.on_chunk_complete(1, 0, {"eval_loss": 0.5})
+        cb.on_shard_complete(1, 0, {"eval_loss": 0.5})
         reported = self._get_intermediate_values(study, trial)
         assert reported == {0: 0.5}
 
@@ -422,14 +422,14 @@ class TestOptunaChunkCallback:
 
 
 # ---------------------------------------------------------------------------
-# OptunaChunkCallback — epoch granularity
+# OptunaFitShardCallback — epoch granularity
 # ---------------------------------------------------------------------------
 
 
-class TestOptunaChunkCallbackEpochGranularity:
+class TestOptunaFitShardCallbackEpochGranularity:
     """Tests for granularity='epoch': decisions only fire at epoch boundaries."""
 
-    NUM_CHUNKS = 4
+    NUM_SHARDS = 4
 
     def _make_callback(self, direction="minimize", pruner=None):
         study = optuna.create_study(
@@ -437,8 +437,8 @@ class TestOptunaChunkCallbackEpochGranularity:
             pruner=pruner or optuna.pruners.NopPruner(),
         )
         space = [("lr", Range(0.0, 1.0))]
-        template = _fit_template_for_chunk_callback_tests()
-        cb = OptunaChunkCallback(
+        template = _fit_template_for_shard_callback_tests()
+        cb = OptunaFitShardCallback(
             study=study,
             search_spaces=[space],
             config_templates=[template],
@@ -446,21 +446,21 @@ class TestOptunaChunkCallbackEpochGranularity:
             budget=5,
             objective_metric="eval_loss",
             granularity="epoch",
-            num_chunks=self.NUM_CHUNKS,
+            num_shards=self.NUM_SHARDS,
         )
         return cb, study
 
     def test_defers_decision_until_epoch_boundary(self):
-        """Chunks 0-2 should always continue; chunk 3 (4th) is the epoch boundary."""
+        """Shards 0-2 should always continue; shard 3 (4th) is the epoch boundary."""
         cb, study = self._make_callback()
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
-        for chunk_id in range(self.NUM_CHUNKS - 1):
-            decision = cb.on_chunk_complete(1, chunk_id, {"eval_loss": 0.9 - chunk_id * 0.1})
-            assert decision.action == "continue", f"expected continue at chunk {chunk_id}"
+        for shard_id in range(self.NUM_SHARDS - 1):
+            decision = cb.on_shard_complete(1, shard_id, {"eval_loss": 0.9 - shard_id * 0.1})
+            assert decision.action == "continue", f"expected continue at shard {shard_id}"
 
-        decision = cb.on_chunk_complete(1, self.NUM_CHUNKS - 1, {"eval_loss": 0.5})
+        decision = cb.on_shard_complete(1, self.NUM_SHARDS - 1, {"eval_loss": 0.5})
         assert decision.action == "continue"
 
     def test_prune_fires_at_epoch_boundary(self):
@@ -469,11 +469,11 @@ class TestOptunaChunkCallbackEpochGranularity:
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
-        for chunk_id in range(self.NUM_CHUNKS - 1):
-            decision = cb.on_chunk_complete(1, chunk_id, {"eval_loss": 5.0})
+        for shard_id in range(self.NUM_SHARDS - 1):
+            decision = cb.on_shard_complete(1, shard_id, {"eval_loss": 5.0})
             assert decision.action == "continue"
 
-        decision = cb.on_chunk_complete(1, self.NUM_CHUNKS - 1, {"eval_loss": 5.0})
+        decision = cb.on_shard_complete(1, self.NUM_SHARDS - 1, {"eval_loss": 5.0})
         assert decision.action == "prune"
 
     def test_counter_resets_after_epoch(self):
@@ -482,24 +482,24 @@ class TestOptunaChunkCallbackEpochGranularity:
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
-        for chunk_id in range(self.NUM_CHUNKS):
-            cb.on_chunk_complete(1, chunk_id, {"eval_loss": 0.5})
-        assert cb._chunks_since_last_eval[1] == 0
+        for shard_id in range(self.NUM_SHARDS):
+            cb.on_shard_complete(1, shard_id, {"eval_loss": 0.5})
+        assert cb._shards_since_last_eval[1] == 0
 
-        for chunk_id in range(self.NUM_CHUNKS - 1):
-            decision = cb.on_chunk_complete(1, chunk_id, {"eval_loss": 0.4})
+        for shard_id in range(self.NUM_SHARDS - 1):
+            decision = cb.on_shard_complete(1, shard_id, {"eval_loss": 0.4})
             assert decision.action == "continue"
 
-    def test_metrics_still_reported_every_chunk(self):
+    def test_metrics_still_reported_every_shard(self):
         """Even with epoch granularity, one intermediate value (the last in the
-        chunk's history) is reported to Optuna on every chunk at the cumulative
-        chunks-completed step so the pruner has visibility at chunk boundaries."""
+        shard's history) is reported to Optuna on every shard at the cumulative
+        shards-completed step so the pruner has visibility at shard boundaries."""
         cb, study = self._make_callback()
         trial = study.ask()
         cb._set_initial_trials({1: trial}, spawned=1)
 
-        cb.on_chunk_complete(1, 0, {"eval_loss": [(0, 0.9), (5, 0.8)]})
-        cb.on_chunk_complete(1, 1, {"eval_loss": [(0, 0.9), (5, 0.8), (10, 0.7)]})
+        cb.on_shard_complete(1, 0, {"eval_loss": [(0, 0.9), (5, 0.8)]})
+        cb.on_shard_complete(1, 1, {"eval_loss": [(0, 0.9), (5, 0.8), (10, 0.7)]})
 
         reported = {}
         for ft in study.get_trials(deepcopy=False):
@@ -513,17 +513,17 @@ class TestOptunaChunkCallbackEpochGranularity:
         t2 = study.ask()
         cb._set_initial_trials({1: t1, 2: t2}, spawned=2)
 
-        cb.on_chunk_complete(1, 0, {"eval_loss": 0.5})
-        cb.on_chunk_complete(1, 1, {"eval_loss": 0.4})
-        cb.on_chunk_complete(2, 0, {"eval_loss": 0.6})
+        cb.on_shard_complete(1, 0, {"eval_loss": 0.5})
+        cb.on_shard_complete(1, 1, {"eval_loss": 0.4})
+        cb.on_shard_complete(2, 0, {"eval_loss": 0.6})
 
-        assert cb._chunks_since_last_eval[1] == 2
-        assert cb._chunks_since_last_eval[2] == 1
+        assert cb._shards_since_last_eval[1] == 2
+        assert cb._shards_since_last_eval[2] == 1
 
     def test_invalid_granularity_rejected(self):
         study = optuna.create_study()
         with pytest.raises(Exception, match="granularity"):
-            OptunaChunkCallback(
+            OptunaFitShardCallback(
                 study=study,
                 search_spaces=[[("x", Range(0.0, 1.0))]],
                 config_templates=[{"x": Range(0.0, 1.0)}],
@@ -531,13 +531,13 @@ class TestOptunaChunkCallbackEpochGranularity:
                 budget=5,
                 objective_metric="loss",
                 granularity="step",
-                num_chunks=4,
+                num_shards=4,
             )
 
-    def test_epoch_granularity_requires_num_chunks(self):
+    def test_epoch_granularity_requires_num_shards(self):
         study = optuna.create_study()
-        with pytest.raises(Exception, match="num_chunks"):
-            OptunaChunkCallback(
+        with pytest.raises(Exception, match="num_shards"):
+            OptunaFitShardCallback(
                 study=study,
                 search_spaces=[[("x", Range(0.0, 1.0))]],
                 config_templates=[{"x": Range(0.0, 1.0)}],
@@ -545,7 +545,7 @@ class TestOptunaChunkCallbackEpochGranularity:
                 budget=5,
                 objective_metric="loss",
                 granularity="epoch",
-                num_chunks=None,
+                num_shards=None,
             )
 
 
@@ -609,11 +609,11 @@ class TestPrunerNopShortCircuit:
     """
 
     @staticmethod
-    def _make_chunk_callback(pruner):
+    def _make_shard_callback(pruner):
         study = optuna.create_study(direction="minimize", pruner=pruner)
         space = [("lr", Range(0.0, 1.0))]
-        template = _fit_template_for_chunk_callback_tests()
-        cb = OptunaChunkCallback(
+        template = _fit_template_for_shard_callback_tests()
+        cb = OptunaFitShardCallback(
             study=study,
             search_spaces=[space],
             config_templates=[template],
@@ -625,7 +625,7 @@ class TestPrunerNopShortCircuit:
 
     def test_pruner_none_never_prunes(self):
         """NopPruner short-circuits even when _should_prune_concurrent would fire."""
-        cb, study = self._make_chunk_callback(optuna.pruners.NopPruner())
+        cb, study = self._make_shard_callback(optuna.pruners.NopPruner())
         peer = study.ask()
         current = study.ask()
         cb._set_initial_trials({1: peer, 2: current}, spawned=2)
@@ -633,8 +633,8 @@ class TestPrunerNopShortCircuit:
         # Peer reports a good (low) loss at step 0; current reports a bad
         # (high) loss at the same step, so _should_prune_concurrent would
         # return True (0.9 > median([0.2]) == 0.2) without the short-circuit.
-        cb.on_chunk_complete(1, 0, {"eval_loss": 0.2})
-        decision = cb.on_chunk_complete(2, 0, {"eval_loss": 0.9})
+        cb.on_shard_complete(1, 0, {"eval_loss": 0.2})
+        decision = cb.on_shard_complete(2, 0, {"eval_loss": 0.9})
 
         assert decision.action == "continue"
         assert decision.replacement_config is None
@@ -644,13 +644,13 @@ class TestPrunerNopShortCircuit:
 
     def test_pruner_median_prunes(self):
         """pruner='median' prunes the current trial when it is worse than the peer median."""
-        cb, study = self._make_chunk_callback(optuna.pruners.MedianPruner())
+        cb, study = self._make_shard_callback(optuna.pruners.MedianPruner())
         peer = study.ask()
         current = study.ask()
         cb._set_initial_trials({1: peer, 2: current}, spawned=2)
 
-        cb.on_chunk_complete(1, 0, {"eval_loss": 0.2})
-        decision = cb.on_chunk_complete(2, 0, {"eval_loss": 0.9})
+        cb.on_shard_complete(1, 0, {"eval_loss": 0.2})
+        decision = cb.on_shard_complete(2, 0, {"eval_loss": 0.9})
 
         assert decision.action == "prune"
         assert decision.replacement_config is not None
@@ -840,7 +840,7 @@ class TestRFOptuna:
         )
         assert rfopt._granularity == "epoch"
 
-    def test_granularity_defaults_to_chunk_on_rfoptuna(self):
+    def test_granularity_defaults_to_shard_on_rfoptuna(self):
         rfopt = RFOptuna(
             configs=[{"pipeline": "fake", "temp": Range(0.0, 2.0)}],
             trainer_type=None,
@@ -850,7 +850,7 @@ class TestRFOptuna:
             sampler="random",
             pruner=None,
         )
-        assert rfopt._granularity == "chunk"
+        assert rfopt._granularity == "shard"
 
 
 # ---------------------------------------------------------------------------

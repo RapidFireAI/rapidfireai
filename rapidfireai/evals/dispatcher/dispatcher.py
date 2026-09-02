@@ -167,7 +167,7 @@ class Dispatcher:
             "full_config": self._build_full_config(
                 pipeline_config_json, pipeline.get("context_id")
             ),
-            "num_chunks_visited": pipeline.get("shards_completed") or 0,
+            "num_shards_visited": pipeline.get("shards_completed") or 0,
             "total_shards": total_shards,
             "total_samples_processed": pipeline.get("total_samples_processed") or 0,
             "error": pipeline.get("error") or "",

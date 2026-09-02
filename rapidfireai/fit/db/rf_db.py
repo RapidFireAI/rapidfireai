@@ -74,12 +74,48 @@ class RfDb:
                         self.db.conn.commit()
                 except sqlite3.Error:
                     pass
+                # Migrate the chunk->shard column renames on databases created
+                # before the terminology reconciliation. Each rename is guarded so
+                # it is idempotent and survives a partially-migrated DB. Requires
+                # SQLite >= 3.25.0 for ALTER TABLE ... RENAME COLUMN.
+                self._rename_column_if_needed(
+                    "runs", "num_chunks_visited_curr_epoch", "num_shards_visited_curr_epoch"
+                )
+                self._rename_column_if_needed("runs", "chunk_offset", "shard_offset")
+                self._rename_column_if_needed("worker_task", "chunk_id", "shard_id")
+                self._rename_column_if_needed(
+                    "worker_progress", "subchunk_progress", "subshard_progress"
+                )
         except FileNotFoundError as e:
             raise DBException(f"tables.sql file not found at {tables_file}") from e
         except sqlite3.Error as e:
             raise DBException(f"Failed to create tables: {e}") from e
         except Exception as e:
             raise DBException(f"Unexpected error creating tables: {e}") from e
+
+    def _rename_column_if_needed(self, table: str, old: str, new: str) -> None:
+        """Idempotently rename a column on ``table`` from ``old`` to ``new``.
+
+        No-op when the column is already renamed (or never existed). Used to
+        migrate databases created before the chunk->shard terminology
+        reconciliation. Requires SQLite >= 3.25.0 for RENAME COLUMN.
+        """
+        try:
+            columns = [
+                column[1]
+                for column in self.db.conn.execute(
+                    f"PRAGMA table_info({table})"
+                ).fetchall()
+            ]
+            if old in columns and new not in columns:
+                self.db.conn.execute(
+                    f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}"
+                )
+                self.db.conn.commit()
+        except sqlite3.Error:
+            # Swallow: a missing table or an already-migrated column is not
+            # fatal -- the rest of create_tables should still run.
+            pass
 
     def close(self):
         """Close the database connection"""
@@ -379,9 +415,9 @@ class RfDb:
         flattened_config: dict[str, Any] | None = None,
         completed_steps: int = 0,
         total_steps: int = 0,
-        num_chunks_visited_curr_epoch: int = 0,
+        num_shards_visited_curr_epoch: int = 0,
         num_epochs_completed: int = 0,
-        chunk_offset: int = 0,
+        shard_offset: int = 0,
         error: str = "",
         source: RunSource | None = None,
         ended_by: RunEndedBy | None = None,
@@ -393,8 +429,8 @@ class RfDb:
         """Create a new run"""
         query = """
             INSERT INTO runs (status, metric_run_id, flattened_config, config_leaf,
-            completed_steps, total_steps, num_chunks_visited_curr_epoch,
-            num_epochs_completed, chunk_offset, error, source, ended_by, warm_started_from, cloned_from,
+            completed_steps, total_steps, num_shards_visited_curr_epoch,
+            num_epochs_completed, shard_offset, error, source, ended_by, warm_started_from, cloned_from,
             estimated_runtime, required_workers)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
@@ -407,9 +443,9 @@ class RfDb:
                 encode_payload(config_leaf) if config_leaf else "{}",
                 completed_steps,
                 total_steps,
-                num_chunks_visited_curr_epoch,
+                num_shards_visited_curr_epoch,
                 num_epochs_completed,
-                chunk_offset,
+                shard_offset,
                 error,
                 source.value if source else "",
                 ended_by.value if ended_by else "",
@@ -434,9 +470,9 @@ class RfDb:
         config_leaf: dict[str, Any] | None = None,
         completed_steps: int | None = None,
         total_steps: int | None = None,
-        num_chunks_visited_curr_epoch: int | None = None,
+        num_shards_visited_curr_epoch: int | None = None,
         num_epochs_completed: int | None = None,
-        chunk_offset: int | None = None,
+        shard_offset: int | None = None,
         error: str | None = None,
         source: RunSource | None = None,
         ended_by: RunEndedBy | None = None,
@@ -456,9 +492,9 @@ class RfDb:
             "config_leaf": encode_payload(config_leaf) if config_leaf else None,
             "completed_steps": completed_steps,
             "total_steps": total_steps,
-            "num_chunks_visited_curr_epoch": num_chunks_visited_curr_epoch,
+            "num_shards_visited_curr_epoch": num_shards_visited_curr_epoch,
             "num_epochs_completed": num_epochs_completed,
-            "chunk_offset": chunk_offset,
+            "shard_offset": shard_offset,
             "error": error,
             "source": source.value if source else None,
             "ended_by": ended_by.value if ended_by else None,
@@ -492,7 +528,7 @@ class RfDb:
         """Get a run's details"""
         query = """
             SELECT status, metric_run_id, flattened_config, config_leaf, completed_steps, total_steps,
-            num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
+            num_shards_visited_curr_epoch, num_epochs_completed, shard_offset, error, source, ended_by,
             warm_started_from, cloned_from, estimated_runtime, required_workers
             FROM runs
             WHERE run_id = ?
@@ -512,9 +548,9 @@ class RfDb:
                 ),
                 "completed_steps": run_details[4],
                 "total_steps": run_details[5],
-                "num_chunks_visited_curr_epoch": run_details[6],
+                "num_shards_visited_curr_epoch": run_details[6],
                 "num_epochs_completed": run_details[7],
-                "chunk_offset": run_details[8],
+                "shard_offset": run_details[8],
                 "error": run_details[9],
                 "source": RunSource(run_details[10]) if run_details[10] else None,
                 "ended_by": RunEndedBy(run_details[11]) if run_details[11] else None,
@@ -537,7 +573,7 @@ class RfDb:
         placeholders = ",".join(["?"] * len(statuses))
         query = f"""
             SELECT run_id, status, metric_run_id, flattened_config, config_leaf, completed_steps, total_steps,
-            num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
+            num_shards_visited_curr_epoch, num_epochs_completed, shard_offset, error, source, ended_by,
             warm_started_from, cloned_from, estimated_runtime, required_workers
             FROM runs
             WHERE status IN ({placeholders})
@@ -557,9 +593,9 @@ class RfDb:
                     ),
                     "completed_steps": run[5],
                     "total_steps": run[6],
-                    "num_chunks_visited_curr_epoch": run[7],
+                    "num_shards_visited_curr_epoch": run[7],
                     "num_epochs_completed": run[8],
-                    "chunk_offset": run[9],
+                    "shard_offset": run[9],
                     "error": run[10],
                     "source": RunSource(run[11]) if run[11] else None,
                     "ended_by": RunEndedBy(run[12]) if run[12] else None,
@@ -574,7 +610,7 @@ class RfDb:
         """Get all runs for UI display (ignore all complex fields)"""
         query = """
             SELECT run_id, status, metric_run_id, flattened_config, config_leaf, completed_steps, total_steps,
-            num_chunks_visited_curr_epoch, num_epochs_completed, chunk_offset, error, source, ended_by,
+            num_shards_visited_curr_epoch, num_epochs_completed, shard_offset, error, source, ended_by,
             warm_started_from, cloned_from, estimated_runtime, required_workers
             FROM runs
         """
@@ -592,9 +628,9 @@ class RfDb:
                     ),
                     "completed_steps": run[5],
                     "total_steps": run[6],
-                    "num_chunks_visited_curr_epoch": run[7],
+                    "num_shards_visited_curr_epoch": run[7],
                     "num_epochs_completed": run[8],
-                    "chunk_offset": run[9],
+                    "shard_offset": run[9],
                     "error": run[10],
                     "source": RunSource(run[11]) if run[11] else None,
                     "ended_by": RunEndedBy(run[12]) if run[12] else None,
@@ -701,14 +737,14 @@ class RfDb:
         task_type: WorkerTask,
         status: TaskStatus,
         run_id: int,
-        chunk_id: int = -1,
+        shard_id: int = -1,
         multi_worker_details: dict[str, Any] | None = None,
         config_options: dict[str, Any] | None = None,
     ) -> int:
         """Create a worker task"""
 
         query = """
-            INSERT INTO worker_task (worker_id, task_type, status, run_id, chunk_id, multi_worker_details, config_options)
+            INSERT INTO worker_task (worker_id, task_type, status, run_id, shard_id, multi_worker_details, config_options)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """
         multi_worker_details_str = (
@@ -722,7 +758,7 @@ class RfDb:
                 task_type.value,
                 status.value,
                 run_id,
-                chunk_id,
+                shard_id,
                 multi_worker_details_str,
                 config_options_str,
             ),
@@ -736,7 +772,7 @@ class RfDb:
     def get_all_worker_tasks(self) -> dict[int, dict[str, Any]]:
         """Get the latest task of each worker"""
         query = """
-            SELECT worker_id, task_id, task_type, status, run_id, chunk_id, multi_worker_details, config_options
+            SELECT worker_id, task_id, task_type, status, run_id, shard_id, multi_worker_details, config_options
             FROM worker_task wt1
             WHERE task_id = (
                 SELECT MAX(task_id)
@@ -754,7 +790,7 @@ class RfDb:
                     "task_type": WorkerTask(task[2]),
                     "status": TaskStatus(task[3]),
                     "run_id": task[4],
-                    "chunk_id": task[5],
+                    "shard_id": task[5],
                     "multi_worker_details": (
                         json.loads(task[6]) if task[6] and task[6] != "{}" else {}
                     ),
@@ -769,7 +805,7 @@ class RfDb:
     def get_worker_scheduled_task(self, worker_id: int) -> dict[str, Any]:
         """Get the latest scheduled task for a worker"""
         query = """
-            SELECT task_id, task_type, run_id, chunk_id, multi_worker_details, config_options
+            SELECT task_id, task_type, run_id, shard_id, multi_worker_details, config_options
             FROM worker_task
             WHERE worker_id = ? AND status = ?
             ORDER BY task_id DESC
@@ -795,7 +831,7 @@ class RfDb:
                 "task_id": task_details[0],
                 "task_type": WorkerTask(task_details[1]),
                 "run_id": task_details[2],
-                "chunk_id": task_details[3],
+                "shard_id": task_details[3],
                 "multi_worker_details": multi_worker_details,
                 "config_options": (
                     config_options
@@ -848,22 +884,22 @@ class RfDb:
         return 0.0
 
     # Train Worker Progress Table
-    def set_worker_progress(self, run_id: int, subchunk_progress: float) -> None:
+    def set_worker_progress(self, run_id: int, subshard_progress: float) -> None:
         """Set the progress of a Worker for training"""
         query = """
-            INSERT INTO worker_progress (run_id, subchunk_progress)
+            INSERT INTO worker_progress (run_id, subshard_progress)
             VALUES (?, ?)
             ON CONFLICT (run_id)
             DO UPDATE SET
-                subchunk_progress = EXCLUDED.subchunk_progress;
+                subshard_progress = EXCLUDED.subshard_progress;
         """
-        progress_rounded = round(subchunk_progress, 2)
+        progress_rounded = round(subshard_progress, 2)
         self.db.execute(query, (run_id, progress_rounded), commit=True)
 
     def get_worker_progress(self, run_id: int) -> float:
         """Get the progress of a Worker for training"""
         query = """
-            SELECT subchunk_progress
+            SELECT subshard_progress
             FROM worker_progress
             WHERE run_id = ?
         """

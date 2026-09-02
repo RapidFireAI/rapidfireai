@@ -15,7 +15,7 @@ from torch.utils.data import Dataset
 
 from rapidfireai.automl import AutoMLAlgorithm
 from rapidfireai.utils.os_utils import mkdir_p
-from rapidfireai.fit.backend.chunks import DatasetChunks
+from rapidfireai.fit.backend.shards import DatasetShards
 from rapidfireai.fit.backend.scheduler import Scheduler
 from rapidfireai.fit.db.rf_db import RfDb
 from rapidfireai.automl import get_flattened_config_leaf, get_runs
@@ -157,11 +157,11 @@ class Controller:
         current: int | None = None,
         total: int | None = None,
     ) -> None:
-        """Mirror chunk progress to MLflow tags so the dashboard's Shards
+        """Mirror shard progress to MLflow tags so the dashboard's Shards
         column can render ``current/total`` for fit-mode runs.
 
         We use tags (not params) because ``current`` is mutable across
-        chunks, and tags are MLflow's only mutable per-run key/value
+        shards, and tags are MLflow's only mutable per-run key/value
         primitive. The frontend reads ``rapidfire.progress.current`` and
         ``rapidfire.progress.total`` (see
         ``RunShardsCellRenderer.tsx``). This mirrors the seeding/update
@@ -193,7 +193,7 @@ class Controller:
         source: RunSource,
         seed: int,
         len_train_dataset: int,
-        num_chunks: int,
+        num_shards: int,
         clone_modify_info: dict[str, Any] | None = None,
     ) -> list[int]:
         """Creates the models."""
@@ -215,8 +215,8 @@ class Controller:
             cloned_from = (
                 clone_modify_info.get("cloned_from") if clone_modify_info else None
             )
-            chunk_offset = (
-                clone_modify_info.get("chunk_offset", 0) if clone_modify_info else 0
+            shard_offset = (
+                clone_modify_info.get("shard_offset", 0) if clone_modify_info else 0
             )
 
             if warm_started_from:
@@ -245,7 +245,7 @@ class Controller:
                 )
 
             total_steps = self._get_total_step(
-                config_leaf, len_train_dataset, num_chunks, required_workers
+                config_leaf, len_train_dataset, num_shards, required_workers
             )
             run_id = self.db.create_run(
                 config_leaf=config_leaf,
@@ -255,7 +255,7 @@ class Controller:
                 error="",
                 source=source,
                 ended_by=None,
-                chunk_offset=chunk_offset,
+                shard_offset=shard_offset,
                 warm_started_from=warm_started_from,
                 cloned_from=cloned_from,
                 estimated_runtime=estimated_runtime,
@@ -301,13 +301,13 @@ class Controller:
                         metric_run_id, "parent-run", str(cloned_from)
                     )
                 # Seed the Shards-column tags so the dashboard renders
-                # ``0/num_chunks`` immediately on run creation, instead
-                # of waiting for the first chunk to complete. The fit
-                # scheduler tracks chunks per epoch (it calls
+                # ``0/num_shards`` immediately on run creation, instead
+                # of waiting for the first shard to complete. The fit
+                # scheduler tracks shards per epoch (it calls
                 # ``reset_run`` at epoch boundaries), so ``total`` is
-                # ``num_chunks`` -- not ``num_chunks * num_epochs``.
+                # ``num_shards`` -- not ``num_shards * num_epochs``.
                 self._set_progress_tags(
-                    metric_run_id, current=0, total=num_chunks
+                    metric_run_id, current=0, total=num_shards
                 )
                 self.logger.debug(
                     f"Populated MetricLogger with model config info for run {run_id}."
@@ -383,7 +383,7 @@ class Controller:
         clone_modify_tasks: list[dict[str, Any]],
         len_train_dataset: int,
         seed: int,
-        num_chunks: int,
+        num_shards: int,
     ) -> None:
         """Process interactive control tasks."""
 
@@ -490,11 +490,11 @@ class Controller:
                         RunSource.INTERACTIVE_CONTROL,
                         seed,
                         len_train_dataset,
-                        num_chunks=num_chunks,
+                        num_shards=num_shards,
                         clone_modify_info=clone_modify_info,
                     )
                 elif ic_op == ControllerTask.IC_CLONE_MODIFY_WARM:
-                    # calculate clone chunk offset
+                    # calculate clone shard offset
                     effective_batch_size = (
                         parent_run_details["config_leaf"]["training_args"].get(
                             "per_device_train_batch_size", 1
@@ -504,35 +504,35 @@ class Controller:
                         )
                         * parent_run_details["required_workers"]
                     )
-                    chunker = DatasetChunks(
+                    sharder = DatasetShards(
                         len_train_dataset,
-                        num_chunks,
+                        num_shards,
                         batch_size=effective_batch_size,
-                        offset=parent_run_details["chunk_offset"],
+                        offset=parent_run_details["shard_offset"],
                     )
-                    # Convert count to chunk_id by subtracting 1, with edge case handling for 0 chunks visited
-                    num_chunks_visited = parent_run_details[
-                        "num_chunks_visited_curr_epoch"
+                    # Convert count to shard_id by subtracting 1, with edge case handling for 0 shards visited
+                    num_shards_visited = parent_run_details[
+                        "num_shards_visited_curr_epoch"
                     ]
-                    if num_chunks_visited == 0:
-                        # No chunks visited yet - warm-clone behaves like cold clone (start from beginning)
-                        clone_chunk_offset = 0
+                    if num_shards_visited == 0:
+                        # No shards visited yet - warm-clone behaves like cold clone (start from beginning)
+                        clone_shard_offset = 0
                     else:
-                        last_completed_chunk_id = num_chunks_visited - 1
-                        clone_chunk_offset = chunker.get_clone_offset(
-                            last_completed_chunk_id
+                        last_completed_shard_id = num_shards_visited - 1
+                        clone_shard_offset = sharder.get_clone_offset(
+                            last_completed_shard_id
                         )
                     clone_modify_info = {
                         "cloned_from": parent_run_id,
                         "warm_started_from": parent_run_id,
-                        "chunk_offset": clone_chunk_offset,
+                        "shard_offset": clone_shard_offset,
                     }
                     run_ids = self._create_models(
                         config_leaf,
                         RunSource.INTERACTIVE_CONTROL,
                         seed,
                         len_train_dataset,
-                        num_chunks,
+                        num_shards,
                         clone_modify_info,
                     )
                 else:
@@ -566,7 +566,7 @@ class Controller:
         for task in ic_scheduled_tasks:
             run_id = task["run_id"]
 
-            # skip if run is currently scheduled (we process IC ops only at chunk boundaries)
+            # skip if run is currently scheduled (we process IC ops only at shard boundaries)
             if run_id in currently_scheduled_runs:
                 # self.logger.debug(f"Skipping IC op for run {run_id} as it is currently scheduled")
                 continue
@@ -669,7 +669,7 @@ class Controller:
         self,
         config_leaf: dict[str, Any],
         len_train_dataset: int,
-        num_chunks: int,
+        num_shards: int,
         required_workers: int,
     ) -> int:
         """Get the total number of steps for a run."""
@@ -682,7 +682,7 @@ class Controller:
         )
         # max_steps overrides num_train_epochs
         if config_leaf["training_args"].get("max_steps", None):
-            # ceil to nearest chunk multiple
+            # ceil to nearest shard multiple
             total_steps = config_leaf["training_args"]["max_steps"]
         elif num_train_epochs:
             per_device_train_batch_size = config_leaf["training_args"].get(
@@ -715,11 +715,11 @@ class Controller:
         create_model_fn: Callable,
         train_dataset: Dataset,
         eval_dataset: Dataset,
-        num_chunks: int,
+        num_shards: int,
         seed: int = 42,
         num_gpus: int = 1,
         monte_carlo_simulations: int = 1000,
-        chunk_callback=None,
+        shard_callback=None,
     ) -> None:
         """Run the fit."""
 
@@ -737,7 +737,7 @@ class Controller:
             datasets = {
                 "train": train_dataset,
                 "eval": eval_dataset if eval_dataset else None,
-                "num_chunks": num_chunks,
+                "num_shards": num_shards,
             }
             with open(DataPath.dataset_path(), "w", encoding="utf-8") as f:
                 f.write(encode_payload(datasets))
@@ -757,7 +757,7 @@ class Controller:
                 RunSource.INITIAL,
                 seed,
                 len_train_dataset,
-                num_chunks=num_chunks,
+                num_shards=num_shards,
             )
             self.logger.debug("Created models.")
         except Exception as e:
@@ -765,11 +765,11 @@ class Controller:
 
         # RFOptuna: ``get_runs()`` (inside _create_models) creates the Optuna study.
         # ``get_callback()`` must run after that or it returns None and trials never finalize.
-        if chunk_callback is None and hasattr(param_config, "get_callback"):
-            chunk_callback = param_config.get_callback(num_chunks=num_chunks)
+        if shard_callback is None and hasattr(param_config, "get_callback"):
+            shard_callback = param_config.get_callback(num_shards=num_shards)
 
         # Bind Optuna trials to the newly created DB run IDs
-        if chunk_callback is not None and hasattr(param_config, "bind_initial_trials"):
+        if shard_callback is not None and hasattr(param_config, "bind_initial_trials"):
             param_config.bind_initial_trials(run_ids)
             self.logger.info(f"Optuna callback bound to {len(run_ids)} initial runs")
 
@@ -799,7 +799,7 @@ class Controller:
             )
 
         scheduler = Scheduler(
-            runs_info, self.num_workers, num_chunks, monte_carlo_simulations
+            runs_info, self.num_workers, num_shards, monte_carlo_simulations
         )
 
         # run fit
@@ -856,10 +856,10 @@ class Controller:
 
                 # Process completed tasks first (before scheduling new ones)
                 for run_id in completed_runs:
-                    chunk_id = worker_task["chunk_id"]
+                    shard_id = worker_task["shard_id"]
                     run_details = all_run_details[run_id]
                     self.logger.debug(
-                        f"Completed task: run {run_id}, chunk {chunk_id} on workers {active_runs[run_id]}"
+                        f"Completed task: run {run_id}, shard {shard_id} on workers {active_runs[run_id]}"
                     )
                     self.logger.info(
                         f"Run {run_id} completed steps - {run_details['completed_steps']}/{run_details['total_steps']}"
@@ -872,14 +872,14 @@ class Controller:
                     active_runs.pop(run_id, None)
 
                     # Update database state and local state using scheduler's state as source of truth
-                    new_chunks_visited = scheduler.state.run_visited_num_chunks[run_id]
-                    if new_chunks_visited == num_chunks:
+                    new_shards_visited = scheduler.state.run_visited_num_shards[run_id]
+                    if new_shards_visited == num_shards:
                         num_epochs_completed = run_details["num_epochs_completed"] + 1
                     else:
                         num_epochs_completed = run_details["num_epochs_completed"]
                     self.db.set_run_details(
                         run_id=run_id,
-                        num_chunks_visited_curr_epoch=new_chunks_visited,
+                        num_shards_visited_curr_epoch=new_shards_visited,
                         num_epochs_completed=num_epochs_completed,
                     )
 
@@ -890,7 +890,7 @@ class Controller:
                     # ``scheduler.reset_run``) by resetting current to 0.
                     self._set_progress_tags(
                         run_details.get("metric_run_id"),
-                        current=new_chunks_visited,
+                        current=new_shards_visited,
                     )
 
                     # Update progress
@@ -905,9 +905,9 @@ class Controller:
                     )
                     self.db.set_controller_progress(run_id, progress_percentage)
 
-                    # Optuna callback: evaluate run after chunk and potentially prune
+                    # Optuna callback: evaluate run after shard and potentially prune
                     if (
-                        chunk_callback is not None
+                        shard_callback is not None
                         and run_details["completed_steps"] < run_details["total_steps"]
                     ):
                         try:
@@ -917,7 +917,7 @@ class Controller:
                                 if metric_run_id
                                 else {}
                             )
-                            decision = chunk_callback.on_chunk_complete(run_id, chunk_id, run_metrics)
+                            decision = shard_callback.on_shard_complete(run_id, shard_id, run_metrics)
                             if decision.action == "prune":
                                 scheduler.remove_run(run_id)
                                 self.db.set_run_details(
@@ -929,18 +929,18 @@ class Controller:
                                 # (intentional programmatic termination).
                                 self._finalize_mlflow_run(run_id, "KILLED")
                                 self._clear_run_from_shm(run_id)
-                                self.logger.info(f"Optuna pruned run {run_id} after chunk {chunk_id}")
+                                self.logger.info(f"Optuna pruned run {run_id} after shard {shard_id}")
                                 if decision.replacement_config:
                                     new_run_ids = self._create_models(
                                         decision.replacement_config,
                                         RunSource.OPTUNA,
                                         seed,
                                         len_train_dataset,
-                                        num_chunks=num_chunks,
+                                        num_shards=num_shards,
                                     )
-                                    if hasattr(chunk_callback, "_remap_pending_trial"):
+                                    if hasattr(shard_callback, "_remap_pending_trial"):
                                         for new_id in new_run_ids:
-                                            chunk_callback._remap_pending_trial(new_id)
+                                            shard_callback._remap_pending_trial(new_id)
                                     self.logger.info(
                                         f"Optuna suggested replacement run(s): {new_run_ids}"
                                     )
@@ -949,7 +949,7 @@ class Controller:
                             self.logger.warning(f"Optuna callback error for run {run_id}: {e}")
 
                     # Check if run has completed all epochs
-                    # completed_steps can go beyond total_steps since we stop only at a chunk boundary
+                    # completed_steps can go beyond total_steps since we stop only at a shard boundary
                     if run_details["completed_steps"] >= run_details["total_steps"]:
                         scheduler.remove_run(run_id)
                         self.db.set_run_details(
@@ -968,23 +968,23 @@ class Controller:
                         )
                     # Check if run has completed only current epoch (hasn't reached total_steps yet)
                     elif (
-                        new_chunks_visited == num_chunks
+                        new_shards_visited == num_shards
                         and run_details["completed_steps"] < run_details["total_steps"]
                     ):
                         scheduler.reset_run(run_id)
                         self.db.set_run_details(
-                            run_id=run_id, num_chunks_visited_curr_epoch=0
+                            run_id=run_id, num_shards_visited_curr_epoch=0
                         )
-                        # The scheduler tracks chunks per-epoch, so reset
-                        # the Shards tag to ``0/num_chunks`` for the new
+                        # The scheduler tracks shards per-epoch, so reset
+                        # the Shards tag to ``0/num_shards`` for the new
                         # epoch. Without this the cell would be stuck at
-                        # ``num_chunks/num_chunks`` for the rest of the
+                        # ``num_shards/num_shards`` for the rest of the
                         # run, hiding the rollover from users.
                         self._set_progress_tags(
                             run_details.get("metric_run_id"), current=0
                         )
                         self.logger.info(
-                            f"Run {run_id} has completed epoch ({new_chunks_visited}/{num_chunks} chunks)"
+                            f"Run {run_id} has completed epoch ({new_shards_visited}/{num_shards} shards)"
                         )
 
                 # Check for failed runs and update scheduler, local state, shm
@@ -1012,7 +1012,7 @@ class Controller:
                         clone_modify_tasks,
                         len_train_dataset,
                         seed,
-                        num_chunks,
+                        num_shards,
                     )
                 except Exception as e:
                     raise ControllerException(
@@ -1034,22 +1034,22 @@ class Controller:
                             "req_workers": run_details["required_workers"],
                             "estimated_runtime": run_details["estimated_runtime"],
                         }
-                        chunks_visited = all_run_details[run_id][
-                            "num_chunks_visited_curr_epoch"
+                        shards_visited = all_run_details[run_id][
+                            "num_shards_visited_curr_epoch"
                         ]
-                        scheduler.add_run(run_info, chunks_visited)
+                        scheduler.add_run(run_info, shards_visited)
                         # Re-seed Shards-column tags when an IC Op
                         # resumes or revives a run. ``_create_models``
                         # only fires for brand-new run IDs; without
                         # this, resumed runs would render ``-`` until
-                        # their next chunk completes.
+                        # their next shard completes.
                         self._set_progress_tags(
                             run_details.get("metric_run_id"),
-                            current=chunks_visited,
-                            total=num_chunks,
+                            current=shards_visited,
+                            total=num_shards,
                         )
                         self.logger.debug(
-                            f"Added run {run_id} to scheduler with {chunks_visited} chunks visited"
+                            f"Added run {run_id} to scheduler with {shards_visited} shards visited"
                         )
                     elif (
                         run_details["status"] in (RunStatus.STOPPED, RunStatus.DELETED)
@@ -1064,18 +1064,18 @@ class Controller:
                 schedule = scheduler.schedule()
                 run_id = schedule["run_id"]
                 worker_ids = schedule["worker_ids"]
-                chunk_id = schedule["chunk_id"]
+                shard_id = schedule["shard_id"]
 
                 # Check termination condition
-                if run_id is None and worker_ids is None and chunk_id is None:
+                if run_id is None and worker_ids is None and shard_id is None:
                     self.logger.info(
-                        "Scheduler indicates all runs have completed all chunks"
+                        "Scheduler indicates all runs have completed all shards"
                     )
                     all_done = True
                     break
 
                 # Check if no schedule possible
-                if run_id == -1 and chunk_id == -1:
+                if run_id == -1 and shard_id == -1:
                     # self.logger.debug("No schedule possible - all workers busy or no available runs")
                     time.sleep(1)
                     continue
@@ -1102,12 +1102,12 @@ class Controller:
                         WorkerTask.TRAIN_VAL,
                         TaskStatus.SCHEDULED,
                         run_id,
-                        chunk_id,
+                        shard_id,
                         multi_worker_details=multi_worker_details,
                         config_options={"create_model_fn": create_model_fn},
                     )
                 self.logger.debug(
-                    f"Scheduled run {run_id} on workers {worker_ids} for chunk {chunk_id}"
+                    f"Scheduled run {run_id} on workers {worker_ids} for shard {shard_id}"
                 )
 
                 # Update prev_worker_tasks for next iteration (only track task_id and status)
@@ -1123,14 +1123,14 @@ class Controller:
                 time.sleep(1)
 
             # Finalize Optuna callback with final metrics from all runs
-            if chunk_callback is not None:
+            if shard_callback is not None:
                 try:
                     final_metrics = {}
                     for rid, rdetails in self.db.get_all_runs().items():
                         metric_run_id = rdetails.get("metric_run_id")
                         if metric_run_id:
                             final_metrics[rid] = self.metric_logger.get_run_metrics(metric_run_id)
-                    chunk_callback.finalize(final_metrics)
+                    shard_callback.finalize(final_metrics)
                     self.logger.info("Optuna callback finalized")
                 except Exception as e:
                     self.logger.warning(f"Optuna finalize error: {e}")
