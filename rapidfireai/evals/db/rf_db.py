@@ -402,11 +402,13 @@ class RFDatabase:
         Unlike :meth:`get_running_experiment` this does not filter on status,
         so it resolves any experiment ever created in this (evals) DB - live,
         ended, failed, or cancelled - which is what lets a caller read the
-        persisted ``experiment_mode`` for a historical experiment. Names can
-        recur across re-runs, so the most recent row (max experiment_id) wins.
+        persisted ``experiment_mode`` and ``num_actors`` for a historical
+        experiment. Names can recur across re-runs, so the most recent row
+        (max experiment_id) wins.
         """
         query = """
-        SELECT experiment_id, experiment_name, metric_experiment_id, status, error, created_at, experiment_mode
+        SELECT experiment_id, experiment_name, metric_experiment_id, status, error,
+               created_at, experiment_mode, num_actors
         FROM experiments
         WHERE experiment_name = ?
         ORDER BY experiment_id DESC
@@ -423,6 +425,7 @@ class RFDatabase:
                 "error": row[4],
                 "created_at": row[5],
                 "experiment_mode": row[6],
+                "num_actors": row[7],
             }
         return None
 

@@ -14,7 +14,6 @@ from rapidfireai.evals.db import RFDatabase
 from rapidfireai.evals.metrics.aggregator import Aggregator
 from rapidfireai.evals.scheduling.interactive_control import InteractiveControlHandler
 from rapidfireai.evals.scheduling.pipeline_scheduler import PipelineScheduler
-from rapidfireai.evals.scheduling.scheduler import Scheduler
 from rapidfireai.evals.utils.constants import (
     SEARCH_TYPE_KEYS,
     ContextStatus,
@@ -122,7 +121,6 @@ class Controller:
         """
         self.aggregator = Aggregator()
         self.dataloader = DataLoader()
-        self.scheduler = Scheduler(strategy="round_robin")
         self.experiment_name = experiment_name
         self.experiment_path = experiment_path
         self.metric_manager = metric_manager

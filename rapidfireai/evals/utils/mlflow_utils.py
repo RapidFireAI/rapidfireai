@@ -206,3 +206,31 @@ def mlflow_get_current_active_span():
     if is_mlflow_enabled():
         return mlflow.get_current_active_span()
     return None
+
+
+# ---------------------------------------------------------------------------
+# Terminal-status guard for mlflow.start_run(run_id=<existing-run>)
+# ---------------------------------------------------------------------------
+
+# mlflow.start_run(run_id=<terminal-run>) reactivates it, flipping server
+# status KILLED/FAILED/FINISHED back to RUNNING and desyncing the dashboard
+# (reads MLflow) from the dispatcher DB (reads pipelines.status). Callers
+# about to (re)open a run by id must check this first and skip the start_run.
+_MLFLOW_TERMINAL_STATUSES = frozenset({"KILLED", "FAILED", "FINISHED"})
+
+
+def get_mlflow_run_status(client: Any, run_id: str) -> str | None:
+    """Return the server-side MLflow RunStatus string for ``run_id``, or None.
+
+    None when the run is absent or the lookup fails (best-effort).
+    """
+    try:
+        run = client.get_run(run_id)
+        return run.info.status if run is not None else None
+    except Exception:
+        return None
+
+
+def is_mlflow_run_terminal(client: Any, run_id: str) -> bool:
+    """True if the MLflow run is already terminal (KILLED/FAILED/FINISHED)."""
+    return get_mlflow_run_status(client, run_id) in _MLFLOW_TERMINAL_STATUSES
