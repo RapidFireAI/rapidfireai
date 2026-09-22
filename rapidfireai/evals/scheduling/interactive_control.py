@@ -133,7 +133,7 @@ class InteractiveControlHandler:
 
                 if operation == ICOperation.STOP.value:
                     self._handle_stop(
-                        pipeline_id, scheduler, db, progress_display, in_flight_pipeline_ids
+                        pipeline_id, scheduler, db, num_shards, progress_display, in_flight_pipeline_ids
                     )
 
                 elif operation == ICOperation.RESUME.value:
@@ -182,6 +182,7 @@ class InteractiveControlHandler:
         pipeline_id: int,
         scheduler: PipelineScheduler,
         db: RFDatabase,
+        num_shards: int,
         progress_display=None,
         in_flight_pipeline_ids: set[int] | None = None,
     ) -> None:
@@ -193,10 +194,28 @@ class InteractiveControlHandler:
         completion and is released naturally when that shard finishes. No
         further shards are scheduled for this pipeline.
 
+        If the pipeline has already finished all its shards by the time this
+        stop is processed (e.g. the last shard completed between the user
+        issuing stop and this IC poll running), the controller's merge path
+        has already set its DB status to COMPLETED and finalized the MLflow
+        run as FINISHED. In that case we reaffirm COMPLETED/FINISHED rather
+        than overwriting a fully-finished run with STOPPED -- a run that
+        processed every shard is COMPLETED, not STOPPED, regardless of
+        whether a (now-stale) stop request was pending in the DB.
+
+        The scheduler's in-memory progress is popped on the first removal, so
+        the detection cannot rely on ``remove_pipeline`` alone: a *second*
+        pending STOP for the same (already-finished) pipeline would see 0 and
+        wrongly clobber the first call's COMPLETED/FINISHED reaffirmation with
+        STOPPED/KILLED. We therefore consult the DB -- the authoritative
+        terminal-state source -- and treat the run as already-completed when
+        the DB reports every shard done or its status is already COMPLETED.
+
         Args:
             pipeline_id: ID of pipeline to stop
             scheduler: PipelineScheduler instance
             db: Database instance
+            num_shards: Total number of shards (to detect already-completed)
             progress_display: Optional progress display to update
             in_flight_pipeline_ids: Set of pipeline_ids with an in-flight shard
         """
@@ -205,33 +224,76 @@ class InteractiveControlHandler:
 
         # Remove from scheduler (returns shards completed). Do not free the
         # actor if a shard is in flight -- it will be freed on completion.
-        shards_completed = scheduler.remove_pipeline(
+        scheduler_shards_completed = scheduler.remove_pipeline(
             pipeline_id, in_flight=(pipeline_id in in_flight_pipeline_ids)
         )
 
-        # Update database status
-        db.set_pipeline_status(pipeline_id, PipelineStatus.STOPPED)
+        # The scheduler's in-memory progress is *popped* on the first removal,
+        # so a second pending STOP for the same pipeline sees 0 and would
+        # wrongly clobber a finished run with STOPPED/KILLED. The DB is the
+        # authoritative terminal-state source: it persists ``shards_completed``
+        # (advanced by the controller's merge path on every shard completion)
+        # and ``status`` (COMPLETED once the run finished, or as reaffirmed by
+        # a prior STOP). Fetch it once -- without the expensive dill config
+        # decode, since only status / progress / metric_run_id are needed here
+        # -- and reuse it below for the metric_run_id lookup.
+        pipeline = None
+        try:
+            pipeline = db.get_pipeline(pipeline_id, include_decoded_config=False)
+        except Exception as exc:
+            self.logger.warning(
+                f"Failed to read pipeline {pipeline_id} for stop: {exc}"
+            )
+        db_shards_completed = (pipeline or {}).get("shards_completed", 0)
+        db_status = (pipeline or {}).get("status")
 
-        # Terminate the MLflow run with KILLED so the dashboard matches the
-        # notebook table (which now shows STOPPED). Mirrors _handle_delete's
-        # try/except pattern: MLflow trouble must not fail the IC op.
+        # A pipeline that has already processed every shard is COMPLETED, not
+        # STOPPED. Treat it as already-completed when the scheduler OR the DB
+        # reports every shard done, or the DB status is already COMPLETED (the
+        # merge path, or a prior STOP's reaffirmation). The max guards a race
+        # where the scheduler count is fresher than the DB row; the DB-status
+        # check guards the second-pending-STOP case where the scheduler count
+        # was popped back to 0.
+        effective_shards_completed = max(scheduler_shards_completed, db_shards_completed)
+        already_completed = (
+            effective_shards_completed >= num_shards
+            or db_status == PipelineStatus.COMPLETED.value
+        )
+        if already_completed:
+            db.set_pipeline_status(pipeline_id, PipelineStatus.COMPLETED)
+            mlflow_status = "FINISHED"
+            display_status = "COMPLETED"
+        else:
+            db.set_pipeline_status(pipeline_id, PipelineStatus.STOPPED)
+            mlflow_status = "KILLED"
+            display_status = "STOPPED"
+
+        # Terminate the MLflow run so the dashboard matches the notebook table.
+        # COMPLETED -> FINISHED, STOPPED -> KILLED. Mirrors _handle_delete's
+        # try/except pattern: MLflow trouble must not fail the IC op. Safe to
+        # call even if the merge path already finalized the run -- the
+        # try/except swallows any double-terminate, and re-asserting the same
+        # terminal status is a no-op on the MLflow server.
         if self.metric_manager:
             try:
-                pipeline = db.get_pipeline(pipeline_id)
                 metric_run_id = pipeline.get("metric_run_id") if pipeline else None
                 if metric_run_id:
-                    self.metric_manager.end_run(metric_run_id, status="KILLED")
+                    self.metric_manager.end_run(metric_run_id, status=mlflow_status)
                     self.logger.info(
-                        f"Marked MLflow run {metric_run_id} as KILLED for stopped pipeline {pipeline_id}"
+                        f"Marked MLflow run {metric_run_id} as {mlflow_status} for "
+                        f"{'completed' if already_completed else 'stopped'} pipeline {pipeline_id}"
                     )
             except Exception as e:
                 self.logger.warning(f"Failed to end MLflow run for stopped pipeline {pipeline_id}: {e}")
 
         # Update display
         if progress_display:
-            progress_display.update_pipeline(pipeline_id, status="STOPPED")
+            progress_display.update_pipeline(pipeline_id, status=display_status)
 
-        self.logger.info(f"Stopped pipeline {pipeline_id} at {shards_completed} shards completed")
+        self.logger.info(
+            f"{'Completed' if already_completed else 'Stopped'} pipeline {pipeline_id} "
+            f"at {effective_shards_completed}/{num_shards} shards completed"
+        )
 
     def _handle_resume(
         self, pipeline_id: int, scheduler: PipelineScheduler, db: RFDatabase, num_shards: int, progress_display=None

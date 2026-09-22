@@ -16,7 +16,12 @@ import pickle
 
 from rapidfireai.utils.constants import MLflowConfig
 from rapidfireai.evals.utils.constants import SEARCH_DEFAULTS, VALID_SEARCH_TYPES, PINECONE_SOURCE_TAG
-from rapidfireai.evals.utils.mlflow_utils import setup_mlflow, mlflow_start_span, is_mlflow_enabled
+from rapidfireai.evals.utils.mlflow_utils import (
+    setup_mlflow,
+    mlflow_start_span,
+    is_mlflow_enabled,
+    is_mlflow_run_terminal,
+)
 
 from langchain_community.vectorstores import FAISS
 from langchain_postgres import PGVector
@@ -84,6 +89,7 @@ class QueryProcessingActor:
         self.prompt_manager = None  # Prompt manager for few-shot examples
         self.current_engine_config_hash = None  # Track currently loaded model
         self.metric_run_id = None  # MLflow run ID for trace association
+        self._mlflow_client = None  # Lazily-cached MlflowClient for terminal-status checks
 
     def _clear_local_mlflow_active_run(self) -> None:
         """Pop this actor's MLflow active-run stack WITHOUT terminating on the server.
@@ -108,6 +114,20 @@ class QueryProcessingActor:
         )
 
         clear_local_mlflow_active_run_stack(self.logger)
+
+    def _get_mlflow_client(self):
+        """Return a lazily-cached ``MlflowClient`` for server-side status checks.
+
+        The actor process already ran ``setup_mlflow`` (which calls
+        ``mlflow.set_tracking_uri``), so a no-arg ``MlflowClient()`` picks up
+        that tracking URI. Cached so the per-shard terminal-status guard
+        doesn't construct a fresh client on every ``initialize_for_pipeline``.
+        """
+        if self._mlflow_client is None:
+            from mlflow.tracking import MlflowClient
+
+            self._mlflow_client = MlflowClient()
+        return self._mlflow_client
 
     def initialize_for_pipeline(
         self,
@@ -367,11 +387,28 @@ class QueryProcessingActor:
             # When this is the same pipeline continuing across shards, the active
             # MLflow run is already open on this actor; calling start_run again
             # would raise "Run with UUID ... is already active" -- skip in that case.
+            #
+            # Terminal-run guard: mlflow.start_run(run_id=<terminal-run>) REACTIVATES
+            # the run, flipping server status KILLED/FAILED/FINISHED back to RUNNING.
+            # The controller (IC stop / error handler) is the single authority on
+            # terminal status; an actor must never reopen a run it doesn't own the
+            # lifecycle of. This races with stop when a shard was dispatched
+            # non-blocking and the IC handler terminates the run (KILLED) before
+            # this actor executes initialize_for_pipeline. Without this check the
+            # dashboard (reads MLflow) would flip STOPPED -> ONGOING while the
+            # dispatcher DB (and the notebook) correctly stay STOPPED. When the
+            # run is already terminal we skip start_run; the local active-run
+            # stack was already cleared above, so traces for the (soon-to-be-
+            # discarded) shard simply don't reopen the run. Fails open on a
+            # transient MLflow lookup error so a running pipeline isn't broken --
+            # the controller's stopping-pipelines guard still disposes of the
+            # shard in the stopped case.
             self.metric_run_id = metric_run_id
             if (
                 self.metric_run_id
                 and is_mlflow_enabled()
                 and not same_pipeline_next_shard
+                and not is_mlflow_run_terminal(self._get_mlflow_client(), self.metric_run_id)
             ):
                 mlflow.start_run(run_id=self.metric_run_id)
 

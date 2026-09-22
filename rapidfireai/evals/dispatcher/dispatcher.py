@@ -970,6 +970,7 @@ class Dispatcher:
                 "status": experiment.get("status"),
                 "metric_experiment_id": experiment.get("metric_experiment_id"),
                 "experiment_mode": experiment.get("experiment_mode"),
+                "num_actors": experiment.get("num_actors"),
             }), 200
 
         except Exception as e:
@@ -977,10 +978,12 @@ class Dispatcher:
 
     def get_experiment_by_name(self, experiment_name: str) -> tuple[Response, int]:
         """
-        Get an experiment (any status) by name, exposing experiment_mode.
+        Get an experiment (any status) by name, exposing experiment_mode
+        and num_actors.
 
-        Lets a caller resolve the persisted experiment type for a historical
-        experiment via a plain DB lookup instead of run-config heuristics.
+        Lets a caller resolve the persisted experiment type and actor count
+        for a historical experiment via a plain DB lookup instead of
+        run-config heuristics or the currently-running experiment.
         """
         if request.method == "OPTIONS":
             return jsonify({}), 200
@@ -996,6 +999,7 @@ class Dispatcher:
                 "status": experiment.get("status"),
                 "metric_experiment_id": experiment.get("metric_experiment_id"),
                 "experiment_mode": experiment.get("experiment_mode"),
+                "num_actors": experiment.get("num_actors"),
             }), 200
 
         except Exception as e:
