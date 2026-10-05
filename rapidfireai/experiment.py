@@ -5,7 +5,6 @@ This module contains the unified Experiment class for both fit and evals modes.
 import logging
 import multiprocessing as mp
 import os
-import time
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -483,7 +482,7 @@ class Experiment:
                     display(
                         HTML(
                             '<p style="color: blue; font-weight: bold;">'
-                            "🎉 Training completed! Check InteractiveController for final results."
+                            "🎉 Training completed! Check the RapidFire dashboard for final results."
                             "</p>"
                         )
                     )
@@ -498,9 +497,9 @@ class Experiment:
                     '<div style="padding: 10px; background-color: #d4edda; '
                     'border: 1px solid #28a745; border-radius: 5px; color: #155724;">'
                     "<b>✓ Training started in background</b><br>"
-                    "Use InteractiveController to monitor progress. "
+                    "Monitor and control runs from the RapidFire dashboard. "
                     "The notebook kernel will remain responsive while training runs.<br>"
-                    "<small>Tip: Interact with InteractiveController periodically to keep Colab active.</small>"
+                    "<small>Tip: Interact with the notebook periodically to keep Colab active.</small>"
                     "</div>"
                 )
             )
@@ -598,13 +597,14 @@ class Experiment:
         # Update experiment resources in database
         self.db.set_experiment_resources(self.experiment_id, num_actors, cpus_per_actor, gpus_per_actor)
 
-        # Display interactive control panel in notebook
-        # Give dispatcher a moment to start up
-        time.sleep(0.5)
-        try:
-            self.notebook_ui.display()
-        except Exception as e:
-            self.logger.warning(f"Failed to display notebook UI: {e}")
+        # Notebook IC Ops controls are disabled: stop/resume/delete/clone runs from the
+        # dashboard (or the Converge agent) instead. The tables below still update.
+        # Re-enable by uncommenting (and restoring `import time` at the top of the file):
+        # time.sleep(0.5)  # give the dispatcher a moment to start
+        # try:
+        #     self.notebook_ui.display()
+        # except Exception as e:
+        #     self.logger.warning(f"Failed to display notebook UI: {e}")
 
         # Update experiment with num_shards
         self.db.set_experiment_num_shards(self.experiment_id, num_shards)
