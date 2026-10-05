@@ -43,6 +43,7 @@ import { useControllerNotification } from '../../hooks/useInteractiveControllerN
 import InteractiveControllerComponent from '../../../run-page/InteractiveController';
 import RightSlidingDrawer from '../../../../../rapidfire-ui/components/RightSlidingDrawer';
 import TerminalLogViewer from '../../../TerminalLogViewer';
+import { IndexTableTab } from './IndexTableTab';
 import { useExperimentLogs, useExperimentICLogs } from '../../../../hooks/useExperimentLogs';
 import { useDesignSystemTheme } from '@databricks/design-system';
 import { useUpdateExperimentViewUIState } from '../../contexts/ExperimentPageUIStateContext';
@@ -347,8 +348,8 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
             minHeight: 225, // This is the exact height for displaying a minimum five rows and table header
             height: '100%',
             position: 'relative',
-            display: (compareRunsMode === 'LOGS' || compareRunsMode === 'IC_LOGS') ? 'block' : 'flex',
-            width: (compareRunsMode === 'LOGS' || compareRunsMode === 'IC_LOGS') ? '100%' : 'auto',
+            display: (compareRunsMode === 'LOGS' || compareRunsMode === 'IC_LOGS' || compareRunsMode === 'INDEX_TABLE') ? 'block' : 'flex',
+            width: (compareRunsMode === 'LOGS' || compareRunsMode === 'IC_LOGS' || compareRunsMode === 'INDEX_TABLE') ? '100%' : 'auto',
           }}
         >
           {compareRunsMode === 'LOGS' ? (
@@ -364,6 +365,10 @@ export const ExperimentViewRuns = React.memo((props: ExperimentViewRunsProps) =>
                 logs={isLoadingICLogs ? ['Loading interactive control logs...'] : icLogsError ? ['Error fetching interactive control logs...'] : icLogs}
                 emptyStateMessage="No interactive control logs available yet..."
               />
+            </div>
+          ) : compareRunsMode === 'INDEX_TABLE' ? (
+            <div css={{ width: '100%', height: '100%' }}>
+              <IndexTableTab />
             </div>
           ) : isComparingRuns ? (
             <ExperimentViewRunsTableResizer

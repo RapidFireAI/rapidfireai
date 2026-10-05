@@ -5,6 +5,10 @@ import type { ExperimentViewRunsCompareMode } from '../../../../types';
 import { PreviewBadge } from '@mlflow/mlflow/src/shared/building_blocks/PreviewBadge';
 import { getExperimentPageDefaultViewMode, useExperimentPageViewMode } from '../../hooks/useExperimentPageViewMode';
 import { useExperimentPageSearchFacets } from '../../hooks/useExperimentPageSearchFacets';
+import { useSelector } from 'react-redux';
+import type { ReduxState } from '../../../../../redux-types';
+import { getExperiment } from '../../../../reducers/Reducers';
+import { useExperimentMode } from '../../../../hooks/useExperimentMode';
 
 export interface ExperimentViewRunsModeSwitchProps {
   viewState?: ExperimentPageViewState;
@@ -32,6 +36,13 @@ export const ExperimentViewRunsModeSwitch = ({
   // Extract experiment ID from the URL but only if it's a single experiment.
   // In case of multiple experiments (compare mode), the experiment ID is undefined.
   const singleExperimentId = experimentIds.length === 1 ? experimentIds[0] : undefined;
+
+  // RapidFire: the Index Table tab only applies to evals (RAG) experiments, so resolve
+  // the experiment's mode from the dispatcher and hide the tab for fit experiments.
+  const singleExperimentName = useSelector((state: ReduxState) =>
+    singleExperimentId ? getExperiment(singleExperimentId, state)?.name : undefined,
+  );
+  const { mode: experimentMode } = useExperimentMode(singleExperimentName);
 
   return (
     <LegacyTabs
@@ -106,6 +117,19 @@ export const ExperimentViewRunsModeSwitch = ({
         }
         key="IC_LOGS"
       />
+      {experimentMode === 'evals' && (
+        <LegacyTabs.TabPane
+          tab={
+            <span data-testid="experiment-runs-mode-switch-index-table">
+              <FormattedMessage
+                defaultMessage="Index Table"
+                description="A button enabling the RAG index table view on the experiment page"
+              />
+            </span>
+          }
+          key="INDEX_TABLE"
+        />
+      )}
     </LegacyTabs>
   );
 };

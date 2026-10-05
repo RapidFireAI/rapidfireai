@@ -103,7 +103,8 @@ class ContextStatus(str, Enum):
     """Status values for RAG contexts."""
 
     NEW = "new"
-    ONGOING = "ongoing"
+    ONGOING = "ongoing"  # index build in progress
+    COMPLETED = "completed"  # index built and usable
     DELETED = "deleted"
     FAILED = "failed"
 

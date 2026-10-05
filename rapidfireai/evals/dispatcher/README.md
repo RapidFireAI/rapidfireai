@@ -78,6 +78,42 @@ Base URL: `http://127.0.0.1:8851/dispatcher`
 GET /dispatcher/health-check
 ```
 
+### Get All Contexts (RAG sources)
+```bash
+GET /dispatcher/get-all-contexts
+```
+
+One row per RAG source / vector-store index of the current experiment, ordered by
+`context_id`. This is the data behind the dashboard's **Index Table** tab and mirrors
+the notebook's index table: `status` is `Building`, `Complete` or `Failed`;
+`duration_seconds` keeps counting while a row is `Building`; `vector_store` is `null`
+when the context has no vector store, and a pgvector `connection` has its password
+masked.
+
+**Response:**
+```json
+[
+  {
+    "context_id": 1,
+    "context_hash": "3f9a...",
+    "status": "Complete",
+    "duration_seconds": 12.4,
+    "started_at": 1759680000.1,
+    "completed_at": 1759680012.5,
+    "device": "GPU",
+    "vector_store": {
+      "type": "pgvector",
+      "label": "PGVector",
+      "connection": "postgresql://rf:***@db:5432/rf",
+      "collection_name": "docs",
+      "index_name": null,
+      "namespace": null
+    },
+    "error": ""
+  }
+]
+```
+
 ### Stop Pipeline
 ```bash
 POST /dispatcher/stop-pipeline

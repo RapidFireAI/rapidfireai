@@ -21,6 +21,7 @@ from rapidfireai.evals.utils.constants import (
     TaskStatus,
 )
 from rapidfireai.evals.utils.logger import RFLogger
+from rapidfireai.evals.utils.context_info import collect_vector_store_info
 from rapidfireai.evals.utils.progress_display import ContextBuildingDisplay, PipelineProgressDisplay
 from rapidfireai.automl import RFGridSearch, RFRandomSearch
 from rapidfireai.automl import get_runs, get_flattened_config_leaf, sanitize_flat_config
@@ -584,14 +585,24 @@ class Controller:
             # Need to build new context
             self.logger.info(f"Will build new context {context_hash[:8]}...")
 
+            # Display fields shared by the notebook index table and the dashboard's
+            # Index Table tab (persisted on the contexts row so the dispatcher can serve them)
+            enable_gpu = bool(rag_spec.enable_gpu_search) if rag_spec else False
+            vector_store_info = collect_vector_store_info(rag_spec)
+
             # Create context record in DB for tracking/analytics
             context_id = db.create_context(
                 context_hash=context_hash,
                 rag_config_json=json.dumps(self._sanitize_for_json(rag_spec)),
                 prompt_config_json=json.dumps(self._sanitize_for_json(prompt_manager)),
                 status=ContextStatus.ONGOING,
+                enable_gpu=enable_gpu,
+                vector_store_json=json.dumps(vector_store_info) if vector_store_info is not None else None,
             )
-            db.set_context_start_time(context_id, time.time())
+            start_time = time.time()
+            # (Re)mark as building: create_context returns the existing row when the
+            # hash was seen in an earlier run_evals call of this experiment.
+            db.start_context_build(context_id, start_time)
 
             contexts_to_build.append(
                 {
@@ -599,7 +610,9 @@ class Controller:
                     "context_id": context_id,
                     "rag": rag_spec,
                     "prompt_manager": prompt_manager,
-                    "start_time": time.time(),
+                    "start_time": start_time,
+                    "enable_gpu": enable_gpu,
+                    "vector_store_info": vector_store_info,
                     "summarizer_batch_size": summarizer_batch_sizes.get(context_hash),
                 }
             )
@@ -766,23 +779,13 @@ class Controller:
         num_contexts = len(contexts_to_build)
         self.logger.info(f"Creating {num_contexts} DocProcessingActor(s) for parallel processing")
 
-        # Prepare context info for display (add enable_gpu flag)
+        # Initialize progress display for context building. ``enable_gpu`` and
+        # ``vector_store_info`` were computed (and persisted) when the context was
+        # registered in step 2 above; fill them in for callers that pass bare dicts.
         for context_info in contexts_to_build:
             rag_spec = context_info["rag"]
-            context_info["enable_gpu"] = rag_spec.enable_gpu_search if rag_spec else False
-            if rag_spec and rag_spec.vector_store_cfg:
-                type = rag_spec.vector_store_cfg.get("type", None)
-                connection = rag_spec.vector_store_cfg.get("connection", "-")
-                collection_name = rag_spec.vector_store_cfg.get("collection_name", rag_spec.get_hash()) if type == "pgvector" else "-"
-                index_namespace = rag_spec.vector_store_cfg.get("index_namespace", ("rf-" + rag_spec.get_hash()[:42], "")) if type == "pinecone" else ("-", "-")
-                context_info["vector_store_info"] = {
-                    "type": type,
-                    "pgvector_connection": connection,
-                    "pgvector_collection_name": collection_name,
-                    "pinecone_index_name": index_namespace[0],
-                    "pinecone_namespace": index_namespace[1],
-                }
-        # Initialize progress display for context building
+            context_info.setdefault("enable_gpu", bool(rag_spec.enable_gpu_search) if rag_spec else False)
+            context_info.setdefault("vector_store_info", collect_vector_store_info(rag_spec))
         context_display = ContextBuildingDisplay(contexts_to_build)
         context_display.start()
 
@@ -896,7 +899,7 @@ class Controller:
 
                     # Update database
                     db.set_context_end_time(context_id, end_time, duration)
-                    db.set_context_status(context_id, ContextStatus.ONGOING)
+                    db.set_context_status(context_id, ContextStatus.COMPLETED)
                     self.logger.info(f"Built context {context_id} ({context_hash[:8]}...) successfully in {duration:.2f}s")
 
                     # Cache for session-level reuse

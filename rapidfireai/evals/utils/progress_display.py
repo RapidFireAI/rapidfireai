@@ -15,6 +15,8 @@ from typing import Any
 import pandas as pd
 from IPython.display import display
 
+from rapidfireai.evals.utils.context_info import vector_store_columns
+
 
 class ContextBuildingDisplay:
     """
@@ -74,30 +76,14 @@ class ContextBuildingDisplay:
             else:
                 duration = "-"
 
-            # Format vector store columns
-            vector_store_info = data["vector_store_info"]
+            # Format vector store columns (shared with the dashboard's Index Table tab)
             row = {
                 "RAG Source ID": ctx_id,
                 "Status": status,
                 "Duration": duration,
                 "Device": "GPU" if data["enable_gpu"] else "CPU",
             }
-            if vector_store_info is not None:
-                raw_type = vector_store_info.get("type", None)
-                if raw_type == "faiss":
-                    row["Vector Store"] = "FAISS"
-                elif raw_type == "pgvector":
-                    row["Vector Store"] = "PGVector"
-                    row["Connection"] = vector_store_info.get("pgvector_connection", "-")
-                    row["Collection Name"] = vector_store_info.get("pgvector_collection_name", "-")
-                elif raw_type == "pinecone":
-                    row["Vector Store"] = "Pinecone"
-                    row["Index Name"] = vector_store_info.get("pinecone_index_name", "-")
-                    row["Namespace"] = vector_store_info.get("pinecone_namespace", "-")
-                    if row["Namespace"] == "":
-                        row["Namespace"] = "''"
-                else:
-                    row["Vector Store"] = raw_type or "Unknown"
+            row.update(vector_store_columns(data["vector_store_info"]))
             rows.append(row)
         return pd.DataFrame(rows)
 

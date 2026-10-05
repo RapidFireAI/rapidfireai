@@ -32,9 +32,13 @@ export class DispatcherService {
   // UI routes
   static getAllRunsUi = () => getBigIntJson({ url: this.getApiUrl('get-all-runs') });
   static getRunUi = (data: any) => postJson({ relativeUrl: this.getApiUrl('get-run'), data });
+  // RAG sources (vector-store indexes) of the current evals experiment (Index Table tab)
+  static getAllContexts = () => getBigIntJson({ relativeUrl: this.getApiUrl('get-all-contexts') });
 
   // Experiment routes
   static getRunningExperiment = () => getBigIntJson({ relativeUrl: this.getApiUrl('get-running-experiment') });
+  static getExperimentByName = (experimentName: string) =>
+    getBigIntJson({ relativeUrl: this.getApiUrl(`get-experiment-by-name/${encodeURIComponent(experimentName)}`) });
   static isExperimentRunning = (data: { experiment_name: string }) =>
     postJson({ relativeUrl: this.getApiUrl('is-experiment-running'), data });
   static createExperiment = (data: any) => postJson({ relativeUrl: this.getApiUrl('create-experiment'), data });
