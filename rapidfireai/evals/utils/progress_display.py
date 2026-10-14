@@ -76,7 +76,7 @@ class ContextBuildingDisplay:
             else:
                 duration = "-"
 
-            # Format vector store columns (shared with the dashboard's Index Table tab)
+            # Format vector store columns (shared with the dashboard's Retrieval Sources tab)
             row = {
                 "RAG Source ID": ctx_id,
                 "Status": status,

@@ -32,7 +32,7 @@ export class DispatcherService {
   // UI routes
   static getAllRunsUi = () => getBigIntJson({ url: this.getApiUrl('get-all-runs') });
   static getRunUi = (data: any) => postJson({ relativeUrl: this.getApiUrl('get-run'), data });
-  // RAG sources (vector-store indexes) of the current evals experiment (Index Table tab)
+  // RAG sources (vector-store indexes) of the current evals experiment (Retrieval Sources tab)
   static getAllContexts = () => getBigIntJson({ relativeUrl: this.getApiUrl('get-all-contexts') });
 
   // Experiment routes

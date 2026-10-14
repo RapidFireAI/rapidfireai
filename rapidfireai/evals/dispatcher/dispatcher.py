@@ -194,7 +194,7 @@ class Dispatcher:
 
     def _transform_context_to_row(self, context: dict, now: float | None = None) -> dict:
         """
-        Shape a ``contexts`` row for the dashboard's Index Table tab.
+        Shape a ``contexts`` row for the dashboard's Retrieval Sources tab.
 
         Produces the same columns as the notebook's ``ContextBuildingDisplay``:
         status wording, a duration that keeps counting while the index builds,
@@ -356,7 +356,7 @@ class Dispatcher:
             self.get_pipeline_config_json,
             methods=["GET", "OPTIONS"],
         )
-        # Context (RAG source) queries (for the dashboard's Index Table tab)
+        # Context (RAG source) queries (for the dashboard's Retrieval Sources tab)
         self.app.add_url_rule(
             f"{route_prefix}/get-all-contexts", "get_all_contexts", self.get_all_contexts, methods=["GET", "OPTIONS"]
         )
@@ -749,7 +749,7 @@ class Dispatcher:
         """
         Get all contexts (RAG sources / vector-store indexes) of the current experiment.
 
-        Backs the dashboard's Index Table tab: one row per context with the same
+        Backs the dashboard's Retrieval Sources tab: one row per context with the same
         columns as the notebook's index table (status, duration, device, vector store).
 
         Returns:

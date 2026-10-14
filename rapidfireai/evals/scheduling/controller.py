@@ -586,7 +586,7 @@ class Controller:
             self.logger.info(f"Will build new context {context_hash[:8]}...")
 
             # Display fields shared by the notebook index table and the dashboard's
-            # Index Table tab (persisted on the contexts row so the dispatcher can serve them)
+            # Retrieval Sources tab (persisted on the contexts row so the dispatcher can serve them)
             enable_gpu = bool(rag_spec.enable_gpu_search) if rag_spec else False
             vector_store_info = collect_vector_store_info(rag_spec)
 

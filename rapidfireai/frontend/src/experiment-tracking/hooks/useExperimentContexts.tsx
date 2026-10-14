@@ -2,10 +2,10 @@ import { useQuery } from '@mlflow/mlflow/src/common/utils/reactQueryHooks';
 import { DispatcherService } from '../sdk/DispatcherService';
 
 /** Status wording shared with the notebook's index table. */
-export type IndexTableStatus = 'Building' | 'Complete' | 'Failed';
+export type RetrievalSourceStatus = 'Building' | 'Complete' | 'Failed';
 
 /** Vector-store summary of a RAG source, as served by `GET /dispatcher/get-all-contexts`. */
-export interface IndexTableVectorStore {
+export interface RetrievalSourceVectorStore {
   /** Raw store type ("faiss", "pgvector", "pinecone", ...). */
   type: string | null;
   /** Display label ("FAISS", "PGVector", "Pinecone", raw type or "Unknown"). */
@@ -21,21 +21,21 @@ export interface IndexTableVectorStore {
 }
 
 /** One RAG source (vector-store index) of the current experiment. */
-export interface IndexTableRow {
+export interface RetrievalSourceRow {
   context_id: number;
   context_hash: string;
-  status: IndexTableStatus;
+  status: RetrievalSourceStatus;
   /** Final build duration, or elapsed seconds while Building, or null. */
   duration_seconds: number | null;
   started_at: number | null;
   completed_at: number | null;
   device: 'GPU' | 'CPU';
-  vector_store: IndexTableVectorStore | null;
+  vector_store: RetrievalSourceVectorStore | null;
   error: string;
 }
 
-export const INDEX_TABLE_BUILDING_POLL_MS = 3 * 1000;
-export const INDEX_TABLE_IDLE_POLL_MS = 15 * 1000;
+export const RETRIEVAL_SOURCES_BUILDING_POLL_MS = 3 * 1000;
+export const RETRIEVAL_SOURCES_IDLE_POLL_MS = 15 * 1000;
 
 /**
  * Polls the dispatcher for the RAG sources (vector-store indexes) of the current
@@ -44,11 +44,11 @@ export const INDEX_TABLE_IDLE_POLL_MS = 15 * 1000;
  * slows down once every row has settled.
  */
 export const useExperimentContexts = (enabled = true) =>
-  useQuery<IndexTableRow[]>(
+  useQuery<RetrievalSourceRow[]>(
     ['experiment-contexts'],
     async () => {
       const rows = await DispatcherService.getAllContexts();
-      return Array.isArray(rows) ? (rows as IndexTableRow[]) : [];
+      return Array.isArray(rows) ? (rows as RetrievalSourceRow[]) : [];
     },
     {
       enabled,
@@ -57,6 +57,8 @@ export const useExperimentContexts = (enabled = true) =>
       retry: 2,
       refetchOnWindowFocus: false,
       refetchInterval: (data) =>
-        data?.some((row) => row.status === 'Building') ? INDEX_TABLE_BUILDING_POLL_MS : INDEX_TABLE_IDLE_POLL_MS,
+        data?.some((row) => row.status === 'Building')
+          ? RETRIEVAL_SOURCES_BUILDING_POLL_MS
+          : RETRIEVAL_SOURCES_IDLE_POLL_MS,
     },
   );

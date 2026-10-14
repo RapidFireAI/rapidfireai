@@ -14,13 +14,13 @@ import {
 import { FormattedMessage } from 'react-intl';
 import {
   useExperimentContexts,
-  type IndexTableRow,
-  type IndexTableStatus,
-  type IndexTableVectorStore,
+  type RetrievalSourceRow,
+  type RetrievalSourceStatus,
+  type RetrievalSourceVectorStore,
 } from '../../../../hooks/useExperimentContexts';
 
 /**
- * IndexTableTab
+ * RetrievalSourcesTab
  *
  * The dashboard twin of the notebook's "Preprocessing RAG Sources" table: one row
  * per RAG source (vector-store index) of the current evals experiment, with the
@@ -33,13 +33,16 @@ import {
  * FAISS-only experiment shows the same five columns as the notebook.
  */
 
-const STATUS_TAG_COLOR: Record<IndexTableStatus, React.ComponentProps<typeof Tag>['color']> = {
+const STATUS_TAG_COLOR: Record<RetrievalSourceStatus, React.ComponentProps<typeof Tag>['color']> = {
   Building: 'lemon',
   Complete: 'lime',
   Failed: 'coral',
 };
 
-type DetailColumnKey = keyof Pick<IndexTableVectorStore, 'connection' | 'collection_name' | 'index_name' | 'namespace'>;
+type DetailColumnKey = keyof Pick<
+  RetrievalSourceVectorStore,
+  'connection' | 'collection_name' | 'index_name' | 'namespace'
+>;
 
 const DETAIL_COLUMNS: { key: DetailColumnKey; header: React.ReactNode }[] = [
   {
@@ -69,9 +72,9 @@ const formatDuration = (seconds: number | null | undefined) =>
 
 const shortHash = (hash: string) => (hash ? `${hash.slice(0, 8)}...` : '');
 
-const StatusTag = ({ row }: { row: IndexTableRow }) => {
+const StatusTag = ({ row }: { row: RetrievalSourceRow }) => {
   const tag = (
-    <Tag componentId="rapidfire.index-table.status-tag" color={STATUS_TAG_COLOR[row.status] ?? 'default'}>
+    <Tag componentId="rapidfire.retrieval-sources.status-tag" color={STATUS_TAG_COLOR[row.status] ?? 'default'}>
       {row.status}
     </Tag>
   );
@@ -81,15 +84,15 @@ const StatusTag = ({ row }: { row: IndexTableRow }) => {
   return tag;
 };
 
-export interface IndexTableTabProps {
+export interface RetrievalSourcesTabProps {
   /** Pass false to pause polling (the tab is normally unmounted when hidden). */
   enabled?: boolean;
 }
 
-export const IndexTableTab = ({ enabled = true }: IndexTableTabProps) => {
+export const RetrievalSourcesTab = ({ enabled = true }: RetrievalSourcesTabProps) => {
   const { theme } = useDesignSystemTheme();
   const { data, isLoading, error } = useExperimentContexts(enabled);
-  const rows: IndexTableRow[] = useMemo(() => data ?? [], [data]);
+  const rows: RetrievalSourceRow[] = useMemo(() => data ?? [], [data]);
 
   const visibleDetailColumns = useMemo(
     () =>
@@ -103,13 +106,13 @@ export const IndexTableTab = ({ enabled = true }: IndexTableTabProps) => {
     return (
       <div css={{ padding: theme.spacing.md }}>
         <Alert
-          componentId="rapidfire.index-table.error"
+          componentId="rapidfire.retrieval-sources.error"
           type="error"
           closable={false}
           message={
             <FormattedMessage
-              defaultMessage="Failed to load the index table"
-              description="Error shown when the RAG index table cannot be fetched from the dispatcher"
+              defaultMessage="Failed to load retrieval sources"
+              description="Error shown when the retrieval sources cannot be fetched from the dispatcher"
             />
           }
           description={error instanceof Error ? error.message : String(error)}
@@ -130,8 +133,8 @@ export const IndexTableTab = ({ enabled = true }: IndexTableTabProps) => {
     <Empty
       description={
         <FormattedMessage
-          defaultMessage="No RAG sources built yet. Rows appear here once run_evals starts building indexes."
-          description="Empty state of the RAG index table tab on the experiment page"
+          defaultMessage="No retrieval sources built yet. Rows appear here once run_evals starts building them."
+          description="Empty state of the retrieval sources tab on the experiment page"
         />
       }
     />
@@ -141,8 +144,8 @@ export const IndexTableTab = ({ enabled = true }: IndexTableTabProps) => {
     <div css={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.sm, padding: theme.spacing.sm }}>
       <Typography.Hint>
         <FormattedMessage
-          defaultMessage="RAG sources (vector-store indexes) of this experiment. Refreshes automatically while indexes build."
-          description="Hint above the RAG index table on the experiment page"
+          defaultMessage="Retrieval sources of this experiment. Refreshes automatically while they build."
+          description="Hint above the retrieval sources table on the experiment page"
         />
       </Typography.Hint>
       <Table
@@ -154,32 +157,32 @@ export const IndexTableTab = ({ enabled = true }: IndexTableTabProps) => {
         }}
       >
         <TableRow isHeader>
-          <TableHeader componentId="rapidfire.index-table.rag-source-id-header" css={{ flex: 1 }}>
+          <TableHeader componentId="rapidfire.retrieval-sources.rag-source-id-header" css={{ flex: 1 }}>
             <FormattedMessage
               defaultMessage="RAG Source ID"
               description="Index table column: RAG source (context) id"
             />
           </TableHeader>
-          <TableHeader componentId="rapidfire.index-table.status-header" css={{ flex: 1 }}>
+          <TableHeader componentId="rapidfire.retrieval-sources.status-header" css={{ flex: 1 }}>
             <FormattedMessage defaultMessage="Status" description="Index table column: build status" />
           </TableHeader>
-          <TableHeader componentId="rapidfire.index-table.duration-header" css={{ flex: 1 }}>
+          <TableHeader componentId="rapidfire.retrieval-sources.duration-header" css={{ flex: 1 }}>
             <FormattedMessage defaultMessage="Duration" description="Index table column: build duration" />
           </TableHeader>
-          <TableHeader componentId="rapidfire.index-table.device-header" css={{ flex: 1 }}>
+          <TableHeader componentId="rapidfire.retrieval-sources.device-header" css={{ flex: 1 }}>
             <FormattedMessage defaultMessage="Device" description="Index table column: GPU or CPU" />
           </TableHeader>
-          <TableHeader componentId="rapidfire.index-table.vector-store-header" css={{ flex: 1 }}>
+          <TableHeader componentId="rapidfire.retrieval-sources.vector-store-header" css={{ flex: 1 }}>
             <FormattedMessage defaultMessage="Vector Store" description="Index table column: vector store type" />
           </TableHeader>
           {visibleDetailColumns.map(({ key, header }) => (
-            <TableHeader key={key} componentId={`rapidfire.index-table.${key}-header`} css={{ flex: 2 }}>
+            <TableHeader key={key} componentId={`rapidfire.retrieval-sources.${key}-header`} css={{ flex: 2 }}>
               {header}
             </TableHeader>
           ))}
         </TableRow>
         {rows.map((row) => (
-          <TableRow key={row.context_id} data-testid={`index-table-row-${row.context_id}`}>
+          <TableRow key={row.context_id} data-testid={`retrieval-source-row-${row.context_id}`}>
             <TableCell css={{ flex: 1 }}>
               <div css={{ display: 'flex', flexDirection: 'column' }}>
                 <span>{row.context_id}</span>
@@ -206,4 +209,4 @@ export const IndexTableTab = ({ enabled = true }: IndexTableTabProps) => {
   );
 };
 
-export default IndexTableTab;
+export default RetrievalSourcesTab;

@@ -76,7 +76,7 @@ class RFDatabase:
 
         # Migration: Add display columns to contexts table if they don't exist
         # (Device + vector-store summary shown by the notebook index table and the
-        # dashboard's Index Table tab).
+        # dashboard's Retrieval Sources tab).
         try:
             cursor = self.db.conn.execute("PRAGMA table_info(contexts)")
             columns = [row[1] for row in cursor.fetchall()]
@@ -549,7 +549,7 @@ class RFDatabase:
         Get every context (RAG source) of the current experiment, oldest first.
 
         The contexts table is cleared whenever a new experiment is created, so
-        this is the row set the dashboard's Index Table tab renders.
+        this is the row set the dashboard's Retrieval Sources tab renders.
 
         Returns:
             List of context dicts (same shape as ``get_context``), ordered by context_id

@@ -4,8 +4,8 @@ import { DesignSystemProvider } from '@databricks/design-system';
 import { QueryClient, QueryClientProvider } from '@mlflow/mlflow/src/common/utils/reactQueryHooks';
 import { renderWithIntl } from '@mlflow/mlflow/src/common/utils/TestUtils.react18';
 import { DispatcherService } from '../../../../sdk/DispatcherService';
-import { IndexTableTab } from './IndexTableTab';
-import type { IndexTableRow } from '../../../../hooks/useExperimentContexts';
+import { RetrievalSourcesTab } from './RetrievalSourcesTab';
+import type { RetrievalSourceRow } from '../../../../hooks/useExperimentContexts';
 
 jest.mock('../../../../sdk/DispatcherService', () => ({
   DispatcherService: {
@@ -15,7 +15,7 @@ jest.mock('../../../../sdk/DispatcherService', () => ({
 
 const mockedGetAllContexts = DispatcherService.getAllContexts as unknown as jest.Mock;
 
-const faissRow: IndexTableRow = {
+const faissRow: RetrievalSourceRow = {
   context_id: 1,
   context_hash: 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
   status: 'Complete',
@@ -34,7 +34,7 @@ const faissRow: IndexTableRow = {
   error: '',
 };
 
-const pgvectorRow: IndexTableRow = {
+const pgvectorRow: RetrievalSourceRow = {
   context_id: 2,
   context_hash: 'ffffffff0123456789abcdef0123456789abcdef0123456789abcdef01234567',
   status: 'Building',
@@ -60,13 +60,13 @@ const renderTab = () => {
   return renderWithIntl(
     <QueryClientProvider client={queryClient}>
       <DesignSystemProvider>
-        <IndexTableTab />
+        <RetrievalSourcesTab />
       </DesignSystemProvider>
     </QueryClientProvider>,
   );
 };
 
-describe('IndexTableTab', () => {
+describe('RetrievalSourcesTab', () => {
   beforeEach(() => {
     mockedGetAllContexts.mockReset();
   });
@@ -75,7 +75,7 @@ describe('IndexTableTab', () => {
     mockedGetAllContexts.mockResolvedValue([faissRow]);
     renderTab();
 
-    await waitFor(() => expect(screen.getByTestId('index-table-row-1')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('retrieval-source-row-1')).toBeInTheDocument());
 
     for (const header of ['RAG Source ID', 'Status', 'Duration', 'Device', 'Vector Store']) {
       expect(screen.getByText(header)).toBeInTheDocument();
@@ -96,7 +96,7 @@ describe('IndexTableTab', () => {
     mockedGetAllContexts.mockResolvedValue([faissRow, pgvectorRow]);
     renderTab();
 
-    await waitFor(() => expect(screen.getByTestId('index-table-row-2')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('retrieval-source-row-2')).toBeInTheDocument());
 
     expect(screen.getByText('Connection')).toBeInTheDocument();
     expect(screen.getByText('Collection Name')).toBeInTheDocument();
@@ -113,14 +113,14 @@ describe('IndexTableTab', () => {
     mockedGetAllContexts.mockResolvedValue([]);
     renderTab();
 
-    await waitFor(() => expect(screen.getByText(/No RAG sources built yet/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/No retrieval sources built yet/)).toBeInTheDocument());
   });
 
   it('shows an error alert when the dispatcher call fails', async () => {
     mockedGetAllContexts.mockRejectedValue(new Error('dispatcher unreachable'));
     renderTab();
 
-    await waitFor(() => expect(screen.getByText('Failed to load the index table')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Failed to load retrieval sources')).toBeInTheDocument());
     expect(screen.getByText('dispatcher unreachable')).toBeInTheDocument();
   });
 });

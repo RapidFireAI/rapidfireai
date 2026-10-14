@@ -37,7 +37,7 @@ export const ExperimentViewRunsModeSwitch = ({
   // In case of multiple experiments (compare mode), the experiment ID is undefined.
   const singleExperimentId = experimentIds.length === 1 ? experimentIds[0] : undefined;
 
-  // RapidFire: the Index Table tab only applies to evals (RAG) experiments, so resolve
+  // RapidFire: the Retrieval Sources tab only applies to evals (RAG) experiments, so resolve
   // the experiment's mode from the dispatcher and hide the tab for fit experiments.
   const singleExperimentName = useSelector((state: ReduxState) =>
     singleExperimentId ? getExperiment(singleExperimentId, state)?.name : undefined,
@@ -95,6 +95,19 @@ export const ExperimentViewRunsModeSwitch = ({
           }
         />
       )}
+      {experimentMode === 'evals' && (
+        <LegacyTabs.TabPane
+          tab={
+            <span data-testid="experiment-runs-mode-switch-retrieval-sources">
+              <FormattedMessage
+                defaultMessage="Retrieval Sources"
+                description="A button enabling the retrieval sources view on the experiment page"
+              />
+            </span>
+          }
+          key="RETRIEVAL_SOURCES"
+        />
+      )}
       <LegacyTabs.TabPane
         tab={
           <span data-testid="experiment-runs-mode-switch-logs">
@@ -117,19 +130,6 @@ export const ExperimentViewRunsModeSwitch = ({
         }
         key="IC_LOGS"
       />
-      {experimentMode === 'evals' && (
-        <LegacyTabs.TabPane
-          tab={
-            <span data-testid="experiment-runs-mode-switch-index-table">
-              <FormattedMessage
-                defaultMessage="Index Table"
-                description="A button enabling the RAG index table view on the experiment page"
-              />
-            </span>
-          }
-          key="INDEX_TABLE"
-        />
-      )}
     </LegacyTabs>
   );
 };

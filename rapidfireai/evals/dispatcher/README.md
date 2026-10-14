@@ -84,7 +84,7 @@ GET /dispatcher/get-all-contexts
 ```
 
 One row per RAG source / vector-store index of the current experiment, ordered by
-`context_id`. This is the data behind the dashboard's **Index Table** tab and mirrors
+`context_id`. This is the data behind the dashboard's **Retrieval Sources** tab and mirrors
 the notebook's index table: `status` is `Building`, `Complete` or `Failed`;
 `duration_seconds` keeps counting while a row is `Building`; `vector_store` is `null`
 when the context has no vector store, and a pgvector `connection` has its password
