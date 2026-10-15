@@ -16,10 +16,14 @@ The same panel serves both modes; only the dispatcher endpoints differ:
 - ``mode="evals"``: pipelines (configs), via ``/dispatcher/list-all-pipeline-ids``,
   ``/dispatcher/get-pipeline-config-json/<id>``, ``/dispatcher/{stop,resume,delete}-pipeline``
   and ``/dispatcher/clone-pipeline``.
+
+It also provides :func:`end_experiment_button`, the Colab "Click to End Experiment" button
+that blocks until clicked so "Run all" does not end the experiment early.
 """
 
 import json
 import uuid
+from typing import Any
 
 from IPython.display import HTML, display
 
@@ -385,3 +389,44 @@ class NotebookUI:
     def display(self) -> None:
         """Display the panel in the notebook."""
         display(HTML(self._generate_html()))
+
+
+_END_BUTTON_JS = """
+new Promise((resolve) => {
+    const button = document.getElementById("__BUTTON_ID__");
+    button.onclick = () => {
+        button.disabled = true;
+        button.innerText = "Continuing...";
+        resolve("clicked");
+    };
+})
+"""
+
+
+def end_experiment_button(experiment: Any) -> None:
+    """Show a "Click to End Experiment" button, block until it is clicked, then end the experiment.
+
+    Colab only. Blocking keeps "Run all" from ending the experiment, and from running the
+    cells after this one, before you are done with it.
+    """
+    try:
+        from google.colab import output
+    except ImportError as e:
+        raise RuntimeError(
+            "end_experiment_button() needs Google Colab; elsewhere call experiment.end() when you are done."
+        ) from e
+
+    button_id = f"end_experiment_{uuid.uuid4().hex[:8]}"
+    display(
+        HTML(
+            f'<button id="{button_id}" style="padding: 10px 20px; font-size: 16px;">Click to End Experiment</button>'
+        )
+    )
+
+    # eval_js blocks until the Promise resolves, i.e. until the button is clicked
+    output.eval_js(_END_BUTTON_JS.replace("__BUTTON_ID__", button_id))
+
+    # Actually end the experiment after the button is clicked
+    experiment.end()
+    print("Done!")
+
