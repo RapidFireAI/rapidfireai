@@ -261,11 +261,8 @@ class Experiment:
         from rapidfireai.evals.db import RFDatabase
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.evals.utils.constants import get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
-        from rapidfireai.evals.utils.notebook_ui import NotebookUI
-        from rapidfireai.utils.colab import get_colab_auth_token
         from rapidfireai.utils.constants import DispatcherConfig
         from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 
@@ -395,9 +392,6 @@ class Experiment:
                 host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger
             )
 
-        # Initialize notebook UI controller with auth token for Colab
-        self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
-
     def run_fit(
         self,
         param_config: Any,
@@ -482,7 +476,7 @@ class Experiment:
                     display(
                         HTML(
                             '<p style="color: blue; font-weight: bold;">'
-                            "🎉 Training completed! Check the RapidFire dashboard for final results."
+                            "🎉 Training completed! Check InteractiveController for final results."
                             "</p>"
                         )
                     )
@@ -497,9 +491,9 @@ class Experiment:
                     '<div style="padding: 10px; background-color: #d4edda; '
                     'border: 1px solid #28a745; border-radius: 5px; color: #155724;">'
                     "<b>✓ Training started in background</b><br>"
-                    "Monitor and control runs from the RapidFire dashboard. "
+                    "Use InteractiveController to monitor progress. "
                     "The notebook kernel will remain responsive while training runs.<br>"
-                    "<small>Tip: Interact with the notebook periodically to keep Colab active.</small>"
+                    "<small>Tip: Interact with InteractiveController periodically to keep Colab active.</small>"
                     "</div>"
                 )
             )
@@ -596,15 +590,6 @@ class Experiment:
 
         # Update experiment resources in database
         self.db.set_experiment_resources(self.experiment_id, num_actors, cpus_per_actor, gpus_per_actor)
-
-        # Notebook IC Ops controls are disabled: stop/resume/delete/clone runs from the
-        # dashboard (or the Converge agent) instead. The tables below still update.
-        # Re-enable by uncommenting (and restoring `import time` at the top of the file):
-        # time.sleep(0.5)  # give the dispatcher a moment to start
-        # try:
-        #     self.notebook_ui.display()
-        # except Exception as e:
-        #     self.logger.warning(f"Failed to display notebook UI: {e}")
 
         # Update experiment with num_shards
         self.db.set_experiment_num_shards(self.experiment_id, num_shards)
