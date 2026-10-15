@@ -24,7 +24,7 @@ class InteractiveController:
         self.run_id: int | None = None
         self.config: dict | None = None
         self.status: str = "Unknown"
-        self.chunk_number: int = 0
+        self.shard_number: int = 0
 
         # Create UI widgets
         self._create_widgets()
@@ -47,7 +47,7 @@ class InteractiveController:
 
         # Status display
         self.status_label = widgets.HTML(value="<b>Status:</b> Not loaded")
-        self.chunk_label = widgets.HTML(value="<b>Chunk:</b> N/A")
+        self.shard_label = widgets.HTML(value="<b>Shard:</b> N/A")
         self.run_id_label = widgets.HTML(value="<b>Run ID:</b> N/A")
 
         # Action buttons
@@ -262,7 +262,7 @@ class InteractiveController:
             # Update state
             self.config = data.get("config", {})
             self.status = data.get("status", "Unknown")
-            self.chunk_number = data.get("num_chunks_visited", 0)
+            self.shard_number = data.get("num_shards_visited", 0)
 
             # Update UI
             self._update_display()
@@ -279,7 +279,7 @@ class InteractiveController:
         """Update widget values"""
         self.run_id_label.value = f"<b>Run ID:</b> {self.run_id}"
         self.status_label.value = f"<b>Status:</b> {self.status}"
-        self.chunk_label.value = f"<b>Chunk:</b> {self.chunk_number}"
+        self.shard_label.value = f"<b>Shard:</b> {self.shard_number}"
         self.config_text.value = json.dumps(self.config, indent=2)
 
         # Disable buttons if completed
@@ -424,7 +424,7 @@ class InteractiveController:
         header = widgets.VBox(
             [
                 widgets.HTML("<h3>Interactive Run Controller</h3>"),
-                widgets.HBox([self.run_id_label, self.status_label, self.chunk_label]),
+                widgets.HBox([self.run_id_label, self.status_label, self.shard_label]),
             ]
         )
 

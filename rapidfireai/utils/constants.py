@@ -3,6 +3,7 @@ Constants for the RapidFire AI package
 """
 import os
 from enum import Enum
+
 from rapidfireai.utils.colab import is_running_in_colab
 from rapidfireai.utils.os_utils import mkdir_p
 
@@ -28,12 +29,14 @@ RF_TENSORBOARD_LOG_DIR = os.getenv("RF_TENSORBOARD_LOG_DIR", f"{RF_EXPERIMENT_PA
 RF_TRAINING_LOG_FILENAME = os.getenv("RF_TRAINING_LOG_FILENAME", "training.log")
 RF_TRAINER_OUTPUT = os.getenv("RF_TRAINER_OUTPUT", os.path.join(RF_HOME, "trainer_output"))
 
-try:
-    mkdir_p(RF_LOG_PATH)
-    mkdir_p(RF_HOME)
-except (PermissionError, OSError) as e:
-    print(f"Error creating directory: {e}")
-    raise
+def init_directories():
+    """Lazily initialize runtime directories."""
+    try:
+        mkdir_p(RF_LOG_PATH)
+        mkdir_p(RF_HOME)
+    except (PermissionError, OSError) as e:
+        print(f"Error creating directory: {e}")
+        raise
 
 class DispatcherConfig:
     """Class to manage the dispatcher configuration.

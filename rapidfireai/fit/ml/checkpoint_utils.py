@@ -104,6 +104,13 @@ def create_model_instance(
     model_instance, tokenizer = create_model_fn(model_config)
 
     if is_peft and checkpoint_path:
+        # NOTE (warm start, disk path only): PeftModel.from_pretrained
+        # reconstructs the adapter from the checkpoint's saved
+        # adapter_config.json, so clone-modified peft_params (lora_alpha,
+        # lora_dropout, r, ...) are NOT honored here - the parent's config
+        # wins. Only the default shared-memory path
+        # (load_checkpoint_from_shared_memory) rebuilds the adapter from the
+        # fresh LoraConfig(**peft_params) before loading the parent weights.
         model_instance = PeftModel.from_pretrained(model_instance, checkpoint_path)
     _configure_tokenizer(tokenizer)
 
@@ -790,10 +797,10 @@ def save_checkpoint_to_disk(
     elif last:
         checkpoint_path = DataPath.final_checkpoint_path(base_run_path)
     else:
-        # One folder per chunk save, suffixed by completed_steps. Prior to this
+        # One folder per shard save, suffixed by completed_steps. Prior to this
         # change every intermediate save overwrote the same "checkpoint" folder,
-        # which silently dropped per-chunk snapshots even when the user opted
-        # in to save_strategy="chunk".
+        # which silently dropped per-shard snapshots even when the user opted
+        # in to save_strategy="shard".
         checkpoint_path = DataPath.intermediate_checkpoint_for_step(
             base_run_path, completed_steps
         )

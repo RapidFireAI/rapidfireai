@@ -228,7 +228,7 @@ class TestEvalsControllerFinalize:
 
 @requires_ray
 class TestEvalsInteractiveControlStop:
-    def test_handle_stop_terminates_mlflow_with_killed(self):
+    def _build_handler(self):
         from rapidfireai.evals.scheduling.interactive_control import (
             InteractiveControlHandler,
         )
@@ -240,6 +240,10 @@ class TestEvalsInteractiveControlStop:
         handler.logger = MagicMock()
         handler.ic_logger = MagicMock()
         handler._context_cache = {}
+        return handler
+
+    def test_handle_stop_terminates_mlflow_with_killed(self):
+        handler = self._build_handler()
 
         scheduler = MagicMock()
         scheduler.remove_pipeline.return_value = 3
@@ -247,15 +251,44 @@ class TestEvalsInteractiveControlStop:
         db = MagicMock()
         db.get_pipeline.return_value = {"metric_run_id": "stop-rid"}
 
+        # num_shards (10) > shards completed (3): not yet complete -> STOPPED/KILLED.
         handler._handle_stop(
             pipeline_id=12,
             scheduler=scheduler,
             db=db,
+            num_shards=10,
             progress_display=None,
         )
 
         handler.metric_manager.end_run.assert_called_once_with(
             "stop-rid", status="KILLED"
+        )
+
+    def test_handle_stop_already_completed_terminates_mlflow_with_finished(self):
+        """A stop arriving after every shard finished must reaffirm
+        COMPLETED/FINISHED, not clobber a finished run with STOPPED/KILLED."""
+        handler = self._build_handler()
+
+        scheduler = MagicMock()
+        scheduler.remove_pipeline.return_value = 3  # scheduler count (stale)
+
+        db = MagicMock()
+        # DB is authoritative: it reports every shard done.
+        db.get_pipeline.return_value = {
+            "metric_run_id": "done-rid",
+            "shards_completed": 10,
+        }
+
+        handler._handle_stop(
+            pipeline_id=12,
+            scheduler=scheduler,
+            db=db,
+            num_shards=10,
+            progress_display=None,
+        )
+
+        handler.metric_manager.end_run.assert_called_once_with(
+            "done-rid", status="FINISHED"
         )
 
 

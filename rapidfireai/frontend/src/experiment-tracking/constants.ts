@@ -13,7 +13,7 @@ export const ATTRIBUTE_COLUMN_LABELS = {
   EXPERIMENT_NAME: 'Experiment Name',
   DURATION: 'Duration',
   USER: 'User',
-  RUN_NAME: 'Run Name',
+  RUN_NAME: 'Run ID',
   STATUS: 'Status',
   SHARDS: 'Shards',
   SOURCE: 'Source',
@@ -26,7 +26,7 @@ export const ATTRIBUTE_COLUMN_LABELS = {
 export const ATTRIBUTE_COLUMN_SORT_LABEL = {
   DATE: 'Created',
   USER: 'User',
-  RUN_NAME: 'Run Name',
+  RUN_NAME: 'Run ID',
   SOURCE: 'Source',
   VERSION: 'Version',
   DESCRIPTION: 'Description',

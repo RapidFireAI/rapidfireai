@@ -141,7 +141,7 @@ class MetricLogger(ABC):
         the notebook table, but a subsequent resume must put that same
         run back into ``RUNNING`` -- otherwise the dashboard stays at
         ``STOPPED`` while the notebook (and the actual training loop)
-        progresses through new chunks/shards.
+        progresses through new shards.
 
         The default implementation is a no-op so backends without a
         meaningful "status" concept (TensorBoard, Trackio) don't need to

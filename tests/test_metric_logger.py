@@ -409,7 +409,7 @@ class TestCallbacksIntegration:
             metric_logger=mock_logger,
             metric_run_id="run_1",
             completed_steps=0,
-            chunk_id=0,
+            shard_id=0,
             num_epochs_completed=0
         )
 
@@ -446,7 +446,7 @@ class TestCallbacksIntegration:
             metric_logger=mock_logger,
             metric_run_id="run_1",
             completed_steps=0,
-            chunk_id=0,
+            shard_id=0,
             num_epochs_completed=0
         )
 
@@ -459,7 +459,7 @@ class TestCallbacksIntegration:
         callback.on_log(args, state, control, logs=logs)
 
         # Verify log_metric was called for each metric
-        assert mock_logger.log_metric.call_count == 4  # 2 metrics + chunk_number + num_epochs_completed
+        assert mock_logger.log_metric.call_count == 4  # 2 metrics + shard_number + num_epochs_completed
 
     def test_callback_step_offset_works_correctly(self):
         """Test that callbacks apply completed_steps offset correctly."""
@@ -471,7 +471,7 @@ class TestCallbacksIntegration:
             metric_logger=mock_logger,
             metric_run_id="run_1",
             completed_steps=100,  # Resumed run
-            chunk_id=0,
+            shard_id=0,
             num_epochs_completed=0
         )
 

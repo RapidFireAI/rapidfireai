@@ -4,7 +4,15 @@ from .base import AutoMLAlgorithm
 from .datatypes import List, Range
 from .grid_search import RFGridSearch
 from .random_search import RFRandomSearch
-from .automl_utils import get_flattened_config_leaf, get_runs
+from .automl_utils import (
+    get_flattened_config_leaf,
+    get_runs,
+    is_secret_key,
+    redact_secret_values,
+    redact_uri_credentials,
+    sanitize_flat_config,
+    strip_secret_keys,
+)
 from .model_config import _make_unavailable_class
 
 # Optuna integration (conditionally available)
@@ -84,6 +92,11 @@ __all__ = [
     # Utility functions
     "get_flattened_config_leaf",
     "get_runs",
+    "is_secret_key",
+    "redact_secret_values",
+    "redact_uri_credentials",
+    "sanitize_flat_config",
+    "strip_secret_keys",
 ]
 
 __all__.append("RFOptuna")

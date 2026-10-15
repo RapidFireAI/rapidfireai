@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS experiments (
     config_options TEXT NOT NULL,
     status TEXT NOT NULL,
     current_task TEXT NOT NULL,
-    error TEXT DEFAULT ''
+    error TEXT DEFAULT '',
+    experiment_mode TEXT NOT NULL DEFAULT 'fit'
 );
 
 -- Runs table
@@ -18,9 +19,9 @@ CREATE TABLE IF NOT EXISTS runs (
     config_leaf TEXT DEFAULT '{}',
     completed_steps INTEGER DEFAULT 0,
     total_steps INTEGER DEFAULT 0,
-    num_chunks_visited_curr_epoch INTEGER DEFAULT 0,
+    num_shards_visited_curr_epoch INTEGER DEFAULT 0,
     num_epochs_completed INTEGER DEFAULT 0,
-    chunk_offset INTEGER DEFAULT 0,
+    shard_offset INTEGER DEFAULT 0,
     error TEXT DEFAULT '',
     source TEXT DEFAULT '',
     ended_by TEXT DEFAULT '',
@@ -47,7 +48,7 @@ CREATE TABLE IF NOT EXISTS worker_task (
     task_type TEXT NOT NULL,
     status TEXT NOT NULL,
     run_id INTEGER NOT NULL,
-    chunk_id INTEGER NOT NULL,
+    shard_id INTEGER NOT NULL,
     config_options TEXT DEFAULT '{}',
     multi_worker_details TEXT DEFAULT '{}',
     FOREIGN KEY (run_id) REFERENCES runs (run_id)
@@ -63,6 +64,6 @@ CREATE TABLE IF NOT EXISTS controller_progress (
 -- Worker Progress table
 CREATE TABLE IF NOT EXISTS worker_progress (
     run_id INTEGER PRIMARY KEY,
-    subchunk_progress REAL DEFAULT 0.0,
+    subshard_progress REAL DEFAULT 0.0,
     FOREIGN KEY (run_id) REFERENCES runs (run_id)
 );

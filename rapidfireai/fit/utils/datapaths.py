@@ -64,8 +64,8 @@ class DataPath:
     ) -> Path:
         """Return a per-step subfolder under ``intermediate_checkpoints/``.
 
-        Each chunk save lands in its own ``checkpoint-<step>`` folder (mirrors
-        HF Trainer's convention) so users get one snapshot per chunk instead of
+        Each shard save lands in its own ``checkpoint-<step>`` folder (mirrors
+        HF Trainer's convention) so users get one snapshot per shard instead of
         a single overwritten folder. The legacy ``checkpoint`` name is kept as
         a fallback for the rare case ``completed_steps`` is 0 (e.g. an initial
         intermediate save before any training step has run).

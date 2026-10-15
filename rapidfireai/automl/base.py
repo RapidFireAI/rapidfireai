@@ -22,8 +22,6 @@ class AutoMLAlgorithm(ABC):
     configs :
         Config templates (``RFModelConfig`` for fit, dicts for evals).
         Accepts a list, a ``List([...])`` wrapper, or a single object.
-    create_model_fn :
-        Legacy parameter (unused).
     trainer_type : str or None
         ``"SFT"`` / ``"DPO"`` / ``"GRPO"`` for fit mode, ``None`` for evals.
     num_runs : int
@@ -41,7 +39,7 @@ class AutoMLAlgorithm(ABC):
     -------
     get_runs(seed) -> list[dict]
         Return concrete config-leaf dicts.
-    get_callback(**kwargs) -> ChunkCallback | ShardCallback | None
+    get_callback(**kwargs) -> FitShardCallback | ShardCallback | None
         Return an optional inter-step pruning callback.
     """
 
@@ -50,7 +48,6 @@ class AutoMLAlgorithm(ABC):
     def __init__(
         self,
         configs=None,
-        create_model_fn=None,
         trainer_type: str | None = None,
         num_runs: int = 1,
     ):
@@ -110,11 +107,11 @@ class AutoMLAlgorithm(ABC):
                     )
 
     def get_callback(self, **kwargs):
-        """Return an optional callback for inter-chunk/shard pruning decisions.
+        """Return an optional callback for inter-shard pruning decisions.
 
         Returns
         -------
-        ChunkCallback or ShardCallback or None
+        FitShardCallback or ShardCallback or None
         """
         return None
 

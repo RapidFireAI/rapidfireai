@@ -1,10 +1,7 @@
 """Interface for the database."""
 
-import functools
 import os
 import sqlite3
-import time
-from collections.abc import Callable
 from typing import Any
 
 from rapidfireai.evals.utils.constants import DBConfig
@@ -34,9 +31,10 @@ class DatabaseInterface:
             PRAGMA page_size={DBConfig.PAGE_SIZE};
             PRAGMA busy_timeout={DBConfig.BUSY_TIMEOUT};
             PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
+            PRAGMA synchronous=OFF;
             PRAGMA temp_store=MEMORY;
             PRAGMA foreign_keys=ON;
+            PRAGMA wal_autocheckpoint={DBConfig.WAL_AUTO_CHECKPOINT};
             """
             _ = self.conn.executescript(pragma_sql)
 
@@ -46,42 +44,6 @@ class DatabaseInterface:
             raise Exception(f"Failed to initialize database connection: {e}") from e
         except Exception as e:
             raise Exception(f"Unexpected error during database initialization: {e}") from e
-
-    @staticmethod
-    def retry_on_locked(
-        max_retries: int = DBConfig.DEFAULT_MAX_RETRIES,
-        base_delay: float = DBConfig.DEFAULT_BASE_DELAY,
-        max_delay: float = DBConfig.DEFAULT_MAX_DELAY,
-    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Decorator to retry operations when database is locked"""
-
-        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            @functools.wraps(func)
-            def wrapper(*args: Any, **kwargs: Any) -> Any:
-                last_exception = None
-                for attempt in range(max_retries):
-                    try:
-                        return func(*args, **kwargs)
-                    except sqlite3.OperationalError as e:
-                        if "database is locked" in str(e).lower():
-                            last_exception = e
-                            if attempt < max_retries - 1:
-                                # Exponential backoff with jitter
-                                delay = min(base_delay * (2**attempt), max_delay)
-                                delay += time.time() % 0.1  # Add small jitter
-                                time.sleep(delay)
-                                continue
-                        # Re-raise if it's not a "database is locked" error
-                        raise
-                # If we get here, all retries failed
-                if last_exception:
-                    raise last_exception
-                else:
-                    raise RuntimeError("All retries failed but no exception was captured")
-
-            return wrapper
-
-        return decorator
 
     def close(self) -> None:
         """Close the database connection properly"""
@@ -102,7 +64,38 @@ class DatabaseInterface:
         except Exception as e:
             raise Exception(f"Unexpected error during database optimization: {e}") from e
 
-    @retry_on_locked()
+    def checkpoint(self) -> None:
+        """Run a PASSIVE WAL checkpoint. Non-blocking: checkpoints as many
+        frames as possible without waiting on readers/writers. Safe to call
+        from the hot writer to bound WAL growth so auto-checkpoint doesn't
+        ambush a burst."""
+        try:
+            _ = self.conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        except sqlite3.Error as e:
+            raise Exception(f"Failed to checkpoint WAL: {e}") from e
+        except Exception as e:
+            raise Exception(f"Unexpected error during WAL checkpoint: {e}") from e
+
+    def _execute_once(
+        self,
+        query: str,
+        params: dict[str, Any] | tuple[Any, ...] | None,
+        fetch: bool,
+        commit: bool,
+    ) -> list[Any] | tuple[Any] | None:
+        """Execute a query a single time without retry handling."""
+        # Execute the query with parameters if provided
+        result = self.cursor.execute(query, params) if params else self.cursor.execute(query)
+
+        # Commit the transaction if commit is True
+        if commit:
+            self.conn.commit()
+
+        # Return the result if fetch is True
+        if fetch:
+            return result.fetchall()
+        return None
+
     def execute(
         self,
         query: str,
@@ -110,23 +103,22 @@ class DatabaseInterface:
         fetch: bool = False,
         commit: bool = False,
     ) -> list[Any] | tuple[Any] | None:
-        """Execute a query with automatic retry on database locked errors"""
-        # Validate that either fetch or commit is True
+        """Execute a query a single time.
+
+        Lock-waiting is handled entirely by SQLite's ``busy_timeout`` PRAGMA
+        (set on the connection): on a locked database SQLite blocks and retries
+        the lock internally for up to ``BUSY_TIMEOUT`` ms, succeeding the moment
+        the lock frees. There is no Python-level retry on top — that would just
+        stack more ``busy_timeout`` windows and add latency. A write that still
+        fails after ``busy_timeout`` is raised as a wrapped ``Exception``.
+        """
         if not fetch and not commit:
             raise ValueError("Either fetch or commit must be True")
 
         try:
-            # Execute the query with parameters if provided
-            result = self.cursor.execute(query, params) if params else self.cursor.execute(query)
-
-            # Commit the transaction if commit is True
-            if commit:
-                self.conn.commit()
-
-            # Return the result if fetch is True
-            if fetch:
-                return result.fetchall()
-
+            return self._execute_once(query, params, fetch, commit)
+        except sqlite3.OperationalError as e:
+            raise Exception(f"Database error executing query '{query[:50]}...': {e}") from e
         except sqlite3.Error as e:
             raise Exception(f"Database error executing query '{query[:50]}...': {e}") from e
         except Exception as e:
