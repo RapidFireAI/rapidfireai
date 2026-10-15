@@ -10,7 +10,14 @@ from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
 from rapidfireai.fit.db.rf_db import RfDb
-from rapidfireai.utils.constants import DispatcherConfig, FrontendConfig, MLflowConfig, RF_LOG_FILENAME, RF_LOG_PATH
+from rapidfireai.utils.constants import (
+    ColabConfig,
+    DispatcherConfig,
+    FrontendConfig,
+    MLflowConfig,
+    RF_LOG_FILENAME,
+    RF_LOG_PATH,
+)
 from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.fit.utils.constants import ControllerTask
 from rapidfireai.fit.utils.exceptions import DispatcherException
@@ -104,7 +111,18 @@ class Dispatcher:
         # Enable CORS for all routes
         # Allow all origins for local development (dispatcher runs on localhost)
         # This is safe since the API is not exposed to the internet
-        _ = CORS(self.app, resources={r"/*": {"origins": "*"}})
+        # supports_credentials=True is required for Colab proxy auth (credentials: 'include' in
+        # the NotebookUI panel's fetch calls), matching the evals dispatcher
+        _ = CORS(
+            self.app,
+            resources={
+                r"/*": {
+                    "origins": "*",
+                    "allow_headers": ["Content-Type", "Authorization"],
+                    "supports_credentials": ColabConfig.ON_COLAB,
+                }
+            },
+        )
 
         # register routes
         self.register_routes()
