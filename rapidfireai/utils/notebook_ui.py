@@ -143,9 +143,16 @@ _TEMPLATE = """
                 } catch (e) {
                     data = null;
                 }
-                if (!response.ok || (data && data.error)) {
+                // Only the HTTP status marks a failed call: both dispatchers report failures with
+                // 4xx/5xx, while a 200 body may legitimately carry an `error` field (fit get-run
+                // returns a failed run's stored error there).
+                if (!response.ok) {
                     const detail = data && (data.error || data.err_msg);
-                    throw new Error(detail ? String(detail).split('\\n')[0] : 'HTTP ' + response.status);
+                    // fit errors append " Traceback (most recent call last): ..."; keep the message only
+                    const message = detail
+                        ? String(detail).split(/\\s*Traceback \\(most recent call last\\)/)[0].split('\\n')[0]
+                        : '';
+                    throw new Error(message || 'HTTP ' + response.status);
                 }
                 return data;
             }
