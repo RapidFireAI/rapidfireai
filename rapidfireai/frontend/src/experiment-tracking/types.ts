@@ -390,6 +390,7 @@ export type ExperimentViewRunsCompareMode =
   | 'TRACES'
   | 'LOGS'
   | 'IC_LOGS'
+  | 'RETRIEVAL_SOURCES'
   | 'MODELS'
   | 'EVAL_RESULTS'
   | 'DATASETS'

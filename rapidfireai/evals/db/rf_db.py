@@ -74,6 +74,20 @@ class RFDatabase:
         except Exception:
             pass
 
+        # Migration: Add display columns to contexts table if they don't exist
+        # (Device + vector-store summary shown by the notebook index table and the
+        # dashboard's Retrieval Sources tab).
+        try:
+            cursor = self.db.conn.execute("PRAGMA table_info(contexts)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "enable_gpu" not in columns:
+                self.db.conn.execute("ALTER TABLE contexts ADD COLUMN enable_gpu INTEGER NOT NULL DEFAULT 0")
+            if "vector_store_json" not in columns:
+                self.db.conn.execute("ALTER TABLE contexts ADD COLUMN vector_store_json TEXT")
+            self.db.conn.commit()
+        except Exception:
+            pass
+
     def close(self):
         """Close the database connection."""
         self.db.close()
@@ -433,12 +447,36 @@ class RFDatabase:
     # CONTEXTS TABLE METHODS
     # ============================================================================
 
+    _CONTEXT_COLUMNS = (
+        "context_id, context_hash, rag_config_json, prompt_config_json, "
+        "status, error, started_at, completed_at, duration_seconds, enable_gpu, vector_store_json"
+    )
+
+    @staticmethod
+    def _row_to_context(row: tuple) -> dict[str, Any]:
+        """Convert a ``_CONTEXT_COLUMNS`` row to the context dict returned by the getters."""
+        return {
+            "context_id": row[0],
+            "context_hash": row[1],
+            "rag_config_json": row[2],
+            "prompt_config_json": row[3],
+            "status": row[4],
+            "error": row[5],
+            "started_at": row[6],
+            "completed_at": row[7],
+            "duration_seconds": row[8],
+            "enable_gpu": bool(row[9]),
+            "vector_store_json": row[10],
+        }
+
     def create_context(
         self,
         context_hash: str,
         rag_config_json: str = None,
         prompt_config_json: str = None,
         status: ContextStatus = ContextStatus.NEW,
+        enable_gpu: bool = False,
+        vector_store_json: str | None = None,
     ) -> int:
         """
         Create a new context record.
@@ -448,6 +486,9 @@ class RFDatabase:
             rag_config_json: JSON string of RAG configuration
             prompt_config_json: JSON string of prompt manager configuration
             status: Initial status (default: ContextStatus.NEW)
+            enable_gpu: Whether the index is built/searched on GPU (Device column)
+            vector_store_json: JSON summary of the vector store for display
+                (see ``rapidfireai.evals.utils.context_info.collect_vector_store_info``)
 
         Returns:
             context_id of the created context (or existing if hash matches)
@@ -460,12 +501,13 @@ class RFDatabase:
 
         # Create new context
         query = """
-        INSERT INTO contexts (context_hash, rag_config_json, prompt_config_json, status, error)
-        VALUES (?, ?, ?, ?, '')
+        INSERT INTO contexts (context_hash, rag_config_json, prompt_config_json, status, error,
+                              enable_gpu, vector_store_json)
+        VALUES (?, ?, ?, ?, '', ?, ?)
         """
         self.db.execute(
             query,
-            (context_hash, rag_config_json, prompt_config_json, status.value),
+            (context_hash, rag_config_json, prompt_config_json, status.value, int(bool(enable_gpu)), vector_store_json),
             commit=True,
         )
         return self.db.cursor.lastrowid
@@ -480,26 +522,10 @@ class RFDatabase:
         Returns:
             Dictionary with all context fields, or None if not found
         """
-        query = """
-        SELECT context_id, context_hash, rag_config_json, prompt_config_json,
-               status, error, started_at, completed_at, duration_seconds
-        FROM contexts
-        WHERE context_id = ?
-        """
+        query = f"SELECT {self._CONTEXT_COLUMNS} FROM contexts WHERE context_id = ?"
         result = self.db.execute(query, (context_id,), fetch=True)
         if result:
-            row = result[0]
-            return {
-                "context_id": row[0],
-                "context_hash": row[1],
-                "rag_config_json": row[2],
-                "prompt_config_json": row[3],
-                "status": row[4],
-                "error": row[5],
-                "started_at": row[6],
-                "completed_at": row[7],
-                "duration_seconds": row[8],
-            }
+            return self._row_to_context(result[0])
         return None
 
     def get_context_by_hash(self, context_hash: str) -> dict[str, Any] | None:
@@ -512,27 +538,43 @@ class RFDatabase:
         Returns:
             Dictionary with all context fields, or None if not found
         """
-        query = """
-        SELECT context_id, context_hash, rag_config_json, prompt_config_json,
-               status, error, started_at, completed_at, duration_seconds
-        FROM contexts
-        WHERE context_hash = ?
-        """
+        query = f"SELECT {self._CONTEXT_COLUMNS} FROM contexts WHERE context_hash = ?"
         result = self.db.execute(query, (context_hash,), fetch=True)
         if result:
-            row = result[0]
-            return {
-                "context_id": row[0],
-                "context_hash": row[1],
-                "rag_config_json": row[2],
-                "prompt_config_json": row[3],
-                "status": row[4],
-                "error": row[5],
-                "started_at": row[6],
-                "completed_at": row[7],
-                "duration_seconds": row[8],
-            }
+            return self._row_to_context(result[0])
         return None
+
+    def get_all_contexts(self) -> list[dict[str, Any]]:
+        """
+        Get every context (RAG source) of the current experiment, oldest first.
+
+        The contexts table is cleared whenever a new experiment is created, so
+        this is the row set the dashboard's Retrieval Sources tab renders.
+
+        Returns:
+            List of context dicts (same shape as ``get_context``), ordered by context_id
+        """
+        query = f"SELECT {self._CONTEXT_COLUMNS} FROM contexts ORDER BY context_id"
+        result = self.db.execute(query, fetch=True)
+        return [self._row_to_context(row) for row in (result or [])]
+
+    def start_context_build(self, context_id: int, start_time: float):
+        """
+        Mark a context as building (again): status ONGOING, fresh start time, cleared result.
+
+        Used when a context is (re)built in a new ``run_evals`` call so a row that
+        previously completed does not keep showing as Complete while it rebuilds.
+
+        Args:
+            context_id: ID of the context
+            start_time: Build start time (``time.time()`` epoch seconds)
+        """
+        query = """
+        UPDATE contexts
+        SET status = ?, started_at = ?, completed_at = NULL, duration_seconds = NULL, error = ''
+        WHERE context_id = ?
+        """
+        self.db.execute(query, (ContextStatus.ONGOING.value, start_time, context_id), commit=True)
 
     def set_context_status(self, context_id: int, status: ContextStatus):
         """

@@ -30,11 +30,13 @@ CREATE TABLE IF NOT EXISTS contexts (
     context_hash TEXT NOT NULL UNIQUE,  -- SHA256 hash for deduplication
     rag_config_json TEXT,  -- Full RAG configuration as JSON
     prompt_config_json TEXT,  -- Full prompt manager configuration as JSON
-    status TEXT NOT NULL,  -- 'new', 'ongoing', 'deleted', 'failed'
+    status TEXT NOT NULL,  -- 'new', 'ongoing' (building), 'completed', 'deleted', 'failed'
     error TEXT DEFAULT '',
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
-    duration_seconds REAL
+    duration_seconds REAL,
+    enable_gpu INTEGER NOT NULL DEFAULT 0,  -- 1 when the index is built/searched on GPU (Device column)
+    vector_store_json TEXT  -- JSON summary of the vector store for display (type, pgvector/pinecone identifiers)
 );
 
 -- ============================================================================

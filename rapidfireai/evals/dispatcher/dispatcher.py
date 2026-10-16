@@ -10,6 +10,7 @@ import logging
 import os
 import threading
 import functools
+import time
 import traceback
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
@@ -20,8 +21,19 @@ from rapidfireai.evals.utils.logger import RFLogger, SafeLoggerAdapter
 from rapidfireai.utils.constants import DispatcherConfig, ColabConfig, RF_LOG_PATH, RF_LOG_FILENAME
 from rapidfireai.utils.dispatcher_utils import check_experiment_running
 from rapidfireai.evals.utils.constants import ICOperation
+from rapidfireai.evals.utils.context_info import redact_connection, vector_store_columns
 
 CORS_ALLOWED_ORIGINS = "*" # Allow all origins
+
+
+def _as_float(value) -> float | None:
+    """Coerce a stored timestamp/duration to float; None when missing or not numeric."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class _ThreadSafeRFDatabase:
@@ -65,6 +77,13 @@ class Dispatcher:
         "completed": "Completed",
         "stopped": "Stopped",
         "deleted": "Deleted",
+        "failed": "Failed",
+    }
+
+    # Context (RAG source) status -> notebook index-table wording. Anything else
+    # (``new``, ``ongoing``) is still building.
+    CONTEXT_STATUS_MAP = {
+        "completed": "Complete",
         "failed": "Failed",
     }
 
@@ -173,6 +192,70 @@ class Dispatcher:
             "error": pipeline.get("error") or "",
         }
 
+    def _transform_context_to_row(self, context: dict, now: float | None = None) -> dict:
+        """
+        Shape a ``contexts`` row for the dashboard's Retrieval Sources tab.
+
+        Produces the same columns as the notebook's ``ContextBuildingDisplay``:
+        status wording, a duration that keeps counting while the index builds,
+        the Device flag and the vector-store summary. The pgvector connection
+        string has its password masked before it leaves the process.
+
+        Args:
+            context: Row dict from ``RFDatabase.get_all_contexts`` / ``get_context``
+            now: Reference time for the elapsed duration of building rows (defaults to ``time.time()``)
+        """
+        now = time.time() if now is None else now
+        raw_status = (context.get("status") or "").lower()
+        started_at = _as_float(context.get("started_at"))
+        completed_at = _as_float(context.get("completed_at"))
+        duration = _as_float(context.get("duration_seconds"))
+
+        if raw_status in self.CONTEXT_STATUS_MAP:
+            status = self.CONTEXT_STATUS_MAP[raw_status]
+        elif completed_at is not None:
+            # Rows written before ContextStatus.COMPLETED existed stayed "ongoing" after a
+            # successful build; a recorded completion time is the signal they finished.
+            status = "Complete"
+        else:
+            status = "Building"
+
+        if duration is None and status == "Building" and started_at is not None:
+            duration = max(0.0, now - started_at)
+
+        info = context.get("vector_store_json")
+        if isinstance(info, str):
+            try:
+                info = json.loads(info)
+            except (TypeError, ValueError):
+                info = None
+        if not isinstance(info, dict):
+            info = None
+
+        vector_store = None
+        if info is not None:
+            cols = vector_store_columns(info)
+            vector_store = {
+                "type": info.get("type"),
+                "label": cols.get("Vector Store"),
+                "connection": redact_connection(cols["Connection"]) if "Connection" in cols else None,
+                "collection_name": cols.get("Collection Name"),
+                "index_name": cols.get("Index Name"),
+                "namespace": cols.get("Namespace"),
+            }
+
+        return {
+            "context_id": context.get("context_id"),
+            "context_hash": context.get("context_hash") or "",
+            "status": status,
+            "duration_seconds": duration,
+            "started_at": started_at,
+            "completed_at": completed_at,
+            "device": "GPU" if context.get("enable_gpu") else "CPU",
+            "vector_store": vector_store,
+            "error": context.get("error") or "",
+        }
+
     def _build_full_config(self, pipeline_config_json: dict, context_id) -> dict:
         """Build the complete, display-only config view for a run.
 
@@ -272,6 +355,10 @@ class Dispatcher:
             "get_pipeline_config_json",
             self.get_pipeline_config_json,
             methods=["GET", "OPTIONS"],
+        )
+        # Context (RAG source) queries (for the dashboard's Retrieval Sources tab)
+        self.app.add_url_rule(
+            f"{route_prefix}/get-all-contexts", "get_all_contexts", self.get_all_contexts, methods=["GET", "OPTIONS"]
         )
         # Legacy endpoints (kept for backwards compatibility)
         self.app.add_url_rule(
@@ -654,6 +741,38 @@ class Dispatcher:
                 return jsonify({"error": f"Pipeline {pipeline_id} not found"}), 404
 
             return jsonify(config_data), 200
+
+        except Exception as e:
+            return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+    def get_all_contexts(self) -> tuple[Response, int]:
+        """
+        Get all contexts (RAG sources / vector-store indexes) of the current experiment.
+
+        Backs the dashboard's Retrieval Sources tab: one row per context with the same
+        columns as the notebook's index table (status, duration, device, vector store).
+
+        Returns:
+            List of context rows ordered by context_id (empty list when none)
+        """
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+
+        try:
+            contexts = self.db.get_all_contexts()
+            now = time.time()
+            rows = []
+            for ctx in contexts:
+                # Recover per-row (see ``get_all_runs``): one odd row must not 500 the poll.
+                try:
+                    rows.append(self._transform_context_to_row(ctx, now))
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "transform failed for context_id=%s; skipping row",
+                        ctx.get("context_id") if isinstance(ctx, dict) else "?",
+                        exc_info=True,
+                    )
+            return jsonify(rows), 200
 
         except Exception as e:
             return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
