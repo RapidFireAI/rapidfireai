@@ -558,23 +558,39 @@ class RFDatabase:
         result = self.db.execute(query, fetch=True)
         return [self._row_to_context(row) for row in (result or [])]
 
-    def start_context_build(self, context_id: int, start_time: float):
+    def start_context_build(
+        self,
+        context_id: int,
+        start_time: float,
+        enable_gpu: bool | None = None,
+        vector_store_json: str | None = None,
+    ):
         """
         Mark a context as building (again): status ONGOING, fresh start time, cleared result.
 
         Used when a context is (re)built in a new ``run_evals`` call so a row that
         previously completed does not keep showing as Complete while it rebuilds.
+        ``create_context`` returns the existing row on a hash match without touching
+        the display columns, so pass ``enable_gpu`` / ``vector_store_json`` here to
+        refresh them (repairs rows written before those columns existed).
 
         Args:
             context_id: ID of the context
             start_time: Build start time (``time.time()`` epoch seconds)
+            enable_gpu: Device flag to store; None leaves the stored value unchanged
+            vector_store_json: Vector-store summary JSON to store; None leaves it unchanged
         """
-        query = """
-        UPDATE contexts
-        SET status = ?, started_at = ?, completed_at = NULL, duration_seconds = NULL, error = ''
-        WHERE context_id = ?
-        """
-        self.db.execute(query, (ContextStatus.ONGOING.value, start_time, context_id), commit=True)
+        assignments = ["status = ?", "started_at = ?", "completed_at = NULL", "duration_seconds = NULL", "error = ''"]
+        params: list[Any] = [ContextStatus.ONGOING.value, start_time]
+        if enable_gpu is not None:
+            assignments.append("enable_gpu = ?")
+            params.append(int(bool(enable_gpu)))
+        if vector_store_json is not None:
+            assignments.append("vector_store_json = ?")
+            params.append(vector_store_json)
+        params.append(context_id)
+        query = f"UPDATE contexts SET {', '.join(assignments)} WHERE context_id = ?"
+        self.db.execute(query, tuple(params), commit=True)
 
     def set_context_status(self, context_id: int, status: ContextStatus):
         """

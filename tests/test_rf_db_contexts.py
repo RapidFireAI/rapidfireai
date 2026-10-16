@@ -109,7 +109,9 @@ def test_get_all_contexts_empty(rf_db):
 
 
 def test_start_context_build_resets_result_fields(rf_db):
-    cid = rf_db.create_context("hash-a", status=ContextStatus.ONGOING)
+    cid = rf_db.create_context(
+        "hash-a", status=ContextStatus.ONGOING, enable_gpu=True, vector_store_json='{"type": "faiss"}'
+    )
     rf_db.set_context_end_time(cid, 1700000010.0, 10.0)
     rf_db.set_context_status(cid, ContextStatus.COMPLETED)
     rf_db.set_context_error(cid, "boom")
@@ -122,6 +124,25 @@ def test_start_context_build_resets_result_fields(rf_db):
     assert ctx["completed_at"] is None
     assert ctx["duration_seconds"] is None
     assert ctx["error"] == ""
+    # Display fields are left alone when not passed.
+    assert ctx["enable_gpu"] is True
+    assert ctx["vector_store_json"] == '{"type": "faiss"}'
+
+
+def test_start_context_build_refreshes_display_fields(rf_db):
+    """A row that pre-dates the display columns (or was created by create_context's
+    hash-match short-circuit) gets enable_gpu / vector_store_json on rebuild."""
+    cid = rf_db.create_context("hash-a", status=ContextStatus.ONGOING)
+    assert rf_db.get_context(cid)["enable_gpu"] is False
+    assert rf_db.get_context(cid)["vector_store_json"] is None
+
+    rf_db.start_context_build(cid, 1700000000.0, enable_gpu=True, vector_store_json='{"type": "faiss"}')
+    ctx = rf_db.get_context(cid)
+    assert ctx["status"] == "ongoing"
+    assert ctx["started_at"] == 1700000000.0
+    assert ctx["completed_at"] is None
+    assert ctx["enable_gpu"] is True
+    assert ctx["vector_store_json"] == '{"type": "faiss"}'
 
 
 def test_failed_build_keeps_duration(rf_db):

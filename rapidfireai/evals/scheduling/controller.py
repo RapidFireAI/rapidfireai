@@ -589,6 +589,7 @@ class Controller:
             # Retrieval Sources tab (persisted on the contexts row so the dispatcher can serve them)
             enable_gpu = bool(rag_spec.enable_gpu_search) if rag_spec else False
             vector_store_info = collect_vector_store_info(rag_spec)
+            vector_store_json = json.dumps(vector_store_info) if vector_store_info is not None else None
 
             # Create context record in DB for tracking/analytics
             context_id = db.create_context(
@@ -597,12 +598,15 @@ class Controller:
                 prompt_config_json=json.dumps(self._sanitize_for_json(prompt_manager)),
                 status=ContextStatus.ONGOING,
                 enable_gpu=enable_gpu,
-                vector_store_json=json.dumps(vector_store_info) if vector_store_info is not None else None,
+                vector_store_json=vector_store_json,
             )
             start_time = time.time()
             # (Re)mark as building: create_context returns the existing row when the
-            # hash was seen in an earlier run_evals call of this experiment.
-            db.start_context_build(context_id, start_time)
+            # hash was seen in an earlier run_evals call of this experiment (or a
+            # re-attached one), so refresh the display fields on that row too.
+            db.start_context_build(
+                context_id, start_time, enable_gpu=enable_gpu, vector_store_json=vector_store_json
+            )
 
             contexts_to_build.append(
                 {
