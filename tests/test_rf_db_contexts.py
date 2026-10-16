@@ -124,6 +124,21 @@ def test_start_context_build_resets_result_fields(rf_db):
     assert ctx["error"] == ""
 
 
+def test_failed_build_keeps_duration(rf_db):
+    """The controller's failure path stores end time + duration before marking FAILED."""
+    cid = rf_db.create_context("hash-a", status=ContextStatus.ONGOING)
+    rf_db.start_context_build(cid, 1700000000.0)
+    rf_db.set_context_end_time(cid, 1700000003.5, 3.5)
+    rf_db.set_context_status(cid, ContextStatus.FAILED)
+    rf_db.set_context_error(cid, "boom")
+
+    ctx = rf_db.get_context(cid)
+    assert ctx["status"] == "failed"
+    assert ctx["completed_at"] == 1700000003.5
+    assert ctx["duration_seconds"] == 3.5
+    assert ctx["error"] == "boom"
+
+
 def test_reset_experiment_states_keeps_completed_contexts(rf_db):
     done = rf_db.create_context("done", status=ContextStatus.COMPLETED)
     building = rf_db.create_context("building", status=ContextStatus.ONGOING)

@@ -912,6 +912,7 @@ class Controller:
                     end_time = time.time()
                     duration = end_time - start_time
 
+                    db.set_context_end_time(context_id, end_time, duration)
                     db.set_context_status(context_id, ContextStatus.FAILED)
                     db.set_context_error(context_id, str(e))
                     self.logger.exception(f"Failed to build context {context_id} ({context_hash[:8]}...)")

@@ -74,9 +74,11 @@ def vector_store_columns(info: dict[str, Any] | None) -> dict[str, str]:
 def redact_connection(value: Any) -> Any:
     """Mask the password in a database connection string; return non-strings untouched.
 
-    Handles URL-shaped strings (``postgresql://user:secret@host/db`` ->
-    ``postgresql://user:***@host/db``) and libpq key/value strings
-    (``host=h password=secret`` -> ``host=h password=***``). Never raises.
+    Handles URL userinfo (``postgresql://user:secret@host/db`` ->
+    ``postgresql://user:***@host/db``), ``password=`` tokens in URL query strings
+    (``postgresql://host/db?password=secret`` -> ``...?password=***``) and in libpq
+    key/value strings (``host=h password=secret`` -> ``host=h password=***``).
+    Never raises.
     """
     if not isinstance(value, str) or not value:
         return value
@@ -88,7 +90,7 @@ def redact_connection(value: Any) -> Any:
             userinfo, _, hostport = netloc.rpartition("@")
             if ":" in userinfo:
                 user = userinfo.split(":", 1)[0]
-                return f"{scheme}://{user}:***@{hostport}{slash}{tail}"
-        return value
+                value = f"{scheme}://{user}:***@{hostport}{slash}{tail}"
 
+    # Also mask ``password=<value>`` wherever it appears (query string or key/value form).
     return _PASSWORD_KV_RE.sub(r"\1***", value)

@@ -111,6 +111,11 @@ def test_columns_unknown_type():
         ("postgresql+psycopg://rf:p%40ss@db/rf?sslmode=require", "postgresql+psycopg://rf:***@db/rf?sslmode=require"),
         ("postgresql://rf@db/rf", "postgresql://rf@db/rf"),  # no password: unchanged
         ("postgresql://db/rf", "postgresql://db/rf"),
+        ("postgresql://host/db?password=secret", "postgresql://host/db?password=***"),
+        (
+            "postgresql://u:p@host/db?password=secret&sslmode=require",
+            "postgresql://u:***@host/db?password=***&sslmode=require",
+        ),
         ("host=db user=rf password=s3cret dbname=rf", "host=db user=rf password=*** dbname=rf"),
         ("host=db PASSWORD = s3cret", "host=db PASSWORD = ***"),
         ("-", "-"),
