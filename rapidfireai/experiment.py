@@ -5,7 +5,6 @@ This module contains the unified Experiment class for both fit and evals modes.
 import logging
 import multiprocessing as mp
 import os
-import time
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -211,7 +210,6 @@ class Experiment:
         # Initialize fit-specific attributes
         self.log_server_process: mp.Process | None = None
         self.worker_processes: list[mp.Process] = []
-        self._training_thread: Any = None  # Track background training thread (Colab only)
 
         # Create db tables
         try:
@@ -262,11 +260,8 @@ class Experiment:
         from rapidfireai.evals.db import RFDatabase
         from rapidfireai.evals.dispatcher import start_dispatcher_thread
         from rapidfireai.evals.scheduling.controller import Controller
-        from rapidfireai.evals.utils.constants import get_dispatcher_url
         from rapidfireai.evals.utils.experiment_utils import ExperimentUtils
         from rapidfireai.evals.utils.logger import RFLogger
-        from rapidfireai.evals.utils.notebook_ui import NotebookUI
-        from rapidfireai.utils.colab import get_colab_auth_token
         from rapidfireai.utils.constants import DispatcherConfig
         from rapidfireai.utils.metric_rfmetric_manager import RFMetricLogger
 
@@ -396,9 +391,6 @@ class Experiment:
                 host=DispatcherConfig.HOST, port=DispatcherConfig.PORT, logger=self.logger
             )
 
-        # Initialize notebook UI controller with auth token for Colab
-        self.notebook_ui = NotebookUI(dispatcher_url=get_dispatcher_url(), auth_token=get_colab_auth_token())
-
     def run_fit(
         self,
         param_config: Any,
@@ -433,96 +425,30 @@ class Experiment:
 
         ExperimentException = self._ExperimentException
 
-        # Check if training is already running
-        if self._training_thread is not None and self._training_thread.is_alive():
-            print("⚠️  Training is already running in background. Please wait for it to complete.")
-            return
-
         # Extract shard callback from param_config if it supports Optuna-style callbacks
         shard_callback = None
         if hasattr(param_config, "get_callback"):
             shard_callback = param_config.get_callback()
 
-        if ColabConfig.ON_COLAB:
-            # Run Controller in background thread to keep kernel responsive
-            import sys
-            import threading
-            from io import StringIO
-
-            from IPython.display import HTML, display
-
-            def _run_controller_background():
-                """Run controller in background thread with output suppression"""
-                # Suppress stdout to avoid print statements appearing in wrong cells
-                old_stdout = sys.stdout
-                sys.stdout = StringIO()
-
-                try:
-                    controller = Controller(self.experiment_id, self.experiment_name)
-                    controller.run_fit(
-                        param_config,
-                        create_model_fn,
-                        train_dataset,
-                        eval_dataset,
-                        num_shards,
-                        seed,
-                        num_gpus,
-                        monte_carlo_simulations,
-                        shard_callback=shard_callback,
-                    )
-                except Exception as e:
-                    # Restore stdout for error logging
-                    sys.stdout = old_stdout
-                    if hasattr(self, "logger"):
-                        self.logger.opt(exception=True).error(f"Error in background training: {e}")
-                    display(HTML(f'<p style="color: red; font-weight: bold;">❌ Error in background training: {e}</p>'))
-                finally:
-                    # Restore stdout
-                    sys.stdout = old_stdout
-                    # Display completion message
-                    display(
-                        HTML(
-                            '<p style="color: blue; font-weight: bold;">'
-                            "🎉 Training completed! Check InteractiveController for final results."
-                            "</p>"
-                        )
-                    )
-                    self._training_thread = None
-
-            self._training_thread = threading.Thread(target=_run_controller_background, daemon=True)
-            self._training_thread.start()
-
-            # Use IPython display for reliable output in Colab
-            display(
-                HTML(
-                    '<div style="padding: 10px; background-color: #d4edda; '
-                    'border: 1px solid #28a745; border-radius: 5px; color: #155724;">'
-                    "<b>✓ Training started in background</b><br>"
-                    "Use InteractiveController to monitor progress. "
-                    "The notebook kernel will remain responsive while training runs.<br>"
-                    "<small>Tip: Interact with InteractiveController periodically to keep Colab active.</small>"
-                    "</div>"
-                )
+        # Blocking, like run_evals(), including on Colab: IC Ops run from the browser-side
+        # NotebookUI panel, which talks to the dispatcher over HTTP and needs no free kernel.
+        try:
+            controller = Controller(self.experiment_id, self.experiment_name)
+            controller.run_fit(
+                param_config,
+                create_model_fn,
+                train_dataset,
+                eval_dataset,
+                num_shards,
+                seed,
+                num_gpus,
+                monte_carlo_simulations,
+                shard_callback=shard_callback,
             )
-        else:
-            # Original blocking behavior for non-Colab environments
-            try:
-                controller = Controller(self.experiment_id, self.experiment_name)
-                controller.run_fit(
-                    param_config,
-                    create_model_fn,
-                    train_dataset,
-                    eval_dataset,
-                    num_shards,
-                    seed,
-                    num_gpus,
-                    monte_carlo_simulations,
-                    shard_callback=shard_callback,
-                )
-            except Exception as e:
-                if hasattr(self, "logger"):
-                    self.logger.opt(exception=True).error(f"Error running fit: {e}")
-                raise ExperimentException(f"Error running fit: {e}, traceback: {traceback.format_exc()}") from e
+        except Exception as e:
+            if hasattr(self, "logger"):
+                self.logger.opt(exception=True).error(f"Error running fit: {e}")
+            raise ExperimentException(f"Error running fit: {e}, traceback: {traceback.format_exc()}") from e
 
     def run_evals(
         self,
@@ -597,14 +523,6 @@ class Experiment:
 
         # Update experiment resources in database
         self.db.set_experiment_resources(self.experiment_id, num_actors, cpus_per_actor, gpus_per_actor)
-
-        # Display interactive control panel in notebook
-        # Give dispatcher a moment to start up
-        time.sleep(0.5)
-        try:
-            self.notebook_ui.display()
-        except Exception as e:
-            self.logger.warning(f"Failed to display notebook UI: {e}")
 
         # Update experiment with num_shards
         self.db.set_experiment_num_shards(self.experiment_id, num_shards)
