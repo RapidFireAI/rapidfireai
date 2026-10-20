@@ -15,8 +15,41 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.16.2]
+
+### Additions
+- New **Retrieval Sources** tab in the dashboard (before Logs) showing RAG source index / context builds, with duration recorded for failed builds and query-string passwords redacted. New `/contexts` dispatcher endpoints, `rapidfireai/evals/utils/context_info.py`, and `useExperimentContexts` / `useExperimentMode` frontend hooks. (#309)
+- Unified `rapidfireai.utils.notebook_ui.NotebookUI(mode="fit"|"evals")`: a single browser-side IC Ops panel that polls the dispatcher over HTTP, so it stays live while the kernel is busy. Fit mode adds the warm-start option. `rapidfireai.evals.utils.notebook_ui.NotebookUI` remains as a backward-compatible evals wrapper. (#308)
+- New `end_experiment_button(experiment)` helper for Colab "End Experiment" cells, replacing the inline HTML/`eval_js` snippet in the staging notebooks. (#308)
+- `OptunaFitShardCallback` (formerly `OptunaChunkCallback`) and expanded `RFOptuna` API: `set_seed()`, `sample()`, `set_logger()`, `set_context_feasibility()`, `get_context_coverage_leaves()`; new SciFact Optuna tutorial and a much larger `tests/test_optuna.py` suite. (#305, #306)
+- Prompt-manager and API-generator knobs (`prompt_manager_config`, endpoint/client config, rate-limit knobs) are now surfaced in MLflow and the notebook config table for evals runs, matching how RAG knobs are shown. (#299)
+- `/all-operations` endpoint on the fit dispatcher so pending IC ops are listable, matching the evals dispatcher payload. (#299)
+- Full display-only run config (`_build_full_config`) exposed by the dispatchers for the dashboard run page. (#287)
+- `rapidfireai/evals/utils/trace_metrics.py` and `rapidfireai/automl/automl_utils.py` helpers. (#299)
+- `docs/AGENTS.md`: operational install/setup/troubleshooting guide for AI coding agents, linked from the README and the PyPI project URLs. (#281)
+- Root `AGENTS.md` adopted as the canonical maintainer-docs entry point; per-subdirectory `CLAUDE.md` files removed and root `CLAUDE.md` reduced to an `@AGENTS.md` pointer. (#280)
+- New unit tests: `test_context_info.py`, `test_evals_dispatcher_contexts.py`, `test_rf_db_contexts.py`, `test_mlflow_run_reactivation_guard.py`, `test_shards.py`. (#307, #309, #306)
+
+### Changes
+- **Fit backend renamed "chunk" → "shard"** throughout: `rapidfireai/fit/backend/chunks.py` → `shards.py`, `on_chunk_complete` → `on_shard_complete`, `granularity="chunk"` → `"shard"`, `num_chunks` → `num_shards`, and the `save_strategy="chunk"` sentinel is now `"shard"`. (#306)
+- Fit chunking is now front-loaded and run comparison is anchored on cumulative shards. (#306)
+- `run_fit()` now always blocks (like `run_evals()`); the Colab background-thread path and `_training_thread` are removed. (#308)
+- In-notebook IC Ops controls are disabled in favour of the dashboard; the notebook keeps the status/metrics tables. (#308)
+- Fit dispatcher CORS now supports credentials on Colab (cookie-based proxy auth), matching the evals dispatcher. (#308)
+- Controller now rejects `num_gpus > 1` without an `fsdp_config` in `training_args` at run-creation time with a clear error. (#299, fixes #291)
+- Legacy `rapidfireai/evals/scheduling/scheduler.py` removed; interactive control now uses the DB as the authoritative source for terminal run status. (#307)
+- `flashinfer-python`, `flashinfer-cubin` and `flashinfer-jit-cache` pinned to `0.6.13` in `rapidfireai init --train`. (#293)
+- Updated RapidFire logo in the dashboard header (light and dark variants). (#298)
+
 ### Fixed
-- Fixed `#219`: `rapidfireai --version` and `--help` no longer implicitly create `$RF_HOME` or `$RF_HOME/logs`. Directory initialization is now deferred until non-pure-info subcommands are run.
+- Fixed `#219`: `rapidfireai --version` and `--help` no longer implicitly create `$RF_HOME` or `$RF_HOME/logs`. Directory initialization is now deferred until non-pure-info subcommands are run. (#294)
+- Query actors no longer reopen a terminal (STOPPED/FAILED/FINISHED) MLflow run via `mlflow.start_run`, which caused the dashboard to show STOPPED runs as ONGOING after an IC stop. (#307)
+- A second pending STOP for the same pipeline no longer clobbers a finished run with STOPPED/KILLED. (#307)
+- Fixed RF-OPT-1, RF-OPT-2 and RF-OPT-4 Optuna bugs, an online-aggregation bug, and a controller model-name bug; Optuna fit budget updated. (#305, #306)
+- `progress_display` no longer hides any key containing the substring "token" (`max_tokens`, `tokenizer`, `*_token_id`, …) as a secret. (#299)
+- Grid search no longer cross-products the same `automl.List` twice when `max_completion_tokens` is set. (#299)
+- Fixed issue #290 (indentation and reference errors). (#299)
+- Fixed NDCG@k and MRR metric helpers in the rag-contexteng tutorials and community RAG notebooks: binary IDCG (`[1]` not `[3]`) and ordered-list input so rank is respected. Also fixed the fragile `extract_solution` extractor/prompt, a `*.jsonl` glob that indexed query files as corpus, and stale config counts in the SciFact notebooks. (#284, #286; fixes #257–#261, #285)
 
 ## [v0.16.1]
 
