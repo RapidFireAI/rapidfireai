@@ -1,13 +1,18 @@
 # Post-training tutorials
 
-Preference alignment with DPO and math reasoning with GRPO, two of the Hugging Face TRL trainers that RapidFire AI supports. Set up with `rapidfireai init --train`, then run `rapidfireai start`. The [DPO](https://oss-docs.rapidfire.ai/en/latest/dpo.html) and [GRPO](https://oss-docs.rapidfire.ai/en/latest/grpo.html) pages in the docs walk through each use case.
+These notebooks train a model further after supervised fine-tuning, with two trainers from the Hugging Face TRL library:
 
-| Notebook | What it shows | Models | Needs |
-|---|---|---|---|
-| [`rf-tutorial-dpo-alignment.ipynb`](rf-tutorial-dpo-alignment.ipynb) | DPO on 500 examples of `trl-lib/ultrafeedback_binarized`: 4 configs that vary LoRA rank (64, 128), beta and loss (sigmoid, robust, and a weighted sigmoid + BCO-pair + SFT mix) | `rapidfire-ai-inc/mistral-7b-sft-bnb-4bit`, a 4-bit QLoRA SFT of Mistral-7B-Instruct-v0.3 | GPU with ≥80 GB |
-| [`rf-tutorial-dpo-alignment-lite.ipynb`](rf-tutorial-dpo-alignment-lite.ipynb) | 3 of those configs with LoRA r=16, 128 examples and shorter sequences | Same as above | GPU with <80 GB |
-| [`rf-tutorial-dpo-alignment-fsdp-lite.ipynb`](rf-tutorial-dpo-alignment-fsdp-lite.ipynb) | The 3 lite configs with FSDP across 2 GPUs | TinyLlama-1.1B-Chat-v1.0 | ≥2 A10 GPUs (48 GB total) |
-| [`rf-tutorial-grpo-mathreasoning.ipynb`](rf-tutorial-grpo-mathreasoning.ipynb) | GRPO on `openai/gsm8k` with 5 reward functions (correctness, integer answer, strict format, soft format, XML tag count); 4 configs | Llama-3.1-8B-Instruct, Qwen2.5-3B-Instruct (2 learning rates), Qwen2.5-7B-Instruct, all loaded in 4-bit | GPU with ≥80 GB; Hugging Face access to Llama |
-| [`rf-tutorial-grpo-mathreasoning-lite.ipynb`](rf-tutorial-grpo-mathreasoning-lite.ipynb) | Same task with 2 small models, not quantized; 2 configs | Qwen2.5-0.5B-Instruct, Llama-3.2-1B-Instruct | GPU with <80 GB; Hugging Face access to Llama |
+- DPO (Direct Preference Optimization) teaches a model to prefer the better of two answers.
+- GRPO (Group Relative Policy Optimization) teaches a model to solve math problems. The model writes several answers to each question, and reward functions score them.
 
-All five notebooks download their datasets from the Hugging Face Hub.
+To set up, run `rapidfireai init --train`, then `rapidfireai start`. The [DPO](https://oss-docs.rapidfire.ai/en/latest/dpo.html) and [GRPO](https://oss-docs.rapidfire.ai/en/latest/grpo.html) pages in the docs explain each use case step by step.
+
+| Notebook | What it does | Models | What you need |
+| --- | --- | --- | --- |
+| [`rf-tutorial-dpo-alignment.ipynb`](rf-tutorial-dpo-alignment.ipynb) | Runs DPO on 500 examples from `trl-lib/ultrafeedback_binarized`. Compares 4 configs that change the LoRA rank (64 or 128), the beta value and the loss function (sigmoid, robust, or a weighted mix of sigmoid, BCO-pair and SFT). | `rapidfire-ai-inc/mistral-7b-sft-bnb-4bit`: Mistral-7B-Instruct-v0.3 already fine-tuned with SFT and stored in 4-bit | A GPU with at least 80 GB of memory |
+| [`rf-tutorial-dpo-alignment-lite.ipynb`](rf-tutorial-dpo-alignment-lite.ipynb) | A smaller version: 3 of those configs, with LoRA rank 16, 128 examples and shorter sequences | The same model as above | A smaller GPU, with less than 80 GB of memory, is enough. |
+| [`rf-tutorial-dpo-alignment-fsdp-lite.ipynb`](rf-tutorial-dpo-alignment-fsdp-lite.ipynb) | The 3 lite configs, with the model split across 2 GPUs using FSDP | TinyLlama-1.1B-Chat-v1.0 | At least 2 A10 GPUs (48 GB in total) |
+| [`rf-tutorial-grpo-mathreasoning.ipynb`](rf-tutorial-grpo-mathreasoning.ipynb) | Runs GRPO on the `openai/gsm8k` math problems. 5 reward functions score each answer: whether it's correct, whether it's a whole number, whether it strictly or loosely follows the expected format, and how many of the expected XML tags it uses. Compares 4 configs. | Llama-3.1-8B-Instruct, Qwen2.5-3B-Instruct (with 2 learning rates) and Qwen2.5-7B-Instruct, all loaded in 4-bit | A GPU with at least 80 GB of memory. Access to Llama on Hugging Face. |
+| [`rf-tutorial-grpo-mathreasoning-lite.ipynb`](rf-tutorial-grpo-mathreasoning-lite.ipynb) | The same task with 2 small models that aren't loaded in 4-bit. Compares 2 configs. | Qwen2.5-0.5B-Instruct, Llama-3.2-1B-Instruct | A smaller GPU, with less than 80 GB of memory, is enough. Access to Llama on Hugging Face. |
+
+All five notebooks download their datasets from the Hugging Face Hub when they run.

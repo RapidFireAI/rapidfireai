@@ -1,10 +1,16 @@
 # SFT with Trackio
 
-The customer-support SFT use case from [`fine-tuning/`](../), with metrics logged to [Trackio](https://github.com/gradio-app/trackio), a lightweight, local-first experiment tracker from Hugging Face. Set up with `rapidfireai init --train`, then run `rapidfireai start`.
+These notebooks run the customer-support chatbot example from [`fine-tuning/`](../) and log the metrics to [Trackio](https://github.com/gradio-app/trackio). Trackio is a lightweight experiment tracker from Hugging Face. By default, it keeps your data on your own machine.
 
-| Notebook | What it shows | Models | Needs |
-|---|---|---|---|
-| [`rf-tutorial-sft-trackio.ipynb`](rf-tutorial-sft-trackio.ipynb) | Sets `RF_TRACKIO_ENABLED=true` and turns MLflow and TensorBoard off before importing RapidFire; 2 learning rates × 2 LoRA adapters = 4 configs | TinyLlama-1.1B-Chat-v1.0 | GPU |
-| [`rf-colab-tutorial-sft-trackio.ipynb`](rf-colab-tutorial-sft-trackio.ipynb) ([open in Colab](https://colab.research.google.com/github/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/trackio/rf-colab-tutorial-sft-trackio.ipynb)) | Colab version that shows the Trackio dashboard in the notebook | Qwen3-0.6B | Colab GPU runtime |
+To set up, run `rapidfireai init --train`, then `rapidfireai start`.
 
-To view the local notebook's runs, run `trackio show --project "exp1-sft-trackio-demo"` in a terminal.
+| Notebook | What it does | Models | What you need |
+| --- | --- | --- | --- |
+| [`rf-tutorial-sft-trackio.ipynb`](rf-tutorial-sft-trackio.ipynb) | Turns on Trackio (`RF_TRACKIO_ENABLED=true`) and turns off MLflow and TensorBoard before it imports RapidFire. Compares 4 configs: 2 learning rates, each with 2 LoRA adapter sizes. | TinyLlama-1.1B-Chat-v1.0 | A GPU |
+| [`rf-colab-tutorial-sft-trackio.ipynb`](rf-colab-tutorial-sft-trackio.ipynb) ([open in Colab](https://colab.research.google.com/github/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/trackio/rf-colab-tutorial-sft-trackio.ipynb)) | The Colab version. It shows the Trackio dashboard inside the notebook. | Qwen3-0.6B | A Colab runtime with a GPU |
+
+To see the runs from the local notebook, run this command in a terminal:
+
+```bash
+trackio show --project "exp1-sft-trackio-demo"
+```
