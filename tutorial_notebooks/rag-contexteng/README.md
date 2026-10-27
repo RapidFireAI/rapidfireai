@@ -2,7 +2,7 @@
 
 RAG (retrieval-augmented generation) answers a question in two steps: it finds documents related to the question, then gives them to an LLM to write the answer. Context engineering means choosing what to put in the LLM's prompt. Each notebook here builds several pipeline configurations (configs) and compares them with `run_evals()`.
 
-To set up, run `rapidfireai init`, which installs the evals setup by default. Then run `rapidfireai start`, and open the notebooks from `rapidfireai jupyter`. For more detail, see the [tutorials page](https://oss-docs.rapidfire.ai/en/latest/tutorials.html) and the [FiQA](https://oss-docs.rapidfire.ai/en/latest/rag_fiqa.html), [SciFact](https://oss-docs.rapidfire.ai/en/latest/rag_scifact.html) and [GSM8K](https://oss-docs.rapidfire.ai/en/latest/rag_gsm8k.html) pages in the docs.
+To set up, run `rapidfireai init`, which installs the evals setup by default, then run `rapidfireai start`. Open the notebooks in VS Code. For more detail, see the [tutorials page](https://oss-docs.rapidfire.ai/en/latest/tutorials.html) and the [FiQA](https://oss-docs.rapidfire.ai/en/latest/rag_fiqa.html), [SciFact](https://oss-docs.rapidfire.ai/en/latest/rag_scifact.html) and [GSM8K](https://oss-docs.rapidfire.ai/en/latest/rag_gsm8k.html) pages in the docs.
 
 | Notebook | What it does | Models | What you need |
 | --- | --- | --- | --- |

@@ -101,7 +101,7 @@ rapidfireai start
 # Forward this port if you installed rapidfireai on a remote machine
 ssh -L 8853:localhost:8853 username@remote-machine
 
-# Open an example notebook from ./tutorial_notebooks/[fine-tuning | post-training] and start experiment
+# Open an example notebook from ./tutorial_notebooks/[fine-tuning | post-training] in VS Code, select the .venv kernel, and start experiment
 
 
 # [OR]
@@ -118,14 +118,10 @@ rapidfireai start
 # ...
 # Press Ctrl+C to stop all services
 
-# For the RAG/context eng. notebooks, only jupyter is supported for now and must be started as follows
-rapidfireai jupyter
-
 # Forward these ports if you installed rapidfireai on a remote machine
-ssh -L 8850:localhost:8850 -L 8851:localhost:8851 -L 8853:localhost:8853 -L 8852:localhost:8852 username@remote-machine
+ssh -L 8851:localhost:8851 -L 8853:localhost:8853 -L 8852:localhost:8852 username@remote-machine
 
-# Open the URL provided by the jupyter notebook command above via your browser
-# Open an example notebook from ./tutorial_notebooks/rag-contexteng/ and start experiment
+# Open an example notebook from ./tutorial_notebooks/rag-contexteng/ in VS Code, select the .venv kernel, and start experiment
 
 ```
 

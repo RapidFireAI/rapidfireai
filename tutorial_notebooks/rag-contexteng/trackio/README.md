@@ -2,7 +2,7 @@
 
 These notebooks run the FiQA RAG example from [`rag-contexteng/`](../) and log the metrics to [Trackio](https://github.com/gradio-app/trackio). Trackio is a lightweight experiment tracker from Hugging Face. By default, it keeps your data on your own machine.
 
-To set up, run `rapidfireai init`, then `rapidfireai start`. Then open the notebook from `rapidfireai jupyter`.
+To set up, run `rapidfireai init`, then `rapidfireai start`. Then open the notebook in VS Code.
 
 | Notebook | What it does | Models | What you need |
 | --- | --- | --- | --- |

@@ -38,7 +38,7 @@ Pick a branch **before** running any install commands — the two workflows inst
 
 ### Environment selectors
 
-- **Remote / cloud machine** → an SSH port-forward is required to view the dashboard locally. The set of ports differs by workflow (smaller for fit, larger for evals because Jupyter and MLflow are also exposed). The current port set and the exact `ssh` command are in the README §Install — read them from there, do not memorize.
+- **Remote / cloud machine** → an SSH port-forward is required to view the dashboard locally. The set of ports differs by workflow (smaller for fit, larger for evals because the dispatcher and MLflow are also exposed). The current port set and the exact `ssh` command are in the README §Install — read them from there, do not memorize.
 - **GPU issues** (CUDA absent, OOM, driver mismatch) → run `rapidfireai doctor` and act on its output. For OOM, switch the user to a *lite* tutorial variant (see §6).
 - **Hugging Face permission issues** → confirm the user has run the README's HF auth step and has been granted access on the gated model's HF page. If access is blocked, suggest an open-license substitute (TinyLlama, Qwen-0.5B/3B) where licensing permits.
 
@@ -58,12 +58,12 @@ Run the steps in the order below. The **commands** are in the README; the **deci
 6. **Apply current workarounds** that the README's install section calls out (for example, an `hf-xet` uninstall step, if still listed). These known-issue steps are *volatile* — read them from the live README each time, never from memory or this guide.
 7. **Choose the init variant based on workflow.** This is the most-missed step. The two `rapidfireai init` variants install **different dependency sets** that are not interchangeable. The README §Install shows both invocations; §2 of this guide tells you which one to pick. If the user has already run the wrong variant, they may need to recreate the venv before re-initing.
 8. **Run `rapidfireai doctor`** and confirm no critical failures (Python, GPU/CUDA where applicable, ports, packages). Do not proceed past failures without diagnosing the root cause.
-9. **Start the dashboard stack** with `rapidfireai start` (frontend, MLflow, dispatcher). For the RAG/evals workflow, also start a Jupyter listener as documented in the README — the evals tutorials run inside Jupyter rather than an arbitrary IDE notebook.
+9. **Start the dashboard stack** with `rapidfireai start` (frontend, MLflow, dispatcher). This step is the same for the fit and evals workflows.
 10. **(Remote/cloud machines only) Port-forward** the workflow-appropriate set with `ssh` *before* clicking the dashboard URL. The current set and SSH syntax are in README §Install. VS Code typically auto-forwards the dashboard port; other clients require the explicit `ssh -L` invocation. Skip this step on a local machine.
 11. **Open the tutorial notebook** under `./tutorial_notebooks/` (see §6 for the filename matching the workflow). Two non-obvious requirements:
-    - Notebooks **cannot** run via `python notebook.ipynb` — there is a multiprocessing restriction. Open the notebook in an IDE that supports Jupyter (VS Code, Cursor, JetBrains), or use `rapidfireai jupyter` (mandatory for the RAG/evals tutorials).
+    - Notebooks **cannot** run via `python notebook.ipynb` — there is a multiprocessing restriction. Open the notebook in VS Code, for every workflow including the RAG/evals tutorials. Do not suggest `rapidfireai jupyter`.
     - The notebook's kernel **must** be set to the `.venv` you created in step 2, not the system Python; otherwise `import rapidfireai` fails. In VS Code / Cursor, click the kernel selector in the upper-right of the notebook and pick the venv interpreter.
-    - The dashboard URL printed by `rapidfireai start` (or by `rapidfireai jupyter` for evals) shows live run progress as cells execute.
+    - The dashboard URL printed by `rapidfireai start` shows live run progress as cells execute.
 12. **Stop the stack** with `rapidfireai stop` when the user is done.
 
 **Hard rule**: if any specific command above is missing here and present in the README, **use the README's version**. This guide is intentionally silent on volatile commands so it cannot drift from the README.
@@ -95,7 +95,7 @@ Match the symptom to the diagnostic direction. Specific commands (kill-by-port, 
 | `CUDA out of memory` during fit | Model too large for available VRAM | Switch to a `*-lite` tutorial; reduce per-device batch size; consider gradient accumulation |
 | `nvidia-smi` not found, or no GPU detected | CUDA toolkit absent or no GPU on host | Run `rapidfireai doctor`; on CPU-only hosts, only the API-based RAG/evals workflow is viable |
 | `rapidfireai start` exits silently or fails | A service port already bound, or a service init failure | Read the printed log; check service log files reported by `rapidfireai doctor` |
-| Notebook crashes immediately on `Experiment(...)` | Often a multiprocessing restriction (CLI-launched Jupyter cannot spawn child processes) | Run the notebook through an IDE (VS Code / Cursor) or `rapidfireai jupyter`, not raw `python notebook.py` |
+| Notebook crashes immediately on `Experiment(...)` | Often a multiprocessing restriction (CLI-launched Jupyter cannot spawn child processes) | Run the notebook in VS Code, not in a separately launched Jupyter server or as raw `python notebook.py` |
 | `ImportError: No module named 'rapidfireai'` *inside the notebook* (but `rapidfireai --version` works in the shell) | Notebook kernel is the system Python, not the project `.venv` | In the IDE's notebook UI, change the kernel/interpreter to the `.venv` you created; restart the kernel and re-run cells |
 
 ---

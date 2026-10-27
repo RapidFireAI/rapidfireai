@@ -8,7 +8,7 @@ For a step-by-step guide to each use case, see the [tutorials page](https://oss-
 | --- | --- | --- |
 | [`fine-tuning/`](fine-tuning/) | Supervised fine-tuning (SFT) of a customer-support chatbot. There are versions for one large GPU, for smaller GPUs, for several GPUs (FSDP), for automatic tuning (Optuna), for Google Colab and for Trackio. | Run `rapidfireai init --train`, then `rapidfireai start` |
 | [`post-training/`](post-training/) | Training a model to prefer better answers (DPO), and training a model to solve math problems (GRPO) | Run `rapidfireai init --train`, then `rapidfireai start` |
-| [`rag-contexteng/`](rag-contexteng/) | Comparing RAG and context-engineering pipelines on the FiQA, SciFact, GSM8K and MMDocIR datasets. The data for these notebooks is in [`rag-contexteng/datasets/`](rag-contexteng/datasets/). | Run `rapidfireai init`, then `rapidfireai start`, then `rapidfireai jupyter` |
+| [`rag-contexteng/`](rag-contexteng/) | Comparing RAG and context-engineering pipelines on the FiQA, SciFact, GSM8K and MMDocIR datasets. The data for these notebooks is in [`rag-contexteng/datasets/`](rag-contexteng/datasets/). | Run `rapidfireai init`, then `rapidfireai start` |
 
 ## What the file names mean
 
@@ -22,8 +22,7 @@ For a step-by-step guide to each use case, see the [tutorials page](https://oss-
 ## How to run the notebooks
 
 - `rapidfireai init` copies this folder to `./tutorial_notebooks`, or to the path in `$RF_TUTORIAL_PATH` if you set it. Use that copy, because it matches the version you installed. The notebooks on GitHub `main` can be newer than the latest release on PyPI.
-- Open a notebook in Jupyter, or in an editor that supports notebooks, such as VS Code. Select the virtual environment where you installed `rapidfireai` as the kernel. You can't run a notebook as a Python script (`python notebook.ipynb`).
-- Open the RAG notebooks in the Jupyter server that `rapidfireai jupyter` starts.
+- Open a notebook in VS Code. Select the virtual environment where you installed `rapidfireai` as the kernel, using the kernel picker in the top-right corner of the notebook. You can't run a notebook as a Python script (`python notebook.ipynb`).
 - The Llama models are gated on Hugging Face, which means you need permission to download them. Request access on each model's Hugging Face page, then log in with `hf auth login`.
 - To install RapidFire AI, see [Install and Get Started](https://oss-docs.rapidfire.ai/en/latest/walkthrough.html) in the docs or the [main README](https://github.com/RapidFireAI/rapidfireai#install-and-get-started).
 
