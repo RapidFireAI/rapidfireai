@@ -52,7 +52,7 @@ export const MlflowHeader = ({
           <img
               css={{
                 display: 'block',
-                height: theme.spacing.md * 1.75,
+                height: theme.spacing.md * 3.5,
                 color: theme.colors.textPrimary,
               }}
               alt="RapidFireAI"
